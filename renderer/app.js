@@ -1061,6 +1061,45 @@ function bindFiscal() {
     // ---- Painel das notas já baixadas (dashboard + lista, tudo numa tela) ----
     let DL_ULTIMO_PAINEL_HTML = null;
 
+    // Gera a pizza (não donut) de com×sem retenção em JS, e troca no HTML
+    // que o Python devolve — evita precisar recompilar o núcleo Python só
+    // por causa do gráfico (o resto do painel continua vindo do núcleo já
+    // testado e funcionando). % dentro da fatia, giro na entrada, realce
+    // no hover — igual ao que foi combinado.
+    function _pizzaComSemRetencao(comQtd, semQtd) {
+      const total = comQtd + semQtd;
+      if (total === 0) return null; // mantém a mensagem "Nenhuma nota ainda" original
+      const R = 130, CX = 140, CY = 140;
+      function fatia(valor, inicioAng) {
+        const frac = valor / total;
+        const angFim = inicioAng + frac * 360;
+        const rad1 = (inicioAng - 90) * Math.PI / 180, rad2 = (angFim - 90) * Math.PI / 180;
+        const x1 = CX + R * Math.cos(rad1), y1 = CY + R * Math.sin(rad1);
+        const x2 = CX + R * Math.cos(rad2), y2 = CY + R * Math.sin(rad2);
+        const grandeArco = frac > 0.5 ? 1 : 0;
+        const meio = (inicioAng + angFim) / 2, radM = (meio - 90) * Math.PI / 180;
+        const lx = CX + R * 0.62 * Math.cos(radM), ly = CY + R * 0.62 * Math.sin(radM);
+        // fatia única (100%) não fecha com arco - usa círculo cheio
+        const d = frac >= 0.999
+          ? `M ${CX} ${CY - R} A ${R} ${R} 0 1 1 ${CX - 0.01} ${CY - R} Z`
+          : `M ${CX} ${CY} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${R} ${R} 0 ${grandeArco} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z`;
+        return { d, angFim, lx, ly, pct: Math.round(frac * 100) };
+      }
+      let ang = 0;
+      const partes = [];
+      if (semQtd > 0) { const f = fatia(semQtd, ang); partes.push({ ...f, cor: '#0ea472' }); ang = f.angFim; }
+      if (comQtd > 0) { const f = fatia(comQtd, ang); partes.push({ ...f, cor: '#e8632b' }); ang = f.angFim; }
+      const paths = partes.map((p) => `<path d="${p.d}" fill="${p.cor}" class="fatia-pizza"/>`).join('');
+      const labels = partes.map((p) => p.pct >= 6 ? `<text x="${p.lx.toFixed(1)}" y="${p.ly.toFixed(1)}" text-anchor="middle" font-size="22" font-weight="600" fill="#fff">${p.pct}%</text>` : '').join('');
+      const legenda = [
+        semQtd > 0 ? `<div class="lg"><span class="dot" style="background:#0ea472"></span>Sem retenção<b>${semQtd}</b></div>` : '',
+        comQtd > 0 ? `<div class="lg"><span class="dot" style="background:#e8632b"></span>Com retenção<b>${comQtd}</b></div>` : '',
+      ].join('');
+      return `<div class='donut-row'><svg id="pizzaRetSvg" width="260" height="260" viewBox="0 0 280 280" style="transform-origin:140px 140px;transition:transform 1.1s cubic-bezier(.2,.8,.2,1);flex:0 0 auto">${paths}${labels}</svg><div class='legend'>${legenda}</div></div>
+      <style>.fatia-pizza{transition:filter .15s,opacity .15s}.donut-row:hover .fatia-pizza:not(:hover){opacity:.75}.fatia-pizza:hover{filter:drop-shadow(0 4px 10px rgba(31,42,90,.4))}</style>
+      <script>requestAnimationFrame(function(){setTimeout(function(){var el=document.getElementById('pizzaRetSvg');if(el)el.style.transform='rotate(360deg)';},100);});</script>`;
+    }
+
     async function dlAnalisar() {
       const empresaId = $('#dlSelectEmpresa').value;
       if (!empresaId) { toast('Escolha uma empresa.', true); return; }
@@ -1068,10 +1107,18 @@ function bindFiscal() {
       const res = await window.fiscocont.fiscal.nfseAnalise(empresaId);
       overlay(false);
       if (res.error) { toast(res.error, true); return; }
-      DL_ULTIMO_PAINEL_HTML = res.painelHtml;
+      let painelHtml = res.painelHtml;
+      const novaPizza = _pizzaComSemRetencao(res.resumo.qtd_com_retencao, res.resumo.qtd_sem_retencao);
+      if (novaPizza) {
+        painelHtml = painelHtml.replace(
+          /<h3><span class="dot"><\/span>Com × sem retenção<\/h3>[\s\S]*?(?=<div class="card"><h3><span class="dot"><\/span>Top parceiros por valor<\/h3>)/,
+          `<h3><span class="dot"></span>Com × sem retenção</h3>\n    ${novaPizza}\n  </div>\n  `
+        );
+      }
+      DL_ULTIMO_PAINEL_HTML = painelHtml;
       $('#btnDlExportarPainel').disabled = false;
       const fr = $('#dlAnaliseFrame');
-      fr.srcdoc = res.painelHtml;
+      fr.srcdoc = painelHtml;
       fr.hidden = false;
     }
     $('#btnDlVerPainel').addEventListener('click', () => dlAnalisar());

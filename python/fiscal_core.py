@@ -14,7 +14,7 @@ CLI:
   fiscal_core.py conferencia ARQ.txt --xmls PASTA_OU_ARQS --json saida.json
   fiscal_core.py conferencia ARQ.txt --xmls PASTA_OU_ARQS --html saida.html
 """
-import sys, os, re, json, glob, base64, math, html as _html, zipfile
+import sys, os, re, json, glob, base64, math, html as _html, zipfile, tempfile
 import pdfplumber
 
 # --------------------------------------------------------------------------- #
@@ -64,6 +64,18 @@ def _brl0(v):
 
 def _esc(s):
     return _html.escape('' if s is None else str(s))
+
+def _campo(bloco, tag):
+    m = re.search(rf'<{tag}>(.*?)</{tag}>', bloco or '', re.S)
+    return m.group(1).strip() if m else ''
+
+def _numx(s):
+    """Converte float no formato de XML (ponto decimal) — diferente de
+    _num(), que é pra formato SPED (vírgula decimal)."""
+    try:
+        return float((s or '0').strip() or 0)
+    except ValueError:
+        return 0.0
 
 def _fmt_cnpj(c):
     c = re.sub(r'\D', '', c or '')
@@ -2675,6 +2687,63 @@ def main(argv):
     modo = argv[0]
 
     # "pgdas" não depende de SPED nenhum — só do Extrato do PGDAS-D (PDF).
+    # "ler-certificado" — lê um .pfx e devolve CNPJ/razão social/validade.
+    if modo == 'ler-certificado':
+        if len(argv) < 2:
+            print('uso: fiscal_core.py ler-certificado CERTIFICADO.pfx --senha SENHA'); return 1
+        args = argv[2:]
+
+        def optc(name, default=None):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        senha = optc('--senha', '')
+        try:
+            info = ler_certificado_pfx(argv[1], senha)
+        except Exception as e:
+            info = {'erro': str(e)}
+        if '--json' in args:
+            _out(optc('--json', 'certificado.json'), json.dumps(info, ensure_ascii=False))
+        print(json.dumps(info, ensure_ascii=False))
+        return 0 if 'erro' not in info else 1
+
+    # "baixar-nfse" — roda o download de NFS-e via ADN pra uma empresa/período.
+    if modo == 'baixar-nfse':
+        if len(argv) < 2:
+            print('uso: fiscal_core.py baixar-nfse CERTIFICADO.pfx --senha SENHA --empresa NOME --cnpj CNPJ --pasta PASTA_BASE --inicio AAAA-MM-DD --fim AAAA-MM-DD [--nsu N] [--homologacao] [--json saida.json]'); return 1
+        args = argv[2:]
+
+        def optb(name, default=None):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        resultado = baixar_nfse_adn(
+            cert_path=argv[1], senha=optb('--senha', ''),
+            data_inicial=optb('--inicio'), data_final=optb('--fim'),
+            pasta_base=optb('--pasta'), nome_empresa=optb('--empresa'), cnpj_empresa=optb('--cnpj', ''),
+            nsu_inicial=int(optb('--nsu', '0')), homologacao=('--homologacao' in args),
+        )
+        if '--json' in args:
+            _out(optb('--json', 'resultado_nfse.json'), json.dumps(resultado, ensure_ascii=False))
+        print(json.dumps(resultado, ensure_ascii=False))
+        return 0 if not resultado.get('erro') else 1
+
+    # "analisar-nfse" — lê os XMLs de NFS-e já baixados (recursivo) e monta
+    # o painel de com×sem retenção e top parceiros.
+    if modo == 'analisar-nfse':
+        if len(argv) < 2:
+            print('uso: fiscal_core.py analisar-nfse PASTA --cnpj CNPJ_EMPRESA [--empresa NOME] [--painel-html saida.html] [--json saida.json]'); return 1
+        args = argv[2:]
+
+        def opta(name, default=None):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        pasta = argv[1]
+        caminhos = glob.glob(os.path.join(pasta, '**', '*.xml'), recursive=True)
+        dados = analisar_nfse(caminhos, opta('--cnpj', ''))
+        empresa_nome = opta('--empresa', '')
+        if '--json' in args:
+            _out(opta('--json', 'analise_nfse.json'), json.dumps(dados, ensure_ascii=False))
+        if '--painel-html' in args:
+            _out(opta('--painel-html', 'painel_nfse.html'), gerar_painel_nfse_html(dados, empresa_nome))
+        print(json.dumps({k: v for k, v in dados.items() if k not in ('notas_com_retencao', 'notas_sem_retencao')}, ensure_ascii=False))
+        return 0
+
     if modo == 'pgdas':
         if len(argv) < 2:
             print('uso: fiscal_core.py pgdas EXTRATO.pdf [--json saida.json] [--html saida.html]'); return 1
@@ -3440,6 +3509,468 @@ function render() {{
 render();
 </script>
 </body></html>"""
+
+
+def ler_certificado_pfx(caminho, senha):
+    """Lê um certificado A1 (.pfx) e devolve CNPJ, razão social e validade."""
+    from cryptography.hazmat.primitives.serialization import pkcs12
+    import re as _re
+
+    with open(caminho, 'rb') as f:
+        pfx_bytes = f.read()
+    chave_privada, certificado, cadeia = pkcs12.load_key_and_certificates(pfx_bytes, senha.encode('utf-8'))
+    if chave_privada is None or certificado is None:
+        raise ValueError('Certificado sem chave privada ou sem certificado válido — senha errada ou arquivo corrompido.')
+
+    titular = certificado.subject.rfc4514_string()
+    m = _re.search(r':(\d{14})', titular)
+    cnpj = m.group(1) if m else ''
+    m2 = _re.search(r'CN=([^:,]+)', titular)
+    razao_social = m2.group(1).strip() if m2 else titular
+    return {
+        'cnpj': cnpj, 'razao_social': razao_social,
+        'validade': certificado.not_valid_after_utc.strftime('%Y-%m-%d'),
+        'titular_completo': titular,
+    }
+
+
+def _extrair_cert_chave_temp(caminho_pfx, senha):
+    """Extrai certificado + chave privada do .pfx pra arquivos PEM temporários."""
+    from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption
+
+    with open(caminho_pfx, 'rb') as f:
+        pfx_bytes = f.read()
+    chave_privada, certificado, cadeia = pkcs12.load_key_and_certificates(pfx_bytes, senha.encode('utf-8'))
+    if chave_privada is None or certificado is None:
+        raise ValueError('Certificado sem chave privada ou sem certificado válido — senha errada ou arquivo corrompido.')
+
+    tmp_dir = tempfile.mkdtemp(prefix='fc_cert_')
+    cert_path = os.path.join(tmp_dir, 'cert.pem')
+    key_path = os.path.join(tmp_dir, 'key.pem')
+    with open(cert_path, 'wb') as f:
+        f.write(certificado.public_bytes(Encoding.PEM))
+        for c in (cadeia or []):
+            f.write(c.public_bytes(Encoding.PEM))
+    with open(key_path, 'wb') as f:
+        f.write(chave_privada.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()))
+    return cert_path, key_path, tmp_dir
+
+
+def parse_nfse_xml(path):
+    """Extrai os campos da NFS-e nacional (layout SPED/SEFIN Nacional)."""
+    t = _read_text(path)
+    bloco_emit = re.search(r'<emit>(.*?)</emit>', t, re.S)
+    bloco_emit = bloco_emit.group(1) if bloco_emit else ''
+    bloco_prest = re.search(r'<prest>(.*?)</prest>', t, re.S)
+    bloco_prest = bloco_prest.group(1) if bloco_prest else ''
+    bloco_toma = re.search(r'<toma>(.*?)</toma>', t, re.S)
+    bloco_toma = bloco_toma.group(1) if bloco_toma else ''
+    bloco_trib = re.search(r'<trib>(.*?)</trib>', t, re.S)
+    bloco_trib = bloco_trib.group(1) if bloco_trib else ''
+
+    chave_m = re.search(r'Id="NFS(\d{50})"', t)
+    chave = chave_m.group(1) if chave_m else ''
+    nnfse = _campo(t, 'nNFSe')
+    dcompet = _campo(t, 'dCompet') or (_campo(t, 'dhProc')[:10] if _campo(t, 'dhProc') else '')
+
+    prest_cnpj = _campo(bloco_emit, 'CNPJ') or _campo(bloco_prest, 'CNPJ')
+    prest_cpf = _campo(bloco_emit, 'CPF') or _campo(bloco_prest, 'CPF')
+    toma_cnpj = _campo(bloco_toma, 'CNPJ')
+    toma_cpf = _campo(bloco_toma, 'CPF')
+    toma_nome = _campo(bloco_toma, 'xNome')
+
+    tp_ret_issqn = _campo(bloco_trib, 'tpRetISSQN')
+    tp_ret_pis = _campo(bloco_trib, 'tpRetPisCofins')
+    retido = (tp_ret_issqn == '2') or (tp_ret_pis not in ('', '0'))
+
+    vserv_m = re.search(r'<vServ>([\d.]+)</vServ>', t)
+    vserv = _numx(vserv_m.group(1)) if vserv_m else 0.0
+    vliq_m = re.search(r'<valores><vBC>[\d.]+</vBC>.*?<vLiq>([\d.]+)</vLiq>', t, re.S)
+    vliq = _numx(vliq_m.group(1)) if vliq_m else vserv
+    vissqn_m = re.search(r'<vISSQN>([\d.]+)</vISSQN>', t)
+    vissqn = _numx(vissqn_m.group(1)) if vissqn_m else 0.0
+
+    v_ret_pis_cofins_csll = _numx(_campo(bloco_trib, 'vRetCSLL'))
+    v_ret_irrf = _numx(_campo(bloco_trib, 'vRetIRRF'))
+    v_ret_cp = _numx(_campo(bloco_trib, 'vRetCP'))
+    v_iss_retido = vissqn if tp_ret_issqn == '2' else 0.0
+    retencoes_detalhe = []
+    if v_iss_retido:
+        retencoes_detalhe.append({'tributo': 'ISS', 'valor': v_iss_retido})
+    if v_ret_pis_cofins_csll:
+        retencoes_detalhe.append({'tributo': 'PIS/COFINS/CSLL', 'valor': v_ret_pis_cofins_csll})
+    if v_ret_irrf:
+        retencoes_detalhe.append({'tributo': 'IRRF', 'valor': v_ret_irrf})
+    if v_ret_cp:
+        retencoes_detalhe.append({'tributo': 'INSS (Contrib. Previdenciária)', 'valor': v_ret_cp})
+    total_retido = round(sum(r['valor'] for r in retencoes_detalhe), 2)
+
+    return {
+        'chave': chave, 'nnfse': nnfse, 'competencia': dcompet,
+        'prestador_cnpj': prest_cnpj or prest_cpf, 'prestador_doc_tipo': 'CNPJ' if prest_cnpj else ('CPF' if prest_cpf else ''),
+        'prestador_nome': _campo(bloco_emit, 'xNome') or '(não identificado)',
+        'tomador_cnpj': toma_cnpj or toma_cpf, 'tomador_doc_tipo': 'CNPJ' if toma_cnpj else ('CPF' if toma_cpf else ''),
+        'tomador_nome': toma_nome or ('(pessoa física sem nome informado)' if toma_cpf else '(destinatário não identificado)'),
+        'descricao': _campo(t, 'xDescServ') or _campo(t, 'xTribNac'),
+        'vserv': vserv, 'vliq': vliq, 'vissqn': vissqn,
+        'retido': retido, 'tp_ret_issqn': tp_ret_issqn, 'tp_ret_pis': tp_ret_pis,
+        'retencoes_detalhe': retencoes_detalhe, 'total_retido': total_retido,
+    }
+
+
+def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome_empresa, cnpj_empresa,
+                     nsu_inicial=0, homologacao=False, progresso=None):
+    """Baixa NFS-e (emitidas e recebidas) via ADN, filtrando pelo período
+    pedido. Salva em pasta_base/nome_empresa/NFS-e/Prestados|Tomados/AAAA-MM/chave.xml"""
+    import gzip
+    import re as _re
+    import time as _time
+    from datetime import datetime as _dt
+
+    dt_ini = _dt.strptime(data_inicial, '%Y-%m-%d').date()
+    dt_fim = _dt.strptime(data_final, '%Y-%m-%d').date()
+
+    import requests
+
+    def _get_com_retry(url, cert_tupla, tentativas=4):
+        ultimo_erro = None
+        for tentativa in range(1, tentativas + 1):
+            try:
+                return requests.get(
+                    url, cert=cert_tupla,
+                    headers={'Accept': 'application/json', 'Connection': 'close'},
+                    timeout=45,
+                )
+            except requests.exceptions.RequestException as e:
+                ultimo_erro = e
+                if tentativa < tentativas:
+                    _time.sleep(2 * tentativa)
+        raise ultimo_erro
+
+    cert_path_pem, key_path_pem, tmp_dir = _extrair_cert_chave_temp(cert_path, senha)
+    base_url = 'https://adn.producaorestrita.nfse.gov.br' if homologacao else 'https://adn.nfse.gov.br'
+    salvos, ignorados_fora_periodo, paginas = 0, 0, 0
+    nsu = int(nsu_inicial or 0)
+    ultimo_nsu_visto = nsu
+    erro = None
+
+    try:
+        while True:
+            try:
+                resp = _get_com_retry(f'{base_url}/contribuintes/DFe/{nsu}', (cert_path_pem, key_path_pem))
+            except requests.exceptions.SSLError as e:
+                erro = ('Falha de conexão segura (TLS) com a Receita, mesmo tentando de novo várias vezes. '
+                        'Costuma ser antivírus com "inspeção de HTTPS" ativada, VPN, ou instabilidade na rede — '
+                        'tente desativar temporariamente a inspeção de HTTPS do antivírus pra esse programa, ou '
+                        f'testar em outra rede. Detalhe técnico: {e}')
+                break
+            except requests.exceptions.RequestException as e:
+                erro = f'Não consegui conectar com a Receita, mesmo tentando de novo: {e}'
+                break
+            try:
+                dados = resp.json()
+            except ValueError:
+                dados = None
+            sem_documentos = dados and any(
+                e.get('Codigo') == 'E2220' for e in (dados.get('Erros') or [])
+            )
+            if sem_documentos:
+                break
+            if resp.status_code != 200:
+                erro = f'A Receita respondeu {resp.status_code}: {resp.text[:300]}'
+                break
+            if dados is None:
+                erro = 'A Receita respondeu algo que não consegui interpretar (não é JSON válido).'
+                break
+            if dados.get('Erros'):
+                erro = f'A Receita retornou erro: {dados["Erros"]}'
+                break
+
+            lote = dados.get('LoteDFe') or []
+            paginas += 1
+            if progresso:
+                try:
+                    progresso(paginas, salvos)
+                except Exception:
+                    pass
+            if not lote:
+                break
+
+            for item in lote:
+                nsu_item = int(item.get('NSU', nsu))
+                ultimo_nsu_visto = max(ultimo_nsu_visto, nsu_item)
+                if (item.get('TipoDocumento') or '').upper() != 'NFSE':
+                    continue
+
+                xml_b64 = item.get('ArquivoXml')
+                if not xml_b64:
+                    continue
+                try:
+                    xml_bytes = gzip.decompress(base64.b64decode(xml_b64))
+                    xml_texto = xml_bytes.decode('utf-8')
+                except Exception:
+                    continue
+
+                dhger = item.get('DataHoraGeracao', '')
+                data_doc = None
+                if dhger:
+                    try:
+                        data_doc = _dt.strptime(dhger[:10], '%Y-%m-%d').date()
+                    except ValueError:
+                        pass
+                if data_doc and not (dt_ini <= data_doc <= dt_fim):
+                    ignorados_fora_periodo += 1
+                    continue
+
+                chave = item.get('ChaveAcesso') or f'nsu_{nsu_item}'
+                competencia = data_doc.strftime('%Y-%m') if data_doc else 'sem-data'
+                prest_cnpj_m = _re.search(r'<prest><CNPJ>(\d+)</CNPJ>', xml_texto)
+                subpasta = 'Prestados' if (prest_cnpj_m and prest_cnpj_m.group(1) == cnpj_empresa) else 'Tomados'
+                pasta_destino = os.path.join(pasta_base, nome_empresa, 'NFS-e', subpasta, competencia)
+                os.makedirs(pasta_destino, exist_ok=True)
+                caminho_arquivo = os.path.join(pasta_destino, f'{chave}.xml')
+                with open(caminho_arquivo, 'w', encoding='utf-8') as f:
+                    f.write(xml_texto)
+                salvos += 1
+
+            nsu = ultimo_nsu_visto
+    finally:
+        for p in (cert_path_pem, key_path_pem):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        try:
+            os.rmdir(tmp_dir)
+        except OSError:
+            pass
+
+    return {
+        'erro': erro, 'salvos': salvos, 'ignorados_fora_periodo': ignorados_fora_periodo,
+        'paginas_lidas': paginas, 'ultimo_nsu': ultimo_nsu_visto,
+        'pasta': os.path.join(pasta_base, nome_empresa, 'NFS-e'),
+    }
+
+
+def analisar_nfse(caminhos, cnpj_empresa):
+    """Lê os XML de NFS-e já baixados e monta a análise agregada."""
+    notas = []
+    for p in caminhos:
+        try:
+            d = parse_nfse_xml(p)
+        except Exception:
+            continue
+        if not d['nnfse']:
+            continue
+        if d['prestador_cnpj'] == cnpj_empresa:
+            papel, parc_cnpj, parc_nome, parc_doc = 'emitida', d['tomador_cnpj'], d['tomador_nome'], d['tomador_doc_tipo']
+        elif d['tomador_cnpj'] == cnpj_empresa:
+            papel, parc_cnpj, parc_nome, parc_doc = 'recebida', d['prestador_cnpj'], d['prestador_nome'], d['prestador_doc_tipo']
+        else:
+            papel, parc_cnpj, parc_nome, parc_doc = 'desconhecida', '', '', ''
+        d['papel'] = papel
+        d['parceiro_cnpj'] = parc_cnpj
+        d['parceiro_nome'] = parc_nome
+        d['parceiro_doc_tipo'] = parc_doc
+        notas.append(d)
+
+    com_ret = [n for n in notas if n['retido']]
+    sem_ret = [n for n in notas if not n['retido']]
+    emitidas = sum(1 for n in notas if n['papel'] == 'emitida')
+    recebidas = sum(1 for n in notas if n['papel'] == 'recebida')
+
+    por_parceiro = {}
+    for n in notas:
+        chave = n['parceiro_cnpj'] or '?'
+        g = por_parceiro.setdefault(chave, {'nome': n['parceiro_nome'] or 'Desconhecido', 'qtd': 0, 'valor': 0.0})
+        g['qtd'] += 1
+        g['valor'] += n['vserv']
+    top_parceiros = sorted(por_parceiro.values(), key=lambda g: -g['valor'])
+
+    return {
+        'total_notas': len(notas), 'total_valor': round(sum(n['vserv'] for n in notas), 2),
+        'qtd_com_retencao': len(com_ret), 'valor_com_retencao': round(sum(n['vserv'] for n in com_ret), 2),
+        'qtd_sem_retencao': len(sem_ret), 'valor_sem_retencao': round(sum(n['vserv'] for n in sem_ret), 2),
+        'emitidas': emitidas, 'recebidas': recebidas,
+        'notas_com_retencao': sorted(com_ret, key=lambda n: n['competencia'], reverse=True),
+        'notas_sem_retencao': sorted(sem_ret, key=lambda n: n['competencia'], reverse=True),
+        'top_parceiros': top_parceiros[:10],
+    }
+
+
+_NFSE_CORES = ['#e8632b', '#1f2a5a', '#0ea472', '#8b5cf6', '#d4711a', '#2563eb', '#db2777', '#14b8a6']
+
+
+def gerar_painel_nfse_html(dados, empresa_nome=''):
+    """Painel único do Download de NFS-e — dashboard (KPIs, donut de
+    com/sem retenção, top parceiros) e a lista completa, separada por
+    Prestado/Tomado e com/sem retenção, com chave completa e "+" de
+    detalhamento de retenção."""
+    total = dados['total_notas']
+    segs_ret = []
+    if dados['qtd_sem_retencao']:
+        segs_ret.append(('Sem retenção', dados['qtd_sem_retencao'], '#0ea472'))
+    if dados['qtd_com_retencao']:
+        segs_ret.append(('Com retenção', dados['qtd_com_retencao'], '#e8632b'))
+    arcs_ret = _donut(segs_ret, is_money=False) if segs_ret else ''
+    legend_ret = ''.join(
+        f'<div class="lg"><span class="dot" style="background:{cor}"></span>{_esc(nome)}<b>{qtd}</b></div>'
+        for nome, qtd, cor in segs_ret)
+
+    top = dados['top_parceiros']
+    maior = max((g['valor'] for g in top), default=1) or 1
+    linhas_top = ''.join(
+        f'<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px">'
+        f'<span>{_esc(g["nome"])[:38]}</span><span style="color:var(--ink2)">R$ {_brl(g["valor"])} · {g["qtd"]} nota(s)</span></div>'
+        f'<div style="height:6px;background:#eef0f6;border-radius:3px"><div style="width:{max(3, g["valor"] / maior * 100):.0f}%;height:100%;background:{_NFSE_CORES[i % len(_NFSE_CORES)]};border-radius:3px"></div></div></div>'
+        for i, g in enumerate(top))
+
+    def _doc(n):
+        tipo = n.get('parceiro_doc_tipo', '') or ('CNPJ' if len(n.get('parceiro_cnpj', '') or '') == 14 else 'CPF')
+        return f'{tipo}: {_esc(n["parceiro_cnpj"] or "—")}' if n.get('parceiro_cnpj') else ''
+
+    def _linha_sem(n):
+        return (f'<tr><td>{_esc(n["competencia"])}</td><td>NFS-e {_esc(n["nnfse"])}</td>'
+                f'<td style="font-family:monospace;font-size:9.5px;word-break:break-all">{_esc(n["chave"])}</td>'
+                f'<td>{_esc(n["parceiro_nome"])[:30]}<br><span style="font-size:10px;color:var(--ink2)">{_doc(n)}</span></td>'
+                f'<td style="text-align:right">R$ {_brl(n["vserv"])}</td></tr>')
+
+    def _linha_com(n, prefixo, idx):
+        det_id = f'ret-{prefixo}-{idx}'
+        det_rows = ''.join(
+            f'<tr><td style="padding:6px 8px 6px 28px">{_esc(r["tributo"])}</td><td style="text-align:right;padding:6px 8px">R$ {_brl(r["valor"])}</td></tr>'
+            for r in n['retencoes_detalhe']
+        )
+        detalhe_html = (
+            f'<table style="width:100%;border-collapse:collapse;font-size:12px;background:var(--bg,#f4f6fb);border-radius:8px">'
+            f'<tbody>{det_rows}'
+            f'<tr style="font-weight:700;border-top:1px solid var(--line)"><td style="padding:6px 8px 6px 28px">Total retido</td>'
+            f'<td style="text-align:right;padding:6px 8px">R$ {_brl(n["total_retido"])}</td></tr></tbody></table>'
+        ) if det_rows else '<div style="padding:6px 8px 6px 28px;color:var(--ink2);font-size:12px">Sem detalhamento por tributo disponível nessa nota.</div>'
+        return (
+            f'<tr class="lb-ret" data-alvo="{det_id}" style="cursor:pointer">'
+            f'<td>{_esc(n["competencia"])}</td><td>NFS-e {_esc(n["nnfse"])}</td>'
+            f'<td style="font-family:monospace;font-size:9.5px;word-break:break-all">{_esc(n["chave"])}</td>'
+            f'<td>{_esc(n["parceiro_nome"])[:26]}<br><span style="font-size:10px;color:var(--ink2)">{_doc(n)}</span></td>'
+            f'<td style="text-align:right;color:#e8632b;font-weight:700">R$ {_brl(n["vserv"])}</td>'
+            f'<td style="text-align:center"><span class="btn-mais" id="mais-{det_id}">+</span></td></tr>'
+            f'<tr id="{det_id}" class="linha-detalhe" style="display:none"><td colspan="6" style="padding:4px 8px 12px">{detalhe_html}</td></tr>'
+        )
+
+    def _tabela_sem(notas):
+        if not notas:
+            return '<div class="emptyok">✓ Nenhuma nota sem retenção.</div>'
+        rows = ''.join(_linha_sem(n) for n in notas)
+        total_v = sum(n['vserv'] for n in notas)
+        return (f'<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+                f'<thead><tr><th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Compet.</th>'
+                f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Nota</th>'
+                f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Chave de acesso</th>'
+                f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Parceiro</th>'
+                f'<th style="text-align:right;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Valor</th></tr></thead>'
+                f'<tbody>{rows}</tbody>'
+                f'<tfoot><tr style="font-weight:700;border-top:2px solid var(--navy)"><td colspan="4" style="padding:9px 8px">Total ({len(notas)} nota(s))</td>'
+                f'<td style="text-align:right;padding:9px 8px">R$ {_brl(total_v)}</td></tr></tfoot></table>')
+
+    def _tabela_com(notas, prefixo):
+        if not notas:
+            return '<div class="emptyok">✓ Nenhuma nota com retenção.</div>'
+        rows = ''.join(_linha_com(n, prefixo, i) for i, n in enumerate(notas))
+        total_v = sum(n['vserv'] for n in notas)
+        total_retido = sum(n['total_retido'] for n in notas)
+        return (f'<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+                f'<thead><tr><th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Compet.</th>'
+                f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Nota</th>'
+                f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Chave de acesso</th>'
+                f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Parceiro</th>'
+                f'<th style="text-align:right;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Valor</th>'
+                f'<th style="text-align:center;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Retenção</th></tr></thead>'
+                f'<tbody>{rows}</tbody>'
+                f'<tfoot><tr style="font-weight:700;border-top:2px solid var(--navy)"><td colspan="4" style="padding:9px 8px">Total ({len(notas)} nota(s)) · retido: R$ {_brl(total_retido)}</td>'
+                f'<td style="text-align:right;padding:9px 8px">R$ {_brl(total_v)}</td><td></td></tr></tfoot></table>')
+
+    prestados_com = [n for n in dados['notas_com_retencao'] if n['papel'] == 'emitida']
+    prestados_sem = [n for n in dados['notas_sem_retencao'] if n['papel'] == 'emitida']
+    tomados_com = [n for n in dados['notas_com_retencao'] if n['papel'] == 'recebida']
+    tomados_sem = [n for n in dados['notas_sem_retencao'] if n['papel'] == 'recebida']
+
+    return f'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Painel de NFS-e{f" · {_esc(empresa_nome)}" if empresa_nome else ""}</title>
+<style>
+:root{{--navy:#1f2a5a;--ink:#232a3d;--ink2:#7a8199;--line:#eef0f6;--bg:#f4f6fb}}
+*{{box-sizing:border-box}} body{{font-family:'Segoe UI',Arial,sans-serif;margin:0;background:#f4f5fa;color:var(--ink)}}
+.hdr{{background:linear-gradient(120deg,#1f2a5a,#2b3a72);color:#fff;padding:18px 24px}}
+.card{{background:#fff;border-radius:14px;padding:18px 20px;margin:14px 20px;box-shadow:0 4px 14px rgba(31,42,90,.06)}}
+.grid2{{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:0 20px}}
+.grid2 .card{{margin:14px 10px}}
+h3{{margin:0 0 12px;font-size:14px;display:flex;align-items:center;gap:8px}}
+h2.secao{{margin:22px 20px 4px;font-size:16px;color:var(--navy);display:flex;align-items:center;gap:8px}}
+.dot{{width:8px;height:8px;border-radius:50%;background:var(--navy);display:inline-block}}
+.dot.sem{{background:#0ea472}}.dot.com{{background:#e8632b}}
+.kpis{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 20px}}
+.kpi{{background:#fff;border-radius:14px;padding:16px;text-align:center;box-shadow:0 4px 14px rgba(31,42,90,.06)}}
+.kpi b{{display:block;font-size:22px}}.kpi span{{font-size:10.5px;color:var(--ink2)}}
+.donut-row{{display:flex;align-items:center;gap:18px}}
+.donut{{position:relative;width:170px;height:170px;flex:0 0 auto}}
+.donut-seg{{cursor:pointer;transition:opacity .15s,filter .15s}}
+.donut:hover .donut-seg:not(:hover){{opacity:.35}}
+.donut-seg:hover{{filter:drop-shadow(0 4px 8px rgba(31,42,90,.35))}}
+.center{{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}}
+.center .big{{font-size:24px;font-weight:800;color:var(--navy)}}.center .sm{{font-size:10px;color:var(--ink2)}}
+.legend{{flex:1;display:flex;flex-direction:column;gap:9px}}
+.lg{{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);border-radius:9px;padding:6px 8px;margin:0 -8px;transition:transform .15s,box-shadow .15s,background .15s}}
+.lg:hover{{transform:translateX(4px);background:#fff;box-shadow:0 6px 16px rgba(31,42,90,.14)}}
+.lg .dot{{width:11px;height:11px;border-radius:3px;flex:0 0 auto}}.lg b{{margin-left:auto;font-weight:700}}
+td,th{{border-bottom:1px solid var(--line)}}
+.emptyok{{color:#0ea472;font-size:12.5px}}
+.lb-ret:hover{{background:#faf4f0}}
+.btn-mais{{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;
+  background:#e8632b;color:#fff;font-weight:800;font-size:13px;transition:transform .2s}}
+.btn-mais.aberto{{transform:rotate(45deg)}}
+.dtip{{position:fixed;pointer-events:none;z-index:9999;background:var(--navy,#1f2a5a);color:#fff;
+  font-size:11.5px;font-weight:600;padding:8px 11px;border-radius:9px;box-shadow:0 8px 22px rgba(0,0,0,.28);
+  white-space:nowrap;opacity:0;transform:translate(-50%,-115%);transition:opacity .1s;top:0;left:0}}
+.dtip b{{display:block;font-size:12.5px;margin-bottom:2px;font-weight:800}}
+.dtip.show{{opacity:1}}
+</style></head><body>
+<div class="hdr"><b>FiscoCont+ · Download de Documentos Fiscais</b><div>Painel de NFS-e{f" · {_esc(empresa_nome)}" if empresa_nome else ""}</div></div>
+<div class="kpis">
+  <div class="kpi"><b>{total}</b><span>Total de notas</span></div>
+  <div class="kpi"><b>R$ {_brl(dados['total_valor'])}</b><span>Valor total</span></div>
+  <div class="kpi"><b style="color:#0ea472">{dados['qtd_sem_retencao']}</b><span>Sem retenção</span></div>
+  <div class="kpi"><b style="color:#e8632b">{dados['qtd_com_retencao']}</b><span>Com retenção</span></div>
+</div>
+<div class="grid2">
+  <div class="card"><h3><span class="dot"></span>Com × sem retenção</h3>
+    {"<div class='donut-row'><div class='donut'><svg width='170' height='170' viewBox='0 0 180 180'>" + arcs_ret + "</svg><div class='center'><div class='big'>" + str(total) + "</div><div class='sm'>notas</div></div></div><div class='legend'>" + legend_ret + "</div></div>" if segs_ret else "<div style='color:#0ea472;font-size:12.5px'>Nenhuma nota ainda.</div>"}
+  </div>
+  <div class="card"><h3><span class="dot"></span>Top parceiros por valor</h3>
+    {linhas_top if linhas_top else "<div style='color:var(--ink2);font-size:12.5px'>Nenhuma nota ainda.</div>"}
+  </div>
+</div>
+
+<h2 class="secao"><span class="dot"></span>Serviços Prestados <span style="font-size:12px;color:var(--ink2);font-weight:400">({dados['emitidas']} nota(s))</span></h2>
+<div class="card"><h3><span class="dot com"></span>Com retenção <span style="font-size:11px;color:var(--ink2);font-weight:400">(clique numa linha pra ver o detalhamento)</span></h3>{_tabela_com(prestados_com, 'prest')}</div>
+<div class="card"><h3><span class="dot sem"></span>Sem retenção</h3>{_tabela_sem(prestados_sem)}</div>
+
+<h2 class="secao"><span class="dot"></span>Serviços Tomados <span style="font-size:12px;color:var(--ink2);font-weight:400">({dados['recebidas']} nota(s))</span></h2>
+<div class="card"><h3><span class="dot com"></span>Com retenção <span style="font-size:11px;color:var(--ink2);font-weight:400">(clique numa linha pra ver o detalhamento)</span></h3>{_tabela_com(tomados_com, 'toma')}</div>
+<div class="card"><h3><span class="dot sem"></span>Sem retenção</h3>{_tabela_sem(tomados_sem)}</div>
+
+<div class="card"><div style="font-size:11.5px;color:var(--ink2)">"Com retenção" considera ISS (tpRetISSQN) e PIS/COFINS/CSLL/IRRF/INSS retidos na fonte.</div></div>
+<script>
+document.querySelectorAll('.lb-ret').forEach(function(tr){{
+  tr.addEventListener('click', function(){{
+    var alvo = document.getElementById(tr.dataset.alvo);
+    var btn = document.getElementById('mais-' + tr.dataset.alvo);
+    var abrindo = alvo.style.display === 'none';
+    alvo.style.display = abrindo ? 'table-row' : 'none';
+    btn.classList.toggle('aberto', abrindo);
+  }});
+}});
+</script>
+{_COUNT_JS}
+</body></html>'''
 
 
 if __name__ == '__main__':
