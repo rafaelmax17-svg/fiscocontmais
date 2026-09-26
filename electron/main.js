@@ -467,6 +467,13 @@ ipcMain.handle('fiscal:certRemover', (_evt, id) => {
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+// Pasta padrão da equipe pro Baixas DF-e — pasta compartilhada em nuvem
+// (Google Drive compartilhado, mapeado como G:). Se existir no
+// computador (drive mapeado/sincronizado), usa ela sozinho, sem pedir
+// escolha manual; só libera escolher outra pasta se ela não for achada
+// (ex.: computador sem esse drive mapeado ainda).
+const PASTA_PADRAO_NFSE = 'G:\\Drives compartilhados\\Fiscal - Lucro Real\\00 - Arquivos FISCAL\\Notas Automáticas - FiscoCont';
+
 ipcMain.handle('fiscal:pickPastaBase', async () => {
   const res = await dialog.showOpenDialog(mainWindow, { title: 'Escolher pasta onde salvar os documentos', properties: ['openDirectory', 'createDirectory'] });
   if (res.canceled || !res.filePaths.length) return { canceled: true };
@@ -474,11 +481,20 @@ ipcMain.handle('fiscal:pickPastaBase', async () => {
   return { canceled: false, path: res.filePaths[0] };
 });
 ipcMain.handle('fiscal:pastaBaseGet', () => {
-  try { return JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase || null; }
-  catch (_) { return null; }
+  try {
+    const pasta = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase;
+    if (pasta) return pasta;
+  } catch (_) {}
+  try {
+    if (fs.existsSync(PASTA_PADRAO_NFSE)) {
+      fs.writeFileSync(_configDownloadPath(), JSON.stringify({ pastaBase: PASTA_PADRAO_NFSE }));
+      return PASTA_PADRAO_NFSE;
+    }
+  } catch (_) {}
+  return null;
 });
 
-ipcMain.handle('fiscal:nfseAnalise', async (_evt, { empresaId }) => {
+ipcMain.handle('fiscal:nfseAnalise', async (_evt, { empresaId, dataInicial, dataFinal }) => {
   const indice = _lerIndiceCert();
   const empresa = indice.empresas.find((e) => e.id === empresaId);
   if (!empresa) return { error: 'Empresa não encontrada.' };
@@ -491,8 +507,14 @@ ipcMain.handle('fiscal:nfseAnalise', async (_evt, { empresaId }) => {
   const painelTmp = path.join(os.tmpdir(), `fc_nfse_painel_${Date.now()}.html`);
   const jsonTmp = path.join(os.tmpdir(), `fc_nfse_analise_${Date.now()}.json`);
   try {
-    await runFiscal(['analisar-nfse', pastaEmpresa, '--cnpj', empresa.cnpj, '--empresa', empresa.razaoSocial,
-      '--painel-html', painelTmp, '--json', jsonTmp], jsonTmp);
+    // achado real (Rafael, 26/09): a pasta acumula downloads de vários
+    // meses ao longo do tempo — o painel tem que respeitar o período
+    // escolhido na tela, não misturar tudo que já foi baixado algum dia.
+    const args = ['analisar-nfse', pastaEmpresa, '--cnpj', empresa.cnpj, '--empresa', empresa.razaoSocial,
+      '--painel-html', painelTmp, '--json', jsonTmp];
+    if (dataInicial) args.push('--inicio', dataInicial);
+    if (dataFinal) args.push('--fim', dataFinal);
+    await runFiscal(args, jsonTmp);
     const resumo = JSON.parse(fs.readFileSync(jsonTmp, 'utf-8'));
     const painelHtml = fs.readFileSync(painelTmp, 'utf-8');
     [painelTmp, jsonTmp].forEach((p) => fs.unlink(p, () => {}));

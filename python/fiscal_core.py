@@ -2728,14 +2728,14 @@ def main(argv):
     # o painel de com×sem retenção e top parceiros.
     if modo == 'analisar-nfse':
         if len(argv) < 2:
-            print('uso: fiscal_core.py analisar-nfse PASTA --cnpj CNPJ_EMPRESA [--empresa NOME] [--painel-html saida.html] [--json saida.json]'); return 1
+            print('uso: fiscal_core.py analisar-nfse PASTA --cnpj CNPJ_EMPRESA [--empresa NOME] [--inicio AAAA-MM-DD] [--fim AAAA-MM-DD] [--painel-html saida.html] [--json saida.json]'); return 1
         args = argv[2:]
 
         def opta(name, default=None):
             return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
         pasta = argv[1]
         caminhos = glob.glob(os.path.join(pasta, '**', '*.xml'), recursive=True)
-        dados = analisar_nfse(caminhos, opta('--cnpj', ''))
+        dados = analisar_nfse(caminhos, opta('--cnpj', ''), data_inicial=opta('--inicio'), data_final=opta('--fim'))
         empresa_nome = opta('--empresa', '')
         if '--json' in args:
             _out(opta('--json', 'analise_nfse.json'), json.dumps(dados, ensure_ascii=False))
@@ -3820,13 +3820,24 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     }
 
 
-def analisar_nfse(caminhos, cnpj_empresa):
+def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
     """Lê os XML de NFS-e já baixados e monta a análise agregada. Notas
     canceladas (sufixo .CANCELADA.xml no nome, posto na hora do download)
     aparecem juntas na lista, com um selo de status — mas ficam de fora dos
     totais em R$ (KPIs, valor total, top parceiros), com um total próprio
     separado, igual ao pedido do Rafael depois de ver como o Portal
-    Nacional mostra (✓ Autorizada / ✗ Cancelada, na mesma listagem)."""
+    Nacional mostra (✓ Autorizada / ✗ Cancelada, na mesma listagem).
+
+    Achado real (Rafael, 26/09): a pasta acumula downloads de vários
+    períodos ao longo do tempo (é uma boa coisa, forma um arquivo
+    histórico) — mas o painel não pode misturar tudo junto quando o
+    pedido foi só de um mês específico. `data_inicial`/`data_final`,
+    quando passados, filtram pela competência da própria nota (não pela
+    pasta onde ela está salva) antes de somar qualquer coisa."""
+    from datetime import datetime as _dt
+    dt_ini = _dt.strptime(data_inicial, '%Y-%m-%d').date() if data_inicial else None
+    dt_fim = _dt.strptime(data_final, '%Y-%m-%d').date() if data_final else None
+
     notas = []
     for p in caminhos:
         cancelada = p.upper().endswith('.CANCELADA.XML')
@@ -3836,6 +3847,16 @@ def analisar_nfse(caminhos, cnpj_empresa):
             continue
         if not d['nnfse']:
             continue
+        if dt_ini or dt_fim:
+            try:
+                data_nota = _dt.strptime(d['competencia'][:10], '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                data_nota = None
+            if data_nota:
+                if dt_ini and data_nota < dt_ini:
+                    continue
+                if dt_fim and data_nota > dt_fim:
+                    continue
         if d['prestador_cnpj'] == cnpj_empresa:
             papel, parc_cnpj, parc_nome, parc_doc = 'emitida', d['tomador_cnpj'], d['tomador_nome'], d['tomador_doc_tipo']
         elif d['tomador_cnpj'] == cnpj_empresa:

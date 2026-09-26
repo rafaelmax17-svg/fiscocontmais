@@ -66,7 +66,7 @@ contextBridge.exposeInMainWorld('fiscocont', {
     pickPastaBase: () => ipcRenderer.invoke('fiscal:pickPastaBase'),
     pastaBaseGet: () => ipcRenderer.invoke('fiscal:pastaBaseGet'),
     nfseBaixar: (empresaId, dataInicial, dataFinal) => ipcRenderer.invoke('fiscal:nfseBaixar', { empresaId, dataInicial, dataFinal }),
-    nfseAnalise: (empresaId) => ipcRenderer.invoke('fiscal:nfseAnalise', { empresaId }),
+    nfseAnalise: (empresaId, dataInicial, dataFinal) => ipcRenderer.invoke('fiscal:nfseAnalise', { empresaId, dataInicial, dataFinal }),
     nfseExportarHtml: (html, tipo, empresaNome) => ipcRenderer.invoke('fiscal:nfseExportarHtml', { html, tipo, empresaNome }),
     lmcDashboard: (semLmcPath, comLmcPath) => ipcRenderer.invoke('fiscal:lmcDashboard', { semLmcPath, comLmcPath }),
     baixarSpedLmc: () => ipcRenderer.invoke('fiscal:baixarSpedLmc'),

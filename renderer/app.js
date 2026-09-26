@@ -1103,8 +1103,10 @@ function bindFiscal() {
     async function dlAnalisar() {
       const empresaId = $('#dlSelectEmpresa').value;
       if (!empresaId) { toast('Escolha uma empresa.', true); return; }
+      const dataInicial = $('#dlDataInicial').value || null;
+      const dataFinal = $('#dlDataFinal').value || null;
       overlay(true, 'Montando o painel…');
-      const res = await window.fiscocont.fiscal.nfseAnalise(empresaId);
+      const res = await window.fiscocont.fiscal.nfseAnalise(empresaId, dataInicial, dataFinal);
       overlay(false);
       if (res.error) { toast(res.error, true); return; }
       let painelHtml = res.painelHtml;
