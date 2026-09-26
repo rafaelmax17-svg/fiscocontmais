@@ -5,3 +5,4 @@ pydist/*.exe
 !pydist/.gitkeep
 *.log
 .DS_Store
+__pycache__/
