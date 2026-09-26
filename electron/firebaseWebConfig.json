@@ -1,0 +1,9 @@
+{
+  "_comentario": "Config PÚBLICA do Firebase (projeto fiscocontmais). Não é segredo.",
+  "apiKey": "AIzaSyC5cZ6-uqB6dez6d0r5x6S7ohHMYTSJWxU",
+  "authDomain": "fiscocontmais.firebaseapp.com",
+  "projectId": "fiscocontmais",
+  "storageBucket": "fiscocontmais.firebasestorage.app",
+  "messagingSenderId": "1079764838710",
+  "appId": "1:1079764838710:web:f4a418b8e8639192ab2b97"
+}

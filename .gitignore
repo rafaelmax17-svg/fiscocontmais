@@ -1,0 +1,7 @@
+node_modules/
+dist/
+pybuild/
+pydist/*.exe
+!pydist/.gitkeep
+*.log
+.DS_Store

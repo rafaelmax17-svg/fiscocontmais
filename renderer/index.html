@@ -1,0 +1,857 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FiscoCont+</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="loginGate" class="login-gate">
+ <div class="lg-stage">
+  <div class="lg-left">
+  <div class="login-card">
+    <svg class="login-logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <g transform="translate(256 248)">
+        <circle r="120" fill="none" stroke="#ffffff" stroke-opacity="0.20" stroke-width="36"/>
+        <circle r="120" fill="none" stroke="#c7d2fe" stroke-width="36" stroke-linecap="round"
+                stroke-dasharray="470 754" transform="rotate(-90)"/>
+        <path d="M -48 4 L -14 42 L 54 -36" fill="none" stroke="#fff" stroke-width="32"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </svg>
+    <div class="login-title">FiscoCont<b>+</b></div>
+    <div class="login-sub">Digite a senha de acesso</div>
+    <form id="loginForm">
+      <input type="password" id="loginPass" class="login-input" placeholder="Senha" autocomplete="off" autofocus>
+      <button type="submit" class="login-btn">Entrar</button>
+    </form>
+    <div class="login-err" id="loginErr" hidden>Senha incorreta.</div>
+  </div>
+  <div class="login-card license-card" id="licenseCard" hidden>
+    <svg class="login-logo lock" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <rect x="4" y="11" width="16" height="10" rx="2" fill="none" stroke="#fff" stroke-width="1.6"/>
+      <path d="M7 11V7a5 5 0 0110 0v4" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+      <circle cx="12" cy="16" r="1.6" fill="#fff"/>
+    </svg>
+    <div class="login-title" id="licenseTitle">Acesso bloqueado</div>
+    <div class="login-sub" id="licenseSub">Este computador ainda não foi liberado.</div>
+    <div class="license-code" id="licenseCode">----</div>
+    <div class="license-hint" id="licenseHint">Envie este código para a Liddera liberar o acesso.</div>
+    <button class="login-btn ghost-btn" id="licenseRetry" type="button">Verificar novamente</button>
+  </div>
+  </div>
+  <div class="lg-right">
+    <div class="bg-blob b1"></div><div class="bg-blob b2"></div><div class="bg-blob b3"></div>
+    <div class="lg-brand">
+      <div class="lg-bname">Liddera | Inteligência em Negócios</div>
+      <h1>Automação Fiscal<br>e Contábil</h1>
+      <p>Tudo o que o escritório precisa pra apurar, conferir e acompanhar os clientes, num só sistema.</p>
+    </div>
+    <div class="carousel">
+      <div class="slide" style="animation-delay:0s">
+        <svg class="s-ic" viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="13" y="4" width="8" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+        <div class="s-t">Painel único: Fiscal + Contábil</div>
+        <div class="s-d">Apuração, conferência e indicadores do escritório inteiro num só sistema.</div>
+      </div>
+      <div class="slide" style="animation-delay:3s">
+        <svg class="s-ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 12l3 3 5-6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="s-t">Conferência NF-e × SPED</div>
+        <div class="s-d">Cruza as entradas com o SPED Fiscal e aponta faltantes e divergências na hora.</div>
+      </div>
+      <div class="slide" style="animation-delay:6s">
+        <svg class="s-ic" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8M4 12a8 8 0 108-8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" transform="scale(-1,1) translate(-24,0)"/></svg>
+        <div class="s-t">Conferência de Saídas</div>
+        <div class="s-d">Mesma conferência automática, agora do lado das vendas — faltantes e divergências na hora.</div>
+      </div>
+      <div class="slide" style="animation-delay:9s">
+        <svg class="s-ic" viewBox="0 0 24 24"><path d="M4 20V10 M10 20V4 M16 20v-7 M22 20H2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="s-t">Indicadores contábeis</div>
+        <div class="s-d">Liquidez, endividamento, margens e ROE calculados automaticamente do balancete.</div>
+      </div>
+      <div class="slide" style="animation-delay:12s">
+        <svg class="s-ic" viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7zM14 3v5h5M9 13h7M9 17h7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="s-t">Documentos de entrada</div>
+        <div class="s-d">NF-e, CT-e, NF3-e e NFCom organizados num só lugar, com dashboards por CFOP.</div>
+      </div>
+      <div class="slide" style="animation-delay:15s">
+        <svg class="s-ic" viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        <div class="s-t">Apuração automática de ICMS</div>
+        <div class="s-d">Importa o SPED e monta o faturamento, o VAF e a apuração pronta pra conferir.</div>
+      </div>
+      <div class="slide" style="animation-delay:18s">
+        <svg class="s-ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9 9l6 6M15 9l-6 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <div class="s-t">Conferência ICMS Desonerado</div>
+        <div class="s-d">Identifica nas entradas quais notas trazem ICMS desonerado informado pelo fornecedor.</div>
+      </div>
+      <div class="slide" style="animation-delay:21s">
+        <svg class="s-ic" viewBox="0 0 24 24"><path d="M3 7h11v8H3zM14 10h4l3 3v2h-7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="7" cy="17" r="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="17.5" cy="17" r="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        <div class="s-t">Classificação de Frete (CT-e)</div>
+        <div class="s-d">Cruza CT-e com a NF-e do SPED e sugere Custo, Despesa e crédito de ICMS automaticamente.</div>
+      </div>
+      <div class="slide" style="animation-delay:24s">
+        <svg class="s-ic" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M15.5 15.5L21 21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M8 10.5h5M10.5 8v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <div class="s-t">Auditor de Classificação Fiscal</div>
+        <div class="s-d">Confere CFOP × CST, itens que trocam de classe e combustível fora do padrão, direto no SPED.</div>
+      </div>
+    </div>
+    <div class="dots">
+      <span class="dot" style="animation-delay:0s"></span>
+      <span class="dot" style="animation-delay:3s"></span>
+      <span class="dot" style="animation-delay:6s"></span>
+      <span class="dot" style="animation-delay:9s"></span>
+      <span class="dot" style="animation-delay:12s"></span>
+      <span class="dot" style="animation-delay:15s"></span>
+      <span class="dot" style="animation-delay:18s"></span>
+      <span class="dot" style="animation-delay:21s"></span>
+      <span class="dot" style="animation-delay:24s"></span>
+    </div>
+  </div>
+ </div>
+</div>
+
+<div class="titlebar">
+  <div class="tb-drag">
+    <svg class="tb-logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <g transform="translate(256 250)">
+        <circle r="122" fill="none" stroke="#a5b4fc" stroke-opacity=".5" stroke-width="40"/>
+        <circle r="122" fill="none" stroke="#c7d2fe" stroke-width="40" stroke-linecap="round"
+                stroke-dasharray="470 767" transform="rotate(-90)"/>
+        <path d="M -48 4 L -14 42 L 54 -36" fill="none" stroke="#fff" stroke-width="36"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </svg>
+    <span class="tb-name">FiscoCont<b>+</b></span>
+    <span class="tb-tag">Automação Fiscal e Contábil</span>
+  </div>
+  <div class="tb-controls">
+    <button class="tb-btn" id="winMin" title="Minimizar">
+      <svg viewBox="0 0 12 12"><path d="M2 6h8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+    </button>
+    <button class="tb-btn" id="winMax" title="Maximizar">
+      <svg viewBox="0 0 12 12" class="ic-max"><rect x="2.2" y="2.2" width="7.6" height="7.6" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+      <svg viewBox="0 0 12 12" class="ic-restore" hidden><path d="M3.6 3.6V2.6a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1h-1" fill="none" stroke="currentColor" stroke-width="1.1"/><rect x="1.6" y="3.6" width="6.8" height="6.8" rx="1.1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+    </button>
+    <button class="tb-btn close" id="winClose" title="Fechar">
+      <svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+</div>
+<div class="app">
+  <!-- ===================== SIDEBAR ===================== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c7d2fe"/>
+        </linearGradient></defs>
+        <g transform="translate(256 248)">
+          <circle r="120" fill="none" stroke="#ffffff" stroke-opacity="0.20" stroke-width="36"/>
+          <circle r="120" fill="none" stroke="url(#lg)" stroke-width="36" stroke-linecap="round"
+                  stroke-dasharray="470 754" transform="rotate(-90)"/>
+          <path d="M -48 4 L -14 42 L 54 -36" fill="none" stroke="#fff" stroke-width="32"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+        <g transform="translate(392 128)"><circle r="54" fill="#fff"/>
+          <path d="M 0 -27 V 27 M -27 0 H 27" stroke="#4f46e5" stroke-width="19" stroke-linecap="round"/></g>
+      </svg>
+      <div class="brand-txt">
+        <div class="brand-name">FiscoCont<span>+</span></div>
+        <div class="brand-ver" id="verTag">v0.0.0</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-group" data-group="fiscal">Fiscal</div>
+      <button class="side-reset" id="btnNovaAnalise" data-group="fiscal" hidden>
+        <svg viewBox="0 0 24 24" class="ic"><path d="M4 12a8 8 0 0114-5.3M20 12a8 8 0 01-14 5.3M4 4v5h5M20 20v-5h-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Nova análise (trocar SPED)</span>
+      </button>
+      <button class="nav-item" data-group="fiscal" data-view="fiscal-dash">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M4 13h6V4H4zM14 20h6V4h-6zM4 20h6v-4H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        <span>Dashboard (SPED)</span>
+      </button>
+      <button class="nav-item" data-group="fiscal" data-view="fiscal-conf">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M9 11l3 3 8-8M4 12a8 8 0 108-8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Conferência NF-e × SPED</span>
+      </button>
+      <button class="nav-item" data-group="fiscal" data-view="fiscal-docs">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M7 3h7l5 5v13H7zM14 3v5h5M9 13h7M9 17h7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Documentos de entrada</span>
+      </button>
+      <button class="nav-item" data-group="fiscal" data-view="fiscal-confs">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M9 11l3 3 8-8M4 12a8 8 0 108-8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" transform="scale(-1,1) translate(-24,0)"/></svg>
+        <span>Conferência de Saídas</span>
+      </button>
+      <button class="nav-item" data-group="fiscal" data-view="fiscal-deson">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M13 2L4 14h6l-1 8 9-12h-6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        <span>Conferência ICMS Desonerado</span>
+      </button>
+      <button class="nav-item" data-group="fiscal" data-view="fiscal-frete">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M3 7h11v8H3zM14 10h4l3 3v2h-7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="7" cy="17" r="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="17.5" cy="17" r="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        <span>Classificação de Frete</span>
+      </button>
+      <button class="nav-item" data-group="fiscal" data-view="fiscal-audit">
+        <svg viewBox="0 0 24 24" class="ic"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M15.5 15.5L21 21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M8 10.5h5M10.5 8v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span>Auditor de Classificação</span>
+      </button>
+      <button class="nav-item" data-group="fiscal" data-view="fiscal-pgdas">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M4 20V10 M10 20V4 M16 20v-7 M22 20H2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Simples Nacional</span>
+        <em class="nav-new" id="pgdasNewBadge" hidden>NOVO</em>
+      </button>
+      <button class="nav-item nav-item-destaque" data-group="fiscal" data-view="fiscal-downloads">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M12 4v11M7.5 11.5L12 16l4.5-4.5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Baixas DF-e</span>
+        <em class="nav-new" id="downloadsNewBadge" hidden>NOVO</em>
+      </button>
+
+      <div class="nav-group" data-group="contabil">Contábil</div>
+      <button class="nav-item active" data-group="contabil" data-view="overview">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M4 13h6V4H4zM14 20h6V4h-6zM4 20h6v-4H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        <span>Visão geral</span>
+      </button>
+      <button class="nav-item" data-group="contabil" data-view="dre">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M4 19V5m0 14h16M8 15l3-4 3 2 4-6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Demonstração de resultado</span>
+      </button>
+      <button class="nav-item" data-group="contabil" data-view="balancete">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M4 5h16M4 9h16M4 13h16M4 17h10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>Balancete completo</span>
+      </button>
+      <button class="nav-item" data-group="contabil" data-view="invertidas">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M12 3l9 16H3z M12 10v4M12 17h.01" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Saldos invertidos</span>
+        <em class="pill" id="invBadge" hidden>0</em>
+      </button>
+      <button class="nav-item" data-group="contabil" data-view="indicadores">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M4 20V10 M10 20V4 M16 20v-7 M22 20H2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Indicadores</span>
+      </button>
+      <button class="nav-item" data-group="contabil" data-view="historico">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M12 8v4l3 3M12 3a9 9 0 100 18 9 9 0 000-18z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Histórico de balancetes</span>
+      </button>
+      <button class="nav-item" data-group="contabil" data-view="lote-balancetes">
+        <svg viewBox="0 0 24 24" class="ic"><rect x="3" y="4" width="7" height="7" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="14" y="4" width="7" height="7" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="3" y="15" width="7" height="7" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="14" y="15" width="7" height="7" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+        <span>Conferência em Lote</span>
+      </button>
+      <button class="nav-item" data-group="contabil" data-view="conciliacao" id="navConciliacao">
+        <svg viewBox="0 0 24 24" class="ic"><rect x="2" y="6" width="20" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M2 10h20M6 14h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>Conciliação de Fornecedores</span>
+        <span class="badge-em-breve" id="badgeEmBreveConc" hidden>EM BREVE</span>
+      </button>
+
+      <div class="nav-group" data-group="admin-only">Administração</div>
+      <button class="nav-item" data-group="admin-only" data-view="admin-lic">
+        <svg viewBox="0 0 24 24" class="ic"><rect x="4" y="11" width="16" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 11V7a5 5 0 0110 0v4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>Licenças de acesso</span>
+      </button>
+      <button class="nav-item nav-item-danger" data-group="admin-only" data-view="admin-corrigir-sped">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M10.3 4.2L2.9 17a1.8 1.8 0 001.55 2.7h15.1A1.8 1.8 0 0021.1 17L13.7 4.2a1.8 1.8 0 00-3.4 0z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        <span>Correção do SPED Fiscal</span>
+      </button>
+      <button class="nav-item nav-item-danger" data-group="admin-only" data-view="admin-lmc">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M8 3v6l-4 9a2 2 0 002 3h12a2 2 0 002-3l-4-9V3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M6 15h12" stroke="currentColor" stroke-width="1.7"/></svg>
+        <span>Substituir LMC (combustíveis)</span>
+      </button>
+    </nav>
+
+    <div class="side-foot">
+      <div id="themePicker" style="display:flex;gap:6px;margin-bottom:8px" title="Cor do sistema">
+        <button class="theme-dot" data-theme="padrao" style="width:14px;height:14px;border-radius:4px;background:#4f46e5;border:1.5px solid rgba(255,255,255,.7);cursor:pointer;padding:0"></button>
+        <button class="theme-dot" data-theme="esmeralda" style="width:14px;height:14px;border-radius:4px;background:#10b981;border:1.5px solid transparent;cursor:pointer;padding:0"></button>
+        <button class="theme-dot" data-theme="grafite" style="width:14px;height:14px;border-radius:4px;background:#2563eb;border:1.5px solid transparent;cursor:pointer;padding:0"></button>
+        <button class="theme-dot" data-theme="vinho" style="width:14px;height:14px;border-radius:4px;background:#e8632b;border:1.5px solid transparent;cursor:pointer;padding:0"></button>
+        <button class="theme-dot" data-theme="rosa" style="width:14px;height:14px;border-radius:4px;background:#db2777;border:1.5px solid transparent;cursor:pointer;padding:0"></button>
+      </div>
+      Liddera | Inteligência em Negócios · <a id="logoutLink">sair</a><br><a id="cloudLink" class="cloud-link">☁ nuvem: verificando…</a><br><span id="cloudLast" class="cloud-last"></span></div>
+  </aside>
+
+  <!-- ===================== CONTEÚDO ===================== -->
+  <main class="content">
+    <header class="topbar">
+      <div class="topbar-info" id="topInfo" hidden>
+        <div class="topbar-info-main">
+          <div class="emp" id="empNome">—</div>
+          <div class="chips">
+            <span class="chip" id="chCnpj"></span>
+            <span class="chip" id="chJunta"></span>
+            <span class="chip" id="chPer"></span>
+          </div>
+        </div>
+        <span class="fiscal-spacer"></span>
+        <button class="act ghost" id="btnImport" style="margin-right:8px">
+          <svg viewBox="0 0 24 24" class="ic"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Trocar balancete
+        </button>
+        <button class="act primary" id="btnExport" disabled>
+          <svg viewBox="0 0 24 24" class="ic"><path d="M12 21V9m0 0l-4 4m4-4l4 4M5 3h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Exportar PDF
+        </button>
+      </div>
+      <div class="topbar-file" id="topFile"></div>
+    </header>
+
+    <section class="stage">
+      <!-- estado vazio / importacao -->
+      <div class="empty" id="empty">
+        <div class="drop" id="dropZone">
+          <div class="ringwrap">
+            <svg class="ring" viewBox="0 0 88 88" aria-hidden="true"><circle cx="44" cy="44" r="42"/></svg>
+            <span class="upic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          <h2 class="drop-h">Importe um balancete para começar</h2>
+          <p class="drop-p">Arraste o PDF do Domínio aqui ou selecione no botão. O FiscoCont+ lê a empresa, o período e monta a análise.</p>
+          <button class="cta" id="btnImport2">
+            <svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><path d="M6 2h9l3 3v17H6z M9 12h6M9 16h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Selecionar balancete (PDF)<span class="sh"></span>
+          </button>
+          <div class="dz-hint">Solte o arquivo aqui para importar</div>
+        </div>
+
+        <div class="chips2">
+          <span class="chip2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V5a1 1 0 011-1h9a1 1 0 011 1v16M15 9h4a1 1 0 011 1v11M8 8h3M8 12h3M8 16h3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Empresa e período</span>
+          <span class="chip2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 109 9h-9z M12 3v9h9a9 9 0 00-9-9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>DRE e dashboard</span>
+          <span class="chip2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3z M12 10v4M12 17h.01" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Saldos invertidos</span>
+        </div>
+
+        <div class="steps">
+          <span class="step act"><span class="n">1</span>Importar</span>
+          <span class="stbar"></span>
+          <span class="step"><span class="n">2</span>Analisar</span>
+          <span class="stbar"></span>
+          <span class="step"><span class="n">3</span>Exportar</span>
+        </div>
+
+        <pre class="errbox" id="importErr" hidden></pre>
+      </div>
+
+      <!-- Fiscal: Dashboard (SPED) -->
+      <div class="view" id="view-fiscal-dash" hidden>
+        <div class="fiscal-bar">
+          <button class="act inv-export" id="btnSpedImport">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Importar SPED Fiscal (.txt)
+          </button>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnSpedHtml" disabled>Exportar HTML</button>
+          <button class="act inv-export" id="btnSpedPdf" disabled>Exportar PDF</button>
+        </div>
+        <div class="fiscal-empty" id="spedEmpty">
+          <svg viewBox="0 0 24 24"><path d="M4 13h6V4H4zM14 20h6V4h-6zM4 20h6v-4H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          <h2>Dashboard do cliente (SPED Fiscal)</h2>
+          <p>Importe o arquivo do SPED Fiscal (.txt) do período. O FiscoCont+ monta a apuração do ICMS, o VAF, compras/vendas por CFOP e os rankings — pronto pra enviar ao cliente.</p>
+        </div>
+        <iframe id="spedFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <!-- Fiscal: Conferência NF-e × SPED -->
+      <div class="view" id="view-fiscal-conf" hidden>
+        <div class="fiscal-bar">
+          <button class="act inv-export" id="btnConfSped">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            1 · SPED (.txt)
+          </button>
+          <button class="act inv-export" id="btnConfXmls" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+            2 · Arquivo .zip das notas
+          </button>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnConfHtml" disabled>Exportar HTML</button>
+          <button class="act inv-export" id="btnConfPdf" disabled>Exportar PDF</button>
+          <button class="act inv-export cliente-btn" id="btnConfCliente" disabled>Gerar relatório para o cliente</button>
+          <button class="act inv-export" id="btnConfNotasFaltantes" style="background:#fdf0e3;color:#c07a10;border-color:#f0c078" disabled hidden>⚠ Adicionar notas faltantes ao SPED</button>
+        </div>
+        <div class="fiscal-empty" id="confEmpty">
+          <svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8M4 12a8 8 0 108-8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2>Conferência NF-e Entradas × SPED</h2>
+          <p>Uso interno. <b>1)</b> Importe o SPED Fiscal (.txt). <b>2)</b> Selecione um ou mais arquivos .zip com os XMLs das entradas. O sistema cruza cada nota pela chave e aponta faltantes e divergências de valor.</p>
+        </div>
+        <iframe id="confFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <!-- Modal: notas faltantes -> incluir no SPED, em lote -->
+      <div id="modalNotasFaltantes" class="modal-overlay" hidden style="position:fixed;inset:0;background:rgba(20,24,50,.55);z-index:200;display:flex;align-items:center;justify-content:center">
+        <div style="background:#eef0f7;border-radius:18px;width:min(1150px,94vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+          <div style="background:linear-gradient(120deg,#1f2a5a,#2b3a72);padding:16px 22px;color:#fff;display:flex;justify-content:space-between;align-items:center">
+            <div><div style="font-weight:700;font-size:14px">Notas ausentes no SPED</div><div style="font-size:11px;color:#c7cbe8">Selecione as notas e confirme a classificação antes de incluir em lote</div></div>
+            <button id="btnFecharModalNotas" style="background:none;border:none;color:#fff;font-size:20px;cursor:pointer;line-height:1">×</button>
+          </div>
+          <div style="overflow:auto;padding:14px 18px;flex:1">
+            <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden">
+              <thead><tr>
+                <th style="width:26px"></th>
+                <th style="text-align:left;font-size:9.5px;text-transform:uppercase;color:#8890ab;padding:10px">Nota</th>
+                <th style="text-align:left;font-size:9.5px;text-transform:uppercase;color:#8890ab;padding:10px">Fornecedor</th>
+                <th style="text-align:right;font-size:9.5px;text-transform:uppercase;color:#8890ab;padding:10px">Valor</th>
+                <th style="text-align:left;font-size:9.5px;text-transform:uppercase;color:#8890ab;padding:10px">Status</th>
+              </tr></thead>
+              <tbody id="tabelaNotasFaltantes"></tbody>
+            </table>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:#fafbfd;border-top:1px solid #e3e6f0">
+            <div id="msgNotasFaltantes" style="font-size:11.5px;color:#8890ab"></div>
+            <button id="btnIncluirNotasSelecionadas" class="act" style="background:linear-gradient(90deg,#e8632b,#ff9860);color:#fff;border:none;font-weight:700">Incluir selecionadas no SPED</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Novidades desta versão -->
+      <div id="modalNovidades" class="modal-overlay" hidden style="position:fixed;inset:0;background:rgba(20,24,50,.55);z-index:9600;display:flex;align-items:center;justify-content:center">
+        <div style="background:#fff;border-radius:18px;width:min(560px,92vw);max-height:82vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+          <div style="background:linear-gradient(120deg,#1f2a5a,#2b3a72);padding:20px 24px;color:#fff">
+            <div style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#c7cbe8">FiscoCont+ atualizado</div>
+            <div id="novidadesVersao" style="font-size:19px;font-weight:800;margin-top:4px">Novidades da versão</div>
+          </div>
+          <div id="novidadesCorpo" style="overflow:auto;padding:20px 24px;flex:1;font-size:13.5px;line-height:1.7;color:#333"></div>
+          <div style="padding:14px 24px;background:#fafbfd;border-top:1px solid #e3e6f0;display:flex;justify-content:flex-end">
+            <button id="btnFecharNovidades" class="act" style="background:linear-gradient(90deg,#1f2a5a,#2b3a72);color:#fff;border:none;font-weight:700;padding:9px 22px">Entendi</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fiscal: Documentos de entrada -->
+      <div class="view" id="view-fiscal-docs" hidden>
+        <div class="fiscal-bar">
+          <button class="act inv-export" id="btnDocsSped">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Importar SPED Fiscal (.txt)
+          </button>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnDocsHtml" disabled>Exportar HTML</button>
+          <button class="act inv-export" id="btnDocsPdf" disabled>Exportar PDF</button>
+        </div>
+        <div class="fiscal-empty" id="docsEmpty">
+          <svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7zM14 3v5h5M9 13h7M9 17h7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2>Documentos de entrada (NF-e · CT-e · NF3-e · NFCom)</h2>
+          <p>Carrega automaticamente quando você importa o SPED no <b>Dashboard (SPED)</b> — não precisa importar de novo aqui. Se quiser abrir só esta relação sem passar pelo Dashboard, importe o SPED direto pelo botão acima.</p>
+        </div>
+        <iframe id="docsFrame" class="fiscal-frame" hidden></iframe>
+
+        <div class="fiscal-bar" style="margin-top:18px;border-top:1px solid var(--line);padding-top:18px">
+          <span style="font-weight:700;color:var(--ink)">Conferência de ICMS do Crédito (XML × SPED)</span>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnIcmsCredXmls">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+            Importar .zip dos XMLs de entrada
+          </button>
+          <button class="act inv-export" id="btnIcmsCredHtml" disabled>Exportar HTML</button>
+          <button class="act inv-export" id="btnIcmsCredPdf" disabled>Exportar PDF</button>
+        </div>
+        <div class="fiscal-empty" id="icmsCredEmpty">
+          <svg viewBox="0 0 24 24"><path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M10.3 4.2L2.9 17a1.8 1.8 0 001.55 2.7h15.1A1.8 1.8 0 0021.1 17L13.7 4.2a1.8 1.8 0 00-3.4 0z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          <p>Compara o ICMS de crédito de cada nota — o que está no XML × o que foi escriturado no SPED. Precisa do SPED já
+          importado (acima) e do .zip dos XMLs de entrada. Nota que não está no SPED é ignorada aqui (isso já é conferido em
+          Notas Faltantes).</p>
+        </div>
+        <iframe id="icmsCredFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <!-- Fiscal: Conferência de Saídas -->
+      <div class="view" id="view-fiscal-confs" hidden>
+        <div class="fiscal-bar">
+          <button class="act inv-export" id="btnConfSSped">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            1 · SPED (.txt)
+          </button>
+          <button class="act inv-export" id="btnConfSXmls" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+            2 · Arquivo .zip das notas
+          </button>
+
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnConfSHtml" disabled>Exportar HTML</button>
+          <button class="act inv-export" id="btnConfSPdf" disabled>Exportar PDF</button>
+          <button class="act inv-export cliente-btn" id="btnConfSCliente" disabled>Gerar relatório para o cliente</button>
+        </div>
+        <div class="fiscal-empty" id="confSEmpty">
+          <svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8M4 12a8 8 0 108-8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2>Conferência de Saídas × SPED</h2>
+          <p>Uso interno. <b>1)</b> Importe o SPED Fiscal (.txt). <b>2)</b> Selecione um ou mais arquivos .zip com os XMLs das notas de saída (NF-e/NFC-e emitidas pela empresa). O sistema cruza cada nota pela chave e aponta faltantes e divergências de valor.</p>
+        </div>
+        <iframe id="confSFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <!-- Fiscal: ICMS Desonerado nas Entradas -->
+      <div class="view" id="view-fiscal-deson" hidden>
+        <div class="fiscal-bar">
+          <button class="act inv-export" id="btnDesonXmls">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+            Arquivo .zip das notas de entrada
+          </button>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnDesonHtml" disabled>Exportar HTML</button>
+          <button class="act inv-export" id="btnDesonPdf" disabled>Exportar PDF</button>
+        </div>
+        <div class="fiscal-empty" id="desonEmpty">
+          <svg viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2>Conferência ICMS Desonerado</h2>
+          <p>Uso interno. Selecione um ou mais arquivos .zip com os XMLs das notas de <b>entrada</b>. O sistema identifica sozinho a empresa (pelo destinatário mais frequente) e quais notas trazem ICMS desonerado informado pelo fornecedor (vICMSDeson/motDesICMS) e por qual motivo. Não usa o SPED — é conferido só a partir dos XMLs.</p>
+        </div>
+        <iframe id="desonFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <!-- Fiscal: Classificação de Frete (CT-e) -->
+      <div class="view" id="view-fiscal-frete" hidden>
+        <div class="fiscal-bar">
+          <button class="act inv-export" id="btnFreteSped">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            1 · SPED (.txt)
+          </button>
+          <button class="act inv-export" id="btnFreteXmls" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+            2 · Arquivo .zip dos CT-e
+          </button>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnFreteHtml" disabled>Exportar HTML</button>
+          <button class="act inv-export" id="btnFretePdf" disabled>Exportar PDF</button>
+        </div>
+        <div class="fiscal-empty" id="freteEmpty">
+          <svg viewBox="0 0 24 24"><path d="M3 7h11v8H3zM14 10h4l3 3v2h-7z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="7" cy="17" r="1.4" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="17.5" cy="17" r="1.4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+          <h2>Classificação de Frete (CT-e)</h2>
+          <p>Uso interno. <b>1)</b> Importe o SPED Fiscal (.txt). <b>2)</b> Selecione um ou mais arquivos .zip com os XMLs de CT-e. O sistema cruza cada CT-e com a NF-e referenciada e sugere se o frete é Custo, Despesa ou Imobilizado, a partir do CFOP já escriturado — sem precisar abrir CT-e por CT-e no Domínio.</p>
+        </div>
+        <iframe id="freteFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <!-- Fiscal: Auditor de Classificação Fiscal -->
+      <div class="view" id="view-fiscal-audit" hidden>
+        <div class="fiscal-bar">
+          <button class="act inv-export" id="btnAuditSped">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            SPED (.txt)
+          </button>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnAuditHtml" disabled>Exportar HTML</button>
+          <button class="act inv-export" id="btnAuditPdf" disabled>Exportar PDF</button>
+        </div>
+        <div class="fiscal-empty" id="auditEmpty">
+          <svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8M4 12a8 8 0 108-8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2>Auditor de Classificação Fiscal</h2>
+          <p>Uso interno. Importe o SPED Fiscal (.txt). O sistema confere, dentro do próprio SPED: (1) CFOP × CST incoerentes; (2) o mesmo produto entrando ora como revenda, ora como uso/consumo/imobilizado no mesmo período; (3) NCM de combustível fora do padrão de uso/consumo. Não precisa de XML.</p>
+        </div>
+        <iframe id="auditFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <div class="view" id="view-fiscal-downloads" hidden>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+          <svg viewBox="0 0 24 24" width="22" height="22" style="color:#854f0b;flex:0 0 auto"><path d="M12 4v11M7.5 11.5L12 16l4.5-4.5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div>
+            <h2 style="margin:0;font-size:18px;color:var(--ink)">Baixas DF-e</h2>
+            <div style="font-size:12px;color:var(--ink2)">Download automático de NFS-e via certificado digital — sem CAPTCHA, sem portal manual</div>
+          </div>
+        </div>
+        <div id="dlKpis" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">
+          <div style="background:var(--panel);border-radius:10px;padding:14px;border:1px solid var(--line)">
+            <div style="font-size:11px;color:var(--ink2);margin-bottom:4px">Empresas cadastradas</div>
+            <div style="font-size:22px;font-weight:600" id="dlKpiEmpresas">0</div>
+          </div>
+          <div style="background:var(--panel);border-radius:10px;padding:14px;border:1px solid var(--line)">
+            <div style="font-size:11px;color:var(--ink2);margin-bottom:4px">NFS-e baixadas nesta sessão</div>
+            <div style="font-size:22px;font-weight:600;color:#0ea472" id="dlKpiDocs">0</div>
+          </div>
+          <div style="background:var(--panel);border-radius:10px;padding:14px;border:1px solid var(--line)">
+            <div style="font-size:11px;color:var(--ink2);margin-bottom:4px">Certificados vencendo (30d)</div>
+            <div style="font-size:22px;font-weight:600" id="dlKpiVencendo">0</div>
+          </div>
+        </div>
+
+        <div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div style="font-size:14px;font-weight:600">Empresas cadastradas</div>
+            <button class="act inv-export" id="btnDlCadastrarCert">Cadastrar certificado</button>
+          </div>
+          <div id="dlSemEmpresas" style="font-size:12.5px;color:var(--ink2)">Nenhuma empresa cadastrada ainda — cadastre um certificado pra começar.</div>
+          <table id="dlTabelaEmpresas" hidden style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="color:var(--ink2);font-size:10.5px;text-transform:uppercase">
+              <th style="text-align:left;padding:6px 8px">Empresa</th>
+              <th style="text-align:left;padding:6px 8px">CNPJ</th>
+              <th style="text-align:left;padding:6px 8px">Certificado válido até</th>
+              <th style="text-align:left;padding:6px 8px">Último download</th>
+              <th style="padding:6px 8px"></th>
+            </tr></thead>
+            <tbody id="dlTabelaEmpresasBody"></tbody>
+          </table>
+        </div>
+
+        <div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:12px">Baixar NFS-e</div>
+          <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:10px;margin-bottom:12px">
+            <div>
+              <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:5px">Empresa</label>
+              <select id="dlSelectEmpresa" style="width:100%"><option value="">Cadastre uma empresa primeiro</option></select>
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:5px">Data inicial</label>
+              <input type="date" id="dlDataInicial" style="width:100%">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:5px">Data final</label>
+              <input type="date" id="dlDataFinal" style="width:100%">
+            </div>
+          </div>
+          <div style="margin-bottom:14px">
+            <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:6px">Tipos de documento</label>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              <span style="background:#faeeda;color:#854f0b;font-size:12px;padding:5px 12px;border-radius:16px">NFS-e</span>
+              <span style="background:var(--bg,#f4f6fb);color:var(--ink2);font-size:12px;padding:5px 12px;border-radius:16px">NF-e · em breve</span>
+              <span style="background:var(--bg,#f4f6fb);color:var(--ink2);font-size:12px;padding:5px 12px;border-radius:16px">NFC-e · em breve</span>
+              <span style="background:var(--bg,#f4f6fb);color:var(--ink2);font-size:12px;padding:5px 12px;border-radius:16px">CT-e · em breve</span>
+            </div>
+          </div>
+          <div id="dlPastaInfo" style="font-size:11.5px;color:var(--ink2);margin-bottom:14px;display:flex;align-items:center;gap:8px">
+            <span id="dlPastaTexto">Nenhuma pasta escolhida ainda</span>
+            <button class="act inv-export" id="btnDlEscolherPasta" style="padding:3px 10px;font-size:11px">Escolher pasta</button>
+          </div>
+          <button class="act inv-export" id="btnDlBaixar" style="background:#e8632b;color:#fff;border-color:transparent" disabled>Baixar NFS-e</button>
+        </div>
+
+        <div id="dlResultado" hidden style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-top:14px"></div>
+
+        <div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-top:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <div style="font-size:14px;font-weight:600">Painel das notas já baixadas</div>
+            <div style="display:flex;gap:8px">
+              <button class="act inv-export" id="btnDlVerPainel">Ver painel</button>
+              <button class="act inv-export" id="btnDlExportarPainel" disabled>Exportar HTML animado</button>
+            </div>
+          </div>
+          <div style="font-size:11.5px;color:var(--ink2)">Aparece sozinho assim que terminar de baixar — dashboard e lista (Prestados/Tomados, com/sem retenção) na mesma tela.</div>
+          <iframe id="dlAnaliseFrame" class="fiscal-frame" hidden style="margin-top:12px;height:900px"></iframe>
+        </div>
+      </div>
+
+      <!-- Modal: cadastrar certificado -->
+      <div id="dlModalCert" hidden style="position:fixed;inset:0;background:rgba(20,23,51,.45);display:flex;align-items:center;justify-content:center;z-index:500">
+        <div style="background:var(--panel);border-radius:12px;padding:22px 24px;width:420px;max-width:90vw">
+          <div style="font-size:15px;font-weight:600;margin-bottom:4px">Cadastrar certificado digital</div>
+          <div style="font-size:12px;color:var(--ink2);margin-bottom:18px">O certificado fica guardado com segurança nesta máquina — a senha nunca é salva em texto puro.</div>
+
+          <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:5px">Arquivo do certificado (.pfx)</label>
+          <div style="display:flex;gap:8px;margin-bottom:14px">
+            <input type="text" id="dlCertArquivoTexto" readonly placeholder="Nenhum arquivo selecionado" style="flex:1">
+            <button class="act inv-export" id="btnDlCertProcurar" style="padding:0 14px">Procurar</button>
+          </div>
+
+          <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:5px">Senha do certificado</label>
+          <input type="password" id="dlCertSenha" style="width:100%;margin-bottom:14px">
+
+          <div id="dlCertErro" hidden style="color:#e23d4c;font-size:12px;margin-bottom:12px"></div>
+          <div id="dlCertPreview" hidden style="background:var(--bg,#f4f6fb);border-radius:8px;padding:12px 14px;margin-bottom:16px">
+            <div style="font-size:10.5px;color:var(--ink2);text-transform:uppercase;margin-bottom:6px">Lido automaticamente do certificado</div>
+            <div style="font-size:13px" id="dlCertPreviewNome"></div>
+            <div style="font-size:12px;color:var(--ink2)" id="dlCertPreviewDetalhe"></div>
+          </div>
+
+          <div style="display:flex;justify-content:flex-end;gap:10px">
+            <button class="act inv-export" id="btnDlCertCancelar">Cancelar</button>
+            <button class="act inv-export" id="btnDlCertVerificar">Verificar</button>
+            <button class="act inv-export" id="btnDlCertSalvar" style="background:#1f2a5a;color:#fff;border-color:transparent" hidden>Salvar empresa</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" id="view-fiscal-pgdas" hidden>
+        <div class="fiscal-bar">
+          <button class="act inv-export" id="btnPgdasPick">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Extrato do PGDAS-D (.pdf)
+          </button>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnPgdasHtml" disabled>Exportar HTML</button>
+          <button class="act inv-export" id="btnPgdasPdf" disabled>Exportar PDF</button>
+        </div>
+        <div class="fiscal-empty" id="pgdasEmpty">
+          <svg viewBox="0 0 24 24"><path d="M4 20V10 M10 20V4 M16 20v-7 M22 20H2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2>Painel do Simples Nacional</h2>
+          <p>Uma vitrine moderna e animada da situação do cliente no Simples Nacional — pra mostrar direto pra ele. Importe o Extrato do PGDAS-D (PDF, gerado no portal da Receita Federal) da competência que quiser. Alíquota efetiva, composição do DAS por imposto, evolução do faturamento e proximidade do teto — tudo calculado automaticamente a partir do próprio extrato.</p>
+        </div>
+        <iframe id="pgdasFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <div class="view" id="view-overview" hidden></div>
+      <div class="view" id="view-dre" hidden></div>
+      <div class="view" id="view-balancete" hidden></div>
+      <div class="view" id="view-invertidas" hidden></div>
+      <div class="view" id="view-indicadores" hidden>
+        <div class="fiscal-bar">
+          <span style="font-weight:700;color:var(--ink)">Indicadores econômico-financeiros</span>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnIndPdf">Exportar PDF</button>
+        </div>
+        <iframe id="indFrame" class="fiscal-frame" hidden></iframe>
+        <div class="fiscal-empty" id="indEmpty">
+          <svg viewBox="0 0 24 24"><path d="M4 20V10 M10 20V4 M16 20v-7 M22 20H2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2>Indicadores</h2>
+          <p>Importe um balancete para ver liquidez, endividamento, margens, giro e rentabilidade (ROA/ROE).</p>
+        </div>
+      </div>
+
+      <!-- Contábil: Histórico de balancetes (nuvem) -->
+      <div class="view" id="view-historico" hidden>
+        <div class="fiscal-bar">
+          <span style="font-weight:700;color:var(--ink)">Histórico de balancetes</span>
+          <span class="fiscal-spacer"></span>
+          <select id="histEmpresaSelect" style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);font-size:13px;min-width:280px;color:var(--ink)">
+            <option value="">Selecione a empresa...</option>
+          </select>
+          <button class="act inv-export" id="btnHistRefresh">Atualizar lista</button>
+        </div>
+        <div class="fiscal-empty" id="histEmpty">
+          <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3M12 3a9 9 0 100 18 9 9 0 000-18z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2>Histórico de balancetes</h2>
+          <p>Todo balancete importado já fica salvo na nuvem automaticamente. Selecione uma empresa acima pra ver todos os já importados — clique em "Abrir" pra reabrir qualquer um deles aqui no app, exatamente como se tivesse importado o PDF de novo.</p>
+        </div>
+        <div id="histListBox"></div>
+      </div>
+
+      <!-- Contábil: Conferência de Balancetes em Lote -->
+      <div class="view" id="view-lote-balancetes" hidden>
+        <div class="fiscal-bar">
+          <button class="act inv-export" id="btnLotePick">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Selecionar vários PDFs
+          </button>
+          <span class="fiscal-spacer"></span>
+          <span id="loteContagem" style="font-size:12.5px;color:var(--ink2)"></span>
+        </div>
+        <div class="fiscal-empty" id="loteEmpty">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="14" y="4" width="7" height="7" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="3" y="15" width="7" height="7" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="14" y="15" width="7" height="7" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+          <h2>Conferência de Balancetes em Lote</h2>
+          <p>Selecione os PDFs de balancete de várias empresas de uma vez (mesmo padrão do Domínio já usado na importação individual). O sistema processa todos e mostra um painel único: quais fecham certinho (Ativo=Passivo), quais têm saldo invertido, e quais falharam — pra você escanear o fechamento de todos os clientes rapidamente. Cada um também é salvo no Histórico normalmente.</p>
+        </div>
+        <iframe id="loteFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <!-- Contábil: Conciliação de Fornecedores -->
+      <div class="view" id="view-conciliacao" hidden>
+        <div class="fiscal-bar">
+          <button class="act inv-export" id="btnConcPlano">📊 Plano de contas: <span id="concPlanoLabel">nenhum importado</span></button>
+          <select class="act" id="concBancoSelect" style="cursor:pointer">
+            <option value="">Selecione o banco…</option>
+            <option value="SICOOB">Sicoob</option>
+            <option value="SISPRIME">Sisprime</option>
+            <option value="CREDISIS">Credisis</option>
+            <option value="CRESOL">Cresol</option>
+            <option value="AMAZONIA">Amazônia</option>
+            <option value="ITAU">Itaú</option>
+            <option value="CORA">Cora</option>
+            <option value="CAIXA">Caixa</option>
+            <option value="BANCO_DO_BRASIL">Banco do Brasil</option>
+          </select>
+          <button class="act inv-export" id="btnConcExtrato">⬆ Importar extrato</button>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnConcExportarTxt" style="background:#0ea472;color:#fff;border:none" disabled>⬇ Exportar TXT conciliado</button>
+        </div>
+        <div class="fiscal-empty" id="concEmpty">
+          <svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 10h20M6 14h4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <h2>Conciliação de Fornecedores</h2>
+          <p>Importe o plano de contas da empresa (Word) e o extrato bancário do mês (Word) — o sistema casa cada transação com o fornecedor certo, por CNPJ ou por nome, e monta o TXT pronto pra importar no Domínio, já com os códigos preenchidos.</p>
+        </div>
+        <div id="concResumo" hidden style="background:linear-gradient(120deg,#1f2a5a,#2b3a72);border-radius:16px;padding:18px 22px;color:#fff;margin-bottom:16px;display:flex;align-items:center;gap:24px">
+          <div><div style="font-size:26px;font-weight:800" id="concQtdCasadas">0</div><div style="font-size:10.5px;color:#c7cbe8;text-transform:uppercase">conciliadas automaticamente</div></div>
+          <div style="flex:1;height:8px;background:rgba(255,255,255,.15);border-radius:99px;overflow:hidden"><div id="concBarra" style="height:100%;background:#3ddb9e;border-radius:99px;width:0%"></div></div>
+          <div><div style="font-size:26px;font-weight:800" id="concQtdRevisar">0</div><div style="font-size:10.5px;color:#c7cbe8;text-transform:uppercase">precisam de revisão</div></div>
+        </div>
+        <table id="concTabela" hidden style="width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 6px 18px rgba(31,42,90,.06)">
+          <thead><tr>
+            <th style="text-align:left;font-size:10px;text-transform:uppercase;color:var(--ink2);padding:10px 14px">Data</th>
+            <th style="text-align:left;font-size:10px;text-transform:uppercase;color:var(--ink2);padding:10px 14px">Descrição do extrato</th>
+            <th style="text-align:right;font-size:10px;text-transform:uppercase;color:var(--ink2);padding:10px 14px">Valor</th>
+            <th style="text-align:left;font-size:10px;text-transform:uppercase;color:var(--ink2);padding:10px 14px;width:280px">Fornecedor</th>
+          </tr></thead>
+          <tbody id="concTabelaBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Administração: Licenças de acesso -->
+      <div class="view" id="view-admin-lic" hidden>
+        <div class="fiscal-bar">
+          <span style="font-weight:700;color:var(--ink)">Licenças de acesso (bloqueio remoto por máquina)</span>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnAdminCred">Configurar credencial administrativa</button>
+          <button class="act inv-export" id="btnLicRefresh">Atualizar</button>
+        </div>
+        <div id="licWarnBox"></div>
+        <div id="licRealtimeStatus" class="lic-realtime" style="margin-bottom:10px;font-size:12px;color:var(--ink2)"></div>
+        <div id="licTableBox"><div class="lic-empty">Carregando…</div></div>
+      </div>
+
+      <div class="view" id="view-admin-corrigir-sped" hidden>
+        <div class="fiscal-bar" style="border-color:rgba(226,61,76,.3)">
+          <button class="act inv-export" id="btnCorrSpedPick">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            SPED Fiscal (.txt)
+          </button>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnCorrSpedVerOriginal" disabled>Ver todos os dados (original)</button>
+          <button class="act inv-export" id="btnCorrSpedRodar" disabled style="background:#e23d4c;color:#fff;border-color:transparent">Corrigir SPED</button>
+        </div>
+        <div class="fiscal-empty" id="corrSpedEmpty">
+          <svg viewBox="0 0 24 24"><path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M10.3 4.2L2.9 17a1.8 1.8 0 001.55 2.7h15.1A1.8 1.8 0 0021.1 17L13.7 4.2a1.8 1.8 0 00-3.4 0z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          <h2>Correção do SPED Fiscal — acesso restrito ao Admin</h2>
+          <p>Corrige automaticamente erros comuns de validação: C191 indevido (CST do C190 pai fora de 00/10/20/51/70/90), bloco E500/E510/E520 quando não há IPI, código de barras "SEM GTIN", CEST fora da tabela oficial (lista conhecida: 1705500, 0000000, 2007910 — cresce conforme repassado), e COD_NAT ausente no C170 (mapeado pelo CFOP). Recalcula o Bloco 9 (contagens) no final. <b>Isso gera um arquivo novo</b> — o original nunca é alterado.</p>
+        </div>
+        <div id="corrSpedResumo" hidden></div>
+        <iframe id="corrSpedFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <!-- Fiscal: Substituir LMC de Combustíveis (Admin) -->
+      <div class="view" id="view-admin-lmc" hidden>
+        <div class="fiscal-bar" style="border-color:rgba(226,61,76,.3)">
+          <button class="act inv-export" id="btnLmcSemPick">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            1 · SPED do Domínio (sem LMC certo)
+          </button>
+          <button class="act inv-export" id="btnLmcComPick" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            2 · SPED do cliente (com LMC certo)
+          </button>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnLmcRodar" disabled style="background:#e23d4c;color:#fff;border-color:transparent">Substituir LMC</button>
+        </div>
+        <div class="fiscal-empty" id="lmcEmpty">
+          <svg viewBox="0 0 24 24"><path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M10.3 4.2L2.9 17a1.8 1.8 0 001.55 2.7h15.1A1.8 1.8 0 0021.1 17L13.7 4.2a1.8 1.8 0 00-3.4 0z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          <h2>Substituir LMC de Combustíveis — acesso restrito ao Admin</h2>
+          <p>Pra posto de gasolina: o cliente manda o SPED com o LMC (registros 1300‑1390) certo, mas o Domínio exporta com
+          esse bloco errado ou incompleto. Selecione os 2 arquivos (1º o do Domínio, 2º o do cliente) — o sistema troca o
+          bloco inteiro pelo do cliente e recalcula os fechamentos. <b>Isso gera um arquivo novo</b> — os originais nunca são alterados.</p>
+        </div>
+        <div id="lmcResumo" hidden></div>
+        <iframe id="lmcFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+<div class="overlay" id="overlay" hidden><div class="spinner"></div><div class="ov-txt" id="ovTxt">Processando…</div></div>
+<div class="update-banner" id="updateBanner" hidden>
+  <span id="updateBannerText"></span>
+  <button id="updateBannerBtn">Reiniciar e atualizar</button>
+  <button id="updateBannerClose" title="Depois">×</button>
+</div>
+
+<div class="ia-bubble" id="iaBubble">
+  <div class="ia-msg">💬 Alguma ajuda tributária?</div>
+  <div class="ia-fab"><span>🤖</span><span class="ia-dot"></span></div>
+</div>
+<div class="ia-panel" id="iaPanel" hidden>
+  <div class="ia-phead">
+    <div class="ia-ic">🤖</div>
+    <div class="ia-htxt"><b>Ajuda Tributária</b><span>ICMS · PIS/COFINS · IBS/CBS · Reforma</span></div>
+    <div class="ia-x" id="iaClose">✕</div>
+  </div>
+  <div class="ia-pbody" id="iaBody">
+    <div class="ia-bot">Oi! Sou o assistente tributário da Liddera. Posso ajudar com ICMS (AC, RO, AM, SP, MT), PIS/COFINS, e a Reforma Tributária (IBS/CBS). Sempre busco na fonte oficial antes de responder algo específico.</div>
+  </div>
+  <div class="ia-pfoot">
+    <input class="ia-pinput" id="iaInput" placeholder="Pergunte alguma coisa…">
+    <button class="ia-psend" id="iaSend">➤</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+{
+  "name": "fiscocont-plus",
+  "version": "1.4.6",
+  "description": "FiscoCont+ — Automação Fiscal e Contábil da Liddera. Módulo Contábil: análise de balancete, DRE e conferência de saldos invertidos.",
+  "author": "Liddera Contabilidade",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "icons": "node build/make-icons.js",
+    "dist": "electron-builder --win nsis",
+    "pack": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^31.7.6",
+    "electron-builder": "^24.13.3",
+    "png-to-ico": "^2.1.8",
+    "sharp": "^0.33.5"
+  },
+  "build": {
+    "appId": "com.liddera.fiscocont",
+    "productName": "FiscoCont+",
+    "copyright": "Copyright © Liddera Contabilidade",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "renderer/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "pydist/balancete_core.exe",
+        "to": "bin/balancete_core.exe"
+      },
+      {
+        "from": "assets",
+        "to": "assets"
+      },
+      {
+        "from": "pydist/fiscal_core.exe",
+        "to": "bin/fiscal_core.exe"
+      },
+      {
+        "from": "pydist/extrato_core.exe",
+        "to": "bin/extrato_core.exe"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FiscoCont+",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "artifactName": "fiscocont-plus-setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "rafaelmax17-svg",
+        "repo": "fiscocontmais"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "firebase": "^10.14.1",
+    "firebase-admin": "^12.7.0"
+  }
+}

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<style>
+  html,body{margin:0;height:100%;background:transparent;overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .card{
+    position:relative;height:100vh;border-radius:20px;
+    background:linear-gradient(150deg,#1b1e3a 0%,#2a2560 55%,#4f46e5 130%);
+    box-shadow:0 20px 60px rgba(10,12,30,.55);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    overflow:hidden;border:1px solid rgba(255,255,255,.08);
+  }
+  .glow{position:absolute;width:360px;height:360px;border-radius:50%;
+    background:radial-gradient(circle,rgba(124,58,237,.45),transparent 60%);
+    top:-120px;right:-90px;filter:blur(6px);}
+  .glow2{position:absolute;width:300px;height:300px;border-radius:50%;
+    background:radial-gradient(circle,rgba(59,130,246,.35),transparent 60%);
+    bottom:-120px;left:-80px;}
+  .logo{width:104px;height:104px;z-index:2;filter:drop-shadow(0 10px 24px rgba(0,0,0,.4))}
+  .name{z-index:2;color:#fff;font-size:26px;font-weight:800;letter-spacing:.3px;margin-top:16px}
+  .name span{color:#c7d2fe}
+  .sub{z-index:2;color:#aab3d6;font-size:12.5px;margin-top:4px;letter-spacing:.4px}
+  .barwrap{z-index:2;margin-top:26px;width:220px;height:5px;border-radius:99px;background:rgba(255,255,255,.12);overflow:hidden}
+  .bar{height:100%;width:40%;border-radius:99px;background:linear-gradient(90deg,#818cf8,#c7d2fe);
+    animation:load 1.4s ease-in-out infinite;}
+  @keyframes load{0%{transform:translateX(-120%)}100%{transform:translateX(320%)}}
+  .load-txt{z-index:2;color:#8b93bd;font-size:11px;margin-top:12px;letter-spacing:.5px}
+  .arc{transform-origin:256px 244px;animation:spin 2.4s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="glow"></div><div class="glow2"></div>
+    <svg class="logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="r" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c7d2fe"/>
+        </linearGradient>
+      </defs>
+      <g transform="translate(256 244)">
+        <circle r="118" fill="none" stroke="#ffffff" stroke-opacity="0.20" stroke-width="34"/>
+        <circle class="arc" r="118" fill="none" stroke="url(#r)" stroke-width="34"
+                stroke-linecap="round" stroke-dasharray="360 741" transform="rotate(-90)"/>
+        <path d="M -46 4 L -14 40 L 52 -34" fill="none" stroke="#ffffff" stroke-width="30"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g transform="translate(388 132)">
+        <circle r="52" fill="#ffffff"/>
+        <path d="M 0 -26 V 26 M -26 0 H 26" stroke="#4f46e5" stroke-width="18" stroke-linecap="round"/>
+      </g>
+    </svg>
+    <div class="name">FiscoCont<span>+</span></div>
+    <div class="sub">Automação Fiscal e Contábil · Liddera</div>
+    <div class="barwrap"><div class="bar"></div></div>
+    <div class="load-txt">Carregando módulos…</div>
+  </div>
+</body>
+</html>
