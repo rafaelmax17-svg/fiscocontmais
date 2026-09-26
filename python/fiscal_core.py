@@ -3650,9 +3650,31 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     cert_path_pem, key_path_pem, tmp_dir = _extrair_cert_chave_temp(cert_path, senha)
     base_url = 'https://adn.producaorestrita.nfse.gov.br' if homologacao else 'https://adn.nfse.gov.br'
     salvos, ignorados_fora_periodo, paginas = 0, 0, 0
+    canceladas_qtd = 0
     nsu = int(nsu_inicial or 0)
     ultimo_nsu_visto = nsu
     erro = None
+
+    # Duas passagens: primeiro junta tudo (notas + eventos) na memória, só
+    # grava em disco no final — necessário porque o evento de cancelamento
+    # pode chegar ANTES ou DEPOIS da nota original na sequência do NSU, não
+    # dá pra decidir "salvar ou não" durante a própria varredura.
+    notas_brutas = []       # (chave, xml_texto, item)
+    chaves_canceladas = set()
+
+    def _talvez_chave_cancelada(item, xml_texto):
+        """Acha a chave de uma nota referenciada por um evento de
+        cancelamento — sem confiar num único campo (achado real: a doc
+        pública não é 100% consistente sobre o nome exato desses campos
+        pra NFS-e Nacional), checa várias pistas ao mesmo tempo."""
+        texto_evento = (item.get('TipoEvento') or '') + ' ' + xml_texto[:2000]
+        parece_cancelamento = bool(_re.search(r'cancel', texto_evento, _re.I))
+        if not parece_cancelamento:
+            return None
+        m = (_re.search(r'chNFSe["\s:>]+(\d{50})', xml_texto)
+             or _re.search(r'chave["\s:>]+(\d{50})', xml_texto, _re.I)
+             or _re.search(r'>(\d{50})<', xml_texto))
+        return m.group(1) if m else None
 
     try:
         while True:
@@ -3699,8 +3721,6 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
             for item in lote:
                 nsu_item = int(item.get('NSU', nsu))
                 ultimo_nsu_visto = max(ultimo_nsu_visto, nsu_item)
-                if (item.get('TipoDocumento') or '').upper() != 'NFSE':
-                    continue
 
                 xml_b64 = item.get('ArquivoXml')
                 if not xml_b64:
@@ -3709,6 +3729,14 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                     xml_bytes = gzip.decompress(base64.b64decode(xml_b64))
                     xml_texto = xml_bytes.decode('utf-8')
                 except Exception:
+                    continue
+
+                if (item.get('TipoDocumento') or '').upper() != 'NFSE':
+                    # não é a nota em si — pode ser evento (cancelamento,
+                    # manifestação etc.). Só nos interessa se for cancelamento.
+                    chave_cancelada = _talvez_chave_cancelada(item, xml_texto)
+                    if chave_cancelada:
+                        chaves_canceladas.add(chave_cancelada)
                     continue
 
                 dhger = item.get('DataHoraGeracao', '')
@@ -3726,12 +3754,7 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                 competencia = data_doc.strftime('%Y-%m') if data_doc else 'sem-data'
                 prest_cnpj_m = _re.search(r'<prest><CNPJ>(\d+)</CNPJ>', xml_texto)
                 subpasta = 'Prestados' if (prest_cnpj_m and prest_cnpj_m.group(1) == cnpj_empresa) else 'Tomados'
-                pasta_destino = os.path.join(pasta_base, nome_empresa, 'NFS-e', subpasta, competencia)
-                os.makedirs(pasta_destino, exist_ok=True)
-                caminho_arquivo = os.path.join(pasta_destino, f'{chave}.xml')
-                with open(caminho_arquivo, 'w', encoding='utf-8') as f:
-                    f.write(xml_texto)
-                salvos += 1
+                notas_brutas.append((chave, xml_texto, subpasta, competencia))
 
             nsu = ultimo_nsu_visto
     finally:
@@ -3745,17 +3768,42 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
         except OSError:
             pass
 
+    # segunda passagem: só agora sabemos quais chaves foram canceladas
+    # (o evento podia ter chegado antes OU depois da nota na sequência do
+    # NSU) — grava com sufixo .CANCELADA no nome quando for o caso, pra
+    # ficar visível no Explorer e a análise saber excluir dos totais.
+    for chave, xml_texto, subpasta, competencia in notas_brutas:
+        pasta_destino = os.path.join(pasta_base, nome_empresa, 'NFS-e', subpasta, competencia)
+        os.makedirs(pasta_destino, exist_ok=True)
+        if chave in chaves_canceladas:
+            nome_arquivo = f'{chave}.CANCELADA.xml'
+            canceladas_qtd += 1
+        else:
+            nome_arquivo = f'{chave}.xml'
+        caminho_arquivo = os.path.join(pasta_destino, nome_arquivo)
+        with open(caminho_arquivo, 'w', encoding='utf-8') as f:
+            f.write(xml_texto)
+        salvos += 1
+
     return {
         'erro': erro, 'salvos': salvos, 'ignorados_fora_periodo': ignorados_fora_periodo,
+        'canceladas': canceladas_qtd,
         'paginas_lidas': paginas, 'ultimo_nsu': ultimo_nsu_visto,
         'pasta': os.path.join(pasta_base, nome_empresa, 'NFS-e'),
     }
 
 
 def analisar_nfse(caminhos, cnpj_empresa):
-    """Lê os XML de NFS-e já baixados e monta a análise agregada."""
+    """Lê os XML de NFS-e já baixados e monta a análise agregada. Notas
+    marcadas como canceladas (sufixo .CANCELADA.xml no nome do arquivo,
+    posto na hora do download) ficam de fora dos totais, mas continuam
+    contadas à parte — pra saber que existem, sem contar como receita."""
     notas = []
+    qtd_canceladas = 0
     for p in caminhos:
+        if p.upper().endswith('.CANCELADA.XML'):
+            qtd_canceladas += 1
+            continue
         try:
             d = parse_nfse_xml(p)
         except Exception:
@@ -3791,7 +3839,7 @@ def analisar_nfse(caminhos, cnpj_empresa):
         'total_notas': len(notas), 'total_valor': round(sum(n['vserv'] for n in notas), 2),
         'qtd_com_retencao': len(com_ret), 'valor_com_retencao': round(sum(n['vserv'] for n in com_ret), 2),
         'qtd_sem_retencao': len(sem_ret), 'valor_sem_retencao': round(sum(n['vserv'] for n in sem_ret), 2),
-        'emitidas': emitidas, 'recebidas': recebidas,
+        'emitidas': emitidas, 'recebidas': recebidas, 'qtd_canceladas': qtd_canceladas,
         'notas_com_retencao': sorted(com_ret, key=lambda n: n['competencia'], reverse=True),
         'notas_sem_retencao': sorted(sem_ret, key=lambda n: n['competencia'], reverse=True),
         'top_parceiros': top_parceiros[:10],
@@ -3940,6 +3988,7 @@ td,th{{border-bottom:1px solid var(--line)}}
   <div class="kpi"><b style="color:#0ea472">{dados['qtd_sem_retencao']}</b><span>Sem retenção</span></div>
   <div class="kpi"><b style="color:#e8632b">{dados['qtd_com_retencao']}</b><span>Com retenção</span></div>
 </div>
+{f'<div class="card" style="background:#fef3f2;border:1px solid #fecdca"><div style="font-size:12.5px;color:#7a1f1f">⚠ {dados["qtd_canceladas"]} nota(s) cancelada(s) foram baixadas mas ficaram de fora dos totais acima — arquivos salvos com .CANCELADA no nome, pra referência.</div></div>' if dados.get('qtd_canceladas') else ''}
 <div class="grid2">
   <div class="card"><h3><span class="dot"></span>Com × sem retenção</h3>
     {"<div class='donut-row'><div class='donut'><svg width='170' height='170' viewBox='0 0 180 180'>" + arcs_ret + "</svg><div class='center'><div class='big'>" + str(total) + "</div><div class='sm'>notas</div></div></div><div class='legend'>" + legend_ret + "</div></div>" if segs_ret else "<div style='color:#0ea472;font-size:12.5px'>Nenhuma nota ainda.</div>"}
