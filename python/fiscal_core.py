@@ -3795,15 +3795,14 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
 
 def analisar_nfse(caminhos, cnpj_empresa):
     """Lê os XML de NFS-e já baixados e monta a análise agregada. Notas
-    marcadas como canceladas (sufixo .CANCELADA.xml no nome do arquivo,
-    posto na hora do download) ficam de fora dos totais, mas continuam
-    contadas à parte — pra saber que existem, sem contar como receita."""
+    canceladas (sufixo .CANCELADA.xml no nome, posto na hora do download)
+    aparecem juntas na lista, com um selo de status — mas ficam de fora dos
+    totais em R$ (KPIs, valor total, top parceiros), com um total próprio
+    separado, igual ao pedido do Rafael depois de ver como o Portal
+    Nacional mostra (✓ Autorizada / ✗ Cancelada, na mesma listagem)."""
     notas = []
-    qtd_canceladas = 0
     for p in caminhos:
-        if p.upper().endswith('.CANCELADA.XML'):
-            qtd_canceladas += 1
-            continue
+        cancelada = p.upper().endswith('.CANCELADA.XML')
         try:
             d = parse_nfse_xml(p)
         except Exception:
@@ -3820,15 +3819,18 @@ def analisar_nfse(caminhos, cnpj_empresa):
         d['parceiro_cnpj'] = parc_cnpj
         d['parceiro_nome'] = parc_nome
         d['parceiro_doc_tipo'] = parc_doc
+        d['cancelada'] = cancelada
         notas.append(d)
 
-    com_ret = [n for n in notas if n['retido']]
-    sem_ret = [n for n in notas if not n['retido']]
-    emitidas = sum(1 for n in notas if n['papel'] == 'emitida')
-    recebidas = sum(1 for n in notas if n['papel'] == 'recebida')
+    validas = [n for n in notas if not n['cancelada']]
+    canceladas = [n for n in notas if n['cancelada']]
+    com_ret = [n for n in notas if n['retido']]        # lista pra exibir: inclui canceladas (com o selo)
+    sem_ret = [n for n in notas if not n['retido']]     # idem
+    emitidas = sum(1 for n in validas if n['papel'] == 'emitida')
+    recebidas = sum(1 for n in validas if n['papel'] == 'recebida')
 
     por_parceiro = {}
-    for n in notas:
+    for n in validas:  # cancelada não entra no ranking de parceiros
         chave = n['parceiro_cnpj'] or '?'
         g = por_parceiro.setdefault(chave, {'nome': n['parceiro_nome'] or 'Desconhecido', 'qtd': 0, 'valor': 0.0})
         g['qtd'] += 1
@@ -3836,10 +3838,13 @@ def analisar_nfse(caminhos, cnpj_empresa):
     top_parceiros = sorted(por_parceiro.values(), key=lambda g: -g['valor'])
 
     return {
-        'total_notas': len(notas), 'total_valor': round(sum(n['vserv'] for n in notas), 2),
-        'qtd_com_retencao': len(com_ret), 'valor_com_retencao': round(sum(n['vserv'] for n in com_ret), 2),
-        'qtd_sem_retencao': len(sem_ret), 'valor_sem_retencao': round(sum(n['vserv'] for n in sem_ret), 2),
-        'emitidas': emitidas, 'recebidas': recebidas, 'qtd_canceladas': qtd_canceladas,
+        'total_notas': len(validas), 'total_valor': round(sum(n['vserv'] for n in validas), 2),
+        'qtd_com_retencao': sum(1 for n in com_ret if not n['cancelada']),
+        'valor_com_retencao': round(sum(n['vserv'] for n in com_ret if not n['cancelada']), 2),
+        'qtd_sem_retencao': sum(1 for n in sem_ret if not n['cancelada']),
+        'valor_sem_retencao': round(sum(n['vserv'] for n in sem_ret if not n['cancelada']), 2),
+        'emitidas': emitidas, 'recebidas': recebidas,
+        'qtd_canceladas': len(canceladas), 'valor_canceladas': round(sum(n['vserv'] for n in canceladas), 2),
         'notas_com_retencao': sorted(com_ret, key=lambda n: n['competencia'], reverse=True),
         'notas_sem_retencao': sorted(sem_ret, key=lambda n: n['competencia'], reverse=True),
         'top_parceiros': top_parceiros[:10],
@@ -3877,14 +3882,22 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
         tipo = n.get('parceiro_doc_tipo', '') or ('CNPJ' if len(n.get('parceiro_cnpj', '') or '') == 14 else 'CPF')
         return f'{tipo}: {_esc(n["parceiro_cnpj"] or "—")}' if n.get('parceiro_cnpj') else ''
 
+    def _selo_status(n):
+        if n.get('cancelada'):
+            return '<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#fcebeb;color:#c92a2a;font-weight:800;font-size:12px" title="Cancelada">✗</span>'
+        return '<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#eaf3de;color:#3b6d11;font-weight:800;font-size:12px" title="Autorizada">✓</span>'
+
     def _linha_sem(n):
-        return (f'<tr><td>{_esc(n["competencia"])}</td><td>NFS-e {_esc(n["nnfse"])}</td>'
+        opacidade = 'opacity:.6' if n.get('cancelada') else ''
+        return (f'<tr style="{opacidade}"><td style="text-align:center">{_selo_status(n)}</td>'
+                f'<td>{_esc(n["competencia"])}</td><td>NFS-e {_esc(n["nnfse"])}</td>'
                 f'<td style="font-family:monospace;font-size:9.5px;word-break:break-all">{_esc(n["chave"])}</td>'
                 f'<td>{_esc(n["parceiro_nome"])[:30]}<br><span style="font-size:10px;color:var(--ink2)">{_doc(n)}</span></td>'
-                f'<td style="text-align:right">R$ {_brl(n["vserv"])}</td></tr>')
+                f'<td style="text-align:right;{"text-decoration:line-through" if n.get("cancelada") else ""}">R$ {_brl(n["vserv"])}</td></tr>')
 
     def _linha_com(n, prefixo, idx):
         det_id = f'ret-{prefixo}-{idx}'
+        opacidade = 'opacity:.6' if n.get('cancelada') else ''
         det_rows = ''.join(
             f'<tr><td style="padding:6px 8px 6px 28px">{_esc(r["tributo"])}</td><td style="text-align:right;padding:6px 8px">R$ {_brl(r["valor"])}</td></tr>'
             for r in n['retencoes_detalhe']
@@ -3896,46 +3909,57 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
             f'<td style="text-align:right;padding:6px 8px">R$ {_brl(n["total_retido"])}</td></tr></tbody></table>'
         ) if det_rows else '<div style="padding:6px 8px 6px 28px;color:var(--ink2);font-size:12px">Sem detalhamento por tributo disponível nessa nota.</div>'
         return (
-            f'<tr class="lb-ret" data-alvo="{det_id}" style="cursor:pointer">'
+            f'<tr class="lb-ret" data-alvo="{det_id}" style="cursor:pointer;{opacidade}">'
+            f'<td style="text-align:center">{_selo_status(n)}</td>'
             f'<td>{_esc(n["competencia"])}</td><td>NFS-e {_esc(n["nnfse"])}</td>'
             f'<td style="font-family:monospace;font-size:9.5px;word-break:break-all">{_esc(n["chave"])}</td>'
             f'<td>{_esc(n["parceiro_nome"])[:26]}<br><span style="font-size:10px;color:var(--ink2)">{_doc(n)}</span></td>'
-            f'<td style="text-align:right;color:#e8632b;font-weight:700">R$ {_brl(n["vserv"])}</td>'
+            f'<td style="text-align:right;color:#e8632b;font-weight:700;{"text-decoration:line-through" if n.get("cancelada") else ""}">R$ {_brl(n["vserv"])}</td>'
             f'<td style="text-align:center"><span class="btn-mais" id="mais-{det_id}">+</span></td></tr>'
-            f'<tr id="{det_id}" class="linha-detalhe" style="display:none"><td colspan="6" style="padding:4px 8px 12px">{detalhe_html}</td></tr>'
+            f'<tr id="{det_id}" class="linha-detalhe" style="display:none"><td colspan="7" style="padding:4px 8px 12px">{detalhe_html}</td></tr>'
         )
+
+    def _rodape_totais(validas, canceladas, colspan, extra=''):
+        linhas = (f'<tr style="font-weight:700;border-top:2px solid var(--navy)"><td colspan="{colspan-1}" style="padding:9px 8px">Total autorizadas ({len(validas)} nota(s)){extra}</td>'
+                  f'<td style="text-align:right;padding:9px 8px">R$ {_brl(sum(n["vserv"] for n in validas))}</td><td></td></tr>')
+        if canceladas:
+            linhas += (f'<tr style="color:#c92a2a;font-size:12px"><td colspan="{colspan-1}" style="padding:6px 8px">Total canceladas ({len(canceladas)} nota(s)) — não soma no total acima</td>'
+                       f'<td style="text-align:right;padding:6px 8px">R$ {_brl(sum(n["vserv"] for n in canceladas))}</td><td></td></tr>')
+        return linhas
 
     def _tabela_sem(notas):
         if not notas:
             return '<div class="emptyok">✓ Nenhuma nota sem retenção.</div>'
         rows = ''.join(_linha_sem(n) for n in notas)
-        total_v = sum(n['vserv'] for n in notas)
+        validas = [n for n in notas if not n.get('cancelada')]
+        canceladas = [n for n in notas if n.get('cancelada')]
         return (f'<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
-                f'<thead><tr><th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Compet.</th>'
+                f'<thead><tr><th style="padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Sit.</th>'
+                f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Compet.</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Nota</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Chave de acesso</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Parceiro</th>'
                 f'<th style="text-align:right;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Valor</th></tr></thead>'
                 f'<tbody>{rows}</tbody>'
-                f'<tfoot><tr style="font-weight:700;border-top:2px solid var(--navy)"><td colspan="4" style="padding:9px 8px">Total ({len(notas)} nota(s))</td>'
-                f'<td style="text-align:right;padding:9px 8px">R$ {_brl(total_v)}</td></tr></tfoot></table>')
+                f'<tfoot>{_rodape_totais(validas, canceladas, 5)}</tfoot></table>')
 
     def _tabela_com(notas, prefixo):
         if not notas:
             return '<div class="emptyok">✓ Nenhuma nota com retenção.</div>'
         rows = ''.join(_linha_com(n, prefixo, i) for i, n in enumerate(notas))
-        total_v = sum(n['vserv'] for n in notas)
-        total_retido = sum(n['total_retido'] for n in notas)
+        validas = [n for n in notas if not n.get('cancelada')]
+        canceladas = [n for n in notas if n.get('cancelada')]
+        retido_str = f' · retido: R$ {_brl(sum(n["total_retido"] for n in validas))}'
         return (f'<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
-                f'<thead><tr><th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Compet.</th>'
+                f'<thead><tr><th style="padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Sit.</th>'
+                f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Compet.</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Nota</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Chave de acesso</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Parceiro</th>'
                 f'<th style="text-align:right;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Valor</th>'
                 f'<th style="text-align:center;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Retenção</th></tr></thead>'
                 f'<tbody>{rows}</tbody>'
-                f'<tfoot><tr style="font-weight:700;border-top:2px solid var(--navy)"><td colspan="4" style="padding:9px 8px">Total ({len(notas)} nota(s)) · retido: R$ {_brl(total_retido)}</td>'
-                f'<td style="text-align:right;padding:9px 8px">R$ {_brl(total_v)}</td><td></td></tr></tfoot></table>')
+                f'<tfoot>{_rodape_totais(validas, canceladas, 6, retido_str)}</tfoot></table>')
 
     prestados_com = [n for n in dados['notas_com_retencao'] if n['papel'] == 'emitida']
     prestados_sem = [n for n in dados['notas_sem_retencao'] if n['papel'] == 'emitida']
