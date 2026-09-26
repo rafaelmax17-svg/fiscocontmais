@@ -1007,6 +1007,78 @@ function bindFiscal() {
     });
   }
 
+  const btnDlImportarLote = $('#btnDlImportarLote');
+  if (btnDlImportarLote) {
+    let dlLoteResultados = [];
+
+    function dlLoteRenderizar() {
+      const wrap = $('#dlLoteTabelaWrap');
+      const vazio = $('#dlLoteVazio');
+      const body = $('#dlLoteTabelaBody');
+      if (!dlLoteResultados.length) { wrap.hidden = true; vazio.hidden = false; return; }
+      vazio.hidden = true; wrap.hidden = false;
+      body.innerHTML = dlLoteResultados.map((r, i) => {
+        if (r.ok) {
+          return `<tr>
+            <td style="padding:7px 8px">${_esc(r.nomeArquivo)}</td>
+            <td style="padding:7px 8px">${_esc(r.info.razao_social)}<br><span style="font-size:10.5px;color:var(--ink2)">CNPJ ${_esc(_fmtCnpjJs(r.info.cnpj))}</span></td>
+            <td style="padding:7px 8px;color:#0ea472;font-weight:600">✓ Identificada</td>
+            <td></td></tr>`;
+        }
+        return `<tr>
+          <td style="padding:7px 8px">${_esc(r.nomeArquivo)}<br><span style="font-size:10.5px;color:#854f0b">${_esc(r.erro || 'Precisa de senha')}</span></td>
+          <td style="padding:7px 8px;color:var(--ink2);font-size:11px">${r.comentario ? _esc(r.comentario) : '(sem comentário no arquivo)'}</td>
+          <td style="padding:7px 8px"><input type="password" data-idx="${i}" class="dl-lote-senha" value="${_esc(r.senhaTentativa || '')}" style="width:130px"></td>
+          <td style="padding:7px 8px"><button class="act inv-export dl-lote-tentar" data-idx="${i}" style="padding:3px 10px;font-size:11px">Tentar</button></td></tr>`;
+      }).join('');
+      body.querySelectorAll('.dl-lote-tentar').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const idx = Number(btn.dataset.idx);
+          const senha = body.querySelector(`.dl-lote-senha[data-idx="${idx}"]`).value;
+          if (!senha) { toast('Digite uma senha pra tentar.', true); return; }
+          overlay(true, 'Verificando…');
+          const res = await window.fiscocont.fiscal.certValidar(dlLoteResultados[idx].caminho, senha);
+          overlay(false);
+          if (res.error) { toast(res.error, true); return; }
+          dlLoteResultados[idx] = { ...dlLoteResultados[idx], ok: true, info: res.info, senhaTentativa: senha };
+          dlLoteRenderizar();
+        });
+      });
+      const okCount = dlLoteResultados.filter((r) => r.ok).length;
+      $('#dlLoteResumo').textContent = `${okCount} de ${dlLoteResultados.length} identificada(s)`;
+      $('#btnDlLoteSalvarTodos').disabled = okCount === 0;
+    }
+
+    btnDlImportarLote.addEventListener('click', async () => {
+      const pick = await window.fiscocont.fiscal.pickPfxLote();
+      if (pick.canceled) return;
+      dlLoteResultados = [];
+      dlLoteRenderizar();
+      $('#dlModalLote').hidden = false;
+      overlay(true, `Lendo comentário e testando senha de ${pick.paths.length} certificado(s)…`);
+      const res = await window.fiscocont.fiscal.certImportarLote(pick.paths);
+      overlay(false);
+      if (res.error) { toast(res.error, true); return; }
+      dlLoteResultados = res.resultados;
+      dlLoteRenderizar();
+    });
+    $('#btnDlLoteFechar').addEventListener('click', () => { $('#dlModalLote').hidden = true; });
+    $('#btnDlLoteSalvarTodos').addEventListener('click', async () => {
+      const validos = dlLoteResultados.filter((r) => r.ok);
+      overlay(true, `Cadastrando ${validos.length} empresa(s)…`);
+      let salvos = 0, comErro = [];
+      for (const r of validos) {
+        const res = await window.fiscocont.fiscal.certSalvar(r.caminho, r.senhaTentativa, r.info);
+        if (res.error) comErro.push(`${r.info.razao_social}: ${res.error}`);
+        else salvos++;
+      }
+      overlay(false);
+      $('#dlModalLote').hidden = true;
+      toast(comErro.length ? `${salvos} cadastrada(s), ${comErro.length} com erro.` : `${salvos} empresa(s) cadastrada(s).`, comErro.length > 0);
+      dlCarregarEmpresas();
+    });
+  }
+
   const btnDlEscolherPasta = $('#btnDlEscolherPasta');
   if (btnDlEscolherPasta) {
     btnDlEscolherPasta.addEventListener('click', async () => {

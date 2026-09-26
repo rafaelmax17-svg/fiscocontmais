@@ -59,6 +59,8 @@ contextBridge.exposeInMainWorld('fiscocont', {
     corrigirSpedDashboard: (spedPath) => ipcRenderer.invoke('fiscal:corrigirSpedDashboard', spedPath),
     substituirLmc: (semLmcPath, comLmcPath) => ipcRenderer.invoke('fiscal:substituirLmc', { semLmcPath, comLmcPath }),
     pickPfx: () => ipcRenderer.invoke('fiscal:pickPfx'),
+    pickPfxLote: () => ipcRenderer.invoke('fiscal:pickPfxLote'),
+    certImportarLote: (caminhos) => ipcRenderer.invoke('fiscal:certImportarLote', caminhos),
     certValidar: (pfxPath, senha) => ipcRenderer.invoke('fiscal:certValidar', { pfxPath, senha }),
     certSalvar: (pfxPath, senha, info) => ipcRenderer.invoke('fiscal:certSalvar', { pfxPath, senha, info }),
     certListar: () => ipcRenderer.invoke('fiscal:certListar'),

@@ -560,7 +560,10 @@
         <div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
             <div style="font-size:14px;font-weight:600">Empresas cadastradas</div>
-            <button class="act inv-export" id="btnDlCadastrarCert">Cadastrar certificado</button>
+            <div style="display:flex;gap:8px">
+              <button class="act inv-export" id="btnDlImportarLote">Importar certificados em lote</button>
+              <button class="act inv-export" id="btnDlCadastrarCert">Cadastrar certificado</button>
+            </div>
           </div>
           <div id="dlSemEmpresas" style="font-size:12.5px;color:var(--ink2)">Nenhuma empresa cadastrada ainda — cadastre um certificado pra começar.</div>
           <table id="dlTabelaEmpresas" hidden style="width:100%;border-collapse:collapse;font-size:13px">
@@ -648,6 +651,33 @@
             <button class="act inv-export" id="btnDlCertCancelar">Cancelar</button>
             <button class="act inv-export" id="btnDlCertVerificar">Verificar</button>
             <button class="act inv-export" id="btnDlCertSalvar" style="background:#1f2a5a;color:#fff;border-color:transparent" hidden>Salvar empresa</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: importar certificados em lote -->
+      <div id="dlModalLote" hidden style="position:fixed;inset:0;background:rgba(20,23,51,.45);display:flex;align-items:center;justify-content:center;z-index:500">
+        <div style="background:var(--panel);border-radius:12px;padding:22px 24px;width:720px;max-width:94vw;max-height:85vh;display:flex;flex-direction:column">
+          <div style="font-size:15px;font-weight:600;margin-bottom:4px">Importar certificados em lote</div>
+          <div style="font-size:12px;color:var(--ink2);margin-bottom:14px">Lê a senha do campo "Comentários" de cada arquivo (Propriedades → Detalhes, no Windows). O que não conseguir identificar sozinho, você corrige aqui mesmo.</div>
+          <div id="dlLoteVazio" style="font-size:12.5px;color:var(--ink2)">Nenhum arquivo selecionado ainda.</div>
+          <div id="dlLoteTabelaWrap" hidden style="overflow:auto;flex:1">
+            <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+              <thead><tr>
+                <th style="text-align:left;padding:6px 8px;color:var(--ink2);font-size:10px;text-transform:uppercase">Arquivo</th>
+                <th style="text-align:left;padding:6px 8px;color:var(--ink2);font-size:10px;text-transform:uppercase">Empresa identificada</th>
+                <th style="text-align:left;padding:6px 8px;color:var(--ink2);font-size:10px;text-transform:uppercase">Senha</th>
+                <th style="padding:6px 8px"></th>
+              </tr></thead>
+              <tbody id="dlLoteTabelaBody"></tbody>
+            </table>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+            <div id="dlLoteResumo" style="font-size:12px;color:var(--ink2)"></div>
+            <div style="display:flex;gap:10px">
+              <button class="act inv-export" id="btnDlLoteFechar">Fechar</button>
+              <button class="act inv-export" id="btnDlLoteSalvarTodos" style="background:#1f2a5a;color:#fff;border-color:transparent" disabled>Cadastrar validados</button>
+            </div>
           </div>
         </div>
       </div>

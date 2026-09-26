@@ -404,6 +404,97 @@ ipcMain.handle('fiscal:pickPfx', async () => {
   return { canceled: false, path: res.filePaths[0] };
 });
 
+ipcMain.handle('fiscal:pickPfxLote', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Selecionar certificados digitais (pode marcar vários)', properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Certificado digital', extensions: ['pfx', 'p12'] }],
+  });
+  if (res.canceled || !res.filePaths.length) return { canceled: true };
+  return { canceled: false, paths: res.filePaths };
+});
+
+// Lê a propriedade "Comentários" (Details do Windows Explorer) de um
+// arquivo via PowerShell — não é um campo de texto comum, é uma
+// propriedade do próprio Windows (Shell.Application), só dá pra ler
+// pedindo pro sistema operacional. O índice da coluna "Comentários"
+// muda dependendo da versão/idioma do Windows, por isso a busca pelo
+// NOME da coluna em vez de um número fixo.
+function _lerComentarioArquivo(caminhoArquivo) {
+  return new Promise((resolve) => {
+    const pasta = path.dirname(caminhoArquivo);
+    const nomeArquivo = path.basename(caminhoArquivo);
+    const pastaPs = pasta.replace(/'/g, "''");
+    const nomePs = nomeArquivo.replace(/'/g, "''");
+    const script = [
+      '$ErrorActionPreference = "SilentlyContinue"',
+      '$shell = New-Object -ComObject Shell.Application',
+      `$folder = $shell.Namespace('${pastaPs}')`,
+      'if ($folder -eq $null) { Write-Output ""; exit }',
+      '$indice = -1',
+      'for ($i = 0; $i -lt 300; $i++) {',
+      '  $nomeColuna = $folder.GetDetailsOf($folder.Items, $i)',
+      '  if ($nomeColuna -eq "Comentários" -or $nomeColuna -eq "Comments") { $indice = $i; break }',
+      '}',
+      'if ($indice -eq -1) { Write-Output ""; exit }',
+      `$item = $folder.ParseName('${nomePs}')`,
+      'if ($item -eq $null) { Write-Output ""; exit }',
+      'Write-Output $folder.GetDetailsOf($item, $indice)',
+    ].join('; ');
+    let saida = '';
+    try {
+      const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true });
+      ps.stdout.on('data', (d) => { saida += d.toString(); });
+      ps.on('close', () => resolve(saida.trim()));
+      ps.on('error', () => resolve(''));
+    } catch (_) { resolve(''); }
+  });
+}
+
+// Tenta achar a senha dentro do texto do comentário — heurística, não
+// exata: a senha costuma vir no fim, depois do nome da empresa/CNPJ.
+// Quebra por separadores comuns e pega o último pedaço que não parece
+// CNPJ nem data.
+function _extrairSenhaProvavel(descricao) {
+  if (!descricao) return '';
+  const partes = descricao.trim().split(/[\s\-|,;:]+/).filter(Boolean);
+  for (let i = partes.length - 1; i >= 0; i--) {
+    const p = partes[i];
+    const soDigitos = p.replace(/\D/g, '');
+    if (soDigitos.length === 14) continue; // parece CNPJ — pula
+    if (/^\d{2}\/\d{2}\/\d{2,4}$/.test(p)) continue; // parece data — pula
+    if (p.length < 3) continue; // curto demais pra ser senha plausível
+    return p;
+  }
+  return partes.length ? partes[partes.length - 1] : '';
+}
+
+ipcMain.handle('fiscal:certImportarLote', async (_evt, caminhos) => {
+  const resultados = [];
+  for (const caminho of caminhos) {
+    const comentario = await _lerComentarioArquivo(caminho);
+    const senhaTentativa = _extrairSenhaProvavel(comentario);
+    const nomeArquivo = path.basename(caminho);
+    if (!senhaTentativa) {
+      resultados.push({ caminho, nomeArquivo, comentario, senhaTentativa: '', ok: false, erro: 'Não achei nenhum texto no comentário do arquivo pra tentar como senha.' });
+      continue;
+    }
+    const jsonTmp = path.join(os.tmpdir(), `fc_cert_lote_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
+    try {
+      await runFiscal(['ler-certificado', caminho, '--senha', senhaTentativa, '--json', jsonTmp], jsonTmp);
+      const info = JSON.parse(fs.readFileSync(jsonTmp, 'utf-8'));
+      fs.unlink(jsonTmp, () => {});
+      if (info.erro) {
+        resultados.push({ caminho, nomeArquivo, comentario, senhaTentativa, ok: false, erro: 'A senha que tentei não funcionou — confere ou corrige abaixo.' });
+      } else {
+        resultados.push({ caminho, nomeArquivo, comentario, senhaTentativa, ok: true, info });
+      }
+    } catch (e) {
+      resultados.push({ caminho, nomeArquivo, comentario, senhaTentativa, ok: false, erro: String(e.message || e) });
+    }
+  }
+  return { ok: true, resultados };
+});
+
 ipcMain.handle('fiscal:certValidar', async (_evt, { pfxPath, senha }) => {
   const jsonTmp = path.join(os.tmpdir(), `fc_cert_val_${Date.now()}.json`);
   try {
