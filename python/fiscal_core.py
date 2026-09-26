@@ -3662,13 +3662,27 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     notas_brutas = []       # (chave, xml_texto, item)
     chaves_canceladas = set()
 
+    # Códigos numéricos de cancelamento vistos em fontes diferentes (a
+    # documentação pública não é 100% consistente entre si sobre qual é o
+    # "oficial") — checa todos, não só um, pra não depender de acertar
+    # logo de cara qual a Receita realmente usa.
+    _CODIGOS_EVENTO_CANCELAMENTO = ('e110001', 'e101101', 'e105101', 'e105102')
+
     def _talvez_chave_cancelada(item, xml_texto):
         """Acha a chave de uma nota referenciada por um evento de
         cancelamento — sem confiar num único campo (achado real: a doc
         pública não é 100% consistente sobre o nome exato desses campos
-        pra NFS-e Nacional), checa várias pistas ao mesmo tempo."""
-        texto_evento = (item.get('TipoEvento') or '') + ' ' + xml_texto[:2000]
-        parece_cancelamento = bool(_re.search(r'cancel', texto_evento, _re.I))
+        pra NFS-e Nacional), checa várias pistas ao mesmo tempo: tanto o
+        texto ("Cancelamento") quanto os códigos numéricos conhecidos —
+        caso o XML do evento só traga o código, sem o texto por extenso
+        (que pode ser só uma tradução feita pelo próprio portal na tela,
+        não algo realmente presente no XML)."""
+        tipo_evento = (item.get('TipoEvento') or '').lower()
+        texto_evento = tipo_evento + ' ' + xml_texto[:2000]
+        parece_cancelamento = (
+            bool(_re.search(r'cancel', texto_evento, _re.I))
+            or any(cod in texto_evento.lower() for cod in _CODIGOS_EVENTO_CANCELAMENTO)
+        )
         if not parece_cancelamento:
             return None
         m = (_re.search(r'chNFSe["\s:>]+(\d{50})', xml_texto)
@@ -3734,6 +3748,19 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                 if (item.get('TipoDocumento') or '').upper() != 'NFSE':
                     # não é a nota em si — pode ser evento (cancelamento,
                     # manifestação etc.). Só nos interessa se for cancelamento.
+                    # Guarda o bruto de QUALQUER evento não reconhecido como
+                    # nota — mesmo quando minha detecção não identifica como
+                    # cancelamento — pra eu poder conferir o formato real
+                    # depois, sem precisar adivinhar de novo se um caso
+                    # passar despercebido.
+                    try:
+                        pasta_diag = os.path.join(pasta_base, nome_empresa, 'NFS-e', '_eventos_brutos')
+                        os.makedirs(pasta_diag, exist_ok=True)
+                        with open(os.path.join(pasta_diag, f'evento_nsu_{nsu_item}.json'), 'w', encoding='utf-8') as f:
+                            json.dump({'item_meta': {k: v for k, v in item.items() if k != 'ArquivoXml'},
+                                       'xml_decodificado': xml_texto}, f, ensure_ascii=False, indent=2)
+                    except Exception:
+                        pass
                     chave_cancelada = _talvez_chave_cancelada(item, xml_texto)
                     if chave_cancelada:
                         chaves_canceladas.add(chave_cancelada)
