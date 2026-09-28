@@ -589,6 +589,7 @@ ipcMain.handle('fiscal:nfseAnalise', async (_evt, { empresaId, dataInicial, data
   const indice = _lerIndiceCert();
   const empresa = indice.empresas.find((e) => e.id === empresaId);
   if (!empresa) return { error: 'Empresa não encontrada.' };
+  if (!dataInicial || !dataFinal) return { error: 'Informe a Data inicial e a Data final para ver o painel.' };
   let pastaBase;
   try { pastaBase = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase; } catch (_) {}
   if (!pastaBase) return { error: 'Escolha a pasta onde os documentos são salvos primeiro.' };

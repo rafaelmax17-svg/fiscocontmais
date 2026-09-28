@@ -879,10 +879,37 @@ function bindFiscal() {
     return `${cnpj.slice(0, 2)}.${cnpj.slice(2, 5)}.${cnpj.slice(5, 8)}/${cnpj.slice(8, 12)}-${cnpj.slice(12)}`;
   }
 
+  // período/empresa usados no último painel montado — pra avisar quando
+  // os campos da tela mudarem depois (evita achar que o painel na tela é
+  // do período novo quando ainda é do antigo).
+  let DL_PAINEL_PERIODO = null;
+
+  // "Ver painel" só libera com empresa + Data inicial + Data final válidas
+  // (pedido do Rafael, 26/09).
+  function dlAtualizarBotaoPainel() {
+    const btn = $('#btnDlVerPainel');
+    if (!btn) return;
+    const empresaId = $('#dlSelectEmpresa').value;
+    const ini = $('#dlDataInicial').value;
+    const fim = $('#dlDataFinal').value;
+    let motivo = '';
+    if (!empresaId) motivo = 'Cadastre e escolha uma empresa para liberar o painel.';
+    else if (!ini || !fim) motivo = 'Informe a Data inicial e a Data final acima para liberar o painel.';
+    else if (ini > fim) motivo = 'A Data inicial não pode ser depois da Data final.';
+    btn.disabled = !!motivo;
+    const dica = $('#dlPainelDica');
+    dica.textContent = motivo;
+    dica.hidden = !motivo;
+    const desat = $('#dlPainelDesatualizado');
+    desat.hidden = !(DL_PAINEL_PERIODO && (DL_PAINEL_PERIODO.empresaId !== empresaId
+      || DL_PAINEL_PERIODO.ini !== ini || DL_PAINEL_PERIODO.fim !== fim));
+  }
+
   function dlAtualizarBotaoBaixar() {
     const temEmpresa = DL_EMPRESAS.length > 0;
     const temPasta = $('#dlPastaTexto').textContent !== 'Nenhuma pasta escolhida ainda';
     $('#btnDlBaixar').disabled = !(temEmpresa && temPasta);
+    dlAtualizarBotaoPainel();
   }
 
   async function dlCarregarEmpresas() {
@@ -1175,8 +1202,10 @@ function bindFiscal() {
     async function dlAnalisar() {
       const empresaId = $('#dlSelectEmpresa').value;
       if (!empresaId) { toast('Escolha uma empresa.', true); return; }
-      const dataInicial = $('#dlDataInicial').value || null;
-      const dataFinal = $('#dlDataFinal').value || null;
+      const dataInicial = $('#dlDataInicial').value;
+      const dataFinal = $('#dlDataFinal').value;
+      if (!dataInicial || !dataFinal) { toast('Informe a Data inicial e a Data final antes de ver o painel.', true); return; }
+      if (dataInicial > dataFinal) { toast('A Data inicial não pode ser depois da Data final.', true); return; }
       overlay(true, 'Montando o painel…');
       const res = await window.fiscocont.fiscal.nfseAnalise(empresaId, dataInicial, dataFinal);
       overlay(false);
@@ -1190,12 +1219,19 @@ function bindFiscal() {
         );
       }
       DL_ULTIMO_PAINEL_HTML = painelHtml;
+      DL_PAINEL_PERIODO = { empresaId, ini: dataInicial, fim: dataFinal };
       $('#btnDlExportarPainel').disabled = false;
       const fr = $('#dlAnaliseFrame');
       fr.srcdoc = painelHtml;
       fr.hidden = false;
+      dlAtualizarBotaoPainel();
     }
     $('#btnDlVerPainel').addEventListener('click', () => dlAnalisar());
+    ['#dlSelectEmpresa', '#dlDataInicial', '#dlDataFinal'].forEach((sel) => {
+      $(sel).addEventListener('input', dlAtualizarBotaoPainel);
+      $(sel).addEventListener('change', dlAtualizarBotaoPainel);
+    });
+    dlAtualizarBotaoPainel();
     $('#btnDlExportarPainel').addEventListener('click', async () => {
       if (!DL_ULTIMO_PAINEL_HTML) return;
       const nomeEmpresa = $('#dlSelectEmpresa').selectedOptions[0]?.textContent || '';
