@@ -450,49 +450,83 @@ function _lerComentarioArquivo(caminhoArquivo) {
   });
 }
 
-// Tenta achar a senha dentro do texto do comentário — heurística, não
-// exata: a senha costuma vir no fim, depois do nome da empresa/CNPJ.
-// Quebra por separadores comuns e pega o último pedaço que não parece
-// CNPJ nem data.
-function _extrairSenhaProvavel(descricao) {
-  if (!descricao) return '';
-  const partes = descricao.trim().split(/[\s\-|,;:]+/).filter(Boolean);
-  for (let i = partes.length - 1; i >= 0; i--) {
-    const p = partes[i];
-    const soDigitos = p.replace(/\D/g, '');
-    if (soDigitos.length === 14) continue; // parece CNPJ — pula
-    if (/^\d{2}\/\d{2}\/\d{2,4}$/.test(p)) continue; // parece data — pula
-    if (p.length < 3) continue; // curto demais pra ser senha plausível
-    return p;
+// Tira do NOME do arquivo (ou de qualquer texto) as senhas mais prováveis, em
+// ordem de probabilidade. Não decide sozinho: cada candidata é TESTADA no
+// próprio certificado, e só a que abrir vale. Formatos que aparecem no
+// escritório: "EMPRESA - Senha 123456.pfx", "EMPRESA - 123456 (1).pfx",
+// "EMPRESA_LTDA05780184000173 Senha 25500750.pfx", "EMPRESA_1347...-abc123.pfx".
+function _candidatasSenha(texto) {
+  let base = String(texto || '').replace(/\.(pfx|p12)$/i, '');
+  base = base.replace(/\s*\(\d+\)\s*$/, '')               // "(1)" de download repetido
+             .replace(/[\s_-]*c[óo]pia(\s+de.*)?$/i, '')  // "- Cópia"
+             .trim();
+  const cands = [];
+  const add = (s) => {
+    s = String(s || '').replace(/^[\s:=_-]+|[\s_-]+$/g, '');
+    if (s.length < 3 || /\s/.test(s)) return;
+    if (s.replace(/\D/g, '').length >= 14) return;         // é (ou contém) CNPJ, não senha
+    if (!cands.includes(s)) cands.push(s);
+  };
+  const mSenha = base.match(/(?:^|[^A-Za-zÀ-ÿ])senha[\s:=_-]*([^\s]+)/i);   // 1) depois da palavra "senha"
+  if (mSenha) { add(mSenha[1]); add(mSenha[1].split('_')[0]); }
+  const h = base.lastIndexOf('-');                                            // 2) depois do último hífen
+  if (h >= 0) add(base.slice(h + 1).replace(/^senha[\s:=_-]*/i, ''));
+  const partes = base.split(/[\s_]+/).filter(Boolean);                        // 3) últimos pedaços
+  for (let i = partes.length - 1; i >= Math.max(0, partes.length - 2); i--) add(partes[i]);
+  return cands.slice(0, 6);
+}
+
+// Testa as candidatas de vários certificados de uma vez, num processo só.
+async function _testarSenhasLote(itens) {
+  const sufixo = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const entrada = path.join(os.tmpdir(), `fc_certs_in_${sufixo}.json`);
+  const saida = path.join(os.tmpdir(), `fc_certs_out_${sufixo}.json`);
+  try {
+    fs.writeFileSync(entrada, JSON.stringify(itens), { encoding: 'utf-8', mode: 0o600 });
+    await runFiscal(['ler-certificados-lote', entrada, '--json', saida], saida);
+    return JSON.parse(fs.readFileSync(saida, 'utf-8'));
+  } finally {
+    [entrada, saida].forEach((f) => { try { fs.unlinkSync(f); } catch (_) {} });
   }
-  return partes.length ? partes[partes.length - 1] : '';
 }
 
 ipcMain.handle('fiscal:certImportarLote', async (_evt, caminhos) => {
-  const resultados = [];
-  for (const caminho of caminhos) {
-    const comentario = await _lerComentarioArquivo(caminho);
-    const senhaTentativa = _extrairSenhaProvavel(comentario);
-    const nomeArquivo = path.basename(caminho);
-    if (!senhaTentativa) {
-      resultados.push({ caminho, nomeArquivo, comentario, senhaTentativa: '', ok: false, erro: 'Não achei nenhum texto no comentário do arquivo pra tentar como senha.' });
-      continue;
+  try {
+    const resultados = caminhos.map((caminho) => {
+      const nomeArquivo = path.basename(caminho);
+      return { caminho, nomeArquivo, candidatas: _candidatasSenha(nomeArquivo), comentario: '', ok: false };
+    });
+    // 1ª rodada: senhas tiradas do NOME do arquivo — todos de uma vez
+    const s1 = await _testarSenhasLote(resultados.map((r) => ({ caminho: r.caminho, candidatas: r.candidatas })));
+    resultados.forEach((r, i) => {
+      const x = s1[i] || {};
+      if (x.ok) { r.ok = true; r.info = x.info; r.senhaTentativa = r.candidatas[x.indice_senha]; r.origem = 'nome'; }
+      else r.detalhe = x.detalhe || '';
+    });
+    // 2ª rodada, só pros que não abriram: campo "Comentários" do Windows (plano B)
+    const falhos = resultados.filter((r) => !r.ok);
+    for (const r of falhos) {
+      r.comentario = await _lerComentarioArquivo(r.caminho);
+      r.candidatas = [...r.candidatas, ..._candidatasSenha(r.comentario)].filter((s, i, a) => a.indexOf(s) === i);
     }
-    const jsonTmp = path.join(os.tmpdir(), `fc_cert_lote_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
-    try {
-      await runFiscal(['ler-certificado', caminho, '--senha', senhaTentativa, '--json', jsonTmp], jsonTmp);
-      const info = JSON.parse(fs.readFileSync(jsonTmp, 'utf-8'));
-      fs.unlink(jsonTmp, () => {});
-      if (info.erro) {
-        resultados.push({ caminho, nomeArquivo, comentario, senhaTentativa, ok: false, erro: 'A senha que tentei não funcionou — confere ou corrige abaixo.' });
-      } else {
-        resultados.push({ caminho, nomeArquivo, comentario, senhaTentativa, ok: true, info });
-      }
-    } catch (e) {
-      resultados.push({ caminho, nomeArquivo, comentario, senhaTentativa, ok: false, erro: String(e.message || e) });
+    const comComentario = falhos.filter((r) => r.comentario);
+    if (comComentario.length) {
+      const s2 = await _testarSenhasLote(comComentario.map((r) => ({ caminho: r.caminho, candidatas: r.candidatas })));
+      comComentario.forEach((r, i) => {
+        const x = s2[i] || {};
+        if (x.ok) { r.ok = true; r.info = x.info; r.senhaTentativa = r.candidatas[x.indice_senha]; r.origem = 'comentario'; }
+      });
     }
-  }
-  return { ok: true, resultados };
+    resultados.forEach((r) => {
+      if (r.ok) return;
+      r.senhaTentativa = r.candidatas[0] || '';
+      r.qtdTentadas = r.candidatas.length;
+      r.erro = r.candidatas.length
+        ? 'Nenhuma das senhas que achei no nome do arquivo abriu o certificado — confira e digite abaixo.'
+        : 'Não achei senha no nome do arquivo — digite abaixo.';
+    });
+    return { ok: true, resultados };
+  } catch (e) { return { error: String(e.message || e) }; }
 });
 
 ipcMain.handle('fiscal:certValidar', async (_evt, { pfxPath, senha }) => {

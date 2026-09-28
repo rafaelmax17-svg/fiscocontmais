@@ -1053,8 +1053,8 @@ function bindFiscal() {
             <td></td></tr>`;
         }
         return `<tr>
-          <td style="padding:7px 8px">${_esc(r.nomeArquivo)}<br><span style="font-size:10.5px;color:#854f0b">${_esc(r.erro || 'Precisa de senha')}</span></td>
-          <td style="padding:7px 8px;color:var(--ink2);font-size:11px">${r.comentario ? _esc(r.comentario) : '(sem comentário no arquivo)'}</td>
+          <td style="padding:7px 8px">${_esc(r.nomeArquivo)}<br><span style="font-size:10.5px;color:#854f0b">${_esc(r.erro || 'Precisa de senha')}${r.detalhe && !/password/i.test(r.detalhe) ? ' (detalhe técnico: ' + _esc(r.detalhe) + ')' : ''}</span></td>
+          <td style="padding:7px 8px;color:var(--ink2);font-size:11px">${r.qtdTentadas ? 'tentei ' + r.qtdTentadas + ' palpite(s) do nome' : '(nenhum palpite no nome)'}</td>
           <td style="padding:7px 8px"><input type="password" data-idx="${i}" class="dl-lote-senha" value="${_esc(r.senhaTentativa || '')}" style="width:130px"></td>
           <td style="padding:7px 8px"><button class="act inv-export dl-lote-tentar" data-idx="${i}" style="padding:3px 10px;font-size:11px">Tentar</button></td></tr>`;
       }).join('');
@@ -1082,7 +1082,7 @@ function bindFiscal() {
       dlLoteResultados = [];
       dlLoteRenderizar();
       $('#dlModalLote').hidden = false;
-      overlay(true, `Lendo comentário e testando senha de ${pick.paths.length} certificado(s)…`);
+      overlay(true, `Testando a senha de ${pick.paths.length} certificado(s)…`);
       const res = await window.fiscocont.fiscal.certImportarLote(pick.paths);
       overlay(false);
       if (res.error) { toast(res.error, true); return; }

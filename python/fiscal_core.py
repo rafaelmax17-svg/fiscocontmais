@@ -2705,6 +2705,20 @@ def main(argv):
         print(json.dumps(info, ensure_ascii=False))
         return 0 if 'erro' not in info else 1
 
+    # "ler-certificados-lote" — testa várias senhas candidatas em vários .pfx
+    # de uma vez, num processo só. Entrada: JSON [{"caminho":..., "candidatas":[...]}].
+    if modo == 'ler-certificados-lote':
+        if len(argv) < 2:
+            print('uso: fiscal_core.py ler-certificados-lote ENTRADA.json [--json SAIDA.json]'); return 1
+        args = argv[2:]
+        with open(argv[1], encoding='utf-8') as f:
+            itens = json.load(f)
+        resultados = testar_senhas_certificados(itens)
+        if '--json' in args and args.index('--json') + 1 < len(args):
+            _out(args[args.index('--json') + 1], json.dumps(resultados, ensure_ascii=False))
+        print(json.dumps({'total': len(resultados), 'abertos': sum(1 for r in resultados if r['ok'])}))
+        return 0
+
     # "baixar-nfse" — roda o download de NFS-e via ADN pra uma empresa/período.
     if modo == 'baixar-nfse':
         if len(argv) < 2:
@@ -3532,6 +3546,33 @@ def ler_certificado_pfx(caminho, senha):
         'validade': certificado.not_valid_after_utc.strftime('%Y-%m-%d'),
         'titular_completo': titular,
     }
+
+
+def testar_senhas_certificados(itens):
+    """Pra cada certificado, tenta as senhas candidatas (tiradas do nome do
+    arquivo etc.) até uma abrir o .pfx. Devolve só o ÍNDICE da candidata que
+    funcionou (não a senha), pra ela não ir parar num arquivo de saída."""
+    resultados = []
+    for it in itens:
+        caminho = it.get('caminho', '')
+        r = {'caminho': caminho, 'ok': False}
+        if not os.path.isfile(caminho):
+            r['detalhe'] = 'arquivo não encontrado'
+            resultados.append(r)
+            continue
+        ultimo = ''
+        for i, senha in enumerate(it.get('candidatas') or []):
+            try:
+                info = ler_certificado_pfx(caminho, senha)
+            except Exception as e:
+                ultimo = str(e)
+                continue
+            r.update({'ok': True, 'indice_senha': i, 'info': info})
+            break
+        if not r['ok'] and ultimo:
+            r['detalhe'] = ultimo[:160]
+        resultados.append(r)
+    return resultados
 
 
 def _extrair_cert_chave_temp(caminho_pfx, senha):
