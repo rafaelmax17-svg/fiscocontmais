@@ -1123,13 +1123,14 @@ function bindFiscal() {
       const empresaId = $('#dlSelectEmpresa').value;
       const dataInicial = $('#dlDataInicial').value;
       const dataFinal = $('#dlDataFinal').value;
+      const gerarPdf = $('#dlGerarPdf').checked;
       if (!empresaId) { toast('Escolha uma empresa.', true); return; }
       if (!dataInicial || !dataFinal) { toast('Escolha o período (data inicial e final).', true); return; }
       btnDlBaixar.disabled = true;
       overlay(true, 'Baixando NFS-e — pode levar um tempo dependendo do volume…');
       let res;
       try {
-        res = await window.fiscocont.fiscal.nfseBaixar(empresaId, dataInicial, dataFinal);
+        res = await window.fiscocont.fiscal.nfseBaixar(empresaId, dataInicial, dataFinal, gerarPdf);
       } finally {
         overlay(false);
         btnDlBaixar.disabled = false;
@@ -1147,7 +1148,8 @@ function bindFiscal() {
           <div><b style="font-size:18px">${r.ignorados_fora_periodo}</b><br>fora do período (ignoradas)</div>
           <div><b style="font-size:18px">${r.paginas_lidas}</b><br>páginas consultadas</div>
         </div>
-        <div style="margin-top:12px;font-size:12px;color:var(--ink2)">Salvo em: ${_esc(r.pasta)}</div>
+        ${gerarPdf ? `<div style="margin-top:10px;font-size:12px;color:var(--ink2)">PDFs (DANFSe) gerados: <b>${r.pdfs_gerados || 0}</b>${r.pdfs_erro ? ` · <span style="color:#c92a2a">${r.pdfs_erro} com erro ao gerar</span>` : ''}</div>` : ''}
+        <div style="margin-top:6px;font-size:12px;color:var(--ink2)">Salvo em: ${_esc(r.pasta)}</div>
         <button class="act inv-export" id="btnDlAbrirPasta" style="margin-top:10px">Abrir pasta</button>`;
       $('#btnDlAbrirPasta').addEventListener('click', () => window.fiscocont.openPath(r.pasta));
       toast(`${r.salvos} nota(s) baixada(s).`);
@@ -1156,6 +1158,19 @@ function bindFiscal() {
     });
     dlCarregarEmpresas();
     dlCarregarPasta();
+
+    // botão "PDF" de cada nota, clicado dentro do iframe do painel — o
+    // próprio iframe manda um postMessage (não dá pra addEventListener
+    // direto num elemento de dentro de um srcdoc de outra origem)
+    window.addEventListener('message', async (ev) => {
+      if (!ev.data || ev.data.tipo !== 'fiscocont-nfse-pdf') return;
+      const empresaId = $('#dlSelectEmpresa').value;
+      if (!empresaId) return;
+      overlay(true, 'Abrindo o PDF (gera na hora se ainda não existir)…');
+      const res = await window.fiscocont.fiscal.nfsePdfAbrir(empresaId, ev.data.chave);
+      overlay(false);
+      if (res.error) toast(res.error, true);
+    });
 
     // ---- Painel das notas já baixadas (dashboard + lista, tudo numa tela) ----
     let DL_ULTIMO_PAINEL_HTML = null;

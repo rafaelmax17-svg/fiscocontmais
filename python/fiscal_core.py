@@ -2719,6 +2719,28 @@ def main(argv):
         print(json.dumps({'total': len(resultados), 'abertos': sum(1 for r in resultados if r['ok'])}))
         return 0
 
+    # "nfse-pdf" — gera o PDF (DANFSe) de UM xml. "nfse-pdf-chave" — acha o xml pela chave
+    # dentro da pasta da empresa e devolve o caminho do PDF (gera se ainda não existir).
+    if modo == 'nfse-pdf':
+        if len(argv) < 3:
+            print('uso: fiscal_core.py nfse-pdf NOTA.xml SAIDA.pdf'); return 1
+        import nfse_danfse
+        nfse_danfse.xml_para_pdf(argv[1], argv[2])
+        print(json.dumps({'pdf': argv[2]}, ensure_ascii=False))
+        return 0
+    if modo == 'nfse-pdf-chave':
+        if len(argv) < 3:
+            print('uso: fiscal_core.py nfse-pdf-chave PASTA_EMPRESA CHAVE [--json saida.json]'); return 1
+        args = argv[3:]
+        try:
+            res = {'pdf': garantir_pdf_nfse(argv[1], argv[2])}
+        except Exception as e:
+            res = {'erro': str(e)}
+        if '--json' in args and args.index('--json') + 1 < len(args):
+            _out(args[args.index('--json') + 1], json.dumps(res, ensure_ascii=False))
+        print(json.dumps(res, ensure_ascii=False))
+        return 0 if 'erro' not in res else 1
+
     # "baixar-nfse" — roda o download de NFS-e via ADN pra uma empresa/período.
     if modo == 'baixar-nfse':
         if len(argv) < 2:
@@ -2732,6 +2754,7 @@ def main(argv):
             data_inicial=optb('--inicio'), data_final=optb('--fim'),
             pasta_base=optb('--pasta'), nome_empresa=optb('--empresa'), cnpj_empresa=optb('--cnpj', ''),
             nsu_inicial=int(optb('--nsu', '0')), homologacao=('--homologacao' in args),
+            gerar_pdf=('--sem-pdf' not in args),
         )
         if '--json' in args:
             _out(optb('--json', 'resultado_nfse.json'), json.dumps(resultado, ensure_ascii=False))
@@ -3645,6 +3668,8 @@ def parse_nfse_xml(path):
     if v_ret_cp:
         retencoes_detalhe.append({'tributo': 'INSS (Contrib. Previdenciária)', 'valor': v_ret_cp})
     total_retido = round(sum(r['valor'] for r in retencoes_detalhe), 2)
+    # achado real (nota com só IRRF retido, ISS "não retido"): retenção federal também conta
+    retido = retido or total_retido > 0
 
     return {
         'chave': chave, 'nnfse': nnfse, 'competencia': dcompet,
@@ -3659,8 +3684,80 @@ def parse_nfse_xml(path):
     }
 
 
+def _destino_pdf(caminho_xml):
+    """Espelha o caminho do XML dentro da pasta PDF:
+    .../NFS-e/XML/Prestados/2026-08/<chave>.xml  ->  .../NFS-e/PDF/Prestados/2026-08/<chave>.pdf
+    (a marca .CANCELADA no nome também é mantida)."""
+    caminho_xml = os.path.abspath(caminho_xml)
+    partes = caminho_xml.replace('\\', '/').split('/')
+    if 'NFS-e' not in partes:
+        return re.sub(r'\.xml$', '.pdf', caminho_xml, flags=re.I)
+    i = len(partes) - 1 - partes[::-1].index('NFS-e')
+    resto = partes[i + 1:]
+    if resto and resto[0].upper() == 'XML':
+        resto = resto[1:]
+    resto[-1] = re.sub(r'\.xml$', '.pdf', resto[-1], flags=re.I)
+    return os.path.join(os.sep.join(partes[:i + 1]) or os.sep, 'PDF', *resto)
+
+
+def migrar_estrutura_nfse(pasta_nfse):
+    """Estrutura antiga: NFS-e/Prestados|Tomados/AAAA-MM/x.xml. Nova: NFS-e/XML/... (e NFS-e/PDF/...).
+    Move o que estiver na estrutura antiga pra dentro de XML, sem perder nada. Devolve quantos moveu."""
+    movidos = 0
+    for sub in ('Prestados', 'Tomados'):
+        raiz = os.path.join(pasta_nfse, sub)
+        if not os.path.isdir(raiz):
+            continue
+        for atual, _dirs, arquivos in os.walk(raiz):
+            for nome in arquivos:
+                origem = os.path.join(atual, nome)
+                rel = os.path.relpath(origem, pasta_nfse)
+                destino = os.path.join(pasta_nfse, 'XML', rel)
+                os.makedirs(os.path.dirname(destino), exist_ok=True)
+                os.replace(origem, destino)
+                movidos += 1
+        for atual, _dirs, _arqs in os.walk(raiz, topdown=False):
+            try:
+                os.rmdir(atual)
+            except OSError:
+                pass
+    return movidos
+
+
+def _gerar_pdf_nfse(caminho_xml):
+    """Gera o DANFSe (PDF) do XML na pasta PDF espelhada. Devolve o caminho do PDF."""
+    import nfse_danfse
+    destino = _destino_pdf(caminho_xml)
+    cancelada = caminho_xml.upper().endswith('.CANCELADA.XML')
+    nfse_danfse.xml_para_pdf(caminho_xml, destino, cancelada=cancelada)
+    if cancelada:  # o PDF antigo, sem carimbo, deixa de valer
+        antigo = _destino_pdf(re.sub(r'\.CANCELADA\.xml$', '.xml', caminho_xml, flags=re.I))
+        try:
+            if os.path.exists(antigo):
+                os.remove(antigo)
+        except OSError:
+            pass
+    return destino
+
+
+def garantir_pdf_nfse(pasta_empresa, chave):
+    """Acha o XML da nota pela chave, gera o PDF se ainda não existir (ou se o XML for
+    mais novo) e devolve o caminho do PDF."""
+    pasta_nfse = os.path.join(pasta_empresa, 'NFS-e')
+    migrar_estrutura_nfse(pasta_nfse)
+    achados = glob.glob(os.path.join(pasta_nfse, 'XML', '**', f'{chave}*.xml'), recursive=True)
+    if not achados:
+        raise FileNotFoundError('Não achei o XML dessa nota na pasta — baixe o período de novo.')
+    achados.sort(key=lambda x: (0 if x.upper().endswith('.CANCELADA.XML') else 1, x))
+    xml = achados[0]
+    pdf = _destino_pdf(xml)
+    if (not os.path.exists(pdf)) or os.path.getmtime(pdf) < os.path.getmtime(xml):
+        _gerar_pdf_nfse(xml)
+    return pdf
+
+
 def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome_empresa, cnpj_empresa,
-                     nsu_inicial=0, homologacao=False, progresso=None):
+                     nsu_inicial=0, homologacao=False, progresso=None, gerar_pdf=True):
     """Baixa NFS-e (emitidas e recebidas) via ADN, filtrando pelo período
     pedido. Salva em pasta_base/nome_empresa/NFS-e/Prestados|Tomados/AAAA-MM/chave.xml"""
     import gzip
@@ -3688,6 +3785,11 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                     _time.sleep(2 * tentativa)
         raise ultimo_erro
 
+    pasta_nfse = os.path.join(pasta_base, nome_empresa, 'NFS-e')
+    try:
+        migrar_estrutura_nfse(pasta_nfse)
+    except OSError:
+        pass
     cert_path_pem, key_path_pem, tmp_dir = _extrair_cert_chave_temp(cert_path, senha)
     base_url = 'https://adn.producaorestrita.nfse.gov.br' if homologacao else 'https://adn.nfse.gov.br'
     salvos, ignorados_fora_periodo, paginas = 0, 0, 0
@@ -3840,24 +3942,34 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     # (o evento podia ter chegado antes OU depois da nota na sequência do
     # NSU) — grava com sufixo .CANCELADA no nome quando for o caso, pra
     # ficar visível no Explorer e a análise saber excluir dos totais.
+    pdfs_gerados, pdfs_erro = 0, 0
     for chave, xml_texto, subpasta, competencia in notas_brutas:
-        pasta_destino = os.path.join(pasta_base, nome_empresa, 'NFS-e', subpasta, competencia)
-        os.makedirs(pasta_destino, exist_ok=True)
-        if chave in chaves_canceladas:
-            nome_arquivo = f'{chave}.CANCELADA.xml'
+        pasta_xml = os.path.join(pasta_nfse, 'XML', subpasta, competencia)
+        os.makedirs(pasta_xml, exist_ok=True)
+        normal = os.path.join(pasta_xml, f'{chave}.xml')
+        cancelado = os.path.join(pasta_xml, f'{chave}.CANCELADA.xml')
+        if chave in chaves_canceladas or os.path.exists(cancelado):
+            destino = cancelado
             canceladas_qtd += 1
+            if os.path.exists(normal):
+                os.remove(normal)  # a mesma nota não pode existir como autorizada E cancelada
         else:
-            nome_arquivo = f'{chave}.xml'
-        caminho_arquivo = os.path.join(pasta_destino, nome_arquivo)
-        with open(caminho_arquivo, 'w', encoding='utf-8') as f:
+            destino = normal
+        with open(destino, 'w', encoding='utf-8') as f:
             f.write(xml_texto)
         salvos += 1
+        if gerar_pdf:
+            try:
+                _gerar_pdf_nfse(destino)
+                pdfs_gerados += 1
+            except Exception:
+                pdfs_erro += 1
 
     return {
         'erro': erro, 'salvos': salvos, 'ignorados_fora_periodo': ignorados_fora_periodo,
-        'canceladas': canceladas_qtd,
+        'canceladas': canceladas_qtd, 'pdfs_gerados': pdfs_gerados, 'pdfs_erro': pdfs_erro,
         'paginas_lidas': paginas, 'ultimo_nsu': ultimo_nsu_visto,
-        'pasta': os.path.join(pasta_base, nome_empresa, 'NFS-e'),
+        'pasta': pasta_nfse,
     }
 
 
@@ -3879,6 +3991,8 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
     dt_ini = _dt.strptime(data_inicial, '%Y-%m-%d').date() if data_inicial else None
     dt_fim = _dt.strptime(data_final, '%Y-%m-%d').date() if data_final else None
 
+    canc = {os.path.basename(p)[:-len('.CANCELADA.xml')] for p in caminhos if p.upper().endswith('.CANCELADA.XML')}
+    caminhos = [p for p in caminhos if p.upper().endswith('.CANCELADA.XML') or os.path.basename(p)[:-4] not in canc]
     notas = []
     for p in caminhos:
         cancelada = p.upper().endswith('.CANCELADA.XML')
@@ -3976,13 +4090,17 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
             return '<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#fcebeb;color:#c92a2a;font-weight:800;font-size:12px" title="Cancelada">✗</span>'
         return '<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#eaf3de;color:#3b6d11;font-weight:800;font-size:12px" title="Autorizada">✓</span>'
 
+    def _btn_pdf(n):
+        return (f'<td class="col-pdf" style="text-align:center"><button type="button" class="btn-pdf" data-chave="{_esc(n["chave"])}" '
+                'title="Abrir o PDF (DANFSe) desta nota — gera na hora se ainda não existir">PDF</button></td>')
+
     def _linha_sem(n):
         opacidade = 'opacity:.6' if n.get('cancelada') else ''
         return (f'<tr style="{opacidade}"><td style="text-align:center">{_selo_status(n)}</td>'
                 f'<td>{_esc(n["competencia"])}</td><td>NFS-e {_esc(n["nnfse"])}</td>'
                 f'<td style="font-family:monospace;font-size:9.5px;word-break:break-all">{_esc(n["chave"])}</td>'
                 f'<td>{_esc(n["parceiro_nome"])[:30]}<br><span style="font-size:10px;color:var(--ink2)">{_doc(n)}</span></td>'
-                f'<td style="text-align:right;{"text-decoration:line-through" if n.get("cancelada") else ""}">R$ {_brl(n["vserv"])}</td></tr>')
+                f'<td style="text-align:right;{"text-decoration:line-through" if n.get("cancelada") else ""}">R$ {_brl(n["vserv"])}</td>' + _btn_pdf(n) + '</tr>')
 
     def _linha_com(n, prefixo, idx):
         det_id = f'ret-{prefixo}-{idx}'
@@ -4004,16 +4122,17 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
             f'<td style="font-family:monospace;font-size:9.5px;word-break:break-all">{_esc(n["chave"])}</td>'
             f'<td>{_esc(n["parceiro_nome"])[:26]}<br><span style="font-size:10px;color:var(--ink2)">{_doc(n)}</span></td>'
             f'<td style="text-align:right;color:#e8632b;font-weight:700;{"text-decoration:line-through" if n.get("cancelada") else ""}">R$ {_brl(n["vserv"])}</td>'
-            f'<td style="text-align:center"><span class="btn-mais" id="mais-{det_id}">+</span></td></tr>'
-            f'<tr id="{det_id}" class="linha-detalhe" style="display:none"><td colspan="7" style="padding:4px 8px 12px">{detalhe_html}</td></tr>'
+            f'<td style="text-align:center"><span class="btn-mais" id="mais-{det_id}">+</span></td>' + _btn_pdf(n) + '</tr>'
+            f'<tr id="{det_id}" class="linha-detalhe" style="display:none"><td colspan="8" style="padding:4px 8px 12px">{detalhe_html}</td></tr>'
         )
 
-    def _rodape_totais(validas, canceladas, colspan, extra=''):
-        linhas = (f'<tr style="font-weight:700;border-top:2px solid var(--navy)"><td colspan="{colspan-1}" style="padding:9px 8px">Total autorizadas ({len(validas)} nota(s)){extra}</td>'
-                  f'<td style="text-align:right;padding:9px 8px">R$ {_brl(sum(n["vserv"] for n in validas))}</td><td></td></tr>')
+    def _rodape_totais(validas, canceladas, n_depois, extra=''):
+        vazias = '<td></td>' * n_depois
+        linhas = (f'<tr style="font-weight:700;border-top:2px solid var(--navy)"><td colspan="5" style="padding:9px 8px">Total autorizadas ({len(validas)} nota(s)){extra}</td>'
+                  f'<td style="text-align:right;padding:9px 8px">R$ {_brl(sum(n["vserv"] for n in validas))}</td>{vazias}</tr>')
         if canceladas:
-            linhas += (f'<tr style="color:#c92a2a;font-size:12px"><td colspan="{colspan-1}" style="padding:6px 8px">Total canceladas ({len(canceladas)} nota(s)) — não soma no total acima</td>'
-                       f'<td style="text-align:right;padding:6px 8px">R$ {_brl(sum(n["vserv"] for n in canceladas))}</td><td></td></tr>')
+            linhas += (f'<tr style="color:#c92a2a;font-size:12px"><td colspan="5" style="padding:6px 8px">Total canceladas ({len(canceladas)} nota(s)) — não soma no total acima</td>'
+                       f'<td style="text-align:right;padding:6px 8px">R$ {_brl(sum(n["vserv"] for n in canceladas))}</td>{vazias}</tr>')
         return linhas
 
     def _tabela_sem(notas):
@@ -4028,9 +4147,10 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Nota</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Chave de acesso</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Parceiro</th>'
-                f'<th style="text-align:right;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Valor</th></tr></thead>'
+                f'<th style="text-align:right;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Valor</th>'
+                f'<th class="col-pdf" style="text-align:center;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">DANFSe</th></tr></thead>'
                 f'<tbody>{rows}</tbody>'
-                f'<tfoot>{_rodape_totais(validas, canceladas, 5)}</tfoot></table>')
+                f'<tfoot>{_rodape_totais(validas, canceladas, 1)}</tfoot></table>')
 
     def _tabela_com(notas, prefixo):
         if not notas:
@@ -4046,9 +4166,10 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Chave de acesso</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Parceiro</th>'
                 f'<th style="text-align:right;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Valor</th>'
-                f'<th style="text-align:center;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Retenção</th></tr></thead>'
+                f'<th style="text-align:center;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Retenção</th>'
+                f'<th class="col-pdf" style="text-align:center;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">DANFSe</th></tr></thead>'
                 f'<tbody>{rows}</tbody>'
-                f'<tfoot>{_rodape_totais(validas, canceladas, 6, retido_str)}</tfoot></table>')
+                f'<tfoot>{_rodape_totais(validas, canceladas, 2, retido_str)}</tfoot></table>')
 
     prestados_com = [n for n in dados['notas_com_retencao'] if n['papel'] == 'emitida']
     prestados_sem = [n for n in dados['notas_sem_retencao'] if n['papel'] == 'emitida']
@@ -4088,6 +4209,9 @@ td,th{{border-bottom:1px solid var(--line)}}
 .btn-mais{{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;
   background:#e8632b;color:#fff;font-weight:800;font-size:13px;transition:transform .2s}}
 .btn-mais.aberto{{transform:rotate(45deg)}}
+.btn-pdf{{border:1px solid #c9ceea;background:#fff;color:#1f2a5a;border-radius:7px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer}}
+.btn-pdf:hover{{background:#eef0ff}}
+body.standalone .col-pdf{{display:none}}
 .dtip{{position:fixed;pointer-events:none;z-index:9999;background:var(--navy,#1f2a5a);color:#fff;
   font-size:11.5px;font-weight:600;padding:8px 11px;border-radius:9px;box-shadow:0 8px 22px rgba(0,0,0,.28);
   white-space:nowrap;opacity:0;transform:translate(-50%,-115%);transition:opacity .1s;top:0;left:0}}
@@ -4121,6 +4245,15 @@ td,th{{border-bottom:1px solid var(--line)}}
 
 <div class="card"><div style="font-size:11.5px;color:var(--ink2)">"Com retenção" considera ISS (tpRetISSQN) e PIS/COFINS/CSLL/IRRF/INSS retidos na fonte.</div></div>
 <script>
+(function(){{
+  if (window.parent === window) document.body.classList.add('standalone');
+  document.querySelectorAll('.btn-pdf').forEach(function(b){{
+    b.addEventListener('click', function(ev){{
+      ev.stopPropagation();
+      window.parent.postMessage({{tipo:'fiscocont-nfse-pdf', chave:b.dataset.chave}}, '*');
+    }});
+  }});
+}})();
 document.querySelectorAll('.lb-ret').forEach(function(tr){{
   tr.addEventListener('click', function(){{
     var alvo = document.getElementById(tr.dataset.alvo);

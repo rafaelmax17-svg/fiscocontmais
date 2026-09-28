@@ -661,7 +661,7 @@ ipcMain.handle('fiscal:nfseExportarHtml', async (_evt, { html, tipo, empresaNome
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
-ipcMain.handle('fiscal:nfseBaixar', async (_evt, { empresaId, dataInicial, dataFinal }) => {
+ipcMain.handle('fiscal:nfseBaixar', async (_evt, { empresaId, dataInicial, dataFinal, gerarPdf }) => {
   const indice = _lerIndiceCert();
   const empresa = indice.empresas.find((e) => e.id === empresaId);
   if (!empresa) return { error: 'Empresa não encontrada — cadastre o certificado primeiro.' };
@@ -692,6 +692,7 @@ ipcMain.handle('fiscal:nfseBaixar', async (_evt, { empresaId, dataInicial, dataF
     const args = ['baixar-nfse', pfxPath, '--senha', senha, '--empresa', empresa.razaoSocial,
       '--cnpj', empresa.cnpj, '--pasta', pastaBase, '--inicio', dataInicial, '--fim', dataFinal,
       '--nsu', '0', '--json', jsonTmp];
+    if (gerarPdf === false) args.push('--sem-pdf');
     await runFiscal(args, jsonTmp);
     const resultado = JSON.parse(fs.readFileSync(jsonTmp, 'utf-8'));
     fs.unlink(jsonTmp, () => {});
@@ -701,6 +702,25 @@ ipcMain.handle('fiscal:nfseBaixar', async (_evt, { empresaId, dataInicial, dataF
       _salvarIndiceCert(indice);
     }
     return resultado.erro ? { error: resultado.erro } : { ok: true, resultado };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
+ipcMain.handle('fiscal:nfsePdfAbrir', async (_evt, { empresaId, chave }) => {
+  const indice = _lerIndiceCert();
+  const empresa = indice.empresas.find((e) => e.id === empresaId);
+  if (!empresa) return { error: 'Empresa não encontrada.' };
+  let pastaBase;
+  try { pastaBase = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase; } catch (_) {}
+  if (!pastaBase) return { error: 'Escolha a pasta onde os documentos são salvos primeiro.' };
+  const pastaEmpresa = path.join(pastaBase, empresa.razaoSocial);
+  const jsonTmp = path.join(os.tmpdir(), `fc_nfse_pdf_${Date.now()}.json`);
+  try {
+    await runFiscal(['nfse-pdf-chave', pastaEmpresa, chave, '--json', jsonTmp], jsonTmp);
+    const res = JSON.parse(fs.readFileSync(jsonTmp, 'utf-8'));
+    fs.unlink(jsonTmp, () => {});
+    if (res.erro) return { error: res.erro };
+    shell.openPath(res.pdf);
+    return { ok: true, pdf: res.pdf };
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
