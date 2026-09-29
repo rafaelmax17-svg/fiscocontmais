@@ -2144,8 +2144,13 @@ function bindNewsToast() {
       linkTestar.textContent = 'testando…';
       const res = await window.fiscocont.news.testarAgora();
       linkTestar.textContent = textoOriginal;
-      if (res.ok) {
-        toast(`Feed OK (compressão: ${res.codificacao}) — ${res.itensNoFeed} notícia(s) no feed, ${res.itensPermitidos} da(s) categoria(s) escolhida(s).`, false);
+      if (res.desativado) {
+        const extra = res.ok ? '' : ` (a busca também falhou: ${res.motivo})`;
+        toast('As notícias estão DESATIVADAS nesta máquina — é por isso que o balão não aparece sozinho. Clique em "notícias: desativadas" no rodapé pra reativar.' + extra, true);
+      } else if (res.ok) {
+        let msg = `Feed OK (compressão: ${res.codificacao}) — ${res.itensNoFeed} notícia(s) no feed, ${res.itensPermitidos} da(s) categoria(s) escolhida(s), ${res.itensNovos} ainda não mostrada(s).`;
+        if (res.itensNovos === 0 && res.itensPermitidos > 0) msg += ' Todas já foram marcadas como vistas — a próxima notícia nova é que vai aparecer.';
+        toast(msg, false);
       } else {
         toast(`Não consegui buscar as notícias: ${res.motivo}`, true);
       }

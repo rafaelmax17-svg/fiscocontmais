@@ -208,7 +208,7 @@ app.on('window-all-closed', () => {
 // site), só reduz o atraso até a equipe ver uma notícia nova.
 const NEWS_RSS_URL = 'https://www.contabeis.com.br/rss/noticias/';
 const NEWS_CATEGORIAS_PERMITIDAS = ['Tributário', 'Contábil', 'Empresarial'];
-const NEWS_INTERVALO_MS = 1 * 60 * 1000;
+const NEWS_INTERVALO_MS = 40 * 1000;
 let newsTimer = null;
 
 function _newsConfigPath() {
@@ -322,22 +322,24 @@ ipcMain.handle('news:ativar', () => { const c = _newsLerConfig(); c.desativado =
 ipcMain.handle('news:abrirLink', (_evt, url) => { if (/^https:\/\//.test(url || '')) shell.openExternal(url); });
 
 ipcMain.handle('news:testarAgora', () => new Promise((resolve) => {
+  const cfg = _newsLerConfig();
   _newsBuscarUrl(NEWS_RSS_URL, 5, (erro, dados, codificacao) => {
     if (erro) {
       const motivo = String(erro.message || erro);
       _newsLog({ ok: false, motivo });
-      resolve({ ok: false, motivo });
+      resolve({ ok: false, motivo, desativado: cfg.desativado });
       return;
     }
     try {
       const todos = _newsParseRss(dados);
       const permitidos = todos.filter((i) => NEWS_CATEGORIAS_PERMITIDAS.includes(i.categoria));
-      _newsLog({ ok: true, codificacao, itensNoFeed: todos.length, itensNovos: permitidos.length, teste: true });
-      resolve({ ok: true, codificacao, itensNoFeed: todos.length, itensPermitidos: permitidos.length });
+      const novos = permitidos.filter((i) => i.guid && !cfg.vistos.includes(i.guid));
+      _newsLog({ ok: true, codificacao, itensNoFeed: todos.length, itensNovos: novos.length, teste: true, desativadoNaHora: cfg.desativado });
+      resolve({ ok: true, codificacao, itensNoFeed: todos.length, itensPermitidos: permitidos.length, itensNovos: novos.length, desativado: cfg.desativado });
     } catch (e) {
       const motivo = 'Erro ao interpretar o feed: ' + String(e.message || e);
       _newsLog({ ok: false, motivo });
-      resolve({ ok: false, motivo });
+      resolve({ ok: false, motivo, desativado: cfg.desativado });
     }
   });
 }));
