@@ -466,6 +466,26 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
   display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(232,99,43,.4);font-size:24px}
 .ia-dot{position:absolute;top:-1px;right:-1px;width:13px;height:13px;background:#0ea472;border-radius:50%;border:2px solid #fff}
 .ia-bubble.hide{display:none}
+
+/* ===== Balão de notícias contábeis ===== */
+.news-toast{position:fixed;right:26px;bottom:92px;width:300px;background:#fff;border-radius:12px;
+  box-shadow:0 8px 22px rgba(31,42,90,.18);overflow:hidden;z-index:8999;cursor:pointer;animation:newsIn .25s ease}
+.news-toast[hidden]{display:none}
+@keyframes newsIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.news-toast .nt-top{padding:12px 14px 10px}
+.news-toast .nt-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.news-toast .nt-cat{font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:6px}
+.news-toast .nt-cat.trib{background:#faeeda;color:#854f0b}
+.news-toast .nt-cat.cont{background:#e1f5ee;color:#085041}
+.news-toast .nt-cat.emp{background:#e6f1fb;color:#0c447c}
+.news-toast .nt-src{font-size:10px;color:var(--ink2);margin-left:auto}
+.news-toast .nt-x{font-size:13px;color:var(--ink2);cursor:pointer;padding:2px;line-height:1}
+.news-toast .nt-title{font-size:12.5px;color:var(--ink);line-height:1.4}
+.news-toast .nt-off{font-size:10.5px;color:var(--ink2);margin-top:8px;text-decoration:underline;cursor:pointer;width:fit-content}
+.news-toast .nt-off:hover{color:var(--navy,#1f2a5a)}
+.news-toast .nt-bar{height:3px;background:#eef0f6}
+.news-toast .nt-bar-fill{height:100%;background:#e8632b;width:100%}
+.news-toast .nt-bar-fill.correndo{transition:width 10s linear;width:0%}
 .ia-panel{position:fixed;right:26px;bottom:24px;width:370px;height:520px;background:#fff;border-radius:18px;
   box-shadow:0 20px 50px rgba(31,42,90,.28);display:flex;flex-direction:column;overflow:hidden;z-index:9001}
 .ia-phead{background:linear-gradient(120deg,#1f2a5a,#2b3a72);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:10px}

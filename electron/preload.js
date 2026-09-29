@@ -102,4 +102,11 @@ contextBridge.exposeInMainWorld('fiscocont', {
     isMaximized: () => ipcRenderer.invoke('win:isMaximized'),
     onMaximize: (cb) => ipcRenderer.on('win:maximized', (_e, v) => cb(v)),
   },
+  news: {
+    status: () => ipcRenderer.invoke('news:status'),
+    desativar: () => ipcRenderer.invoke('news:desativar'),
+    ativar: () => ipcRenderer.invoke('news:ativar'),
+    abrirLink: (url) => ipcRenderer.invoke('news:abrirLink', url),
+    onNovo: (cb) => ipcRenderer.on('news:novo', (_e, item) => cb(item)),
+  },
 });

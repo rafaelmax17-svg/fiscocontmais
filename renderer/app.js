@@ -2060,6 +2060,81 @@ async function loadHistoricoDaEmpresa(cnpj) {
   });
 }
 
+// Balão de notícias contábeis — não intrusivo: 1 por vez (fila se chegar
+// outra enquanto uma está na tela), some sozinho em 10s, clique abre o
+// link, "Desativar notícias" pra quem não quiser ver mais (por máquina).
+function bindNewsToast() {
+  const toast = $('#newsToast');
+  if (!toast || !window.fiscocont.news) return;
+  const cat = $('#newsCat'), titulo = $('#newsTitle'), barra = $('#newsBar');
+  const fila = [];
+  let mostrando = false, timerSumir = null;
+
+  const CLASSE_CAT = { 'Tributário': 'trib', 'Contábil': 'cont', 'Empresarial': 'emp' };
+
+  function esconder() {
+    clearTimeout(timerSumir);
+    toast.hidden = true;
+    barra.classList.remove('correndo');
+    mostrando = false;
+    if (fila.length) setTimeout(mostrarProxima, 400);
+  }
+
+  function mostrarProxima() {
+    if (mostrando || !fila.length) return;
+    const item = fila.shift();
+    mostrando = true;
+    cat.textContent = item.categoria;
+    cat.className = 'nt-cat ' + (CLASSE_CAT[item.categoria] || 'trib');
+    titulo.textContent = item.titulo;
+    toast.dataset.link = item.link;
+    toast.hidden = false;
+    barra.classList.remove('correndo');
+    void barra.offsetWidth; // força reiniciar a animação a cada notícia
+    requestAnimationFrame(() => barra.classList.add('correndo'));
+    timerSumir = setTimeout(esconder, 10000);
+  }
+
+  window.fiscocont.news.onNovo((item) => { fila.push(item); mostrarProxima(); });
+
+  toast.addEventListener('click', (ev) => {
+    if (ev.target.id === 'newsClose' || ev.target.id === 'newsDesativar') return;
+    if (toast.dataset.link) window.fiscocont.news.abrirLink(toast.dataset.link);
+    esconder();
+  });
+  $('#newsClose').addEventListener('click', (ev) => { ev.stopPropagation(); esconder(); });
+  $('#newsDesativar').addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    await window.fiscocont.news.desativar();
+    fila.length = 0;
+    esconder();
+    atualizarLinkRodape();
+    toast.hidden = false;
+    cat.textContent = ''; cat.className = 'nt-cat';
+    barra.classList.remove('correndo');
+    titulo.textContent = 'Notícias desativadas — pode reativar no rodapé do menu, a qualquer momento.';
+    setTimeout(() => { toast.hidden = true; }, 5000);
+  });
+
+  // Link no rodapé do menu: sempre visível, pra reativar sem precisar
+  // esperar aparecer outra notícia.
+  const linkRodape = $('#newsToggleLink');
+  async function atualizarLinkRodape() {
+    if (!linkRodape) return;
+    const status = await window.fiscocont.news.status();
+    linkRodape.textContent = status === 'desativado' ? '📰 notícias: desativadas (reativar)' : '📰 notícias: ativas (desativar)';
+  }
+  if (linkRodape) {
+    linkRodape.addEventListener('click', async () => {
+      const status = await window.fiscocont.news.status();
+      if (status === 'desativado') await window.fiscocont.news.ativar();
+      else await window.fiscocont.news.desativar();
+      await atualizarLinkRodape();
+    });
+    atualizarLinkRodape();
+  }
+}
+
 function bindChatIA() {
   const bubble = $('#iaBubble');
   const panel = $('#iaPanel');
@@ -2334,6 +2409,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   bindConciliacao();
   bindNotasFaltantes();
   bindChatIA();
+  bindNewsToast();
   $('#btnImport').addEventListener('click', doImport);
   $('#btnImport2').addEventListener('click', doImport);
   $('#btnExport').addEventListener('click', doExport);

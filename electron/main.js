@@ -168,6 +168,9 @@ app.whenReady().then(() => {
   updater.initAutoUpdate(() => mainWindow);
   setTimeout(() => updater.checkNow(), 15000); // não compete com a abertura do app
 
+  setTimeout(_newsChecar, 20000); // 1ª checagem, sem competir com a abertura
+  newsTimer = setInterval(_newsChecar, NEWS_INTERVALO_MS);
+
   // Bloqueio remoto em tempo real: assim que o Admin ativa/bloqueia esta
   // máquina no Firestore, o app fica sabendo em segundos.
   license.startLicenseListener(
@@ -189,8 +192,81 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (lastJsonPath) { try { fs.unlinkSync(lastJsonPath); } catch (_) {} }
+  if (newsTimer) clearInterval(newsTimer);
   if (process.platform !== 'darwin') app.quit();
 });
+
+// ---------------------------------------------------------------------------
+// Canal de notícias contábeis (balão não intrusivo, some sozinho)
+// ---------------------------------------------------------------------------
+// Fonte: RSS oficial do Portal Contábeis — pesquisei e testei antes de
+// implementar (28/09): feed real, atualiza a cada 30min-1h em dia útil,
+// bem estruturado (título/link/categoria). Só mostra as categorias que o
+// Rafael pediu (Simples Nacional já vem classificado como "Tributário" na
+// própria fonte, não precisa de regra à parte). Checa a cada 3 min — não
+// muda quantos balões aparecem (isso depende do ritmo de publicação do
+// site), só reduz o atraso até a equipe ver uma notícia nova.
+const NEWS_RSS_URL = 'https://www.contabeis.com.br/rss/noticias/';
+const NEWS_CATEGORIAS_PERMITIDAS = ['Tributário', 'Contábil', 'Empresarial'];
+const NEWS_INTERVALO_MS = 3 * 60 * 1000;
+let newsTimer = null;
+
+function _newsConfigPath() {
+  return path.join(app.getPath('userData'), 'news-config.json');
+}
+function _newsLerConfig() {
+  try { return JSON.parse(fs.readFileSync(_newsConfigPath(), 'utf-8')); }
+  catch (_) { return { desativado: false, vistos: [] }; }
+}
+function _newsSalvarConfig(cfg) {
+  try { fs.writeFileSync(_newsConfigPath(), JSON.stringify(cfg)); } catch (_) {}
+}
+
+// Parser simples e direto pro formato real do feed (testado contra a
+// resposta de verdade do Portal Contábeis) — sem precisar de dependência
+// nova só pra isso.
+function _newsParseRss(xml) {
+  const itens = [];
+  const blocos = xml.split('<item>').slice(1);
+  for (const bloco of blocos) {
+    const corpo = bloco.split('</item>')[0];
+    const pega = (tag) => {
+      const m = corpo.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</${tag}>`));
+      return m ? m[1].trim() : '';
+    };
+    const catM = corpo.match(/<category[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/category>/);
+    itens.push({ titulo: pega('title'), link: pega('link'), guid: pega('guid'), categoria: catM ? catM[1].trim() : '' });
+  }
+  return itens;
+}
+
+function _newsChecar() {
+  const cfg = _newsLerConfig();
+  if (cfg.desativado || !mainWindow) return;
+  const https = require('https');
+  https.get(NEWS_RSS_URL, { headers: { 'User-Agent': 'FiscoCont+' } }, (res) => {
+    let dados = '';
+    res.on('data', (d) => { dados += d; });
+    res.on('end', () => {
+      try {
+        const itens = _newsParseRss(dados)
+          .filter((i) => NEWS_CATEGORIAS_PERMITIDAS.includes(i.categoria))
+          .filter((i) => i.guid && !cfg.vistos.includes(i.guid));
+        if (!itens.length) return;
+        // só a mais nova de cada checagem — nunca empilha vários balões juntos
+        const nova = itens[0];
+        cfg.vistos = [nova.guid, ...cfg.vistos].slice(0, 300);
+        _newsSalvarConfig(cfg);
+        if (mainWindow) mainWindow.webContents.send('news:novo', nova);
+      } catch (_) {}
+    });
+  }).on('error', () => {});
+}
+
+ipcMain.handle('news:status', () => (_newsLerConfig().desativado ? 'desativado' : 'ativo'));
+ipcMain.handle('news:desativar', () => { const c = _newsLerConfig(); c.desativado = true; _newsSalvarConfig(c); return true; });
+ipcMain.handle('news:ativar', () => { const c = _newsLerConfig(); c.desativado = false; _newsSalvarConfig(c); return true; });
+ipcMain.handle('news:abrirLink', (_evt, url) => { if (/^https:\/\//.test(url || '')) shell.openExternal(url); });
 
 // ---------------------------------------------------------------------------
 // IPC: escolher o PDF (sem overlay durante a seleção)
