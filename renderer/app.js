@@ -2096,6 +2096,11 @@ function bindNewsToast() {
   }
 
   window.fiscocont.news.onNovo((item) => { fila.push(item); mostrarProxima(); });
+  // avisa o main process que já pode começar a checar — sem isso, ele usava
+  // um tempo fixo chutado (achado real, 30/09): numa rede mais lenta, o
+  // aviso de licença podia demorar mais que esse tempo, e a notícia era
+  // "enviada" antes da tela estar ouvindo, se perdendo de vez.
+  window.fiscocont.news.avisarPronto();
 
   elBalao.addEventListener('click', (ev) => {
     if (ev.target.id === 'newsClose' || ev.target.id === 'newsDesativar') return;
@@ -2132,29 +2137,6 @@ function bindNewsToast() {
       await atualizarLinkRodape();
     });
     atualizarLinkRodape();
-  }
-
-  // "testar agora" — busca na hora (sem esperar o intervalo) e mostra o
-  // motivo exato se falhar, pra dar pra descobrir o problema sem precisar
-  // ficar esperando.
-  const linkTestar = $('#newsTestarLink');
-  if (linkTestar) {
-    linkTestar.addEventListener('click', async () => {
-      const textoOriginal = linkTestar.textContent;
-      linkTestar.textContent = 'testando…';
-      const res = await window.fiscocont.news.testarAgora();
-      linkTestar.textContent = textoOriginal;
-      if (res.desativado) {
-        const extra = res.ok ? '' : ` (a busca também falhou: ${res.motivo})`;
-        toast('As notícias estão DESATIVADAS nesta máquina — é por isso que o balão não aparece sozinho. Clique em "notícias: desativadas" no rodapé pra reativar.' + extra, true);
-      } else if (res.ok) {
-        let msg = `Feed OK (compressão: ${res.codificacao}) — ${res.itensNoFeed} notícia(s) no feed, ${res.itensPermitidos} da(s) categoria(s) escolhida(s), ${res.itensNovos} ainda não mostrada(s).`;
-        if (res.itensNovos === 0 && res.itensPermitidos > 0) msg += ' Todas já foram marcadas como vistas — a próxima notícia nova é que vai aparecer.';
-        toast(msg, false);
-      } else {
-        toast(`Não consegui buscar as notícias: ${res.motivo}`, true);
-      }
-    });
   }
 }
 

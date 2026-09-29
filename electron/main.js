@@ -168,8 +168,14 @@ app.whenReady().then(() => {
   updater.initAutoUpdate(() => mainWindow);
   setTimeout(() => updater.checkNow(), 15000); // não compete com a abertura do app
 
-  setTimeout(_newsChecar, 20000); // 1ª checagem, sem competir com a abertura
-  newsTimer = setInterval(_newsChecar, NEWS_INTERVALO_MS);
+  // achado real (Rafael, 30/09): NÃO começa por um tempo fixo chutado —
+  // a tela só está pronta pra RECEBER o balão depois que registra o
+  // listener (o que só acontece depois do await checkLicenseGate() no
+  // app.js, que pode demorar mais que qualquer número fixo numa rede mais
+  // lenta). Se checar antes disso, a notícia é "enviada" sem ninguém
+  // ouvindo do outro lado e se perde — foi exatamente isso que aconteceu:
+  // 20 notícias marcadas como vistas, nenhuma apareceu. Agora espera a
+  // própria tela avisar que está pronta (ver 'news:rendererPronto' abaixo).
 
   // Bloqueio remoto em tempo real: assim que o Admin ativa/bloqueia esta
   // máquina no Firestore, o app fica sabendo em segundos.
@@ -302,10 +308,19 @@ function _newsChecar() {
     if (erro) { _newsLog({ ok: false, motivo: String(erro.message || erro) }); return; }
     try {
       const todos = _newsParseRss(dados);
-      const itens = todos
-        .filter((i) => NEWS_CATEGORIAS_PERMITIDAS.includes(i.categoria))
-        .filter((i) => i.guid && !cfg.vistos.includes(i.guid));
-      _newsLog({ ok: true, codificacao, itensNoFeed: todos.length, itensNovos: itens.length });
+      const permitidos = todos.filter((i) => NEWS_CATEGORIAS_PERMITIDAS.includes(i.categoria));
+      let itens = permitidos.filter((i) => i.guid && !cfg.vistos.includes(i.guid));
+      let reiniciou = false;
+      // pedido do Rafael, 30/09: nunca fica "sem nada pra mostrar" — se já
+      // passou por todas as notícias disponíveis, esquece o que já foi
+      // visto e recomeça do início da lista atual (mantém sempre alguma
+      // notícia circulando, em vez de ficar quieto esperando algo genuinamente novo).
+      if (!itens.length && permitidos.length) {
+        cfg.vistos = [];
+        itens = permitidos;
+        reiniciou = true;
+      }
+      _newsLog({ ok: true, codificacao, itensNoFeed: todos.length, itensNovos: itens.length, reiniciou });
       if (!itens.length) return;
       // só a mais nova de cada checagem — nunca empilha vários balões juntos
       const nova = itens[0];
@@ -321,30 +336,15 @@ ipcMain.handle('news:desativar', () => { const c = _newsLerConfig(); c.desativad
 ipcMain.handle('news:ativar', () => { const c = _newsLerConfig(); c.desativado = false; _newsSalvarConfig(c); return true; });
 ipcMain.handle('news:abrirLink', (_evt, url) => { if (/^https:\/\//.test(url || '')) shell.openExternal(url); });
 
-ipcMain.handle('news:testarAgora', () => new Promise((resolve) => {
-  const cfg = _newsLerConfig();
-  _newsBuscarUrl(NEWS_RSS_URL, 5, (erro, dados, codificacao) => {
-    if (erro) {
-      const motivo = String(erro.message || erro);
-      _newsLog({ ok: false, motivo });
-      resolve({ ok: false, motivo, desativado: cfg.desativado });
-      return;
-    }
-    try {
-      const todos = _newsParseRss(dados);
-      const permitidos = todos.filter((i) => NEWS_CATEGORIAS_PERMITIDAS.includes(i.categoria));
-      const novos = permitidos.filter((i) => i.guid && !cfg.vistos.includes(i.guid));
-      _newsLog({ ok: true, codificacao, itensNoFeed: todos.length, itensNovos: novos.length, teste: true, desativadoNaHora: cfg.desativado });
-      resolve({ ok: true, codificacao, itensNoFeed: todos.length, itensPermitidos: permitidos.length, itensNovos: novos.length, desativado: cfg.desativado });
-    } catch (e) {
-      const motivo = 'Erro ao interpretar o feed: ' + String(e.message || e);
-      _newsLog({ ok: false, motivo });
-      resolve({ ok: false, motivo, desativado: cfg.desativado });
-    }
-  });
-}));
-ipcMain.handle('news:diagnostico', () => {
-  try { return JSON.parse(fs.readFileSync(_newsLogPath(), 'utf-8')); } catch (_) { return []; }
+// A tela avisa por aqui quando já registrou o listener de notícia — só a
+// partir desse aviso o relógio de checagem começa (substitui o tempo fixo
+// chutado, que foi a causa real do balão nunca aparecer).
+let newsRendererPronto = false;
+ipcMain.on('news:rendererPronto', () => {
+  if (newsRendererPronto) return; // só uma vez, mesmo que a tela recarregue
+  newsRendererPronto = true;
+  _newsChecar();
+  newsTimer = setInterval(_newsChecar, NEWS_INTERVALO_MS);
 });
 
 // ---------------------------------------------------------------------------

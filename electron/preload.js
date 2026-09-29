@@ -107,8 +107,7 @@ contextBridge.exposeInMainWorld('fiscocont', {
     desativar: () => ipcRenderer.invoke('news:desativar'),
     ativar: () => ipcRenderer.invoke('news:ativar'),
     abrirLink: (url) => ipcRenderer.invoke('news:abrirLink', url),
-    testarAgora: () => ipcRenderer.invoke('news:testarAgora'),
-    diagnostico: () => ipcRenderer.invoke('news:diagnostico'),
+    avisarPronto: () => ipcRenderer.send('news:rendererPronto'),
     onNovo: (cb) => ipcRenderer.on('news:novo', (_e, item) => cb(item)),
   },
 });
