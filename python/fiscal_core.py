@@ -4036,6 +4036,8 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
     sem_ret = [n for n in notas if not n['retido']]     # idem
     emitidas = sum(1 for n in validas if n['papel'] == 'emitida')
     recebidas = sum(1 for n in validas if n['papel'] == 'recebida')
+    valor_emitidas = round(sum(n['vserv'] for n in validas if n['papel'] == 'emitida'), 2)
+    valor_recebidas = round(sum(n['vserv'] for n in validas if n['papel'] == 'recebida'), 2)
 
     por_parceiro = {}
     for n in validas:  # cancelada não entra no ranking de parceiros
@@ -4058,6 +4060,7 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
         'qtd_sem_retencao': sum(1 for n in sem_ret if not n['cancelada']),
         'valor_sem_retencao': round(sum(n['vserv'] for n in sem_ret if not n['cancelada']), 2),
         'emitidas': emitidas, 'recebidas': recebidas,
+        'valor_emitidas': valor_emitidas, 'valor_recebidas': valor_recebidas,
         'qtd_canceladas': len(canceladas), 'valor_canceladas': round(sum(n['vserv'] for n in canceladas), 2),
         'notas_com_retencao': sorted(com_ret, key=lambda n: n['competencia'], reverse=True),
         'notas_sem_retencao': sorted(sem_ret, key=lambda n: n['competencia'], reverse=True),
@@ -4067,6 +4070,59 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
 
 
 _NFSE_CORES = ['#e8632b', '#1f2a5a', '#0ea472', '#8b5cf6', '#d4711a', '#2563eb', '#db2777', '#14b8a6']
+
+
+def _bloco_prestados_tomados(dados):
+    """Comparativo Prestados × Tomados em colunas — pedido do Rafael, 29/09:
+    modelo de colunas verticais, animado (cresce do chão + número contando
+    ao carregar), grande, sem cortar texto. Fica entre os KPIs/avisos e o
+    resto do painel, porque Prestados×Tomados é a divisão de nível mais alto
+    (antes até do com×sem retenção, que é uma subdivisão de cada um)."""
+    ve, vr = dados.get('valor_emitidas', 0), dados.get('valor_recebidas', 0)
+    maior = max(ve, vr, 1)
+    # altura mínima visível pra coluna não "sumir" quando um lado é muito
+    # maior que o outro (achado real testando com dados de verdade, 29/09)
+    alt_p = max(6, round(160 * ve / maior)) if ve else 0
+    alt_t = max(6, round(160 * vr / maior)) if vr else 0
+    return f'''<div class="card">
+  <h3><span class="dot"></span>Serviços Prestados × Tomados</h3>
+  <div style="display:flex;align-items:flex-end;justify-content:center;gap:64px;height:220px;padding-top:12px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:10px;height:100%;justify-content:flex-end">
+      <span id="ptNumPrest" style="font-size:16px;font-weight:800;color:var(--navy)">R$ 0</span>
+      <div id="ptColPrest" style="width:96px;height:0px;background:#1f2a5a;border-radius:8px 8px 0 0;transition:height 1.1s cubic-bezier(.2,.8,.2,1)" data-alvo="{alt_p}"></div>
+      <span style="font-size:13px;color:var(--ink2)">Prestados · {dados.get('emitidas', 0)} nota(s)</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:10px;height:100%;justify-content:flex-end">
+      <span id="ptNumTom" style="font-size:16px;font-weight:800;color:#e8632b">R$ 0</span>
+      <div id="ptColTom" style="width:96px;height:0px;background:#e8632b;border-radius:8px 8px 0 0;transition:height 1.1s cubic-bezier(.2,.8,.2,1) .15s" data-alvo="{alt_t}"></div>
+      <span style="font-size:13px;color:var(--ink2)">Tomados · {dados.get('recebidas', 0)} nota(s)</span>
+    </div>
+  </div>
+</div>
+<script>
+(function(){{
+  requestAnimationFrame(function(){{
+    setTimeout(function(){{
+      var cp = document.getElementById('ptColPrest'), ct = document.getElementById('ptColTom');
+      cp.style.height = cp.dataset.alvo + 'px';
+      ct.style.height = ct.dataset.alvo + 'px';
+    }}, 150);
+  }});
+  function contar(id, alvo, atraso){{
+    var el = document.getElementById(id), inicio = null;
+    function passo(ts){{
+      if (!inicio) inicio = ts;
+      var p = Math.min(1, (ts - inicio) / 1100);
+      var facil = 1 - Math.pow(1 - p, 3);
+      el.textContent = 'R$ ' + Math.round(alvo * facil).toLocaleString('pt-BR');
+      if (p < 1) requestAnimationFrame(passo);
+    }}
+    setTimeout(function(){{ requestAnimationFrame(passo); }}, atraso);
+  }}
+  contar('ptNumPrest', {ve}, 150);
+  contar('ptNumTom', {vr}, 300);
+}})();
+</script>'''
 
 
 def _bloco_inconsistencias_piscofins(inconsistencias):
@@ -4263,6 +4319,7 @@ body.standalone .col-pdf{{display:none}}
 </div>
 {f'<div class="card" style="background:#fef3f2;border:1px solid #fecdca"><div style="font-size:12.5px;color:#7a1f1f">⚠ {dados["qtd_canceladas"]} nota(s) cancelada(s) foram baixadas mas ficaram de fora dos totais acima — arquivos salvos com .CANCELADA no nome, pra referência.</div></div>' if dados.get('qtd_canceladas') else ''}
 {_bloco_inconsistencias_piscofins(dados.get('inconsistencias_piscofins') or [])}
+{_bloco_prestados_tomados(dados)}
 <div class="grid2">
   <div class="card"><h3><span class="dot"></span>Com × sem retenção</h3>
     {"<div class='donut-row'><div class='donut'><svg width='170' height='170' viewBox='0 0 180 180'>" + arcs_ret + "</svg><div class='center'><div class='big'>" + str(total) + "</div><div class='sm'>notas</div></div></div><div class='legend'>" + legend_ret + "</div></div>" if segs_ret else "<div style='color:#0ea472;font-size:12.5px'>Nenhuma nota ainda.</div>"}
