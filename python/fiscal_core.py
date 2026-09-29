@@ -4088,12 +4088,12 @@ def _bloco_prestados_tomados(dados):
   <h3><span class="dot"></span>Serviços Prestados × Tomados</h3>
   <div style="display:flex;align-items:flex-end;justify-content:center;gap:64px;height:220px;padding-top:12px">
     <div style="display:flex;flex-direction:column;align-items:center;gap:10px;height:100%;justify-content:flex-end">
-      <span id="ptNumPrest" style="font-size:16px;font-weight:800;color:var(--navy)">R$ 0</span>
+      <span id="ptNumPrest" style="font-size:16px;font-weight:800;color:var(--navy)">R$ 0,00</span>
       <div id="ptColPrest" style="width:96px;height:0px;background:#1f2a5a;border-radius:8px 8px 0 0;transition:height 1.1s cubic-bezier(.2,.8,.2,1)" data-alvo="{alt_p}"></div>
       <span style="font-size:13px;color:var(--ink2)">Prestados · {dados.get('emitidas', 0)} nota(s)</span>
     </div>
     <div style="display:flex;flex-direction:column;align-items:center;gap:10px;height:100%;justify-content:flex-end">
-      <span id="ptNumTom" style="font-size:16px;font-weight:800;color:#e8632b">R$ 0</span>
+      <span id="ptNumTom" style="font-size:16px;font-weight:800;color:#e8632b">R$ 0,00</span>
       <div id="ptColTom" style="width:96px;height:0px;background:#e8632b;border-radius:8px 8px 0 0;transition:height 1.1s cubic-bezier(.2,.8,.2,1) .15s" data-alvo="{alt_t}"></div>
       <span style="font-size:13px;color:var(--ink2)">Tomados · {dados.get('recebidas', 0)} nota(s)</span>
     </div>
@@ -4114,7 +4114,7 @@ def _bloco_prestados_tomados(dados):
       if (!inicio) inicio = ts;
       var p = Math.min(1, (ts - inicio) / 1100);
       var facil = 1 - Math.pow(1 - p, 3);
-      el.textContent = 'R$ ' + Math.round(alvo * facil).toLocaleString('pt-BR');
+      el.textContent = 'R$ ' + (alvo * facil).toLocaleString('pt-BR', {{minimumFractionDigits: 2, maximumFractionDigits: 2}});
       if (p < 1) requestAnimationFrame(passo);
     }}
     setTimeout(function(){{ requestAnimationFrame(passo); }}, atraso);

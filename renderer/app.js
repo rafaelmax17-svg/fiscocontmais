@@ -2064,8 +2064,8 @@ async function loadHistoricoDaEmpresa(cnpj) {
 // outra enquanto uma está na tela), some sozinho em 10s, clique abre o
 // link, "Desativar notícias" pra quem não quiser ver mais (por máquina).
 function bindNewsToast() {
-  const toast = $('#newsToast');
-  if (!toast || !window.fiscocont.news) return;
+  const elBalao = $('#newsToast');
+  if (!elBalao || !window.fiscocont.news) return;
   const cat = $('#newsCat'), titulo = $('#newsTitle'), barra = $('#newsBar');
   const fila = [];
   let mostrando = false, timerSumir = null;
@@ -2074,7 +2074,7 @@ function bindNewsToast() {
 
   function esconder() {
     clearTimeout(timerSumir);
-    toast.hidden = true;
+    elBalao.hidden = true;
     barra.classList.remove('correndo');
     mostrando = false;
     if (fila.length) setTimeout(mostrarProxima, 400);
@@ -2087,8 +2087,8 @@ function bindNewsToast() {
     cat.textContent = item.categoria;
     cat.className = 'nt-cat ' + (CLASSE_CAT[item.categoria] || 'trib');
     titulo.textContent = item.titulo;
-    toast.dataset.link = item.link;
-    toast.hidden = false;
+    elBalao.dataset.link = item.link;
+    elBalao.hidden = false;
     barra.classList.remove('correndo');
     void barra.offsetWidth; // força reiniciar a animação a cada notícia
     requestAnimationFrame(() => barra.classList.add('correndo'));
@@ -2097,9 +2097,9 @@ function bindNewsToast() {
 
   window.fiscocont.news.onNovo((item) => { fila.push(item); mostrarProxima(); });
 
-  toast.addEventListener('click', (ev) => {
+  elBalao.addEventListener('click', (ev) => {
     if (ev.target.id === 'newsClose' || ev.target.id === 'newsDesativar') return;
-    if (toast.dataset.link) window.fiscocont.news.abrirLink(toast.dataset.link);
+    if (elBalao.dataset.link) window.fiscocont.news.abrirLink(elBalao.dataset.link);
     esconder();
   });
   $('#newsClose').addEventListener('click', (ev) => { ev.stopPropagation(); esconder(); });
@@ -2109,11 +2109,11 @@ function bindNewsToast() {
     fila.length = 0;
     esconder();
     atualizarLinkRodape();
-    toast.hidden = false;
+    elBalao.hidden = false;
     cat.textContent = ''; cat.className = 'nt-cat';
     barra.classList.remove('correndo');
     titulo.textContent = 'Notícias desativadas — pode reativar no rodapé do menu, a qualquer momento.';
-    setTimeout(() => { toast.hidden = true; }, 5000);
+    setTimeout(() => { elBalao.hidden = true; }, 5000);
   });
 
   // Link no rodapé do menu: sempre visível, pra reativar sem precisar
@@ -2132,6 +2132,24 @@ function bindNewsToast() {
       await atualizarLinkRodape();
     });
     atualizarLinkRodape();
+  }
+
+  // "testar agora" — busca na hora (sem esperar o intervalo) e mostra o
+  // motivo exato se falhar, pra dar pra descobrir o problema sem precisar
+  // ficar esperando.
+  const linkTestar = $('#newsTestarLink');
+  if (linkTestar) {
+    linkTestar.addEventListener('click', async () => {
+      const textoOriginal = linkTestar.textContent;
+      linkTestar.textContent = 'testando…';
+      const res = await window.fiscocont.news.testarAgora();
+      linkTestar.textContent = textoOriginal;
+      if (res.ok) {
+        toast(`Feed OK (compressão: ${res.codificacao}) — ${res.itensNoFeed} notícia(s) no feed, ${res.itensPermitidos} da(s) categoria(s) escolhida(s).`, false);
+      } else {
+        toast(`Não consegui buscar as notícias: ${res.motivo}`, true);
+      }
+    });
   }
 }
 

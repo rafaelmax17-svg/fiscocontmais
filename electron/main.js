@@ -240,33 +240,110 @@ function _newsParseRss(xml) {
   return itens;
 }
 
+// Registro de diagnóstico das últimas tentativas — como não dá pra testar
+// contra o site de verdade daqui (rede do ambiente de build bloqueia esse
+// domínio), guardo os últimos resultados (sucesso e erro) pra conseguir
+// investigar de longe se algo ainda falhar.
+function _newsLogPath() {
+  return path.join(app.getPath('userData'), 'news-log.json');
+}
+function _newsLog(entrada) {
+  let log = [];
+  try { log = JSON.parse(fs.readFileSync(_newsLogPath(), 'utf-8')); } catch (_) {}
+  log.unshift({ quando: new Date().toISOString(), ...entrada });
+  try { fs.writeFileSync(_newsLogPath(), JSON.stringify(log.slice(0, 30), null, 2)); } catch (_) {}
+}
+
+// Busca a URL seguindo redirecionamentos (até 5) e descompactando a
+// resposta de acordo com o Content-Encoding que o servidor mandar — sem
+// isso, um servidor que comprime a resposta (comum, mesmo sem eu pedir)
+// faria o programa receber dado ilegível e nunca achar nenhuma notícia,
+// sem erro nenhum aparecer. Foi o suspeito mais forte do problema relatado.
+function _newsBuscarUrl(url, tentativas, cb) {
+  const https = require('https');
+  const zlib = require('zlib');
+  if (tentativas <= 0) { cb(new Error('Redirecionado demais vezes')); return; }
+  https.get(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) FiscoCont+/1.0',
+      'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+      'Accept-Encoding': 'gzip, deflate, br',
+    },
+  }, (res) => {
+    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+      res.resume();
+      const proximo = new URL(res.headers.location, url).toString();
+      _newsBuscarUrl(proximo, tentativas - 1, cb);
+      return;
+    }
+    if (res.statusCode !== 200) {
+      res.resume();
+      cb(new Error(`HTTP ${res.statusCode}`));
+      return;
+    }
+    const codificacao = (res.headers['content-encoding'] || '').toLowerCase();
+    let fluxo = res;
+    try {
+      if (codificacao === 'gzip') fluxo = res.pipe(zlib.createGunzip());
+      else if (codificacao === 'deflate') fluxo = res.pipe(zlib.createInflate());
+      else if (codificacao === 'br') fluxo = res.pipe(zlib.createBrotliDecompress());
+    } catch (e) { cb(e); return; }
+    let dados = '';
+    fluxo.on('data', (d) => { dados += d; });
+    fluxo.on('end', () => cb(null, dados, codificacao || 'nenhuma'));
+    fluxo.on('error', (e) => cb(e));
+  }).on('error', (e) => cb(e));
+}
+
 function _newsChecar() {
   const cfg = _newsLerConfig();
   if (cfg.desativado || !mainWindow) return;
-  const https = require('https');
-  https.get(NEWS_RSS_URL, { headers: { 'User-Agent': 'FiscoCont+' } }, (res) => {
-    let dados = '';
-    res.on('data', (d) => { dados += d; });
-    res.on('end', () => {
-      try {
-        const itens = _newsParseRss(dados)
-          .filter((i) => NEWS_CATEGORIAS_PERMITIDAS.includes(i.categoria))
-          .filter((i) => i.guid && !cfg.vistos.includes(i.guid));
-        if (!itens.length) return;
-        // só a mais nova de cada checagem — nunca empilha vários balões juntos
-        const nova = itens[0];
-        cfg.vistos = [nova.guid, ...cfg.vistos].slice(0, 300);
-        _newsSalvarConfig(cfg);
-        if (mainWindow) mainWindow.webContents.send('news:novo', nova);
-      } catch (_) {}
-    });
-  }).on('error', () => {});
+  _newsBuscarUrl(NEWS_RSS_URL, 5, (erro, dados, codificacao) => {
+    if (erro) { _newsLog({ ok: false, motivo: String(erro.message || erro) }); return; }
+    try {
+      const todos = _newsParseRss(dados);
+      const itens = todos
+        .filter((i) => NEWS_CATEGORIAS_PERMITIDAS.includes(i.categoria))
+        .filter((i) => i.guid && !cfg.vistos.includes(i.guid));
+      _newsLog({ ok: true, codificacao, itensNoFeed: todos.length, itensNovos: itens.length });
+      if (!itens.length) return;
+      // só a mais nova de cada checagem — nunca empilha vários balões juntos
+      const nova = itens[0];
+      cfg.vistos = [nova.guid, ...cfg.vistos].slice(0, 300);
+      _newsSalvarConfig(cfg);
+      if (mainWindow) mainWindow.webContents.send('news:novo', nova);
+    } catch (e) { _newsLog({ ok: false, motivo: 'Erro ao interpretar o feed: ' + String(e.message || e) }); }
+  });
 }
 
 ipcMain.handle('news:status', () => (_newsLerConfig().desativado ? 'desativado' : 'ativo'));
 ipcMain.handle('news:desativar', () => { const c = _newsLerConfig(); c.desativado = true; _newsSalvarConfig(c); return true; });
 ipcMain.handle('news:ativar', () => { const c = _newsLerConfig(); c.desativado = false; _newsSalvarConfig(c); return true; });
 ipcMain.handle('news:abrirLink', (_evt, url) => { if (/^https:\/\//.test(url || '')) shell.openExternal(url); });
+
+ipcMain.handle('news:testarAgora', () => new Promise((resolve) => {
+  _newsBuscarUrl(NEWS_RSS_URL, 5, (erro, dados, codificacao) => {
+    if (erro) {
+      const motivo = String(erro.message || erro);
+      _newsLog({ ok: false, motivo });
+      resolve({ ok: false, motivo });
+      return;
+    }
+    try {
+      const todos = _newsParseRss(dados);
+      const permitidos = todos.filter((i) => NEWS_CATEGORIAS_PERMITIDAS.includes(i.categoria));
+      _newsLog({ ok: true, codificacao, itensNoFeed: todos.length, itensNovos: permitidos.length, teste: true });
+      resolve({ ok: true, codificacao, itensNoFeed: todos.length, itensPermitidos: permitidos.length });
+    } catch (e) {
+      const motivo = 'Erro ao interpretar o feed: ' + String(e.message || e);
+      _newsLog({ ok: false, motivo });
+      resolve({ ok: false, motivo });
+    }
+  });
+}));
+ipcMain.handle('news:diagnostico', () => {
+  try { return JSON.parse(fs.readFileSync(_newsLogPath(), 'utf-8')); } catch (_) { return []; }
+});
 
 // ---------------------------------------------------------------------------
 // IPC: escolher o PDF (sem overlay durante a seleção)
