@@ -208,7 +208,7 @@ app.on('window-all-closed', () => {
 // site), só reduz o atraso até a equipe ver uma notícia nova.
 const NEWS_RSS_URL = 'https://www.contabeis.com.br/rss/noticias/';
 const NEWS_CATEGORIAS_PERMITIDAS = ['Tributário', 'Contábil', 'Empresarial'];
-const NEWS_INTERVALO_MS = 3 * 60 * 1000;
+const NEWS_INTERVALO_MS = 1 * 60 * 1000;
 let newsTimer = null;
 
 function _newsConfigPath() {
