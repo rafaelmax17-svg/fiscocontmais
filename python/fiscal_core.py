@@ -3739,7 +3739,35 @@ def migrar_estrutura_nfse(pasta_nfse):
                 os.rmdir(atual)
             except OSError:
                 pass
+    movidos += _renomear_nsu_para_chave(pasta_nfse)
     return movidos
+
+
+def _renomear_nsu_para_chave(pasta_nfse):
+    """Repara arquivos salvos com o nome errado (achado real, Rafael 30/09):
+    quando a Receita mandava o campo ChaveAcesso vazio, o arquivo era salvo
+    como "nsu_1234.xml" em vez da chave de 50 dígitos — e o botão de PDF
+    (que sempre usa a chave de dentro do XML) nunca achava esses arquivos.
+    Renomeia pra chave certa, extraída do próprio conteúdo do XML."""
+    corrigidos = 0
+    for caminho in glob.glob(os.path.join(pasta_nfse, 'XML', '**', 'nsu_*.xml'), recursive=True):
+        try:
+            with open(caminho, encoding='utf-8') as f:
+                m = re.search(r'Id="NFS(\d{50})"', f.read())
+        except OSError:
+            continue
+        if not m:
+            continue
+        cancelada = '.CANCELADA' if caminho.upper().endswith('.CANCELADA.XML') else ''
+        destino = os.path.join(os.path.dirname(caminho), f'{m.group(1)}{cancelada}.xml')
+        if os.path.exists(destino):
+            continue  # já existe um arquivo certo — não sobrescreve
+        try:
+            os.replace(caminho, destino)
+            corrigidos += 1
+        except OSError:
+            pass
+    return corrigidos
 
 
 def _gerar_pdf_nfse(caminho_xml):
@@ -3925,7 +3953,16 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                     ignorados_fora_periodo += 1
                     continue
 
-                chave = item.get('ChaveAcesso') or f'nsu_{nsu_item}'
+                # achado real (Rafael, 30/09): usar só o campo ChaveAcesso do
+                # JSON da Receita pra nomear o arquivo é arriscado — quando
+                # esse campo vem vazio (acontece), o arquivo era salvo como
+                # "nsu_1234.xml", só que o painel (e o botão de PDF de cada
+                # nota) sempre mostra a chave de 50 dígitos que vem de DENTRO
+                # do próprio XML — daí o botão de PDF nunca achava o arquivo,
+                # mesmo ele existindo. Agora extrai a mesma chave do XML em
+                # ambos os lugares, pra nunca divergir.
+                chave_xml_m = _re.search(r'Id="NFS(\d{50})"', xml_texto)
+                chave = (chave_xml_m.group(1) if chave_xml_m else '') or item.get('ChaveAcesso') or f'nsu_{nsu_item}'
                 competencia = data_doc.strftime('%Y-%m') if data_doc else 'sem-data'
                 prest_cnpj_m = _re.search(r'<prest><CNPJ>(\d+)</CNPJ>', xml_texto)
                 subpasta = 'Prestados' if (prest_cnpj_m and prest_cnpj_m.group(1) == cnpj_empresa) else 'Tomados'
