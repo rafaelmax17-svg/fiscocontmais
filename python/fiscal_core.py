@@ -14,7 +14,7 @@ CLI:
   fiscal_core.py conferencia ARQ.txt --xmls PASTA_OU_ARQS --json saida.json
   fiscal_core.py conferencia ARQ.txt --xmls PASTA_OU_ARQS --html saida.html
 """
-import sys, os, re, json, glob, base64, math, html as _html, zipfile, tempfile
+import sys, os, re, json, glob, base64, math, html as _html, zipfile, tempfile, shutil
 import pdfplumber
 
 # --------------------------------------------------------------------------- #
@@ -3702,7 +3702,12 @@ def _destino_pdf(caminho_xml):
 
 def migrar_estrutura_nfse(pasta_nfse):
     """Estrutura antiga: NFS-e/Prestados|Tomados/AAAA-MM/x.xml. Nova: NFS-e/XML/... (e NFS-e/PDF/...).
-    Move o que estiver na estrutura antiga pra dentro de XML, sem perder nada. Devolve quantos moveu."""
+    Move o que estiver na estrutura antiga pra dentro de XML, sem perder nada. Também remove a
+    pasta _eventos_brutos (um artefato de depuração de uma versão anterior — achado real, Rafael
+    28/09: confunde a equipe, não é pra ficar visível). Devolve quantos arquivos moveu."""
+    diag = os.path.join(pasta_nfse, '_eventos_brutos')
+    if os.path.isdir(diag):
+        shutil.rmtree(diag, ignore_errors=True)
     movidos = 0
     for sub in ('Prestados', 'Tomados'):
         raiz = os.path.join(pasta_nfse, sub)
@@ -3891,19 +3896,6 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                 if (item.get('TipoDocumento') or '').upper() != 'NFSE':
                     # não é a nota em si — pode ser evento (cancelamento,
                     # manifestação etc.). Só nos interessa se for cancelamento.
-                    # Guarda o bruto de QUALQUER evento não reconhecido como
-                    # nota — mesmo quando minha detecção não identifica como
-                    # cancelamento — pra eu poder conferir o formato real
-                    # depois, sem precisar adivinhar de novo se um caso
-                    # passar despercebido.
-                    try:
-                        pasta_diag = os.path.join(pasta_base, nome_empresa, 'NFS-e', '_eventos_brutos')
-                        os.makedirs(pasta_diag, exist_ok=True)
-                        with open(os.path.join(pasta_diag, f'evento_nsu_{nsu_item}.json'), 'w', encoding='utf-8') as f:
-                            json.dump({'item_meta': {k: v for k, v in item.items() if k != 'ArquivoXml'},
-                                       'xml_decodificado': xml_texto}, f, ensure_ascii=False, indent=2)
-                    except Exception:
-                        pass
                     chave_cancelada = _talvez_chave_cancelada(item, xml_texto)
                     if chave_cancelada:
                         chaves_canceladas.add(chave_cancelada)
