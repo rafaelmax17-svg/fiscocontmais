@@ -3671,6 +3671,18 @@ def parse_nfse_xml(path):
     # achado real (nota com só IRRF retido, ISS "não retido"): retenção federal também conta
     retido = retido or total_retido > 0
 
+    # achado real (pedido Rafael, 29/09): só dá pra checar essa inconsistência
+    # em PIS/COFINS/CSLL — ISS não tem um 2º campo de valor pra contradizer, e
+    # IRRF/INSS não têm campo de situação separado do valor. Códigos 1/3/4/5
+    # de tpRetPisCofins dizem que ALGUMA retenção houve; 0/2/vazio dizem que não.
+    inconsistencia_piscofins = None
+    situacao_diz_retido = tp_ret_pis in ('1', '3', '4', '5')
+    situacao_diz_nao_retido = tp_ret_pis in ('', '0', '2')
+    if situacao_diz_retido and not v_ret_pis_cofins_csll:
+        inconsistencia_piscofins = 'A situação da nota diz que houve retenção de PIS/COFINS/CSLL, mas o valor retido está zerado.'
+    elif situacao_diz_nao_retido and v_ret_pis_cofins_csll:
+        inconsistencia_piscofins = f'A situação da nota diz que não houve retenção, mas tem R$ {_brl(v_ret_pis_cofins_csll)} lançado como retido de PIS/COFINS/CSLL.'
+
     return {
         'chave': chave, 'nnfse': nnfse, 'competencia': dcompet,
         'prestador_cnpj': prest_cnpj or prest_cpf, 'prestador_doc_tipo': 'CNPJ' if prest_cnpj else ('CPF' if prest_cpf else ''),
@@ -3681,6 +3693,7 @@ def parse_nfse_xml(path):
         'vserv': vserv, 'vliq': vliq, 'vissqn': vissqn,
         'retido': retido, 'tp_ret_issqn': tp_ret_issqn, 'tp_ret_pis': tp_ret_pis,
         'retencoes_detalhe': retencoes_detalhe, 'total_retido': total_retido,
+        'inconsistencia_piscofins': inconsistencia_piscofins,
     }
 
 
@@ -4032,6 +4045,12 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
         g['valor'] += n['vserv']
     top_parceiros = sorted(por_parceiro.values(), key=lambda g: -g['valor'])
 
+    # inconsistência de retenção (PIS/COFINS/CSLL) — só entre as válidas, não
+    # faz sentido sinalizar isso numa nota que já está cancelada
+    inconsistencias_piscofins = sorted(
+        [n for n in validas if n['inconsistencia_piscofins']],
+        key=lambda n: n['competencia'], reverse=True)
+
     return {
         'total_notas': len(validas), 'total_valor': round(sum(n['vserv'] for n in validas), 2),
         'qtd_com_retencao': sum(1 for n in com_ret if not n['cancelada']),
@@ -4043,10 +4062,35 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
         'notas_com_retencao': sorted(com_ret, key=lambda n: n['competencia'], reverse=True),
         'notas_sem_retencao': sorted(sem_ret, key=lambda n: n['competencia'], reverse=True),
         'top_parceiros': top_parceiros[:10],
+        'inconsistencias_piscofins': inconsistencias_piscofins,
     }
 
 
 _NFSE_CORES = ['#e8632b', '#1f2a5a', '#0ea472', '#8b5cf6', '#d4711a', '#2563eb', '#db2777', '#14b8a6']
+
+
+def _bloco_inconsistencias_piscofins(inconsistencias):
+    """Quadro de aviso, só aparece quando encontra pelo menos 1 caso — pedido
+    do Rafael, 29/09: não vira mais uma coisa que a equipe aprende a
+    ignorar. Cobre só PIS/COFINS/CSLL (é o único tributo com campo de
+    situação E campo de valor separados no XML, pra dar pra contradizer)."""
+    if not inconsistencias:
+        return ''
+    linhas = ''.join(
+        f'<div style="background:#fff;border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:8px">'
+        f'<div style="display:flex;justify-content:space-between;margin-bottom:3px">'
+        f'<span style="font-weight:700">NFS-e {_esc(n["nnfse"])} · {_esc(n["parceiro_nome"])[:34]}</span>'
+        f'<span style="color:var(--ink2)">{_esc(n["competencia"])}</span></div>'
+        f'<div style="color:#791f1f">{_esc(n["inconsistencia_piscofins"])}</div></div>'
+        for n in inconsistencias
+    )
+    plural = 's' if len(inconsistencias) != 1 else ''
+    return (
+        f'<div class="card" style="background:#fcebeb;border:1px solid #f0a5a5;margin-bottom:14px">'
+        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+        f'<span style="font-size:13px;font-weight:700;color:#501313">⚠ {len(inconsistencias)} nota{plural} com possível inconsistência de retenção (PIS/COFINS/CSLL)</span></div>'
+        f'{linhas}</div>'
+    )
 
 
 def gerar_painel_nfse_html(dados, empresa_nome=''):
@@ -4218,6 +4262,7 @@ body.standalone .col-pdf{{display:none}}
   <div class="kpi"><b style="color:#e8632b">{dados['qtd_com_retencao']}</b><span>Com retenção</span></div>
 </div>
 {f'<div class="card" style="background:#fef3f2;border:1px solid #fecdca"><div style="font-size:12.5px;color:#7a1f1f">⚠ {dados["qtd_canceladas"]} nota(s) cancelada(s) foram baixadas mas ficaram de fora dos totais acima — arquivos salvos com .CANCELADA no nome, pra referência.</div></div>' if dados.get('qtd_canceladas') else ''}
+{_bloco_inconsistencias_piscofins(dados.get('inconsistencias_piscofins') or [])}
 <div class="grid2">
   <div class="card"><h3><span class="dot"></span>Com × sem retenção</h3>
     {"<div class='donut-row'><div class='donut'><svg width='170' height='170' viewBox='0 0 180 180'>" + arcs_ret + "</svg><div class='center'><div class='big'>" + str(total) + "</div><div class='sm'>notas</div></div></div><div class='legend'>" + legend_ret + "</div></div>" if segs_ret else "<div style='color:#0ea472;font-size:12.5px'>Nenhuma nota ainda.</div>"}
