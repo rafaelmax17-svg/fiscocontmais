@@ -75,14 +75,30 @@ _CODIGO_VINCULACAO_CREDITO = {
     '201': 'Presumido - Vinculado Exclusivamente a Receita Tributada no Mercado Interno', '202': 'Presumido - Vinculado Exclusivamente a Receita Não-Tributada no Mercado Interno',
     '203': 'Presumido - Vinculado Exclusivamente a Receita de Exportação', '299': 'Outros Créditos Presumidos',
 }
-_NATUREZA_RECEITA = {
-    # achado real (pesquisa, 30/09): ao contrário da natureza do crédito
-    # (M105, uma tabela só), a natureza da receita em M410/M810 usa tabelas
-    # DIFERENTES dependendo do CST (4.3.10 p/ CST04, 4.3.13 p/ CST06, 4.3.14
-    # p/ CST07 etc.), cada uma com dezenas de códigos por produto/NCM — não
-    # dá pra resumir numa tabela pequena sem arriscar mostrar descrição
-    # errada. Por isso mostra só o código mesmo — mais honesto que chutar.
+# Natureza da receita (M410/M810): cada CST usa uma tabela oficial DIFERENTE
+# (CST 04 -> 4.3.10/4.3.11, CST 06 -> 4.3.13 etc.), e o mesmo número significa
+# coisa diferente em cada uma — por isso a descrição é amarrada ao CST.
+# SÓ entram aqui códigos com descrição conferida (30/09):
+#  - 128/129/130: texto da própria tabela 4.3.13 e da MP 609/2013;
+#  - 102: base legal da tabela (Lei 10.925/2004, art. 1º, II) + ordem da lista oficial;
+#  - 918: relato de usuários (fóruns) citando a tabela 4.3.13 (bebidas frias).
+# Qualquer outro código aparece só com o número — melhor do que chutar.
+_NATUREZA_RECEITA_POR_CST = {
+    '06': {
+        '102': 'Defensivos agropecuários (posição 38.08 da TIPI) e suas matérias-primas',
+        '128': 'Sabões de toucador (código 3401.11.90 Ex 01 da TIPI)',
+        '129': 'Produtos para higiene bucal ou dentária (posição 33.06 da TIPI)',
+        '130': 'Papel higiênico (código 4818.10.00 da TIPI)',
+        '918': 'Bebidas frias',
+    },
 }
+
+
+def _nat_receita(cod, cst=''):
+    d = _NATUREZA_RECEITA_POR_CST.get((cst or '').zfill(2), {}).get(cod or '', '')
+    return f'{cod} — {d}' if d else (cod or '-')
+
+
 _IND_DESC_CRED = {'0': 'Desconto da contribuição apurada no próprio período', '1': 'Ressarcimento', '2': 'Compensação'}
 
 
@@ -98,11 +114,6 @@ def _natureza(cod):
 
 def _vinculacao(cod):
     d = _CODIGO_VINCULACAO_CREDITO.get(cod, '')
-    return f'{cod} — {d}' if d else (cod or '-')
-
-
-def _nat_receita(cod):
-    d = _NATUREZA_RECEITA.get((cod or '').zfill(3), '')
     return f'{cod} — {d}' if d else (cod or '-')
 
 
@@ -198,7 +209,14 @@ def parse_efd_contribuicoes(caminho):
 
     def bloco_nao_tributada(pref_cst, pref_natureza):
         por_cst = [{'cst': val(r, 0), 'cst_desc': _cst(val(r, 0)), 'valor': _num(val(r, 1)), 'conta': val(r, 2)} for r in registros(pref_cst)]
-        por_natureza = [{'natureza': val(r, 0), 'natureza_desc': _nat_receita(val(r, 0)), 'valor': _num(val(r, 1)), 'conta': val(r, 2)} for r in registros(pref_natureza)]
+        por_natureza, cst_atual = [], ''
+        for l in linhas:
+            if l.startswith(f'|{pref_cst}|'):
+                cst_atual = val(l.strip('|').split('|')[1:], 0)
+            elif l.startswith(f'|{pref_natureza}|'):
+                r = l.strip('|').split('|')[1:]
+                por_natureza.append({'cst': cst_atual, 'natureza': val(r, 0), 'natureza_desc': _nat_receita(val(r, 0), cst_atual),
+                                     'valor': _num(val(r, 1)), 'conta': val(r, 2)})
         return por_cst, por_natureza
 
     pis_creditos, pis_detalhe_credito, pis_ajustes_credito, pis_ajustes_credito_det = bloco_credito('M100', 'M105', 'M110', 'M115')
@@ -315,8 +333,8 @@ def _secao_tributo(t, nome_tributo, cor):
         ['CST', 'Valor total', 'Conta contábil'],
         [[_esc(n['cst_desc']), _brl(n['valor']), _esc(n['conta'])] for n in t['nao_tributada_cst']], ['l', 'r', 'l'])
     html_nt_nat = _linhas_tabela(
-        ['Natureza da receita (código)', 'Valor', 'Conta contábil'],
-        [[_esc(n['natureza_desc']), _brl(n['valor']), _esc(n['conta'])] for n in t['nao_tributada_natureza']], ['l', 'r', 'l'])
+        ['CST', 'Natureza da receita', 'Valor', 'Conta contábil'],
+        [[_esc(n['cst']), _esc(n['natureza_desc']), _brl(n['valor']), _esc(n['conta'])] for n in t['nao_tributada_natureza']], ['l', 'l', 'r', 'l'])
 
     return f'''
 <h2 class="secao"><span class="dot" style="background:{cor}"></span>{nome_tributo}</h2>
@@ -330,7 +348,7 @@ def _secao_tributo(t, nome_tributo, cor):
 <div class="card"><h3>Ajustes de débito por nota — resumo por código {f"({len(det)} nota(s) no total)" if det else ""}</h3>{html_resumo_det}</div>
 {f'<div class="card"><h3>10 maiores ajustes de débito por nota</h3>{html_top10_det}</div>' if det else ''}
 <div class="card"><h3>Receita não tributada — por CST</h3>{html_nt_cst}</div>
-<div class="card"><h3>Receita não tributada — por natureza <span style="font-size:11px;font-weight:400;color:var(--ink2)">(código conforme tabelas 4.3.10 a 4.3.16 da Receita — ainda não catalogadas no sistema, por isso só o código)</span></h3>{html_nt_nat}</div>
+<div class="card"><h3>Receita não tributada — por natureza <span style="font-size:11px;font-weight:400;color:var(--ink2)">(descrição mostrada só para os códigos já conferidos na tabela oficial da Receita; os demais aparecem apenas com o número)</span></h3>{html_nt_nat}</div>
 '''
 
 
@@ -355,8 +373,8 @@ def gerar_painel_efd_html(dados, empresa_nome=''):
     pct_nt = 100 - pct_trib
 
     maior_pc = max(pis['consolidacao']['total_a_recolher'], cofins['consolidacao']['total_a_recolher'], 1)
-    alt_pis = max(6, round(160 * pis['consolidacao']['total_a_recolher'] / maior_pc)) if pis['consolidacao']['total_a_recolher'] else 0
-    alt_cofins = max(6, round(160 * cofins['consolidacao']['total_a_recolher'] / maior_pc)) if cofins['consolidacao']['total_a_recolher'] else 0
+    alt_pis = max(6, round(230 * pis['consolidacao']['total_a_recolher'] / maior_pc)) if pis['consolidacao']['total_a_recolher'] else 0
+    alt_cofins = max(6, round(230 * cofins['consolidacao']['total_a_recolher'] / maior_pc)) if cofins['consolidacao']['total_a_recolher'] else 0
 
     return f'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Conferência EFD-Contribuições{f" · {_esc(empresa_nome)}" if empresa_nome else ""}</title>
@@ -386,29 +404,29 @@ table{{min-width:520px}}
 
 <div class="grid2">
   <div class="card"><h3>Receita tributada × não tributada</h3>
-    <div style="display:flex;align-items:center;gap:20px">
-      <svg id="efdPizza" width="150" height="150" viewBox="0 0 150 150" style="transform-origin:75px 75px;transition:transform 1.1s cubic-bezier(.2,.8,.2,1);flex:0 0 auto">
-        <circle cx="75" cy="75" r="62" fill="#1f2a5a"/>
-        <path id="efdFatiaNT" d="M75 75 L75 13 A62 62 0 0 1 75 13 Z" fill="#e8632b"/>
-        <text x="60" y="70" font-size="16" font-weight="700" fill="#fff">{pct_trib}%</text>
+    <div style="display:flex;align-items:center;justify-content:center;gap:20px 28px;flex-wrap:wrap">
+      <svg id="efdPizza" width="220" height="220" viewBox="0 0 220 220" style="transform-origin:110px 110px;transition:transform 1.1s cubic-bezier(.2,.8,.2,1);flex:0 0 auto">
+        <circle cx="110" cy="110" r="92" fill="#1f2a5a"/>
+        <path id="efdFatiaNT" d="M110 110 L110 18 A92 92 0 0 1 110 18 Z" fill="#e8632b"/>
+        <text x="88" y="103" font-size="24" font-weight="700" fill="#fff">{pct_trib}%</text>
       </svg>
-      <div style="font-size:12.5px;display:flex;flex-direction:column;gap:9px">
-        <span style="display:flex;align-items:center;gap:7px"><span style="width:11px;height:11px;border-radius:3px;background:#1f2a5a"></span>Tributada<b style="margin-left:auto;padding-left:16px">R$ {_brl(receita_tributada)}</b></span>
-        <span style="display:flex;align-items:center;gap:7px"><span style="width:11px;height:11px;border-radius:3px;background:#e8632b"></span>Não tributada<b style="margin-left:auto;padding-left:16px">R$ {_brl(receita_nao_tributada)}</b></span>
+      <div style="font-size:13.5px;display:flex;flex-direction:column;gap:11px;min-width:250px;white-space:nowrap">
+        <span style="display:flex;align-items:center;gap:8px"><span style="width:12px;height:12px;border-radius:3px;background:#1f2a5a"></span>Tributada<b style="margin-left:auto;padding-left:18px">R$ {_brl(receita_tributada)}</b></span>
+        <span style="display:flex;align-items:center;gap:8px"><span style="width:12px;height:12px;border-radius:3px;background:#e8632b"></span>Não tributada<b style="margin-left:auto;padding-left:18px">R$ {_brl(receita_nao_tributada)}</b></span>
       </div>
     </div>
   </div>
   <div class="card"><h3>PIS × COFINS — total a recolher</h3>
-    <div style="display:flex;align-items:flex-end;justify-content:center;gap:48px;height:200px;padding-top:10px">
-      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;height:100%;justify-content:flex-end">
-        <span id="efdNumPis" style="font-size:15px;font-weight:800;color:var(--navy)">R$ 0,00</span>
-        <div id="efdColPis" style="width:80px;height:0px;background:#1f2a5a;border-radius:8px 8px 0 0;transition:height 1.1s cubic-bezier(.2,.8,.2,1)" data-alvo="{alt_pis}"></div>
-        <span style="font-size:12px;color:var(--ink2)">PIS</span>
+    <div style="display:flex;align-items:flex-end;justify-content:center;gap:64px;height:280px;padding-top:10px">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:10px;height:100%;justify-content:flex-end">
+        <span id="efdNumPis" style="font-size:17px;font-weight:800;color:var(--navy)">R$ 0,00</span>
+        <div id="efdColPis" style="width:108px;height:0px;background:#1f2a5a;border-radius:8px 8px 0 0;transition:height 1.1s cubic-bezier(.2,.8,.2,1)" data-alvo="{alt_pis}"></div>
+        <span style="font-size:13px;color:var(--ink2)">PIS</span>
       </div>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;height:100%;justify-content:flex-end">
-        <span id="efdNumCofins" style="font-size:15px;font-weight:800;color:#e8632b">R$ 0,00</span>
-        <div id="efdColCofins" style="width:80px;height:0px;background:#e8632b;border-radius:8px 8px 0 0;transition:height 1.1s cubic-bezier(.2,.8,.2,1) .15s" data-alvo="{alt_cofins}"></div>
-        <span style="font-size:12px;color:var(--ink2)">COFINS</span>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:10px;height:100%;justify-content:flex-end">
+        <span id="efdNumCofins" style="font-size:17px;font-weight:800;color:#e8632b">R$ 0,00</span>
+        <div id="efdColCofins" style="width:108px;height:0px;background:#e8632b;border-radius:8px 8px 0 0;transition:height 1.1s cubic-bezier(.2,.8,.2,1) .15s" data-alvo="{alt_cofins}"></div>
+        <span style="font-size:13px;color:var(--ink2)">COFINS</span>
       </div>
     </div>
   </div>
@@ -417,13 +435,13 @@ table{{min-width:520px}}
 {_secao_tributo(pis, 'PIS/PASEP', '#1f2a5a')}
 {_secao_tributo(cofins, 'COFINS', '#e8632b')}
 
-<div class="card"><div style="font-size:11px;color:var(--ink2)">Gerado a partir do arquivo EFD-Contribuições — campos conferidos contra o layout oficial da Receita Federal. A "natureza da receita" (M410/M810) usa tabelas específicas por CST que ainda não estão catalogadas no sistema; por isso aparece só o código.</div></div>
+<div class="card"><div style="font-size:11px;color:var(--ink2)">Gerado a partir do arquivo EFD-Contribuições — campos conferidos contra o layout oficial da Receita Federal. A "natureza da receita" (M410/M810) usa uma tabela oficial diferente para cada CST; a descrição só é exibida para os códigos já conferidos, os demais aparecem apenas com o número.</div></div>
 
 <script>
 (function(){{
   var pctNT = {pct_nt};
   if (pctNT > 0) {{
-    var CX=75, CY=75, R=62;
+    var CX=110, CY=110, R=92;
     var ang = pctNT/100*360;
     var rad = (ang-90)*Math.PI/180;
     var x = CX + R*Math.cos(rad), y = CY + R*Math.sin(rad);

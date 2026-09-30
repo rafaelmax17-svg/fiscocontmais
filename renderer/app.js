@@ -1330,7 +1330,7 @@ function bindFiscal() {
           <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
             <button class="act inv-export" id="btnCorrSpedVerCorrigido">Ver todos os dados (corrigido)</button>
             <button class="act inv-export" id="btnCorrSpedVerDashboard" style="background:#1f2a5a;color:#fff;border-color:transparent">Ver dashboard animado</button>
-            <button class="act inv-export" id="btnCorrSpedHtml">Exportar HTML animado</button>
+            <button class="act inv-export" id="btnCorrSpedHtml">Exportar HTML</button>
             <button class="act inv-export" id="btnCorrSpedPdf">Exportar PDF</button>
             <button class="act inv-export" id="btnCorrSpedBaixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button>
           </div>
@@ -1405,7 +1405,7 @@ function bindFiscal() {
           </div>
           <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
             <button class="act inv-export" id="btnLmcVerDashboard" style="background:#1f2a5a;color:#fff;border-color:transparent">Ver dashboard animado</button>
-            <button class="act inv-export" id="btnLmcHtml">Exportar HTML animado</button>
+            <button class="act inv-export" id="btnLmcHtml">Exportar HTML</button>
             <button class="act inv-export" id="btnLmcPdf">Exportar PDF</button>
             <button class="act inv-export" id="btnLmcBaixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button>
           </div>
@@ -1627,7 +1627,7 @@ function perguntarFormato(titulo, subtitulo) {
         <div class="fmt-opts">
           <button class="fmt-opt" data-fmt="html">
             <span class="ic">▶</span>
-            <span><b>HTML animado</b><span>Abre no navegador, com as animações</span></span>
+            <span><b>HTML</b><span>Abre no navegador, com gráficos interativos</span></span>
           </button>
           <button class="fmt-opt" data-fmt="pdf">
             <span class="ic">▤</span>
@@ -2069,6 +2069,7 @@ async function loadHistoricoDaEmpresa(cnpj) {
 function bindEfdContrib() {
   const btn = $('#btnEfdPick');
   if (!btn) return;
+  let ultimoHtml = null, ultimaEmpresa = '';
   btn.addEventListener('click', async () => {
     const pick = await window.fiscocont.fiscal.pickEfdContrib();
     if (pick.canceled) return;
@@ -2081,6 +2082,17 @@ function bindEfdContrib() {
     const frame = $('#efdFrame');
     frame.hidden = false;
     frame.srcdoc = res.painelHtml;
+    ultimoHtml = res.painelHtml;
+    ultimaEmpresa = res.resumo?.empresa?.nome || '';
+    $('#btnEfdExportar').disabled = false;
+  });
+  $('#btnEfdExportar').addEventListener('click', async () => {
+    if (!ultimoHtml) return;
+    const res = await window.fiscocont.fiscal.nfseExportarHtml(ultimoHtml, 'efd-contrib', ultimaEmpresa);
+    if (res.canceled) return;
+    if (res.error) { toast(res.error, true); return; }
+    toast('Conferência exportada.');
+    window.fiscocont.openPath(res.path);
   });
 }
 
