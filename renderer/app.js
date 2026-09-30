@@ -551,6 +551,7 @@ function switchView(name) {
   if (name === 'fiscal-audit') { $('#view-fiscal-audit').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-pgdas') { $('#view-fiscal-pgdas').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-downloads') { $('#view-fiscal-downloads').hidden = false; $('#empty').hidden = true; return; }
+  if (name === 'fiscal-efd-contrib') { $('#view-fiscal-efd-contrib').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-lic') { $('#view-admin-lic').hidden = false; $('#empty').hidden = true; loadLicensePanel(); return; }
   if (name === 'admin-corrigir-sped') { $('#view-admin-corrigir-sped').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-lmc') { $('#view-admin-lmc').hidden = false; $('#empty').hidden = true; return; }
@@ -2063,6 +2064,26 @@ async function loadHistoricoDaEmpresa(cnpj) {
 // Balão de notícias contábeis — não intrusivo: 1 por vez (fila se chegar
 // outra enquanto uma está na tela), some sozinho em 10s, clique abre o
 // link, "Desativar notícias" pra quem não quiser ver mais (por máquina).
+// Conferência de EFD-Contribuições — seleciona o arquivo, manda pro núcleo
+// Python processar e mostra o painel retornado no iframe.
+function bindEfdContrib() {
+  const btn = $('#btnEfdPick');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const pick = await window.fiscocont.fiscal.pickEfdContrib();
+    if (pick.canceled) return;
+    $('#efdArquivoNome').textContent = pick.path.split(/[\\/]/).pop();
+    overlay(true, 'Lendo a EFD-Contribuições…');
+    const res = await window.fiscocont.fiscal.efdContrib(pick.path);
+    overlay(false);
+    if (res.error) { toast(res.error, true); return; }
+    $('#efdVazio').hidden = true;
+    const frame = $('#efdFrame');
+    frame.hidden = false;
+    frame.srcdoc = res.painelHtml;
+  });
+}
+
 function bindNewsToast() {
   const elBalao = $('#newsToast');
   if (!elBalao || !window.fiscocont.news) return;
@@ -2415,6 +2436,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   bindNotasFaltantes();
   bindChatIA();
   bindNewsToast();
+  bindEfdContrib();
   $('#btnImport').addEventListener('click', doImport);
   $('#btnImport2').addEventListener('click', doImport);
   $('#btnExport').addEventListener('click', doExport);

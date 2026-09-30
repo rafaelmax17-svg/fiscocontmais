@@ -90,6 +90,8 @@ contextBridge.exposeInMainWorld('fiscocont', {
     classificacao: (spedPath) => ipcRenderer.invoke('fiscal:classificacao', { spedPath }),
     pickPgdas: () => ipcRenderer.invoke('fiscal:pickPgdas'),
     pgdas: (pdfPath) => ipcRenderer.invoke('fiscal:pgdas', pdfPath),
+    pickEfdContrib: () => ipcRenderer.invoke('fiscal:pickEfdContrib'),
+    efdContrib: (arquivoPath) => ipcRenderer.invoke('fiscal:efdContrib', arquivoPath),
     export: (fmt, payload) => ipcRenderer.invoke('fiscal:export', { fmt, payload }),
   },
   openPath: (p) => ipcRenderer.invoke('app:openPath', p),

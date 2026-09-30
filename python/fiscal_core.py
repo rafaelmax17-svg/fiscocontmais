@@ -2741,6 +2741,36 @@ def main(argv):
         print(json.dumps(res, ensure_ascii=False))
         return 0 if 'erro' not in res else 1
 
+    # "efd-contribuicoes" — lê o arquivo e monta o painel de conferência completo.
+    if modo == 'efd-contribuicoes':
+        if len(argv) < 2:
+            print('uso: fiscal_core.py efd-contribuicoes ARQUIVO.txt [--empresa NOME] [--painel-html saida.html] [--json saida.json]'); return 1
+        args = argv[2:]
+
+        def opte(name, default=None):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        import efd_contribuicoes as _efd
+        try:
+            dados = _efd.parse_efd_contribuicoes(argv[1])
+        except Exception as e:
+            res = {'erro': f'Não consegui ler esse arquivo como EFD-Contribuições: {e}'}
+            if '--json' in args:
+                _out(opte('--json', 'efd.json'), json.dumps(res, ensure_ascii=False))
+            print(json.dumps(res, ensure_ascii=False))
+            return 1
+        empresa_nome = opte('--empresa') or dados['empresa']['nome']
+        if '--painel-html' in args:
+            _out(opte('--painel-html', 'painel_efd.html'), _efd.gerar_painel_efd_html(dados, empresa_nome))
+        resumo = {
+            'empresa': dados['empresa'], 'receita_total': dados['receita_0111']['total'],
+            'pis_a_recolher': dados['pis']['consolidacao']['total_a_recolher'],
+            'cofins_a_recolher': dados['cofins']['consolidacao']['total_a_recolher'],
+        }
+        if '--json' in args:
+            _out(opte('--json', 'efd.json'), json.dumps(resumo, ensure_ascii=False))
+        print(json.dumps(resumo, ensure_ascii=False))
+        return 0
+
     # "baixar-nfse" — roda o download de NFS-e via ADN pra uma empresa/período.
     if modo == 'baixar-nfse':
         if len(argv) < 2:

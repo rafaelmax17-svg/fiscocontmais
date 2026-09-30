@@ -1543,6 +1543,30 @@ ipcMain.handle('fiscal:pickPgdas', async () => {
   return { path: r.filePaths[0] };
 });
 
+ipcMain.handle('fiscal:pickEfdContrib', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: 'Selecione o arquivo da EFD-Contribuições (.txt)',
+    properties: ['openFile'],
+    filters: [{ name: 'EFD-Contribuições', extensions: ['txt'] }],
+  });
+  if (r.canceled || !r.filePaths[0]) return { canceled: true };
+  return { path: r.filePaths[0] };
+});
+
+ipcMain.handle('fiscal:efdContrib', async (_evt, arquivoPath) => {
+  if (!arquivoPath) return { error: 'Selecione o arquivo da EFD-Contribuições.' };
+  const htmlOut = path.join(os.tmpdir(), `fc_efd_painel_${Date.now()}.html`);
+  const jsonOut = path.join(os.tmpdir(), `fc_efd_resumo_${Date.now()}.json`);
+  try {
+    await runFiscal(['efd-contribuicoes', arquivoPath, '--painel-html', htmlOut, '--json', jsonOut], jsonOut);
+    const resumo = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    if (resumo.erro) return { error: resumo.erro };
+    const painelHtml = fs.readFileSync(htmlOut, 'utf-8');
+    [htmlOut, jsonOut].forEach((p) => fs.unlink(p, () => {}));
+    return { ok: true, resumo, painelHtml };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
 ipcMain.handle('fiscal:dashboard', async (_evt, spedPath) => {
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const htmlOut = path.join(os.tmpdir(), `fc_sped_${Date.now()}.html`);
