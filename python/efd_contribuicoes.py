@@ -299,6 +299,15 @@ table.t{width:100%;border-collapse:collapse;font-size:12px;min-width:520px}
 .t tbody tr:hover{background:#eef2ff}
 .t td.neg{color:#b42318}.t td.zero{color:#a3a9bd}
 .t td.cst{min-width:230px}
+.res-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:4px 0 16px}
+.res{background:linear-gradient(180deg,#fff,#f6f8fd);border:1px solid #eef0f6;border-left:5px solid var(--acc,#0f6e56);border-radius:12px;padding:12px 14px;box-shadow:0 6px 14px rgba(31,42,90,.08)}
+.res small{display:block;font-size:11px;color:var(--ink2)}
+.res b{display:block;font-size:15px;margin:2px 0}
+.res.am{--acc:#e8632b}.res.cz{--acc:#888780}
+.st{display:inline-block;border-radius:999px;padding:2px 11px;font-size:11px;font-weight:700;white-space:nowrap}
+.st.ok{background:#e1f5ee;color:#085041}.st.dif{background:#faeeda;color:#854f0b}.st.fora{background:#f1efe8;color:#444441}.st.so{background:#e6f1fb;color:#0c447c}
+.nota{background:linear-gradient(90deg,#fdf1dc,#fff8ea);border:1px solid #efc98f;border-radius:12px;padding:11px 14px;font-size:12px;color:#633806;line-height:1.55;margin:12px 0 0}
+.aviso{background:#fcebeb;border:1px solid #f0a5a5;border-radius:12px;padding:11px 14px;font-size:12px;color:#501313;margin:10px 20px;line-height:1.55}
 .t td.vazio{text-align:center;color:var(--ink2);padding:12px}
 .t tbody tr.sub{background:linear-gradient(90deg,#e4ebff,#f1f5ff)}
 .t tbody tr.sub td{background:transparent;font-weight:700;border-bottom:1px solid #d6e0fb}
@@ -500,7 +509,7 @@ def _versoes_tabelas_natureza():
     return '; '.join(f"{tab} (CST {'/'.join(v['csts'])}): {v['rotulo']}" for tab, v in sorted(_TABELAS_NATUREZA.items()))
 
 
-def gerar_painel_efd_html(dados, empresa_nome=''):
+def gerar_painel_efd_html(dados, empresa_nome='', conferencia_html=''):
     """Painel completo: KPIs, dashboards animados com relevo (pizza tributada ×
     não tributada, colunas PIS × COFINS) e o detalhamento completo do bloco M
     pros dois tributos. É um HTML único e autônomo (vale igual no arquivo exportado)."""
@@ -578,6 +587,8 @@ def gerar_painel_efd_html(dados, empresa_nome=''):
     </div>
   </div>
 </div>
+
+{conferencia_html}
 
 {_secao_tributo(pis, 'PIS/PASEP', '#1f2a5a')}
 {_secao_tributo(cofins, 'COFINS', '#e8632b')}

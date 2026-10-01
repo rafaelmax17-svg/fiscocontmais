@@ -2759,8 +2759,15 @@ def main(argv):
             print(json.dumps(res, ensure_ascii=False))
             return 1
         empresa_nome = opte('--empresa') or dados['empresa']['nome']
+        conf_html = ''
+        if opte('--dominio-entradas') or opte('--dominio-saidas'):
+            import efd_conferencia as _conf
+            try:
+                conf_html = _conf.html_conferencia(_conf.conferir(argv[1], opte('--dominio-entradas'), opte('--dominio-saidas')))
+            except Exception as e:
+                conf_html = f'<div class="aviso"><b>Não foi possível conferir com o Domínio.</b> {e}</div>'
         if '--painel-html' in args:
-            _out(opte('--painel-html', 'painel_efd.html'), _efd.gerar_painel_efd_html(dados, empresa_nome))
+            _out(opte('--painel-html', 'painel_efd.html'), _efd.gerar_painel_efd_html(dados, empresa_nome, conf_html))
         resumo = {
             'empresa': dados['empresa'], 'receita_total': dados['receita_0111']['total'],
             'pis_a_recolher': dados['pis']['consolidacao']['total_a_recolher'],

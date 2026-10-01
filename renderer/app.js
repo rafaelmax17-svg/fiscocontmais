@@ -2069,26 +2069,48 @@ async function loadHistoricoDaEmpresa(cnpj) {
 function bindEfdContrib() {
   const btn = $('#btnEfdPick');
   if (!btn) return;
-  let ultimoHtml = null, ultimaEmpresa = '';
-  btn.addEventListener('click', async () => {
-    const pick = await window.fiscocont.fiscal.pickEfdContrib();
-    if (pick.canceled) return;
-    $('#efdArquivoNome').textContent = pick.path.split(/[\\/]/).pop();
-    overlay(true, 'Lendo a EFD-Contribuições…');
-    const res = await window.fiscocont.fiscal.efdContrib(pick.path);
+  // estado da conferência: o SPED escolhido + (opcional) os relatórios do Domínio; qualquer
+  // mudança relê tudo e redesenha o painel
+  const est = { sped: null, entradas: null, saidas: null, html: null, empresa: '' };
+  const nome = (p) => p.split(/[\\/]/).pop();
+  async function rodar() {
+    overlay(true, (est.entradas || est.saidas) ? 'Lendo a EFD-Contribuições e conferindo com o Domínio…' : 'Lendo a EFD-Contribuições…');
+    const res = await window.fiscocont.fiscal.efdContrib(est.sped, { entradas: est.entradas, saidas: est.saidas });
     overlay(false);
-    if (res.error) { toast(res.error, true); return; }
+    if (res.error) { toast(res.error, true); return false; }
     $('#efdVazio').hidden = true;
     const frame = $('#efdFrame');
     frame.hidden = false;
     frame.srcdoc = res.painelHtml;
-    ultimoHtml = res.painelHtml;
-    ultimaEmpresa = res.resumo?.empresa?.nome || '';
+    est.html = res.painelHtml;
+    est.empresa = res.resumo?.empresa?.nome || '';
     $('#btnEfdExportar').disabled = false;
+    $('#btnEfdDomSaidas').disabled = false;
+    $('#btnEfdDomEntradas').disabled = false;
+    return true;
+  }
+  btn.addEventListener('click', async () => {
+    const pick = await window.fiscocont.fiscal.pickEfdContrib();
+    if (pick.canceled) return;
+    est.sped = pick.path; est.entradas = null; est.saidas = null;
+    $('#efdArquivoNome').textContent = nome(pick.path);
+    $('#efdDomSaidasNome').textContent = '';
+    $('#efdDomEntradasNome').textContent = '';
+    await rodar();
   });
+  async function anexarDominio(tipo) {   // 'saidas' | 'entradas'
+    const pick = await window.fiscocont.fiscal.pickDominioPdf(tipo === 'saidas' ? 'Saídas' : 'Entradas');
+    if (pick.canceled) return;
+    const anterior = est[tipo];
+    est[tipo] = pick.path;
+    if (await rodar()) $(tipo === 'saidas' ? '#efdDomSaidasNome' : '#efdDomEntradasNome').textContent = nome(pick.path);
+    else est[tipo] = anterior;
+  }
+  $('#btnEfdDomSaidas').addEventListener('click', () => anexarDominio('saidas'));
+  $('#btnEfdDomEntradas').addEventListener('click', () => anexarDominio('entradas'));
   $('#btnEfdExportar').addEventListener('click', async () => {
-    if (!ultimoHtml) return;
-    const res = await window.fiscocont.fiscal.nfseExportarHtml(ultimoHtml, 'efd-contrib', ultimaEmpresa);
+    if (!est.html) return;
+    const res = await window.fiscocont.fiscal.nfseExportarHtml(est.html, 'efd-contrib', est.empresa);
     if (res.canceled) return;
     if (res.error) { toast(res.error, true); return; }
     toast('Conferência exportada.');

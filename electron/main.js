@@ -1553,12 +1553,25 @@ ipcMain.handle('fiscal:pickEfdContrib', async () => {
   return { path: r.filePaths[0] };
 });
 
-ipcMain.handle('fiscal:efdContrib', async (_evt, arquivoPath) => {
+ipcMain.handle('fiscal:pickDominioPdf', async (_evt, rotulo) => {
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: `Selecione o Acompanhamento de ${rotulo || 'Entradas/Saídas'} do Domínio (PDF)`,
+    properties: ['openFile'],
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (r.canceled || !r.filePaths[0]) return { canceled: true };
+  return { path: r.filePaths[0] };
+});
+
+ipcMain.handle('fiscal:efdContrib', async (_evt, arquivoPath, opcoes = {}) => {
   if (!arquivoPath) return { error: 'Selecione o arquivo da EFD-Contribuições.' };
   const htmlOut = path.join(os.tmpdir(), `fc_efd_painel_${Date.now()}.html`);
   const jsonOut = path.join(os.tmpdir(), `fc_efd_resumo_${Date.now()}.json`);
   try {
-    await runFiscal(['efd-contribuicoes', arquivoPath, '--painel-html', htmlOut, '--json', jsonOut], jsonOut);
+    const args = ['efd-contribuicoes', arquivoPath, '--painel-html', htmlOut, '--json', jsonOut];
+    if (opcoes && opcoes.entradas) args.push('--dominio-entradas', opcoes.entradas);
+    if (opcoes && opcoes.saidas) args.push('--dominio-saidas', opcoes.saidas);
+    await runFiscal(args, jsonOut);
     const resumo = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
     if (resumo.erro) return { error: resumo.erro };
     const painelHtml = fs.readFileSync(htmlOut, 'utf-8');
