@@ -94,11 +94,19 @@ contextBridge.exposeInMainWorld('fiscocont', {
     efdContrib: (arquivoPath, opcoes) => ipcRenderer.invoke('fiscal:efdContrib', arquivoPath, opcoes || {}),
     pickDominioPdf: (rotulo) => ipcRenderer.invoke('fiscal:pickDominioPdf', rotulo),
     pickPvaPdf: () => ipcRenderer.invoke('fiscal:pickPvaPdf'),
+    nfseLoteIniciar: (params) => ipcRenderer.invoke('fiscal:nfseLoteIniciar', params),
+    nfseLoteCancelar: () => ipcRenderer.invoke('fiscal:nfseLoteCancelar'),
+    onNfseLoteProgresso: (cb) => {
+      const h = (_e, p) => cb(p);
+      ipcRenderer.on('nfse:loteProgresso', h);
+      return () => ipcRenderer.removeListener('nfse:loteProgresso', h);
+    },
     efdCorrigir: (spedPath, pvaPath) => ipcRenderer.invoke('fiscal:efdCorrigir', spedPath, pvaPath || null),
     efdCorrigirSalvar: (corrigidoPath, nomeOriginal) => ipcRenderer.invoke('fiscal:efdCorrigirSalvar', corrigidoPath, nomeOriginal),
     export: (fmt, payload) => ipcRenderer.invoke('fiscal:export', { fmt, payload }),
   },
   openPath: (p) => ipcRenderer.invoke('app:openPath', p),
+  abrirArquivo: (p) => ipcRenderer.invoke('app:abrirArquivo', p),
   diag: () => ipcRenderer.invoke('app:diag'),
   version: () => ipcRenderer.invoke('app:version'),
   win: {

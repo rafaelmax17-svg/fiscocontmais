@@ -7,6 +7,7 @@ const { spawn } = require('child_process');
 const cloud = require('./cloudSync');
 const license = require('./license');
 const changelog = require('./changelog');
+const nfseLote = require('./nfseLote');
 let updater;
 try {
   updater = require('./updater');
@@ -146,6 +147,15 @@ function createMainWindow() {
   mainWindow.on('unmaximize', sendMax);
 
   mainWindow.setMenuBarVisibility(false);
+  // relatórios em HTML (ex.: lote de NFS-e) trazem links relativos para os painéis salvos nas pastas dos clientes:
+  // abrir no navegador padrão em vez de uma janela nova do app
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('file:')) {
+      try { shell.openPath(require('url').fileURLToPath(url)); } catch (_) {}
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
   const started = Date.now();
@@ -774,16 +784,17 @@ ipcMain.handle('fiscal:pastaBaseGet', () => {
   return null;
 });
 
-ipcMain.handle('fiscal:nfseAnalise', async (_evt, { empresaId, dataInicial, dataFinal }) => {
-  const indice = _lerIndiceCert();
-  const empresa = indice.empresas.find((e) => e.id === empresaId);
-  if (!empresa) return { error: 'Empresa não encontrada.' };
+async function _analisarNfseEmpresa(empresa, dataInicial, dataFinal, opcoes = {}) {
   if (!dataInicial || !dataFinal) return { error: 'Informe a Data inicial e a Data final para ver o painel.' };
   let pastaBase;
   try { pastaBase = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase; } catch (_) {}
   if (!pastaBase) return { error: 'Escolha a pasta onde os documentos são salvos primeiro.' };
   const pastaEmpresa = path.join(pastaBase, empresa.razaoSocial);
-  if (!fs.existsSync(pastaEmpresa)) return { error: 'Ainda não tem nenhuma nota baixada dessa empresa nessa pasta.' };
+  if (!fs.existsSync(pastaEmpresa)) {
+    // no lote, empresa sem nenhuma nota baixada não é erro: simplesmente não teve notas no período
+    if (opcoes.vazioSePastaAusente) return { ok: true, resumo: { total_notas: 0, qtd_canceladas: 0 }, painelHtml: '' };
+    return { error: 'Ainda não tem nenhuma nota baixada dessa empresa nessa pasta.' };
+  }
 
   const painelTmp = path.join(os.tmpdir(), `fc_nfse_painel_${Date.now()}.html`);
   const jsonTmp = path.join(os.tmpdir(), `fc_nfse_analise_${Date.now()}.json`);
@@ -801,6 +812,13 @@ ipcMain.handle('fiscal:nfseAnalise', async (_evt, { empresaId, dataInicial, data
     [painelTmp, jsonTmp].forEach((p) => fs.unlink(p, () => {}));
     return { ok: true, resumo, painelHtml };
   } catch (e) { return { error: String(e.message || e) }; }
+}
+
+ipcMain.handle('fiscal:nfseAnalise', async (_evt, { empresaId, dataInicial, dataFinal }) => {
+  const indice = _lerIndiceCert();
+  const empresa = indice.empresas.find((e) => e.id === empresaId);
+  if (!empresa) return { error: 'Empresa não encontrada.' };
+  return _analisarNfseEmpresa(empresa, dataInicial, dataFinal);
 });
 
 ipcMain.handle('fiscal:nfseExportarHtml', async (_evt, { html, tipo, empresaNome }) => {
@@ -816,22 +834,21 @@ ipcMain.handle('fiscal:nfseExportarHtml', async (_evt, { html, tipo, empresaNome
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
-ipcMain.handle('fiscal:nfseBaixar', async (_evt, { empresaId, dataInicial, dataFinal, gerarPdf }) => {
-  const indice = _lerIndiceCert();
-  const empresa = indice.empresas.find((e) => e.id === empresaId);
-  if (!empresa) return { error: 'Empresa não encontrada — cadastre o certificado primeiro.' };
+// Baixa as NFS-e de UMA empresa no período. `tipo` distingue o que é motivo de PULAR a empresa
+// (certificado vencido, senha ausente, pasta não escolhida) de uma falha na baixa em si — o lote usa isso.
+async function _baixarNfseEmpresa(empresa, dataInicial, dataFinal, gerarPdf) {
   if (empresa.validade && new Date(empresa.validade) < new Date()) {
-    return { error: `O certificado dessa empresa está VENCIDO desde ${empresa.validade.split('-').reverse().join('/')} — remova e cadastre um certificado válido antes de baixar.` };
+    return { error: `O certificado dessa empresa está VENCIDO desde ${empresa.validade.split('-').reverse().join('/')} — remova e cadastre um certificado válido antes de baixar.`, tipo: 'pulada' };
   }
   let pastaBase;
   try { pastaBase = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase; } catch (_) {}
-  if (!pastaBase) return { error: 'Escolha a pasta onde salvar os documentos antes de baixar.' };
+  if (!pastaBase) return { error: 'Escolha a pasta onde salvar os documentos antes de baixar.', tipo: 'pulada' };
 
-  const senhaPath = path.join(_certDir(), `${empresaId}.senha`);
-  if (!fs.existsSync(senhaPath)) return { error: 'Senha do certificado não encontrada — cadastre a empresa novamente.' };
+  const senhaPath = path.join(_certDir(), `${empresa.id}.senha`);
+  if (!fs.existsSync(senhaPath)) return { error: 'Senha do certificado não encontrada — cadastre a empresa novamente.', tipo: 'pulada' };
   let senha;
   try { senha = safeStorage.decryptString(fs.readFileSync(senhaPath)); }
-  catch (e) { return { error: 'Não consegui ler a senha salva com segurança nesta máquina.' }; }
+  catch (e) { return { error: 'Não consegui ler a senha salva com segurança nesta máquina.', tipo: 'pulada' }; }
 
   const pfxPath = path.join(_certDir(), empresa.pfxArquivo);
   const jsonTmp = path.join(os.tmpdir(), `fc_nfse_${Date.now()}.json`);
@@ -852,12 +869,93 @@ ipcMain.handle('fiscal:nfseBaixar', async (_evt, { empresaId, dataInicial, dataF
     const resultado = JSON.parse(fs.readFileSync(jsonTmp, 'utf-8'));
     fs.unlink(jsonTmp, () => {});
     if (!resultado.erro) {
-      empresa.ultimoNsu = resultado.ultimo_nsu || empresa.ultimoNsu;
-      empresa.ultimoDownload = new Date().toISOString();
-      _salvarIndiceCert(indice);
+      const indice = _lerIndiceCert();           // relê: no lote o índice muda a cada empresa
+      const alvo = indice.empresas.find((e) => e.id === empresa.id);
+      if (alvo) {
+        alvo.ultimoNsu = resultado.ultimo_nsu || alvo.ultimoNsu;
+        alvo.ultimoDownload = new Date().toISOString();
+        _salvarIndiceCert(indice);
+      }
     }
-    return resultado.erro ? { error: resultado.erro } : { ok: true, resultado };
+    return resultado.erro ? { error: resultado.erro, tipo: 'erro' } : { ok: true, resultado };
+  } catch (e) { return { error: String(e.message || e), tipo: 'erro' }; }
+}
+
+ipcMain.handle('fiscal:nfseBaixar', async (_evt, { empresaId, dataInicial, dataFinal, gerarPdf }) => {
+  const empresa = _lerIndiceCert().empresas.find((e) => e.id === empresaId);
+  if (!empresa) return { error: 'Empresa não encontrada — cadastre o certificado primeiro.' };
+  const r = await _baixarNfseEmpresa(empresa, dataInicial, dataFinal, gerarPdf);
+  return r.error ? { error: r.error } : { ok: true, resultado: r.resultado };
+});
+
+// ---- Baixa em lote: todas as empresas cadastradas, uma por vez, período obrigatório ----
+let _loteRodando = false;
+let _loteCancelar = false;
+const _doisDig = (n) => String(n).padStart(2, '0');
+const _stampArquivo = (d) => `${d.getFullYear()}-${_doisDig(d.getMonth() + 1)}-${_doisDig(d.getDate())}_${_doisDig(d.getHours())}${_doisDig(d.getMinutes())}`;
+const _dataHoraBR = (d) => `${_doisDig(d.getDate())}/${_doisDig(d.getMonth() + 1)}/${d.getFullYear()} ${_doisDig(d.getHours())}:${_doisDig(d.getMinutes())}`;
+
+ipcMain.handle('fiscal:nfseLoteCancelar', () => {
+  if (_loteRodando) _loteCancelar = true;      // termina a empresa em andamento e não começa as próximas
+  return { ok: true };
+});
+
+ipcMain.handle('fiscal:nfseLoteIniciar', async (_evt, { dataInicial, dataFinal, gerarPdf }) => {
+  if (_loteRodando) return { error: 'Já existe um lote em andamento.' };
+  if (!dataInicial || !dataFinal) return { error: 'Informe o período (data inicial e data final) antes de baixar em lote.' };
+  if (dataInicial > dataFinal) return { error: 'A data inicial não pode ser depois da data final.' };
+  const empresas = (_lerIndiceCert().empresas || []).slice()
+    .sort((a, b) => String(a.razaoSocial).localeCompare(String(b.razaoSocial), 'pt-BR'));
+  if (!empresas.length) return { error: 'Nenhuma empresa cadastrada. Cadastre os certificados primeiro.' };
+  let pastaBase;
+  try { pastaBase = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase; } catch (_) {}
+  if (!pastaBase) return { error: 'Escolha a pasta onde salvar os documentos antes de baixar em lote.' };
+
+  _loteRodando = true;
+  _loteCancelar = false;
+  const inicio = new Date();
+  const enviar = (p) => { try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('nfse:loteProgresso', p); } catch (_) {} };
+  let resultados = [];
+  try {
+    resultados = await nfseLote.executarLote({
+      empresas,
+      baixarEmpresa: (emp) => _baixarNfseEmpresa(emp, dataInicial, dataFinal, gerarPdf),
+      analisarEmpresa: (emp) => _analisarNfseEmpresa(emp, dataInicial, dataFinal, { vazioSePastaAusente: true }),
+      salvarPainel: (emp, html) => nfseLote.salvarPainelIndividual(pastaBase, emp, html, dataInicial, dataFinal),
+      onProgresso: enviar,
+      cancelado: () => _loteCancelar,
+    });
+    const cancelado = _loteCancelar;
+    const fim = new Date();
+    const pasta = path.join(pastaBase, '_Relatorios em lote');
+    fs.mkdirSync(pasta, { recursive: true });
+    const caminho = path.join(pasta, `Lote_${dataInicial}_a_${dataFinal}_${_stampArquivo(fim)}.html`);
+    const sub = nfseLote.periodoSubpasta(dataInicial, dataFinal);
+    const dados = {
+      periodo: { ini: dataInicial, fim: dataFinal }, inicio: _dataHoraBR(inicio), fim_exec: _dataHoraBR(fim), gerar_pdf: gerarPdf !== false, cancelado,
+      caminho, pasta_relatorios: [pastaBase, '<Empresa>', 'NFS-e', 'Relatórios', sub].join(path.sep) + path.sep, empresas: resultados,
+    };
+    const inJson = path.join(os.tmpdir(), `fc_lote_${Date.now()}.json`);
+    const outHtml = path.join(os.tmpdir(), `fc_lote_${Date.now()}.html`);
+    fs.writeFileSync(inJson, JSON.stringify(dados), 'utf-8');
+    try {
+      await runFiscal(['nfse-lote-relatorio', '--entrada', inJson, '--saida', outHtml], outHtml);
+    } catch (e) {
+      return { error: `O lote terminou (${resultados.filter((r) => r.salvos).length} empresa(s) com notas), mas não consegui gerar o relatório geral: ${String(e.message || e)}` };
+    }
+    fs.writeFileSync(caminho, fs.readFileSync(outHtml, 'utf-8'), 'utf-8');
+    [inJson, outHtml].forEach((x) => fs.unlink(x, () => {}));
+    const cont = (k) => resultados.filter((r) => r.status === k).length;
+    return {
+      ok: true, caminho, pasta, url: require('url').pathToFileURL(caminho).href,
+      resumo: {
+        total: resultados.length, concluidas: cont('concluida'), sem_notas: cont('sem_notas'), puladas: cont('pulada'), erros: cont('erro'),
+        nao_iniciadas: cont('nao_iniciada'), salvos: resultados.reduce((s, r) => s + (r.salvos || 0), 0),
+        inconsistencias: resultados.reduce((s, r) => s + (r.inconsistencias || 0), 0), cancelado,
+      },
+    };
   } catch (e) { return { error: String(e.message || e) }; }
+  finally { _loteRodando = false; _loteCancelar = false; }
 });
 
 ipcMain.handle('fiscal:nfsePdfAbrir', async (_evt, { empresaId, chave }) => {
@@ -1893,6 +1991,13 @@ ipcMain.handle('fiscal:export', async (_evt, { fmt, payload }) => {
 ipcMain.handle('app:openPath', async (_evt, p) => {
   if (p) shell.showItemInFolder(p);
   return true;
+});
+
+// abre o arquivo no programa padrão (ex.: relatório HTML no navegador) — diferente de openPath, que só destaca na pasta
+ipcMain.handle('app:abrirArquivo', async (_evt, p) => {
+  if (!p) return { error: 'Caminho vazio.' };
+  const r = await shell.openPath(p);
+  return r ? { error: r } : { ok: true };
 });
 
 ipcMain.handle('app:version', async () => app.getVersion());

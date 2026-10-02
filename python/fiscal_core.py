@@ -2742,6 +2742,21 @@ def main(argv):
         return 0 if 'erro' not in res else 1
 
     # "efd-contribuicoes" — lê o arquivo e monta o painel de conferência completo.
+    if modo == 'nfse-lote-relatorio':
+        args = argv[1:]
+
+        def optl(name, default=None):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        entrada, saida = optl('--entrada'), optl('--saida')
+        if not entrada or not saida:
+            print('uso: fiscal_core.py nfse-lote-relatorio --entrada dados.json --saida relatorio.html'); return 1
+        import nfse_lote as _lote
+        with open(entrada, 'r', encoding='utf-8') as fh:
+            dados_lote = json.load(fh)
+        _out(saida, _lote.gerar_relatorio_lote_html(dados_lote))
+        print('Relatório do lote gerado:', saida)
+        return 0
+
     if modo == 'efd-corrigir':
         if len(argv) < 2:
             print('uso: fiscal_core.py efd-corrigir ARQUIVO.txt [--pva ERROS.pdf] --saida CORRIGIDO.txt [--painel-html relatorio.html] [--json resumo.json]'); return 1

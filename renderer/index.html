@@ -620,10 +620,25 @@
             <input type="checkbox" id="dlGerarPdf" checked style="width:15px;height:15px">
             Gerar também o PDF (DANFSe) de cada nota
           </label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="act inv-export" id="btnDlBaixar" style="background:#e8632b;color:#fff;border-color:transparent" disabled>Baixar NFS-e</button>
+          <button class="act inv-export" id="btnNflBaixar" style="background:#1f2a5a;color:#fff;border-color:transparent" disabled>Baixar em lote (todas as empresas)</button>
+          </div>
         </div>
 
         <div id="dlResultado" hidden style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-top:14px"></div>
+        <div id="nflResultado" hidden style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-top:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+            <div style="font-size:14px;font-weight:600">Resultado da baixa em lote</div>
+            <div style="display:flex;gap:8px">
+              <button class="act inv-export" id="btnNflAbrirPasta">Abrir pasta dos relatórios</button>
+              <button class="act inv-export" id="btnNflAbrirRel">Abrir relatório no navegador</button>
+            </div>
+          </div>
+          <div id="nflResumoTexto" style="font-size:13px;margin-bottom:4px"></div>
+          <div id="nflCaminho" style="font-size:11.5px;color:var(--ink2);margin-bottom:10px;word-break:break-all"></div>
+          <iframe id="nflFrame" class="fiscal-frame" style="height:900px"></iframe>
+        </div>
 
         <div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-top:14px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
@@ -637,6 +652,40 @@
           <div id="dlPainelDica" style="font-size:12px;color:#854f0b;background:#faeeda;border-radius:8px;padding:7px 11px;margin-top:8px"></div>
           <div id="dlPainelDesatualizado" hidden style="font-size:12px;color:#854f0b;background:#faeeda;border-radius:8px;padding:7px 11px;margin-top:8px">O período (ou a empresa) mudou depois que esse painel foi montado — clique em <b>Ver painel</b> para atualizar.</div>
           <iframe id="dlAnaliseFrame" class="fiscal-frame" hidden style="margin-top:12px;height:900px"></iframe>
+        </div>
+      </div>
+
+      <!-- Modal: baixa em lote (período obrigatório) -->
+      <div id="nflModal" hidden style="position:fixed;inset:0;background:rgba(20,23,51,.45);display:flex;align-items:center;justify-content:center;z-index:500">
+        <div style="background:var(--panel);border-radius:12px;padding:22px 24px;width:540px;max-width:92vw">
+          <div style="font-size:15px;font-weight:600;margin-bottom:6px">Baixar NFS-e em lote</div>
+          <div id="nflForm">
+            <div id="nflIntro" style="font-size:12.5px;color:var(--ink2);margin-bottom:14px;line-height:1.55"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+              <div>
+                <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:5px">Data inicial <span style="color:#e8632b">*</span></label>
+                <input type="date" id="nflIni" style="width:100%">
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:5px">Data final <span style="color:#e8632b">*</span></label>
+                <input type="date" id="nflFim" style="width:100%">
+              </div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:12px;cursor:pointer">
+              <input type="checkbox" id="nflGerarPdf" checked style="width:15px;height:15px"> Gerar também o PDF (DANFSe) de cada nota
+            </label>
+            <div id="nflConfirma" style="font-size:12.5px;line-height:1.55;background:#faeeda;color:#854f0b;border-radius:8px;padding:9px 12px;margin-bottom:14px"></div>
+            <div style="display:flex;justify-content:flex-end;gap:8px">
+              <button class="act inv-export" id="btnNflFechar">Cancelar</button>
+              <button class="act inv-export" id="btnNflIniciar" disabled style="background:#e8632b;color:#fff;border-color:transparent">Iniciar lote</button>
+            </div>
+          </div>
+          <div id="nflProg" hidden>
+            <div id="nflAtual" style="font-size:13px;font-weight:600;margin:6px 0 10px">Preparando…</div>
+            <div style="height:10px;background:#eef0f6;border-radius:6px;overflow:hidden;margin-bottom:10px"><div id="nflBarra" style="height:100%;width:0%;background:linear-gradient(90deg,#e8632b,#ff9f66);transition:width .4s"></div></div>
+            <div id="nflLog" style="max-height:230px;overflow:auto;font-size:12px;line-height:1.7;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:12px"></div>
+            <div style="display:flex;justify-content:flex-end"><button class="act inv-export" id="btnNflCancelarLote">Cancelar lote</button></div>
+          </div>
         </div>
       </div>
 

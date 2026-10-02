@@ -911,6 +911,8 @@ function bindFiscal() {
     const temEmpresa = DL_EMPRESAS.length > 0;
     const temPasta = $('#dlPastaTexto').textContent !== 'Nenhuma pasta escolhida ainda';
     $('#btnDlBaixar').disabled = !(temEmpresa && temPasta);
+    const btnLote = $('#btnNflBaixar');
+    if (btnLote) btnLote.disabled = !(temEmpresa && temPasta);
     dlAtualizarBotaoPainel();
   }
 
@@ -1160,6 +1162,7 @@ function bindFiscal() {
     });
     dlCarregarEmpresas();
     dlCarregarPasta();
+    document.addEventListener('fiscocont:dl-recarregar', () => dlCarregarEmpresas());   // a baixa em lote atualiza a lista (último download)
 
     // botão "PDF" de cada nota, clicado dentro do iframe do painel — o
     // próprio iframe manda um postMessage (não dá pra addEventListener
@@ -2175,6 +2178,95 @@ function bindCorrigirEfd() {
   });
 }
 
+function bindBaixaLote() {
+  const btn = $('#btnNflBaixar');
+  if (!btn) return;
+  const modal = $('#nflModal');
+  const fmt = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
+  let totalEmp = 0;
+  let rodando = false;
+  const MSG = { vazio: 'O período é obrigatório: informe a data inicial e a data final para continuar.', ordem: 'A data inicial não pode ser depois da data final.' };
+
+  function validar() {
+    const ini = $('#nflIni').value;
+    const fim = $('#nflFim').value;
+    const conf = $('#nflConfirma');
+    const ok = !!ini && !!fim && ini <= fim;
+    if (!ini || !fim) conf.textContent = MSG.vazio;
+    else if (ini > fim) conf.textContent = MSG.ordem;
+    else conf.textContent = `Serão baixadas as NFS-e de ${fmt(ini)} a ${fmt(fim)} de ${totalEmp} empresa(s) cadastrada(s), uma por vez. O painel de cada empresa é salvo na pasta dela e o relatório geral na pasta "_Relatorios em lote".`;
+    $('#btnNflIniciar').disabled = !ok;
+  }
+  $('#nflIni').addEventListener('input', validar);
+  $('#nflFim').addEventListener('input', validar);
+
+  btn.addEventListener('click', async () => {
+    if (rodando) return;
+    const lista = await window.fiscocont.fiscal.certListar();
+    totalEmp = lista.length;
+    $('#nflIni').value = '';
+    $('#nflFim').value = '';
+    $('#nflIntro').textContent = `Baixa as NFS-e de todas as ${totalEmp} empresa(s) cadastrada(s), uma de cada vez. Escolha o período antes de começar.`;
+    $('#nflForm').hidden = false;
+    $('#nflProg').hidden = true;
+    validar();
+    modal.hidden = false;
+  });
+  $('#btnNflFechar').addEventListener('click', () => { modal.hidden = true; });
+
+  $('#btnNflCancelarLote').addEventListener('click', async () => {
+    $('#btnNflCancelarLote').disabled = true;
+    $('#nflAtual').textContent += ' — cancelando ao fim desta empresa…';
+    await window.fiscocont.fiscal.nfseLoteCancelar();
+  });
+
+  $('#btnNflIniciar').addEventListener('click', async () => {
+    const ini = $('#nflIni').value;
+    const fim = $('#nflFim').value;
+    if (!ini || !fim || ini > fim || rodando) return;      // defesa: sem período válido o lote não começa
+    const gerarPdf = $('#nflGerarPdf').checked;
+    rodando = true;
+    $('#nflForm').hidden = true;
+    $('#nflProg').hidden = false;
+    $('#nflLog').innerHTML = '';
+    $('#nflBarra').style.width = '0%';
+    $('#btnNflCancelarLote').disabled = false;
+    $('#nflAtual').textContent = 'Preparando…';
+    const rotulo = { concluida: '✓', sem_notas: '·', pulada: '⚠', erro: '✗' };
+    const off = window.fiscocont.fiscal.onNfseLoteProgresso((p) => {
+      if (p.fase === 'inicio') {
+        $('#nflAtual').textContent = `Empresa ${p.i} de ${p.total}: ${p.nome}…`;
+        $('#nflBarra').style.width = `${Math.round(((p.i - 1) / p.total) * 100)}%`;
+      } else {
+        const txt = p.status === 'concluida' ? `${p.salvos} nota(s)` : (p.status === 'sem_notas' ? 'sem notas no período' : (p.motivo || p.status));
+        $('#nflLog').insertAdjacentHTML('beforeend', `<div>${rotulo[p.status] || '·'} <b>${_esc(p.nome)}</b> — ${_esc(txt)}</div>`);
+        $('#nflLog').scrollTop = $('#nflLog').scrollHeight;
+        $('#nflBarra').style.width = `${Math.round((p.i / p.total) * 100)}%`;
+      }
+    });
+    let res;
+    try {
+      res = await window.fiscocont.fiscal.nfseLoteIniciar({ dataInicial: ini, dataFinal: fim, gerarPdf });
+    } finally {
+      rodando = false;
+      off();
+      modal.hidden = true;
+    }
+    document.dispatchEvent(new Event('fiscocont:dl-recarregar'));
+    if (res.error) { toast(res.error, true); return; }
+    const r = res.resumo;
+    const box = $('#nflResultado');
+    box.hidden = false;
+    $('#nflResumoTexto').innerHTML = `<b>${r.salvos}</b> NFS-e baixadas · ${r.concluidas} empresa(s) concluída(s) · ${r.sem_notas} sem notas · <b>${r.puladas + r.erros}</b> não baixada(s) ou com erro${r.nao_iniciadas ? ` · ${r.nao_iniciadas} não iniciada(s)` : ''}${r.cancelado ? ' · <b>lote cancelado</b>' : ''}`;
+    $('#nflCaminho').textContent = `Relatório salvo em: ${res.caminho}`;
+    $('#nflFrame').src = res.url;
+    $('#btnNflAbrirPasta').onclick = () => window.fiscocont.openPath(res.pasta);
+    $('#btnNflAbrirRel').onclick = () => window.fiscocont.abrirArquivo(res.caminho);
+    if (r.concluidas + r.sem_notas === 0 && !r.cancelado) toast(`Nenhuma empresa foi baixada (${r.puladas + r.erros} com problema) — veja os motivos no relatório.`, true);
+    else toast(r.cancelado ? 'Lote cancelado — o relatório do que foi feito está salvo.' : `Lote concluído: ${r.salvos} nota(s) de ${r.concluidas} empresa(s).`);
+  });
+}
+
 function bindNewsToast() {
   const elBalao = $('#newsToast');
   if (!elBalao || !window.fiscocont.news) return;
@@ -2529,6 +2621,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   bindNewsToast();
   bindEfdContrib();
   bindCorrigirEfd();
+  bindBaixaLote();
   $('#btnImport').addEventListener('click', doImport);
   $('#btnImport2').addEventListener('click', doImport);
   $('#btnExport').addEventListener('click', doExport);
