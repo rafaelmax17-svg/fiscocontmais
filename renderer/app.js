@@ -554,6 +554,7 @@ function switchView(name) {
   if (name === 'fiscal-efd-contrib') { $('#view-fiscal-efd-contrib').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-lic') { $('#view-admin-lic').hidden = false; $('#empty').hidden = true; loadLicensePanel(); return; }
   if (name === 'admin-corrigir-sped') { $('#view-admin-corrigir-sped').hidden = false; $('#empty').hidden = true; return; }
+  if (name === 'admin-corrigir-efd') { $('#view-admin-corrigir-efd').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-lmc') { $('#view-admin-lmc').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'historico') { $('#view-historico').hidden = false; $('#empty').hidden = true; loadHistoricoEmpresas(); return; }
   if (name === 'lote-balancetes') { $('#view-lote-balancetes').hidden = false; $('#empty').hidden = true; return; }
@@ -2118,6 +2119,62 @@ function bindEfdContrib() {
   });
 }
 
+function bindCorrigirEfd() {
+  const btnPick = $('#btnCorrEfdPick');
+  if (!btnPick) return;
+  const est = { sped: null, pva: null, html: null, corrigido: null, empresa: '' };
+  const nome = (p) => p.split(/[\\/]/).pop();
+  btnPick.addEventListener('click', async () => {
+    const pick = await window.fiscocont.fiscal.pickEfdContrib();
+    if (pick.canceled) return;
+    est.sped = pick.path; est.html = null; est.corrigido = null;
+    est.pva = null;                       // o PDF do PVA é de uma empresa/período: ao trocar o SPED, escolhe de novo
+    $('#corrEfdPvaNome').textContent = '';
+    $('#corrEfdNome').textContent = nome(pick.path);
+    $('#btnCorrEfdRodar').disabled = false;
+    $('#btnCorrEfdBaixar').disabled = true;
+    $('#btnCorrEfdHtml').disabled = true;
+  });
+  $('#btnCorrEfdPva').addEventListener('click', async () => {
+    const pick = await window.fiscocont.fiscal.pickPvaPdf();
+    if (pick.canceled) return;
+    est.pva = pick.path;
+    $('#corrEfdPvaNome').textContent = nome(pick.path);
+  });
+  $('#btnCorrEfdRodar').addEventListener('click', async () => {
+    if (!est.sped) return;
+    overlay(true, 'Corrigindo a EFD-Contribuições…');
+    const res = await window.fiscocont.fiscal.efdCorrigir(est.sped, est.pva);
+    overlay(false);
+    if (res.error) { toast(res.error, true); return; }
+    $('#corrEfdVazio').hidden = true;
+    const frame = $('#corrEfdFrame');
+    frame.hidden = false;
+    frame.srcdoc = res.painelHtml;
+    est.html = res.painelHtml;
+    est.corrigido = res.corrigidoPath;
+    est.empresa = res.resumo?.empresa?.nome || '';
+    $('#btnCorrEfdBaixar').disabled = false;
+    $('#btnCorrEfdHtml').disabled = false;
+    const pend = res.resumo?.pendencias || 0;
+    toast(pend ? `Correção concluída — ${pend} pendência(s) para a sua decisão.` : 'Correção concluída.');
+  });
+  $('#btnCorrEfdBaixar').addEventListener('click', async () => {
+    const r = await window.fiscocont.fiscal.efdCorrigirSalvar(est.corrigido, nome(est.sped));
+    if (r.canceled) return;
+    if (r.error) { toast(r.error, true); return; }
+    toast('SPED corrigido salvo.');
+  });
+  $('#btnCorrEfdHtml').addEventListener('click', async () => {
+    if (!est.html) return;
+    const r = await window.fiscocont.fiscal.nfseExportarHtml(est.html, 'efd-corrigir', est.empresa);
+    if (r.canceled) return;
+    if (r.error) { toast(r.error, true); return; }
+    toast('Relatório exportado.');
+    window.fiscocont.openPath(r.path);
+  });
+}
+
 function bindNewsToast() {
   const elBalao = $('#newsToast');
   if (!elBalao || !window.fiscocont.news) return;
@@ -2471,6 +2528,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   bindChatIA();
   bindNewsToast();
   bindEfdContrib();
+  bindCorrigirEfd();
   $('#btnImport').addEventListener('click', doImport);
   $('#btnImport2').addEventListener('click', doImport);
   $('#btnExport').addEventListener('click', doExport);

@@ -256,6 +256,10 @@
         <svg viewBox="0 0 24 24" class="ic"><path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M10.3 4.2L2.9 17a1.8 1.8 0 001.55 2.7h15.1A1.8 1.8 0 0021.1 17L13.7 4.2a1.8 1.8 0 00-3.4 0z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
         <span>Correção do SPED Fiscal</span>
       </button>
+      <button class="nav-item nav-item-danger" data-group="admin-only" data-view="admin-corrigir-efd">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M10.3 4.2L2.9 17a1.8 1.8 0 001.55 2.7h15.1A1.8 1.8 0 0021.1 17L13.7 4.2a1.8 1.8 0 00-3.4 0z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        <span>Correção da EFD-Contribuições</span>
+      </button>
       <button class="nav-item nav-item-danger" data-group="admin-only" data-view="admin-lmc">
         <svg viewBox="0 0 24 24" class="ic"><path d="M8 3v6l-4 9a2 2 0 002 3h12a2 2 0 002-3l-4-9V3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M6 15h12" stroke="currentColor" stroke-width="1.7"/></svg>
         <span>Substituir LMC (combustíveis)</span>
@@ -693,6 +697,21 @@
         </div>
       </div>
 
+      <div class="view" id="view-admin-corrigir-efd" hidden>
+        <div class="fiscal-bar">
+          <button class="act inv-export" id="btnCorrEfdPick">Selecionar SPED da EFD-Contribuições (.txt)</button>
+          <span id="corrEfdNome" style="font-size:12px;color:var(--ink2)"></span>
+          <button class="act inv-export" id="btnCorrEfdPva">Relatório de erros do PVA (PDF, opcional)</button>
+          <span id="corrEfdPvaNome" style="font-size:12px;color:var(--ink2)"></span>
+        </div>
+        <div class="fiscal-bar" style="margin-top:-4px">
+          <button class="act inv-export" id="btnCorrEfdRodar" disabled style="background:#e23d4c;color:#fff;border-color:transparent">Corrigir</button>
+          <button class="act inv-export" id="btnCorrEfdBaixar" disabled style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button>
+          <button class="act inv-export" id="btnCorrEfdHtml" disabled>Exportar relatório (HTML)</button>
+        </div>
+        <div id="corrEfdVazio" class="fiscal-empty">Escolha o SPED da EFD-Contribuições e, se tiver, o relatório "Pendências de Validação" do PVA. O sistema corrige o que é mecânico, registra cada ação e mostra tudo, separado por tipo de erro.</div>
+        <iframe id="corrEfdFrame" hidden style="width:100%;height:900px;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
+      </div>
       <div class="view" id="view-fiscal-efd-contrib" hidden>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
           <svg viewBox="0 0 24 24" width="22" height="22" style="color:#854f0b;flex:0 0 auto"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM14 3v6h6M9 13h6M9 17h6M9 9h1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>

@@ -2742,6 +2742,25 @@ def main(argv):
         return 0 if 'erro' not in res else 1
 
     # "efd-contribuicoes" — lê o arquivo e monta o painel de conferência completo.
+    if modo == 'efd-corrigir':
+        if len(argv) < 2:
+            print('uso: fiscal_core.py efd-corrigir ARQUIVO.txt [--pva ERROS.pdf] --saida CORRIGIDO.txt [--painel-html relatorio.html] [--json resumo.json]'); return 1
+        args = argv[2:]
+
+        def optc(name, default=None):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        import efd_corretor as _corr
+        try:
+            _corr.corrigir_arquivo(argv[1], optc('--pva'), optc('--saida', 'efd_corrigido.txt'), optc('--painel-html'), optc('--json'))
+        except Exception as e:
+            res = {'erro': f'Não consegui corrigir esse arquivo: {e}'}
+            if '--json' in args:
+                _out(optc('--json', 'corrigir.json'), json.dumps(res, ensure_ascii=False))
+            print(json.dumps(res, ensure_ascii=False))
+            return 1
+        print('EFD-Contribuições corrigida:', optc('--saida', 'efd_corrigido.txt'))
+        return 0
+
     if modo == 'efd-contribuicoes':
         if len(argv) < 2:
             print('uso: fiscal_core.py efd-contribuicoes ARQUIVO.txt [--empresa NOME] [--painel-html saida.html] [--json saida.json]'); return 1

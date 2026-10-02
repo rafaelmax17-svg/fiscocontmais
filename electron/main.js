@@ -804,7 +804,7 @@ ipcMain.handle('fiscal:nfseAnalise', async (_evt, { empresaId, dataInicial, data
 });
 
 ipcMain.handle('fiscal:nfseExportarHtml', async (_evt, { html, tipo, empresaNome }) => {
-  const nomeArquivo = tipo === 'efd-contrib' ? 'Conferencia-EFD-Contribuicoes' : 'Painel-NFSe';
+  const nomeArquivo = tipo === 'efd-contrib' ? 'Conferencia-EFD-Contribuicoes' : (tipo === 'efd-corrigir' ? 'Correcao-EFD-Contribuicoes' : 'Painel-NFSe');
   const save = await dialog.showSaveDialog(mainWindow, {
     title: 'Salvar HTML', defaultPath: `${nomeArquivo}-${(empresaNome || '').replace(/[^\w-]+/g, '_')}.html`,
     filters: [{ name: 'HTML', extensions: ['html'] }],
@@ -1577,6 +1577,48 @@ ipcMain.handle('fiscal:efdContrib', async (_evt, arquivoPath, opcoes = {}) => {
     const painelHtml = fs.readFileSync(htmlOut, 'utf-8');
     [htmlOut, jsonOut].forEach((p) => fs.unlink(p, () => {}));
     return { ok: true, resumo, painelHtml };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
+ipcMain.handle('fiscal:pickPvaPdf', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: 'Selecione o relatório de erros do PVA (PDF)',
+    properties: ['openFile'],
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (r.canceled || !r.filePaths[0]) return { canceled: true };
+  return { path: r.filePaths[0] };
+});
+
+ipcMain.handle('fiscal:efdCorrigir', async (_evt, spedPath, pvaPath) => {
+  if (!spedPath) return { error: 'Selecione o arquivo da EFD-Contribuições.' };
+  const stamp = Date.now();
+  const htmlOut = path.join(os.tmpdir(), `fc_efdcorr_${stamp}.html`);
+  const jsonOut = path.join(os.tmpdir(), `fc_efdcorr_${stamp}.json`);
+  const txtOut = path.join(os.tmpdir(), `fc_efdcorr_${stamp}.txt`);
+  try {
+    const args = ['efd-corrigir', spedPath, '--saida', txtOut, '--painel-html', htmlOut, '--json', jsonOut];
+    if (pvaPath) args.push('--pva', pvaPath);
+    await runFiscal(args, jsonOut);
+    const resumo = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    if (resumo.erro) return { error: resumo.erro };
+    const painelHtml = fs.readFileSync(htmlOut, 'utf-8');
+    [htmlOut, jsonOut].forEach((p) => fs.unlink(p, () => {}));
+    return { ok: true, resumo, painelHtml, corrigidoPath: txtOut };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
+ipcMain.handle('fiscal:efdCorrigirSalvar', async (_evt, corrigidoPath, nomeOriginal) => {
+  if (!corrigidoPath || !fs.existsSync(corrigidoPath)) return { error: 'Arquivo corrigido não encontrado. Rode a correção de novo.' };
+  const base = String(nomeOriginal || 'sped.txt').replace(/\.txt$/i, '');
+  const save = await dialog.showSaveDialog(mainWindow, {
+    title: 'Salvar EFD-Contribuições corrigida', defaultPath: `${base}_corrigido.txt`,
+    filters: [{ name: 'EFD-Contribuições', extensions: ['txt'] }],
+  });
+  if (save.canceled || !save.filePath) return { canceled: true };
+  try {
+    fs.copyFileSync(corrigidoPath, save.filePath);
+    return { ok: true, path: save.filePath };
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
