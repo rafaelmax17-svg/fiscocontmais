@@ -671,6 +671,11 @@
           </div>
           <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="eclCreditos" checked style="width:15px;height:15px"> Mostrar "de onde vêm os seus créditos"</label>
           <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:16px;cursor:pointer"><input type="checkbox" id="eclTecnico" style="width:15px;height:15px"> Incluir anexo técnico (códigos e descrições oficiais)</label>
+          <div id="eclSaldoAviso" hidden style="background:#fff8ea;border:1px solid #efc98f;border-left:5px solid #f5a524;border-radius:10px;padding:11px 14px;margin-bottom:14px;font-size:12.5px;line-height:1.6;color:#633806">
+            <b>Este mês tem saldo credor.</b> <span id="eclSaldoTexto"></span><br>
+            O valor sai direto do campo "saldo a transportar" do arquivo, e o Domínio já gerou esse saldo errado em outros casos. Confira antes de enviar ao cliente.
+            <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-weight:600"><input type="checkbox" id="eclSaldoOk" style="width:15px;height:15px"> Conferi o saldo credor</label>
+          </div>
           <div style="display:flex;justify-content:flex-end;gap:8px">
             <button class="act inv-export" id="btnEclFechar">Cancelar</button>
             <button class="act inv-export" id="btnEclGerar" style="background:#0f9d6e;color:#fff;border-color:transparent">Gerar relatório</button>

@@ -2087,6 +2087,7 @@ function bindEfdContrib() {
     frame.hidden = false;
     frame.srcdoc = res.painelHtml;
     est.html = res.painelHtml;
+    est.dados = res.resumo;            // para avisar do saldo credor antes de gerar o relatório do cliente
     est.empresa = res.resumo?.empresa?.nome || '';
     $('#btnEfdExportar').disabled = false;
     $('#btnEfdDomSaidas').disabled = false;
@@ -2116,7 +2117,23 @@ function bindEfdContrib() {
   // ---- relatório para o cliente ----
   const ecl = { html: null, estatico: null, anterior: null, resumo: null };
   const nomeCliente = () => `Relatorio-Cliente_${(ecl.resumo?.empresa || 'empresa').replace(/\s+/g, '_')}_${(ecl.resumo?.competencia || '').replace('/', '-')}`;
-  $('#btnEclAbrir').addEventListener('click', () => { $('#eclModal').hidden = false; });
+  // saldo credor: o valor sai direto do arquivo e o Domínio já gerou esse saldo errado — o escritório confere antes de gerar
+  function saldoCredorDoArquivo() {
+    const pis = (est.dados && est.dados.saldo_credor_pis) || 0;
+    const cofins = (est.dados && est.dados.saldo_credor_cofins) || 0;
+    return { pis, cofins, total: pis + cofins };
+  }
+  const brl = (v) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function atualizarAvisoSaldo() {
+    const s = saldoCredorDoArquivo();
+    const tem = s.total > 0.005;
+    $('#eclSaldoAviso').hidden = !tem;
+    if (tem) $('#eclSaldoTexto').textContent = `PIS: R$ ${brl(s.pis)} · COFINS: R$ ${brl(s.cofins)}.`;
+    $('#eclSaldoOk').checked = false;
+    $('#btnEclGerar').disabled = tem;          // com saldo credor, só gera depois da conferência
+  }
+  $('#eclSaldoOk').addEventListener('change', () => { $('#btnEclGerar').disabled = !$('#eclSaldoOk').checked; });
+  $('#btnEclAbrir').addEventListener('click', () => { atualizarAvisoSaldo(); $('#eclModal').hidden = false; });
   $('#btnEclFechar').addEventListener('click', () => { $('#eclModal').hidden = true; });
   $('#btnEclAnterior').addEventListener('click', async () => {
     const pick = await window.fiscocont.fiscal.pickEfdContrib();

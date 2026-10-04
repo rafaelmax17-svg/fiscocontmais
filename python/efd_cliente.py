@@ -371,14 +371,22 @@ def _guias(n, op):
 
 
 def _bloco_credor(n):
-    if n['caso'] not in ('credor', 'misto'):
-        return ''
     t = n['tot']
+    if n['caso'] == 'nada' or t['saldo'] <= _EPS:
+        return ''
     partes = [(nome, n[k]['saldo']) for nome, k in (('PIS', 'pis'), ('COFINS', 'cofins')) if n[k]['saldo'] > _EPS]
     detalhe = ' e '.join(f'{nome}: <b>{_rs(v)}</b>' for nome, v in partes)
-    titulo = 'Nada a pagar neste mês' if n['caso'] == 'credor' else 'Há saldo credor em um dos tributos'
+    if n['caso'] == 'credor':
+        titulo = 'Nada a pagar neste mês'
+        intro = f'Seus créditos foram maiores que o imposto, e <b>sobrou {_rs(t["saldo"])} de crédito</b> ({detalhe}). '
+    elif n['caso'] == 'misto':
+        titulo = 'Há saldo credor em um dos tributos'
+        intro = f'Em um dos tributos os créditos foram maiores que o imposto, e <b>sobrou {_rs(t["saldo"])} de crédito</b> ({detalhe}). '
+    else:
+        titulo = 'Há saldo credor para os próximos meses'
+        intro = f'Além do valor a pagar, ficou <b>{_rs(t["saldo"])} de crédito sem uso</b> ({detalhe}). '
     return (f'<div class="caixa-credor"><div class="credor-ico">✓</div><div><div class="credor-t">{titulo}</div>'
-            f'<div class="credor-x">Seus créditos foram maiores que o imposto, e <b>sobrou {_rs(t["saldo"])} de crédito</b> ({detalhe}). '
+            f'<div class="credor-x">{intro}'
             f'Esse é o <b>saldo credor</b>: um crédito a que a empresa tem direito e que ainda não foi usado, porque não havia imposto suficiente para descontar. '
             f'Ele fica guardado para reduzir o imposto dos próximos meses, e o escritório acompanha esse saldo. '
             f'<span class="peq">Valor conforme a EFD-Contribuições entregue.</span></div></div></div>')
@@ -593,9 +601,11 @@ def _montar(d, n, anterior, na, op, animar, avisos):
         k4 = f'<div class="kpi laranja">{cnt(0)}<span>Valor a pagar</span></div>'
     else:
         k4 = f'<div class="kpi laranja">{cnt(t["pagar"])}<span>Valor a pagar</span></div>'
+    cred_kpi = (f'<div class="kpi verde">{cnt(t["cred"] + t["saldo"])}<span>Créditos disponíveis no mês</span></div>' if n['caso'] == 'credor'
+                else f'<div class="kpi verde">{cnt(t["cred"])}<span>Créditos das suas compras</span></div>')
     kpis = (f'<div class="kpis"><div class="kpi">{cnt(n["receita"])}<span>Suas receitas no mês</span></div>'
             f'<div class="kpi azul">{cnt(t["debito"])}<span>Imposto sobre as vendas</span></div>'
-            f'<div class="kpi verde">{cnt(t["cred"])}<span>Créditos das suas compras</span></div>{k4}</div>')
+            f'{cred_kpi}{k4}</div>')
     casc = ''
     if n['caso'] != 'nada':
         casc = f'<div class="card"><h3>{"Por que não há nada a pagar" if n["caso"] == "credor" else "Como chegamos ao valor a pagar"}</h3><p class="sub">{_texto_cascata(n)}</p>{_cascata(n)}</div>'

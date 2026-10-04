@@ -2839,6 +2839,9 @@ def main(argv):
             'empresa': dados['empresa'], 'receita_total': dados['receita_0111']['total'],
             'pis_a_recolher': dados['pis']['consolidacao']['total_a_recolher'],
             'cofins_a_recolher': dados['cofins']['consolidacao']['total_a_recolher'],
+            # saldo credor declarado (campo "saldo a transportar" do M100/M500): a tela avisa o escritório antes de gerar o relatório do cliente
+            'saldo_credor_pis': round(sum(x['saldo_a_transportar'] for x in dados['pis']['creditos']), 2),
+            'saldo_credor_cofins': round(sum(x['saldo_a_transportar'] for x in dados['cofins']['creditos']), 2),
         }
         if '--json' in args:
             _out(opte('--json', 'efd.json'), json.dumps(resumo, ensure_ascii=False))
