@@ -1678,6 +1678,56 @@ ipcMain.handle('fiscal:efdContrib', async (_evt, arquivoPath, opcoes = {}) => {
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+// ---- Relatório para o CLIENTE (EFD-Contribuições): explicação automática + dashboards ----
+ipcMain.handle('fiscal:efdCliente', async (_evt, { spedPath, anteriorPath, opcoes }) => {
+  if (!spedPath) return { error: 'Abra primeiro o arquivo da EFD-Contribuições.' };
+  const stamp = Date.now();
+  const f = (ext) => path.join(os.tmpdir(), `fc_efdcli_${stamp}.${ext}`);
+  const htmlOut = f('html'), estOut = f('est.html'), jsonOut = f('json'), optJson = f('opts.json');
+  try {
+    fs.writeFileSync(optJson, JSON.stringify(opcoes || {}), 'utf-8');
+    const args = ['efd-cliente', spedPath, '--html', htmlOut, '--html-estatico', estOut, '--json', jsonOut, '--opcoes', optJson];
+    if (anteriorPath) args.push('--anterior', anteriorPath);
+    await runFiscal(args, jsonOut);
+    const meta = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    if (meta.erro) return { error: meta.erro };
+    const html = fs.readFileSync(htmlOut, 'utf-8');
+    const htmlEstatico = fs.readFileSync(estOut, 'utf-8');
+    [htmlOut, estOut, jsonOut, optJson].forEach((p) => fs.unlink(p, () => {}));
+    return { ok: true, html, htmlEstatico, resumo: meta.resumo, avisos: meta.avisos || [] };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
+ipcMain.handle('fiscal:efdClienteSalvar', async (_evt, { html, nomeSugerido }) => {
+  const nome = nfseLote.sanitizar(nomeSugerido || 'Relatorio-Cliente');
+  const r = await dialog.showSaveDialog(mainWindow, {
+    title: 'Salvar relatório do cliente (HTML)', defaultPath: `${nome}.html`, filters: [{ name: 'HTML', extensions: ['html'] }],
+  });
+  if (r.canceled || !r.filePath) return { canceled: true };
+  try { fs.writeFileSync(r.filePath, html, 'utf-8'); return { ok: true, path: r.filePath }; }
+  catch (e) { return { error: String(e.message || e) }; }
+});
+
+// PDF: usa a versão ESTÁTICA do relatório (sem animação), então o PDF sai sempre no estado final
+ipcMain.handle('fiscal:efdClientePdf', async (_evt, { htmlEstatico, nomeSugerido }) => {
+  const nome = nfseLote.sanitizar(nomeSugerido || 'Relatorio-Cliente');
+  const r = await dialog.showSaveDialog(mainWindow, {
+    title: 'Salvar relatório do cliente (PDF)', defaultPath: `${nome}.pdf`, filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (r.canceled || !r.filePath) return { canceled: true };
+  const tmp = path.join(os.tmpdir(), `fc_cli_pdf_${Date.now()}.html`);
+  fs.writeFileSync(tmp, htmlEstatico, 'utf-8');
+  const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+  try {
+    await win.loadFile(tmp);
+    await new Promise((ok) => setTimeout(ok, 400));
+    const pdf = await win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true });
+    fs.writeFileSync(r.filePath, pdf);
+    return { ok: true, path: r.filePath };
+  } catch (e) { return { error: String(e.message || e) }; }
+  finally { try { win.destroy(); } catch (_) {} fs.unlink(tmp, () => {}); }
+});
+
 ipcMain.handle('fiscal:pickPvaPdf', async () => {
   const r = await dialog.showOpenDialog(mainWindow, {
     title: 'Selecione o relatório de erros do PVA (PDF)',

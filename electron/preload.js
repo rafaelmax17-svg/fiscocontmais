@@ -94,6 +94,9 @@ contextBridge.exposeInMainWorld('fiscocont', {
     efdContrib: (arquivoPath, opcoes) => ipcRenderer.invoke('fiscal:efdContrib', arquivoPath, opcoes || {}),
     pickDominioPdf: (rotulo) => ipcRenderer.invoke('fiscal:pickDominioPdf', rotulo),
     pickPvaPdf: () => ipcRenderer.invoke('fiscal:pickPvaPdf'),
+    efdCliente: (params) => ipcRenderer.invoke('fiscal:efdCliente', params),
+    efdClienteSalvar: (params) => ipcRenderer.invoke('fiscal:efdClienteSalvar', params),
+    efdClientePdf: (params) => ipcRenderer.invoke('fiscal:efdClientePdf', params),
     nfseLoteIniciar: (params) => ipcRenderer.invoke('fiscal:nfseLoteIniciar', params),
     nfseLoteCancelar: () => ipcRenderer.invoke('fiscal:nfseLoteCancelar'),
     onNfseLoteProgresso: (cb) => {

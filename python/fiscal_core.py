@@ -2757,6 +2757,39 @@ def main(argv):
         print('Relatório do lote gerado:', saida)
         return 0
 
+    if modo == 'efd-cliente':
+        if len(argv) < 2:
+            print('uso: fiscal_core.py efd-cliente ARQUIVO.txt [--anterior MES_ANTERIOR.txt] [--opcoes opcoes.json] --html saida.html [--html-estatico saida_pdf.html] [--json meta.json]'); return 1
+        args = argv[2:]
+
+        def optk(name, default=None):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        import efd_contribuicoes as _efd
+        import efd_cliente as _cl
+        try:
+            dados_c = _efd.parse_efd_contribuicoes(argv[1])
+            anterior_c = _efd.parse_efd_contribuicoes(optk('--anterior')) if optk('--anterior') else None
+            opcoes_c = {}
+            if optk('--opcoes'):
+                with open(optk('--opcoes'), 'r', encoding='utf-8') as fh:
+                    opcoes_c = json.load(fh)
+            if not opcoes_c.get('logo'):
+                opcoes_c['logo'] = _logo_uri()
+            res_c = _cl.gerar_relatorio_cliente(dados_c, anterior_c, opcoes_c)
+        except Exception as e:
+            erro = {'erro': f'Não consegui gerar o relatório do cliente: {e}'}
+            if optk('--json'):
+                _out(optk('--json'), json.dumps(erro, ensure_ascii=False))
+            print(json.dumps(erro, ensure_ascii=False))
+            return 1
+        _out(optk('--html', 'relatorio_cliente.html'), res_c['html'])
+        if optk('--html-estatico'):
+            _out(optk('--html-estatico'), res_c['html_estatico'])
+        if optk('--json'):
+            _out(optk('--json'), json.dumps({'avisos': res_c['avisos'], 'resumo': res_c['resumo']}, ensure_ascii=False))
+        print('Relatório do cliente gerado')
+        return 0
+
     if modo == 'efd-corrigir':
         if len(argv) < 2:
             print('uso: fiscal_core.py efd-corrigir ARQUIVO.txt [--pva ERROS.pdf] --saida CORRIGIDO.txt [--painel-html relatorio.html] [--json resumo.json]'); return 1

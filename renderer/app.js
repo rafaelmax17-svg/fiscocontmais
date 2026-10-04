@@ -2091,6 +2091,7 @@ function bindEfdContrib() {
     $('#btnEfdExportar').disabled = false;
     $('#btnEfdDomSaidas').disabled = false;
     $('#btnEfdDomEntradas').disabled = false;
+    $('#btnEclAbrir').disabled = false;
     return true;
   }
   btn.addEventListener('click', async () => {
@@ -2112,6 +2113,54 @@ function bindEfdContrib() {
   }
   $('#btnEfdDomSaidas').addEventListener('click', () => anexarDominio('saidas'));
   $('#btnEfdDomEntradas').addEventListener('click', () => anexarDominio('entradas'));
+  // ---- relatório para o cliente ----
+  const ecl = { html: null, estatico: null, anterior: null, resumo: null };
+  const nomeCliente = () => `Relatorio-Cliente_${(ecl.resumo?.empresa || 'empresa').replace(/\s+/g, '_')}_${(ecl.resumo?.competencia || '').replace('/', '-')}`;
+  $('#btnEclAbrir').addEventListener('click', () => { $('#eclModal').hidden = false; });
+  $('#btnEclFechar').addEventListener('click', () => { $('#eclModal').hidden = true; });
+  $('#btnEclAnterior').addEventListener('click', async () => {
+    const pick = await window.fiscocont.fiscal.pickEfdContrib();
+    if (pick.canceled) return;
+    ecl.anterior = pick.path;
+    $('#eclAnteriorNome').textContent = nome(pick.path);
+    $('#btnEclLimparAnterior').hidden = false;
+  });
+  $('#btnEclLimparAnterior').addEventListener('click', () => { ecl.anterior = null; $('#eclAnteriorNome').textContent = ''; $('#btnEclLimparAnterior').hidden = true; });
+  $('#btnEclGerar').addEventListener('click', async () => {
+    if (!est.sped) return;
+    const opcoes = { recado: $('#eclRecado').value, vencimento: $('#eclVenc').value, creditos: $('#eclCreditos').checked, tecnico: $('#eclTecnico').checked };
+    $('#eclModal').hidden = true;
+    overlay(true, 'Gerando o relatório do cliente…');
+    const res = await window.fiscocont.fiscal.efdCliente({ spedPath: est.sped, anteriorPath: ecl.anterior, opcoes });
+    overlay(false);
+    if (res.error) { toast(res.error, true); return; }
+    ecl.html = res.html; ecl.estatico = res.htmlEstatico; ecl.resumo = res.resumo;
+    $('#efdFrame').srcdoc = res.html;
+    $('#btnEclHtml').hidden = false; $('#btnEclPdf').hidden = false; $('#btnEclVoltar').hidden = false;
+    toast((res.avisos && res.avisos.length) ? res.avisos.join(' ') : 'Relatório do cliente gerado.', !!(res.avisos && res.avisos.length));
+  });
+  $('#btnEclVoltar').addEventListener('click', () => {
+    if (est.html) $('#efdFrame').srcdoc = est.html;
+    $('#btnEclVoltar').hidden = true;
+  });
+  $('#btnEclHtml').addEventListener('click', async () => {
+    if (!ecl.html) return;
+    const r = await window.fiscocont.fiscal.efdClienteSalvar({ html: ecl.html, nomeSugerido: nomeCliente() });
+    if (r.canceled) return;
+    if (r.error) { toast(r.error, true); return; }
+    toast('Relatório do cliente salvo (HTML).');
+    window.fiscocont.abrirArquivo(r.path);
+  });
+  $('#btnEclPdf').addEventListener('click', async () => {
+    if (!ecl.estatico) return;
+    overlay(true, 'Gerando o PDF…');
+    const r = await window.fiscocont.fiscal.efdClientePdf({ htmlEstatico: ecl.estatico, nomeSugerido: nomeCliente() });
+    overlay(false);
+    if (r.canceled) return;
+    if (r.error) { toast(r.error, true); return; }
+    toast('Relatório do cliente salvo (PDF).');
+    window.fiscocont.abrirArquivo(r.path);
+  });
   $('#btnEfdExportar').addEventListener('click', async () => {
     if (!est.html) return;
     const res = await window.fiscocont.fiscal.nfseExportarHtml(est.html, 'efd-contrib', est.empresa);

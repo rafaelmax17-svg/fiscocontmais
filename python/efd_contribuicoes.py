@@ -174,6 +174,17 @@ def parse_efd_contribuicoes(caminho):
             'base_tributada_mi': _num(val(r, 6)), 'base_nao_tributada_mi': _num(val(r, 7)),
             'base_exportacao': _num(val(r, 8)),
         } for r in registros(pref_detalhe)]
+        # cada M105/M505 pertence ao M100/M500 que vem antes dele: guarda a alíquota do pai (usada pra
+        # estimar o crédito por natureza no relatório do cliente)
+        aliq_pai, atual = [], ''
+        for l in linhas:
+            if l.startswith(f'|{pref_credito}|'):
+                campos = l.strip('|').split('|')[1:]
+                atual = campos[3] if len(campos) > 3 else ''
+            elif l.startswith(f'|{pref_detalhe}|'):
+                aliq_pai.append(atual)
+        for d_, a_ in zip(detalhes, aliq_pai):
+            d_['aliquota'] = a_
         ajustes = [{
             'tipo': 'Acréscimo' if val(r, 0) == '1' else 'Redução', 'valor': _num(val(r, 1)) * (1 if val(r, 0) == '1' else -1),
             'codigo': val(r, 2), 'documento': val(r, 3), 'descricao': val(r, 4), 'data': _fmt_data(val(r, 5)),
