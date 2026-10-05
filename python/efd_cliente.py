@@ -23,18 +23,42 @@ _EPS = 0.005
 
 # nomes em linguagem simples para as naturezas de crédito (tabela oficial conferida do módulo)
 _CRED_SIMPLES = {
-    '01': 'Compras de mercadorias para revenda', '02': 'Compras de materiais usados na atividade (insumos)',
-    '03': 'Serviços contratados usados na atividade (insumos)', '04': 'Energia elétrica', '05': 'Aluguel de prédios',
-    '06': 'Aluguel de máquinas e equipamentos', '07': 'Armazenagem e frete nas vendas', '08': 'Arrendamento mercantil (leasing)',
-    '09': 'Compra de máquinas e equipamentos', '10': 'Depreciação de máquinas e equipamentos', '11': 'Devoluções de vendas',
-    '12': 'Outras operações com direito a crédito', '13': 'Transporte de cargas (subcontratação)',
+    '01': 'Aquisição de mercadorias para revenda', '02': 'Aquisição de bens utilizados como insumo',
+    '03': 'Serviços utilizados como insumo', '04': 'Energia elétrica e térmica', '05': 'Aluguéis de prédios',
+    '06': 'Aluguéis de máquinas e equipamentos', '07': 'Armazenagem e frete nas vendas', '08': 'Arrendamento mercantil (leasing)',
+    '09': 'Aquisição de máquinas e equipamentos', '10': 'Depreciação de máquinas e equipamentos', '11': 'Devoluções de vendas',
+    '12': 'Outras operações com direito a crédito', '13': 'Subcontratação de transporte de cargas',
     '14': 'Atividade imobiliária', '15': 'Atividade imobiliária', '16': 'Serviços de limpeza e manutenção',
 }
-_CST_GRUPO = {
-    '04': ('Imposto já pago na indústria (monofásico)', '#2f4090'), '05': ('Imposto cobrado antes (substituição tributária)', '#8b5cf6'),
-    '06': ('Alíquota zero', '#e8632b'), '07': ('Isento por lei', '#0ea5a4'), '08': ('Sem incidência', '#6b7392'),
-    '09': ('Suspenso', '#d4a017'), '49': ('Outras operações', '#8a90a8'), '99': ('Outras operações', '#8a90a8'),
+# como a natureza do crédito aparece dentro de uma frase
+_CRED_DESCR = {
+    '01': 'aquisições de mercadorias para revenda', '02': 'aquisições de bens aplicados na atividade (insumos)',
+    '03': 'serviços contratados aplicados na atividade (insumos)', '04': 'despesas com energia elétrica e térmica', '05': 'aluguéis de prédios',
+    '06': 'aluguéis de máquinas e equipamentos', '07': 'armazenagem e fretes nas operações de venda', '08': 'contraprestações de arrendamento mercantil',
+    '09': 'aquisições de máquinas e equipamentos', '10': 'depreciação de máquinas e equipamentos', '11': 'devoluções de vendas',
+    '12': 'outras operações com direito a crédito', '13': 'subcontratação de transporte de cargas', '14': 'atividade imobiliária',
+    '15': 'atividade imobiliária', '16': 'serviços de limpeza e manutenção',
 }
+_CST_GRUPO = {
+    '04': ('Tributação Monofásica (Indústria)', '#2f4090'), '05': ('Substituição Tributária', '#8b5cf6'),
+    '06': ('Alíquota Zero', '#e8632b'), '07': ('Isenção', '#0ea5a4'), '08': ('Sem Incidência', '#6b7392'),
+    '09': ('Suspensão', '#d4a017'), '49': ('Outras Operações', '#8a90a8'), '99': ('Outras Operações', '#8a90a8'),
+}
+_CST_ROTULO = {'04': 'Monofásico', '05': 'Substituição Tributária', '06': 'Alíquota Zero', '07': 'Isenção', '08': 'Sem Incidência',
+               '09': 'Suspensão', '49': 'Outras Hipóteses', '99': 'Outras Hipóteses'}
+_CST_FORMA = {'04': 'pela tributação concentrada na indústria (regime monofásico)', '05': 'pela substituição tributária',
+              '06': 'pela aplicação de alíquota zero', '07': 'por isenção', '08': 'pela não incidência',
+              '09': 'pela suspensão da exigibilidade', '49': 'por outras hipóteses legais', '99': 'por outras hipóteses legais'}
+_CST_ORDEM = ['04', '05', '06', '07', '08', '09', '49', '99']
+# nomes curtos (a descrição oficial é longa e vem cortada da própria tabela)
+_NOMES_CURTOS = [
+    (r'gen[ée]rico', 'Outras Mercadorias Desoneradas'),
+    (r'^carnes\b.*origem animal', 'Carnes e derivados'),
+    (r'^[áa]guas minerais', 'Águas minerais'),
+    (r'^queijos', 'Queijos'),
+    (r'^leite\b', 'Leite'),
+    (r'^pr[ée]-misturas.*p[aã]o', 'Pré-misturas para pão'),
+]
 
 
 # ------------------------------------------------------------------ utilidades
@@ -86,11 +110,14 @@ def _competencia(d):
 
 
 def _nome_simples(desc):
-    """Nome curto e legível de uma natureza da receita (a descrição oficial é longa e cheia de NCM)."""
+    """Nome curto e legível de uma natureza da receita (a descrição oficial é longa e cheia de NCM). Nunca corta no meio da palavra."""
     t = (desc or '').strip()
     if ' — ' in t:
         t = t.split(' — ', 1)[1]
     t = re.sub(r'^Receita decorrente d[ae]( venda| revenda)? d[eao]s? ', '', t, flags=re.I)
+    for padrao, nome in _NOMES_CURTOS:
+        if re.search(padrao, t, re.I):
+            return nome
     for corte in (', classificad', ' classificad', ' – ', ' - ', ' (', ';', ', conforme', ' conforme', ', quando', ' quando '):
         i = t.lower().find(corte.lower())
         if i > 0:
@@ -98,7 +125,10 @@ def _nome_simples(desc):
     t = t.strip(' .,')
     if sum(1 for w in t.split() if w[:1].isupper()) >= 2:      # "Etanol Não Combustível" -> "Etanol não combustível"
         t = t[:1] + t[1:].lower()
-    return (t[:1].upper() + t[1:])[:72] or 'Outras receitas'
+    t = t[:1].upper() + t[1:]
+    if len(t) > 58:                                              # abrevia só entre palavras
+        t = t[:58].rsplit(' ', 1)[0].rstrip(' ,;:-') + '…'
+    return t or 'Outras Mercadorias Desoneradas'
 
 
 # ------------------------------------------------------------------ números do mês
@@ -111,6 +141,7 @@ def _tributo(t):
         'debito': debito, 'cred': cred, 'pagar': pagar, 'anterior': c['credito_descontado_periodo_anterior'],
         'saldo': sum(x['saldo_a_transportar'] for x in t['creditos']), 'gerado': sum(x['valor_credito'] for x in t['creditos']),
         'outras': round(debito - cred - pagar, 2), 'darf': t['codigos_receita'],
+        'cum': c['apurado_cumulativo'], 'nc': c['apurado_nao_cumulativo'],
     }
 
 
@@ -121,6 +152,7 @@ def calcular(d):
     receita = trib + nao or (d.get('receita_0111') or {}).get('total', 0.0)
     tot = {k: pis[k] + cof[k] for k in ('debito', 'cred', 'pagar', 'saldo', 'gerado', 'outras', 'anterior')}
     n = {'receita': receita, 'trib': trib, 'nao_trib': nao, 'pis': pis, 'cofins': cof, 'tot': tot}
+    n['cumulativo'] = (pis['cum'] + cof['cum'] > _EPS) and (pis['nc'] + cof['nc'] <= _EPS)
     if tot['pagar'] > _EPS:
         misto = any(n[k]['pagar'] <= _EPS and n[k]['saldo'] > _EPS for k in ('pis', 'cofins'))
         n['caso'] = 'misto' if misto else 'normal'
@@ -136,49 +168,44 @@ def calcular(d):
 def _texto_resumo(d, n):
     mes, ano, _, _ = _competencia(d)
     t = n['tot']
-    base = f'Em <b>{mes} de {ano}</b>, sua empresa teve <b>{_rs_curto(n["receita"])}</b> em receitas. '
+    ef = _pct(n['por100']['pagar'], 2)
+    txt = f'Em <b>{mes} de {ano}</b>, sua empresa registrou faturamento de <b>{_rs(n["receita"])}</b>. '
     if n['caso'] == 'nada':
-        return base + 'Neste mês <b>não houve PIS/COFINS a pagar</b> nem crédito para guardar.'
-    txt = base + f'Sobre as receitas que a lei manda tributar, o PIS e a COFINS somaram <b>{_rs(t["debito"])}</b>. '
+        return txt + 'No período, <b>não houve PIS/COFINS a recolher</b> nem saldo de créditos a transportar.'
+    txt += f'Sobre as operações tributadas, o PIS e a COFINS totalizaram <b>{_rs(t["debito"])}</b>. '
     if n['caso'] == 'credor':
-        txt += (f'Como você também comprou mercadorias e serviços que dão direito a desconto, você tem <b>{_rs(t["cred"] + t["saldo"])} em créditos</b> neste mês, '
-                f'valor maior que o imposto das vendas. Por isso <b style="color:#0f6e56">não há PIS/COFINS a pagar</b> — '
-                f'e ainda sobraram <b style="color:#0f6e56">{_rs(t["saldo"])} de crédito</b> para usar nos próximos meses.')
-        return txt
-    if t['cred'] > _EPS:
-        txt += (f'Como você também comprou mercadorias e serviços que dão direito a desconto, parte desse imposto volta como '
-                f'<b>créditos: {_rs(t["cred"])}</b>. ')
-    else:
-        txt += 'Neste mês não houve créditos para descontar. '
+        return txt + (f'Os créditos fiscais apurados (<b>{_rs(t["cred"] + t["saldo"])}</b>) superaram os débitos do período: não há saldo a recolher e '
+                      f'permanece <b style="color:#0f6e56">saldo credor de {_rs(t["saldo"])}</b>, a ser transportado para as competências seguintes.')
+    aj = ''
     if t['outras'] > _EPS:
-        txt += f'Também foram descontados <b>{_rs(t["outras"])}</b> de retenções e outros ajustes. '
+        aj = f' e as deduções por retenções e demais ajustes (<b>{_rs(t["outras"])}</b>)'
+    elif t['outras'] < -_EPS:
+        aj = f' e os acréscimos por demais ajustes (<b>{_rs(-t["outras"])}</b>)'
+    if t['cred'] > _EPS:
+        txt += f'Com os créditos fiscais apurados sobre compras e despesas operacionais (<b>{_rs(t["cred"])}</b>){aj}, o saldo líquido a recolher foi de '
+    else:
+        motivo = 'No regime cumulativo não há apropriação de créditos fiscais' if n.get('cumulativo') else 'Não houve créditos fiscais a apropriar no período'
+        txt += f'{motivo}{"; foram consideradas, ainda, as deduções por retenções e demais ajustes (<b>" + _rs(t["outras"]) + "</b>)" if t["outras"] > _EPS else ""}. O saldo a recolher foi de '
     if n['caso'] == 'normal':
-        txt += (f'O resultado foi <b style="color:#c2500f">{_rs(t["pagar"])} a pagar</b>, ou seja, '
-                f'<b>R$ {_brl(n["por100"]["pagar"])} para cada R$ 100 vendidos</b>.')
-    else:   # misto
-        ps = [(nome, n[k]) for nome, k in (('PIS', 'pis'), ('COFINS', 'cofins'))]
-        a_pagar = [f'{nome}: {_rs(x["pagar"])}' for nome, x in ps if x['pagar'] > _EPS]
-        credor = [f'{"No" if nome == "PIS" else "Na"} {nome} não há nada a pagar e ainda sobraram <b>{_rs(x["saldo"])}</b> de crédito para os próximos meses'
-                  for nome, x in ps if x['pagar'] <= _EPS and x['saldo'] > _EPS]
-        txt += (f'O resultado foi <b style="color:#c2500f">{_rs(t["pagar"])} a pagar</b> ({"; ".join(a_pagar)}). {". ".join(credor)}.')
-    return txt
+        return txt + f'<b style="color:#c2500f">{_rs(t["pagar"])}</b>, representando uma <b>alíquota efetiva de {ef}</b> sobre a receita bruta.'
+    ps = [(nome, n[k]) for nome, k in (('PIS', 'pis'), ('COFINS', 'cofins'))]
+    a_pagar = '; '.join(f'{nome}: {_rs(x["pagar"])}' for nome, x in ps if x['pagar'] > _EPS)
+    credor = ' '.join(f'{"No" if nome == "PIS" else "Na"} {nome}, os créditos superaram os débitos, remanescendo saldo credor de <b>{_rs(x["saldo"])}</b> a transportar.'
+                      for nome, x in ps if x['pagar'] <= _EPS and x['saldo'] > _EPS)
+    return txt + f'<b style="color:#c2500f">{_rs(t["pagar"])}</b> ({a_pagar}), representando uma <b>alíquota efetiva de {ef}</b> sobre a receita bruta. {credor}'
 
 
 def _texto_cascata(n):
     if n['caso'] == 'credor':
-        return ('Primeiro calculamos o imposto das vendas. Depois descontamos os créditos a que você tem direito pelas compras. '
-                'Como os créditos foram maiores, <b>não sobrou nada para pagar</b> e a diferença fica guardada como saldo credor.')
-    return ('Primeiro calculamos o imposto das vendas. Depois descontamos os créditos a que você tem direito pelas compras. '
-            'O que sobra é o que vai para a guia.')
+        return ('Apuração líquida do período: os créditos fiscais admitidos por lei superaram os débitos tributários gerados pelas vendas; '
+                '<b>não há saldo a recolher</b> e a diferença constitui saldo credor a transportar.')
+    if n.get('cumulativo'):
+        return 'Apuração no regime cumulativo: o saldo a recolher corresponde aos débitos tributários gerados pelas vendas, sem apropriação de créditos fiscais.'
+    return 'Apuração líquida do período: dedução dos créditos fiscais admitidos por lei sobre os débitos tributários gerados pelas vendas.'
 
 
 def _texto_cem(n):
-    p = n['por100']
-    if n['caso'] == 'credor':
-        return (f'O imposto das vendas seria <b>R$ {_brl(p["debito"])}</b> para cada R$ 100,00 vendidos. Seus créditos cobriram tudo e ainda sobraram '
-                f'<b>R$ {_brl(p["saldo"])}</b>.')
-    return (f'O imposto das vendas seria <b>R$ {_brl(p["debito"])}</b>. Seus créditos devolvem <b>R$ {_brl(p["cred"])}</b>, '
-            f'e sobram <b>R$ {_brl(p["pagar"])}</b> para pagar.')
+    return ''
 
 
 # ------------------------------------------------------------------ peças visuais
@@ -201,36 +228,41 @@ def _cascata(n):
 
     def igual(cor):
         return f'<div class="conx"><span class="eq" style="color:{cor};border-color:{cor}">=</span></div>'
-    cols = [coluna('Imposto das vendas', 'PIS + COFINS', [barra('azul', 0, px(t['debito']), _rs(t['debito']))])]
+    cols = [coluna('Débitos Apurados', 'Vendas e Saídas', [barra('azul', 0, px(t['debito']), _rs(t['debito']))])]
     if caso == 'credor':
         usado, saldo = t['cred'], t['saldo']
         cols.append(seta)
-        cols.append(coluna('Créditos disponíveis', 'das suas compras', [
+        cols.append(coluna('Créditos Fiscais', 'Disponíveis no período', [
             barra('verde', 0, px(usado), '', ''),
             barra('verde-claro', px(usado), px(saldo), _rs(usado + saldo), 'border-radius:10px 10px 4px 4px'),
         ]))
         cols.append(igual('#0f9d6e'))
-        cols.append(coluna('Saldo credor', 'fica para os próximos meses', [barra('verde', 0, px(saldo), _rs(saldo))]))
+        cols.append(coluna('Saldo Credor', 'A transportar', [barra('verde', 0, px(saldo), _rs(saldo))]))
         return '<div class="casc">' + ''.join(cols) + '</div>'
     nivel = t['debito']
     if t['cred'] > _EPS:
         novo = nivel - t['cred']
         cols.append(seta)
-        cols.append(coluna('Créditos das compras', 'descontados', [barra('verde', px(novo), px(nivel) - px(novo), '− ' + _rs(t['cred']))]))
+        cols.append(coluna('Créditos Fiscais', 'Insumos e Entradas', [barra('verde', px(novo), px(nivel) - px(novo), '− ' + _rs(t['cred']))]))
         nivel = novo
     if abs(t['outras']) > _EPS:
         cols.append(seta)
         if t['outras'] > 0:
             novo = nivel - t['outras']
-            cols.append(coluna('Retenções e ajustes', 'descontados', [barra('cinza', px(novo), px(nivel) - px(novo), '− ' + _rs(t['outras']))]))
+            cols.append(coluna('Retenções e Ajustes', 'Deduções do período', [barra('cinza', px(novo), px(nivel) - px(novo), '− ' + _rs(t['outras']))]))
             nivel = novo
         else:
             novo = nivel - t['outras']
-            cols.append(coluna('Outros ajustes', 'somados', [barra('cinza', px(nivel), px(novo) - px(nivel), '+ ' + _rs(-t['outras']))]))
+            cols.append(coluna('Outros Ajustes', 'Acréscimos do período', [barra('cinza', px(nivel), px(novo) - px(nivel), '+ ' + _rs(-t['outras']))]))
             nivel = novo
     cols.append(igual('#e8632b'))
-    cols.append(coluna('Você paga', 'nas guias', [barra('laranja', 0, px(t['pagar']), _rs(t['pagar']))]))
+    cols.append(coluna('Saldo a Recolher', 'Guias de DARF', [barra('laranja', 0, px(t['pagar']), _rs(t['pagar']))]))
     return '<div class="casc">' + ''.join(cols) + '</div>'
+
+
+def _juntar(itens, ult=' e '):
+    itens = list(itens)
+    return itens[0] if len(itens) == 1 else ', '.join(itens[:-1]) + ult + itens[-1]
 
 
 def _donut_e_ranking(d, n):
@@ -240,16 +272,19 @@ def _donut_e_ranking(d, n):
     C = 2 * 3.14159265 * 62
     arco = C * pct_nao / 100
     grupos = defaultdict(float)
-    cst_do_nome = {}
+    completo = defaultdict(list)
     for x in d['pis']['nao_tributada_natureza']:
+        bruto = re.sub(r'^\s*\d+\s*—\s*', '', x['natureza_desc'] or '').strip()
         nome = _nome_simples(x['natureza_desc'])
         if 'não catalogado' in x['natureza_desc'] or 'sem tabela' in x['natureza_desc']:
-            nome = f'Outras receitas sem PIS/COFINS (código {x["natureza"]})'
+            nome = f'Outras Mercadorias Desoneradas (cód. {x["natureza"]})'
+            bruto = f'Natureza da receita {x["natureza"]}: sem descrição na tabela oficial vigente'
         grupos[(x['cst'], nome)] += x['valor']
-        cst_do_nome[(x['cst'], nome)] = x['cst']
+        if bruto and bruto not in completo[(x['cst'], nome)]:
+            completo[(x['cst'], nome)].append(bruto)
     if not grupos:
         for x in d['pis']['nao_tributada_cst']:
-            grupos[(x['cst'], _CST_GRUPO.get(x['cst'], ('Outras receitas', ''))[0])] += x['valor']
+            grupos[(x['cst'], _CST_GRUPO.get(x['cst'], ('Outras Operações', ''))[0])] += x['valor']
     ordenado = sorted(grupos.items(), key=lambda kv: -kv[1])
     top, resto = ordenado[:6], ordenado[6:]
     linhas = list(top)
@@ -262,22 +297,31 @@ def _donut_e_ranking(d, n):
         cor = _CST_GRUPO.get(cst, ('', '#8a90a8'))[1]
         if cst != '--' and cst not in csts_usados:
             csts_usados.append(cst)
-        barras += (f'<div class="hlinha"><span>{_esc(nome)}</span><span class="htrilho"><span class="hfill" style="width:{100 * v / mx:.1f}%;background:linear-gradient(90deg,{cor},{_mix(cor, (255, 255, 255), .35)})"></span></span>'
+        tip = _esc('; '.join(completo.get((cst, nome), [])) or nome)
+        barras += (f'<div class="hlinha"><span title="{tip}">{_esc(nome)}</span><span class="htrilho"><span class="hfill" style="width:{100 * v / mx:.1f}%;background:linear-gradient(90deg,{cor},{_mix(cor, (255, 255, 255), .35)})"></span></span>'
                    f'<b>{_int(v)}</b></div>')
-    leg = ' &nbsp; '.join(f'<span class="ponto" style="background:{_CST_GRUPO[c][1]}"></span>{_CST_GRUPO[c][0].lower()}' for c in csts_usados if c in _CST_GRUPO)
-    top3 = [nome for (_, nome), _v in linhas[:3] if nome != 'Outros']
-    lista = ', '.join(x.lower() if i else x.lower() for i, x in enumerate(top3[:-1])) + (' e ' if len(top3) > 1 else '') + (top3[-1].lower() if top3 else '')
-    mes = _competencia(d)[0]
-    donut = (f'<div class="card"><h3>Suas receitas</h3><div class="donutbox"><svg width="170" height="170" viewBox="0 0 160 160">'
+    leg = ' &nbsp; '.join(f'<span class="ponto" style="background:{_CST_GRUPO[c][1]}"></span>{_CST_GRUPO[c][0]}' for c in csts_usados if c in _CST_GRUPO)
+    presentes = [c for c in _CST_ORDEM if c in {x['cst'] for x in d['pis']['nao_tributada_cst']}] or [c for c in _CST_ORDEM if c in csts_usados]
+    formas = []
+    rotulos = []
+    for c in presentes:
+        if _CST_FORMA[c] not in formas:
+            formas.append(_CST_FORMA[c])
+        if _CST_ROTULO[c] not in rotulos:
+            rotulos.append(_CST_ROTULO[c])
+    alias = {'Carnes e derivados': 'carnes'}      # nomes curtos só para a frase
+    nomes = [alias.get(nome, nome[:1].lower() + nome[1:]) for (_, nome), _v in linhas[:3] if nome != 'Outros' and not nome.startswith('Outras Mercadorias')]
+    sub = ('Determinadas operações contam com previsão legal de desoneração tributária — seja ' + _juntar(formas, ' ou ') + '.'
+           + (f' No período, destacaram-se produtos como {_esc(_juntar(nomes))}.' if nomes else ''))
+    donut = (f'<div class="card"><h3>Composição da Receita Bruta</h3><div class="donutbox"><svg width="170" height="170" viewBox="0 0 160 160">'
              f'<circle cx="80" cy="80" r="62" fill="none" stroke="#2f4090" stroke-width="24"/>'
              f'<circle class="arco" cx="80" cy="80" r="62" fill="none" stroke="#e8632b" stroke-width="24" stroke-dasharray="{arco:.2f} {C:.2f}" transform="rotate(-90 80 80)"/>'
              f'<text x="80" y="78" text-anchor="middle" font-size="26" font-weight="800" fill="#232a3d">{round(pct_nao)}%</text>'
-             f'<text x="80" y="95" text-anchor="middle" font-size="9.5" fill="#7a8199">sem PIS/COFINS</text></svg></div>'
-             f'<div class="legenda"><span class="ponto" style="background:#2f4090"></span>Tributadas: <b>{_rs_curto(n["trib"])}</b> ({round(100 - pct_nao)}%)<br>'
-             f'<span class="ponto" style="background:#e8632b"></span>Sem PIS/COFINS na venda: <b>{_rs_curto(n["nao_trib"])}</b> ({round(pct_nao)}%)</div></div>')
-    rank = (f'<div class="card"><h3>Por que {round(pct_nao)}% das receitas não pagaram PIS/COFINS?</h3>'
-            f'<p class="sub">Alguns produtos têm tratamento especial na lei: ou o imposto já foi pago antes (na indústria ou por substituição tributária), ou a alíquota é zero, ou há isenção. '
-            f'Em {mes}, isso aconteceu principalmente com {_esc(lista)}.</p><div class="hlista">{barras}</div>'
+             f'<text x="80" y="95" text-anchor="middle" font-size="9.5" fill="#7a8199">Desoneradas</text></svg></div>'
+             f'<div class="legenda"><span class="ponto" style="background:#2f4090"></span>Tributadas: <b>{_rs(n["trib"])}</b> ({round(100 - pct_nao)}%)<br>'
+             f'<span class="ponto" style="background:#e8632b"></span>Receitas Desoneradas ({" / ".join(rotulos)}): <b>{_rs(n["nao_trib"])}</b> ({round(pct_nao)}%)</div></div>')
+    rank = (f'<div class="card"><h3>Detalhamento das Receitas Desoneradas ({round(pct_nao)}%)</h3>'
+            f'<p class="sub">{sub}</p><div class="hlista">{barras}</div>'
             f'<div class="nota-pq">{leg} · valores em R$</div></div>')
     return f'<div class="duo">{donut}{rank}</div>'
 
@@ -300,49 +344,57 @@ def _creditos_origem(d, n):
         if soma > _EPS and alvo > _EPS:
             for k, v in brutos.items():
                 por_nat[k] += v * alvo / soma
-    linhas = [(_CRED_SIMPLES.get(k) or _NATUREZA_CREDITO.get(k.zfill(2), f'Natureza {k}'), v) for k, v in por_nat.items()]
+    linhas = [(k, _CRED_SIMPLES.get(k) or _NATUREZA_CREDITO.get(k.zfill(2), f'Natureza {k}'), v) for k, v in por_nat.items()]
     if t['anterior'] > _EPS:
-        linhas.append(('Saldo de créditos de meses anteriores', t['anterior']))
-    linhas = sorted([x for x in linhas if x[1] > _EPS], key=lambda kv: -kv[1])
+        linhas.append(('ant', 'Saldo de créditos de períodos anteriores', t['anterior']))
+    linhas = sorted([x for x in linhas if x[2] > _EPS], key=lambda kv: -kv[2])
     if not linhas:
         return ''
-    total = sum(v for _, v in linhas)
-    mx = linhas[0][1]
+    total = sum(v for _, _, v in linhas)
+    mx = linhas[0][2]
     barras = ''.join(
-        f'<div class="hlinha"><span>{_esc(nome)}</span><span class="htrilho"><span class="hfill" style="width:{100 * v / mx:.1f}%;background:linear-gradient(90deg,#0f9d6e,#5ed1a8)"></span></span><b>{_int(v)}</b></div>'
-        for nome, v in linhas)
-    principal = linhas[0]
-    exp = {'Compras de mercadorias para revenda': 'Toda mercadoria que você compra para revender gera crédito de PIS/COFINS.',
-           'Energia elétrica': 'A energia elétrica usada na empresa também gera crédito.',
-           'Outras operações com direito a crédito': 'São operações previstas na lei que também dão direito a crédito.'}.get(principal[0], '')
-    return (f'<div class="card"><h3>De onde vêm os seus créditos</h3>'
-            f'<p class="sub">Crédito é o desconto a que você tem direito sobre o PIS/COFINS pago embutido nas suas compras. Dos <b>{_rs(total)}</b> de créditos deste mês, '
-            f'<b>{_pct(100 * principal[1] / total, 0)}</b> vêm de <b>{_esc(principal[0].lower())}</b>. {exp}</p>'
+        f'<div class="hlinha"><span title="{_esc(nome)}">{_esc(nome)}</span><span class="htrilho"><span class="hfill" style="width:{100 * v / mx:.1f}%;background:linear-gradient(90deg,#0f9d6e,#5ed1a8)"></span></span><b>{_int(v)}</b></div>'
+        for _, nome, v in linhas)
+    cod, nome, v = linhas[0]
+    descr = _CRED_DESCR.get(cod) or ('saldo de créditos de períodos anteriores' if cod == 'ant' else nome[:1].lower() + nome[1:])
+    return (f'<div class="card"><h3>Composição dos Créditos Fiscais</h3>'
+            f'<p class="sub">No regime não cumulativo, a aquisição de insumos operacionais, serviços essenciais e mercadorias gera créditos tributários compensatórios. '
+            f'Dos <b>{_rs(total)}</b> apurados no mês, <b>{_pct(100 * v / total, 0)}</b> decorrem de <b>{_esc(descr)}</b>.</p>'
             f'<div class="hlista">{barras}</div><div class="nota-pq">valores em R$</div></div>')
 
 
 def _por_100(n):
-    p = n['por100']
+    p, t = n['por100'], n['tot']
     if n['receita'] <= _EPS or p['debito'] <= _EPS:
         return ''
-    if n['caso'] == 'credor':
-        a, b = p['debito'], p['saldo']
-        seg = (f'<div class="seg" style="width:100%;background:linear-gradient(180deg,#3fc596,#0f9d6e)">Créditos cobriram 100% do imposto</div>')
-        chips = f'<span class="pilula verde">Sobraram R$ {_brl(b)} de crédito para cada R$ 100 vendidos</span>'
-    else:
-        total = p['debito']
-        wc = 100.0 * p['cred'] / total
-        seg = (f'<div class="seg" style="width:{wc:.1f}%;background:linear-gradient(180deg,#3fc596,#0f9d6e)">R$ {_brl(p["cred"])} voltam como crédito</div>'
-               f'<div class="seg" style="width:{100 - wc:.1f}%;background:linear-gradient(180deg,#ff9f66,#e8632b)">R$ {_brl(p["pagar"])} você paga</div>')
-        chips = ''
+    bruta, abat, efet = p['debito'], p['cred'], p['pagar']
     pis, cof = n['pis'], n['cofins']
-    if n['tot']['pagar'] > _EPS:
+    chips = ''
+    if t['pagar'] > _EPS:
         for nome, x in (('COFINS', cof), ('PIS', pis)):
             if x['pagar'] > _EPS:
-                chips += f'<span class="pilula azul">{nome}: {_rs(x["pagar"])} ({round(100 * x["pagar"] / n["tot"]["pagar"])}% do valor a pagar)</span>'
-        if n['tot']['debito'] > _EPS and n['tot']['cred'] > _EPS:
-            chips += f'<span class="pilula verde">{round(100 * n["tot"]["cred"] / n["tot"]["debito"])}% do imposto foi compensado por créditos</span>'
-    return (f'<div class="card"><h3>Para cada R$ 100,00 que você vendeu</h3><p class="sub">{_texto_cem(n)}</p>'
+                chips += f'<span class="pilula azul">{nome} a recolher: {_rs(x["pagar"])} ({round(100 * x["pagar"] / t["pagar"])}% do saldo)</span>'
+    if n['caso'] == 'credor':
+        sub = (f'A alíquota bruta calculada sobre as operações seria de <b>{_pct(bruta, 2)}</b>. Os créditos fiscais do mês superaram os débitos, '
+               f'de modo que a <b>alíquota efetiva recolhida foi de 0,00%</b> sobre a receita total.')
+        seg = '<div class="seg" style="width:100%;background:linear-gradient(180deg,#3fc596,#0f9d6e)">Créditos Fiscais superaram 100% dos débitos</div>'
+        chips = f'<span class="pilula verde">Saldo credor a transportar: {_rs(t["saldo"])}</span>'
+    elif n.get('cumulativo') or t['cred'] <= _EPS:
+        sub = f'A alíquota efetiva recolhida foi de <b>{_pct(efet, 2)}</b> sobre a receita total, sem apropriação de créditos fiscais no período.'
+        seg = f'<div class="seg" style="width:100%;background:linear-gradient(180deg,#ff9f66,#e8632b)">{_pct(efet, 2)} Alíquota Efetiva Recolhida (100%)</div>'
+    else:
+        wc = 100.0 * t['cred'] / t['debito']
+        wo = max(t['outras'], 0.0) / t['debito'] * 100.0
+        wp = max(100.0 - wc - wo, 0.0)
+        ret = f' e de <b>{_pct(100 * max(t["outras"], 0) / n["receita"], 2)}</b> por retenções e demais ajustes' if wo > 0.05 else ''
+        sub = (f'A alíquota bruta calculada sobre as operações seria de <b>{_pct(bruta, 2)}</b>. Com o abatimento de <b>{_pct(abat, 2)}</b> decorrente dos créditos fiscais do mês{ret}, '
+               f'a <b>alíquota efetiva recolhida foi de {_pct(efet, 2)}</b> sobre a receita total.')
+        seg = (f'<div class="seg" title="{_pct(abat, 2)} Abatidos em Créditos" style="width:{wc:.1f}%;background:linear-gradient(180deg,#3fc596,#0f9d6e)">{_pct(abat, 2)} Abatidos em Créditos ({_pct(wc, 1)})</div>')
+        if wo > 0.05:
+            seg += f'<div class="seg" style="width:{wo:.1f}%;background:linear-gradient(180deg,#9aa1b8,#6b7392)"></div>'
+        seg += f'<div class="seg" title="{_pct(efet, 2)} Alíquota Efetiva Recolhida" style="width:{wp:.1f}%;background:linear-gradient(180deg,#ff9f66,#e8632b)">{_pct(efet, 2)} Alíquota Efetiva Recolhida ({_pct(wp, 1)})</div>'
+        chips += f'<span class="pilula verde">{_pct(wc, 1)} do imposto bruto foi absorvido por créditos fiscais</span>'
+    return (f'<div class="card"><h3>Análise da Carga Tributária Efetiva</h3><p class="sub">{sub}</p>'
             f'<div class="empilhada">{seg}</div><div class="pilulas">{chips}</div></div>')
 
 
@@ -350,11 +402,16 @@ def _por_tributo(n):
     def linha(rot, a, b, cor=''):
         return f'<tr><td>{rot}</td><td style="text-align:right;{cor}">{_rs(a)}</td><td style="text-align:right;{cor}">{_rs(b)}</td></tr>'
     pis, cof = n['pis'], n['cofins']
-    corpo = (linha('Imposto sobre as vendas', pis['debito'], cof['debito']) + linha('Créditos descontados', pis['cred'], cof['cred'], 'color:#0f6e56')
-             + linha('Valor a pagar', pis['pagar'], cof['pagar'], 'color:#c2500f;font-weight:800'))
+    corpo = (linha('Débitos sobre Saídas', pis['debito'], cof['debito']) + linha('Créditos sobre Entradas', pis['cred'], cof['cred'], 'color:#0f6e56')
+             + linha('Saldo a Recolher', pis['pagar'], cof['pagar'], 'color:#c2500f;font-weight:800'))
     if n['tot']['saldo'] > _EPS:
-        corpo += linha('Saldo credor (fica para os próximos meses)', pis['saldo'], cof['saldo'], 'color:#0f6e56;font-weight:800')
+        corpo += linha('Saldo Credor (a transportar)', pis['saldo'], cof['saldo'], 'color:#0f6e56;font-weight:800')
     return f'<div class="card"><h3>PIS e COFINS separados</h3><table class="tb"><thead><tr><th></th><th>PIS</th><th>COFINS</th></tr></thead><tbody>{corpo}</tbody></table></div>'
+
+
+def _darf(c):
+    s = re.sub(r'\D', '', str(c or ''))
+    return f'{s[:4]}-{s[4:]}' if len(s) == 6 else (str(c) if c else '—')
 
 
 def _guias(n, op):
@@ -363,11 +420,11 @@ def _guias(n, op):
     linhas = ''
     for nome, x in (('COFINS', n['cofins']), ('PIS', n['pis'])):
         if x['pagar'] > _EPS:
-            cods = ', '.join(c['codigo_darf'] for c in x['darf']) or '—'
-            linhas += f'<div class="guia"><span><b>{nome}</b> · código {_esc(cods)}</span><b>{_rs(x["pagar"])}</b></div>'
-    linhas += f'<div class="guia total"><span>Total</span><span>{_rs(n["tot"]["pagar"])}</span></div>'
+            cods = ', '.join(_darf(c['codigo_darf']) for c in x['darf']) or '—'
+            linhas += f'<div class="guia"><span><b>{nome}</b> · Código {_esc(cods)}</span><b>{_rs(x["pagar"])}</b></div>'
+    linhas += f'<div class="guia total"><span>Total a Recolher</span><span>{_rs(n["tot"]["pagar"])}</span></div>'
     venc = f'<div class="nota-pq" style="margin-top:8px">Vencimento: <b>{_esc(op.get("vencimento"))}</b></div>' if op.get('vencimento') else ''
-    return f'<div class="card"><h3>Para pagar</h3><div class="guias">{linhas}</div>{venc}</div>'
+    return f'<div class="card"><h3>Guias de Recolhimento (DARF)</h3><div class="guias">{linhas}</div>{venc}</div>'
 
 
 def _bloco_credor(n):
@@ -377,18 +434,18 @@ def _bloco_credor(n):
     partes = [(nome, n[k]['saldo']) for nome, k in (('PIS', 'pis'), ('COFINS', 'cofins')) if n[k]['saldo'] > _EPS]
     detalhe = ' e '.join(f'{nome}: <b>{_rs(v)}</b>' for nome, v in partes)
     if n['caso'] == 'credor':
-        titulo = 'Nada a pagar neste mês'
-        intro = f'Seus créditos foram maiores que o imposto, e <b>sobrou {_rs(t["saldo"])} de crédito</b> ({detalhe}). '
+        titulo = 'Sem saldo a recolher no período'
+        intro = f'Os créditos fiscais superaram os débitos apurados, resultando em <b>saldo credor de {_rs(t["saldo"])}</b> ({detalhe}). '
     elif n['caso'] == 'misto':
-        titulo = 'Há saldo credor em um dos tributos'
-        intro = f'Em um dos tributos os créditos foram maiores que o imposto, e <b>sobrou {_rs(t["saldo"])} de crédito</b> ({detalhe}). '
+        titulo = 'Saldo credor em um dos tributos'
+        intro = f'Em um dos tributos, os créditos fiscais superaram os débitos apurados, resultando em <b>saldo credor de {_rs(t["saldo"])}</b> ({detalhe}). '
     else:
-        titulo = 'Há saldo credor para os próximos meses'
-        intro = f'Além do valor a pagar, ficou <b>{_rs(t["saldo"])} de crédito sem uso</b> ({detalhe}). '
+        titulo = 'Saldo credor a transportar'
+        intro = f'Além do saldo a recolher, permanece <b>saldo credor de {_rs(t["saldo"])}</b> ({detalhe}). '
     return (f'<div class="caixa-credor"><div class="credor-ico">✓</div><div><div class="credor-t">{titulo}</div>'
             f'<div class="credor-x">{intro}'
-            f'Esse é o <b>saldo credor</b>: um crédito a que a empresa tem direito e que ainda não foi usado, porque não havia imposto suficiente para descontar. '
-            f'Ele fica guardado para reduzir o imposto dos próximos meses, e o escritório acompanha esse saldo. '
+            f'O saldo credor corresponde à parcela do crédito fiscal que excede o débito do período e permanece disponível para compensação nas competências seguintes, '
+            f'sempre com o próprio tributo. O escritório acompanha esse saldo. '
             f'<span class="peq">Valor conforme a EFD-Contribuições entregue.</span></div></div></div>')
 
 
@@ -404,8 +461,8 @@ def _comparativo(d, n, da, na, avisos):
         return ''
     mes_ant = _competencia(da)[0]
     mes = _competencia(d)[0]
-    itens = [('Receitas', n['receita'], na['receita'], '#2f4090', True), ('Imposto sobre as vendas', n['tot']['debito'], na['tot']['debito'], '#4f62b5', False),
-             ('Créditos usados', n['tot']['cred'], na['tot']['cred'], '#0f9d6e', True), ('Valor a pagar', n['tot']['pagar'], na['tot']['pagar'], '#e8632b', False)]
+    itens = [('Faturamento Bruto', n['receita'], na['receita'], '#2f4090', True), ('Débitos de PIS/COFINS', n['tot']['debito'], na['tot']['debito'], '#4f62b5', False),
+             ('Créditos de Entradas', n['tot']['cred'], na['tot']['cred'], '#0f9d6e', True), ('Saldo a Recolher', n['tot']['pagar'], na['tot']['pagar'], '#e8632b', False)]
     grupos = ''
     for nome, v, va, cor, alta_boa in itens:
         mx = max(v, va, 1)
@@ -424,39 +481,43 @@ def _comparativo(d, n, da, na, avisos):
     if na['receita'] > _EPS:
         var = 100 * (n['receita'] - na['receita']) / na['receita']
         if abs(var) < 0.05:
-            frases.append(f'Suas receitas ficaram praticamente iguais às de {mes_ant} ({_rs_curto(n["receita"])}).')
+            frases.append(f'O faturamento bruto manteve-se praticamente estável em relação a {mes_ant} ({_rs(n["receita"])}).')
         else:
-            frases.append(f'Suas receitas {"cresceram" if var >= 0 else "caíram"} <b>{_pct(abs(var))}</b> em relação a {mes_ant} (de {_rs_curto(na["receita"])} para {_rs_curto(n["receita"])}).')
+            frases.append(f'O faturamento bruto {"cresceu" if var >= 0 else "reduziu"} <b>{_pct(abs(var))}</b> em relação a {mes_ant} (de {_rs(na["receita"])} para {_rs(n["receita"])}).')
     if na['tot']['pagar'] > _EPS and n['tot']['pagar'] > _EPS:
         var = 100 * (n['tot']['pagar'] - na['tot']['pagar']) / na['tot']['pagar']
         if abs(var) < 0.05:
-            frases.append(f'O valor a pagar ficou igual ao de {mes_ant} ({_rs(n["tot"]["pagar"])}).')
+            frases.append(f'O saldo a recolher manteve-se igual ao de {mes_ant} ({_rs(n["tot"]["pagar"])}).')
         else:
-            frases.append(f'O valor a pagar {"subiu" if var >= 0 else "caiu"} <b>{_pct(abs(var))}</b> (de {_rs(na["tot"]["pagar"])} para {_rs(n["tot"]["pagar"])}).')
+            frases.append(f'O saldo a recolher {"aumentou" if var >= 0 else "reduziu"} <b>{_pct(abs(var))}</b> (de {_rs(na["tot"]["pagar"])} para {_rs(n["tot"]["pagar"])}).')
     elif na['tot']['pagar'] > _EPS and n['tot']['pagar'] <= _EPS:
-        frases.append(f'Em {mes_ant} havia {_rs(na["tot"]["pagar"])} a pagar; em {mes}, não há nada a pagar.')
+        frases.append(f'Em {mes_ant} havia saldo a recolher de {_rs(na["tot"]["pagar"])}; em {mes}, não há saldo a recolher.')
     elif n['tot']['pagar'] > _EPS and na['tot']['pagar'] <= _EPS:
-        frases.append(f'Em {mes_ant} não havia valor a pagar; em {mes}, há {_rs(n["tot"]["pagar"])}.')
+        frases.append(f'Em {mes_ant} não havia saldo a recolher; em {mes}, o saldo a recolher é de {_rs(n["tot"]["pagar"])}.')
     if na['receita'] > _EPS and n['receita'] > _EPS:
-        frases.append(f'O PIS/COFINS pago equivale a <b>{_pct(n["por100"]["pagar"], 2)}</b> das receitas (em {mes_ant}: {_pct(na["por100"]["pagar"], 2)}).')
-    return (f'<div class="card"><h3>Comparando com {mes_ant}</h3><p class="sub">{" ".join(frases)}</p>'
+        frases.append(f'A alíquota efetiva recolhida foi de <b>{_pct(n["por100"]["pagar"], 2)}</b> sobre a receita bruta (em {mes_ant}: {_pct(na["por100"]["pagar"], 2)}).')
+    return (f'<div class="card"><h3>Comparativo com {mes_ant}</h3><p class="sub">{" ".join(frases)}</p>'
             f'<div class="cgrupos">{grupos}</div><div class="nota-pq"><span class="ponto" style="background:#9aa6d4"></span>{mes_ant} &nbsp; <span class="ponto" style="background:#e8632b"></span>{mes} · valores em R$ · cada grupo usa a sua própria escala</div></div>')
 
 
 def _glossario(d, n):
-    termos = [('Crédito', 'Desconto sobre o PIS/COFINS pago nas suas compras. Ele reduz o imposto que sobra para pagar.')]
     csts = {x['cst'] for x in d['pis']['nao_tributada_cst']}
+    termos = []
+    if n['tot']['cred'] + n['tot']['saldo'] > _EPS:
+        termos.append(('Crédito Tributário', 'Direito creditório decorrente de aquisições de insumos, serviços e custos admitidos pela legislação no regime não cumulativo, utilizado para abater o imposto devido sobre as saídas.'))
+    if n.get('cumulativo'):
+        termos.append(('Regime Cumulativo', 'Sistemática em que o PIS (0,65%) e a COFINS (3%) incidem diretamente sobre a receita, sem direito a créditos sobre as aquisições.'))
     if '04' in csts:
-        termos.append(('Imposto já pago na indústria (monofásico)', 'Em alguns produtos, o PIS/COFINS é cobrado só do fabricante ou importador. Quem revende não paga de novo.'))
+        termos.append(('Regime Monofásico', 'Mecanismo em que a tributação de PIS/COFINS é concentrada no fabricante ou importador em alíquota única maior, desonerando a venda nas etapas subsequentes (atacadistas e varejistas).'))
     if '06' in csts:
-        termos.append(('Alíquota zero', 'A lei fixou a alíquota em zero para o produto: há venda, mas o imposto é R$ 0,00.'))
+        termos.append(('Alíquota Zero', 'Disposição legal que reduz a alíquota a 0% sobre determinados produtos essenciais ou incentivados, desonerando a venda na apuração do imposto.'))
     if '05' in csts:
-        termos.append(('Substituição tributária', 'O imposto é cobrado antes, de um participante da cadeia, no lugar de quem vende ao consumidor.'))
+        termos.append(('Substituição Tributária', 'Mecanismo em que a responsabilidade pelo recolhimento do tributo devido nas etapas seguintes é atribuída a um participante anterior da cadeia, que o recolhe antecipadamente.'))
     if n['tot']['saldo'] > _EPS:
-        termos.append(('Saldo credor', 'Crédito que sobrou porque não havia imposto suficiente para descontar. Fica guardado para os meses seguintes.'))
+        termos.append(('Saldo Credor', 'Parcela do crédito fiscal que excede o débito do período e permanece disponível para compensação nas competências seguintes, sempre com o próprio tributo (o crédito de PIS compensa PIS; o de COFINS, COFINS).'))
     if n['tot']['pagar'] > _EPS:
-        termos.append(('Guia (DARF)', 'Documento usado para pagar o PIS e a COFINS. Cada tributo tem o seu código.'))
-    return ('<div class="card"><h3>O que significam estas palavras</h3><div class="gloss">' +
+        termos.append(('DARF (Documento de Arrecadação)', 'Guia oficial emitida para o recolhimento dos tributos federais apurados junto à Receita Federal do Brasil.'))
+    return ('<div class="card"><h3>Glossário e Conceitos Tributários</h3><div class="gloss">' +
             ''.join(f'<div><b>{_esc(a)}</b><br><span>{_esc(b)}</span></div>' for a, b in termos) + '</div></div>')
 
 
@@ -525,13 +586,14 @@ body{margin:0;font-family:'Segoe UI',Arial,sans-serif;background:#f3f5fb;color:v
 .legenda{font-size:12px;line-height:1.9}
 .ponto{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:-1px}
 .hlista{display:flex;flex-direction:column;gap:7px;font-size:11.5px}
-.hlinha{display:grid;grid-template-columns:150px 1fr 78px;gap:8px;align-items:center}
+.hlinha{display:grid;grid-template-columns:minmax(150px,38%) 1fr 84px;gap:10px;align-items:center}
+.hlinha>span:first-child{min-width:0;line-height:1.3;overflow-wrap:break-word;word-break:normal;hyphens:auto}
 .htrilho{height:12px;border-radius:6px;background:#eef0f6;overflow:hidden;display:block}
 .hfill{display:block;height:100%;box-shadow:inset 0 2px 0 rgba(255,255,255,.35);transition:width 1.1s cubic-bezier(.2,.8,.2,1)}
 .hlinha b{text-align:right}
 .nota-pq{font-size:10.5px;color:#7a8199;margin-top:9px}
 .empilhada{display:flex;height:34px;border-radius:12px;overflow:hidden;box-shadow:0 8px 14px rgba(31,42,90,.18),inset 0 2px 0 rgba(255,255,255,.3)}
-.seg{display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+.seg{display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 8px;transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
 .pilulas{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:12px}
 .pilula{border-radius:999px;padding:4px 12px;font-weight:700}.pilula.azul{background:#eef3fb;color:#2f4090}.pilula.verde{background:#e1f5ee;color:#085041}
 .tb{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
@@ -560,7 +622,7 @@ body{margin:0;font-family:'Segoe UI',Arial,sans-serif;background:#f3f5fb;color:v
 .pre .barra,.pre .barra2{height:0!important}.pre .hfill,.pre .seg{width:0!important}.pre .arco{stroke-dasharray:0 400}
 @media print{body{background:#fff}.wrap{max-width:none;padding:0}.card,.resumo,.caixa-credor,.recado,.kpi{box-shadow:none!important;break-inside:avoid;page-break-inside:avoid}.kpis{break-inside:avoid}}
 @page{size:A4;margin:10mm}
-@media (max-width:640px){.kpis{grid-template-columns:repeat(2,1fr)}.duo{grid-template-columns:1fr}.hlinha{grid-template-columns:110px 1fr 64px}.cgrupos{grid-template-columns:repeat(2,1fr)}.gloss{grid-template-columns:1fr}.casc{overflow-x:auto}}
+@media (max-width:640px){.kpis{grid-template-columns:repeat(2,1fr)}.duo{grid-template-columns:1fr}.hlinha{grid-template-columns:minmax(110px,40%) 1fr 70px}.cgrupos{grid-template-columns:repeat(2,1fr)}.gloss{grid-template-columns:1fr}.casc{overflow-x:auto}}
 """
 
 _JS = """
@@ -596,19 +658,19 @@ def _montar(d, n, anterior, na, op, animar, avisos):
     def cnt(v):
         return f'<b class="cnt" data-alvo="{v:.2f}">{_rs(v)}</b>'
     if n['caso'] == 'credor':
-        k4 = f'<div class="kpi credor">{cnt(t["saldo"])}<span>Saldo credor — nada a pagar</span></div>'
+        k4 = f'<div class="kpi credor">{cnt(t["saldo"])}<span>Saldo Credor a Transportar</span></div>'
     elif n['caso'] == 'nada':
-        k4 = f'<div class="kpi laranja">{cnt(0)}<span>Valor a pagar</span></div>'
+        k4 = f'<div class="kpi laranja">{cnt(0)}<span>Saldo a Recolher</span></div>'
     else:
-        k4 = f'<div class="kpi laranja">{cnt(t["pagar"])}<span>Valor a pagar</span></div>'
-    cred_kpi = (f'<div class="kpi verde">{cnt(t["cred"] + t["saldo"])}<span>Créditos disponíveis no mês</span></div>' if n['caso'] == 'credor'
-                else f'<div class="kpi verde">{cnt(t["cred"])}<span>Créditos das suas compras</span></div>')
-    kpis = (f'<div class="kpis"><div class="kpi">{cnt(n["receita"])}<span>Suas receitas no mês</span></div>'
-            f'<div class="kpi azul">{cnt(t["debito"])}<span>Imposto sobre as vendas</span></div>'
+        k4 = f'<div class="kpi laranja">{cnt(t["pagar"])}<span>Saldo a Recolher</span></div>'
+    cred_kpi = (f'<div class="kpi verde">{cnt(t["cred"] + t["saldo"])}<span>Créditos Disponíveis</span></div>' if n['caso'] == 'credor'
+                else f'<div class="kpi verde">{cnt(t["cred"])}<span>Créditos de Entradas</span></div>')
+    kpis = (f'<div class="kpis"><div class="kpi">{cnt(n["receita"])}<span>Faturamento Bruto</span></div>'
+            f'<div class="kpi azul">{cnt(t["debito"])}<span>Débitos de PIS/COFINS</span></div>'
             f'{cred_kpi}{k4}</div>')
     casc = ''
     if n['caso'] != 'nada':
-        casc = f'<div class="card"><h3>{"Por que não há nada a pagar" if n["caso"] == "credor" else "Como chegamos ao valor a pagar"}</h3><p class="sub">{_texto_cascata(n)}</p>{_cascata(n)}</div>'
+        casc = f'<div class="card"><h3>{"Por que não há saldo a recolher" if n["caso"] == "credor" else "Como chegamos ao valor a pagar"}</h3><p class="sub">{_texto_cascata(n)}</p>{_cascata(n)}</div>'
     comp = _comparativo(d, n, anterior, na, avisos) if (anterior is not None and na is not None) else ''
     recado = ''
     if (op.get('recado') or '').strip():
@@ -618,8 +680,8 @@ def _montar(d, n, anterior, na, op, animar, avisos):
     partes = [hero, resumo, kpis, _bloco_credor(n), casc, _por_tributo(n) if n['caso'] != 'nada' else '', _donut_e_ranking(d, n),
               _creditos_origem(d, n) if op.get('creditos', True) else '', _por_100(n), comp, lado, _glossario(d, n),
               _anexo_tecnico(d, n) if op.get('tecnico') else '']
-    rodape = (f'<div class="rodape">Relatório gerado automaticamente a partir da EFD-Contribuições entregue de {mes}/{ano}. Ele explica o que foi apurado e declarado. '
-              f'Em caso de dúvida, fale com o seu contador. · {_esc(escritorio)}</div>')
+    rodape = (f'<div class="rodape">Relatório gerencial elaborado a partir das informações declaradas na EFD-Contribuições referente à competência {mes}/{ano}. '
+              f'Documento destinado ao acompanhamento e controle tributário da empresa. Em caso de dúvidas sobre a apuração, consulte sua equipe contábil. · {_esc(escritorio)}</div>')
     corpo = '<div class="wrap">' + ''.join(p for p in partes if p) + rodape + '</div>'
     return (f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
             f'<title>PIS e COFINS de {mes}/{ano} · {_esc(e.get("nome"))}</title><style>{_CSS}</style></head>'
