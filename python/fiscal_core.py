@@ -69,6 +69,42 @@ def _campo(bloco, tag):
     m = re.search(rf'<{tag}>(.*?)</{tag}>', bloco or '', re.S)
     return m.group(1).strip() if m else ''
 
+def _emissao_nfse(texto):
+    """Data de EMISSÃO da NFS-e (AAAA-MM-DD), lida de dentro do XML: o processamento da NFS-e (dhProc);
+    se faltar, a emissão da DPS (dhEmi). NÃO é a competência (dCompet): uma nota emitida em setembro
+    pode ter competência de agosto, e quem manda no período é a emissão."""
+    for tag in ('dhProc', 'dhEmi'):
+        m = re.search(rf'<{tag}>(\d{{4}}-\d{{2}}-\d{{2}})', texto or '')
+        if m:
+            return m.group(1)
+    return ''
+
+
+def _data_da_nota(xml_texto, item=None):
+    """Data que decide o período (e a pasta) de uma NFS-e baixada: a emissão que está no XML — a mesma regra
+    do relatório. Só se o XML não trouxer data cai para a DataHoraGeracao da Receita."""
+    from datetime import datetime as _d
+    for bruto in (_emissao_nfse(xml_texto), ((item or {}).get('DataHoraGeracao') or '')[:10]):
+        if bruto:
+            try:
+                return _d.strptime(bruto, '%Y-%m-%d').date()
+            except ValueError:
+                continue
+    return None
+
+
+def _fmt_emissao_nfse(n):
+    """Emissão em dd/mm/aaaa; se a competência for de outro mês, mostra embaixo (pequena) para conferência."""
+    e = (n.get('emissao') or '')[:10]
+    c = (n.get('competencia') or '')[:10]
+    ok = re.match(r'\d{4}-\d{2}-\d{2}$', e)
+    dd = f'{e[8:10]}/{e[5:7]}/{e[:4]}' if ok else (e or '—')
+    if ok and re.match(r'\d{4}-\d{2}-\d{2}$', c) and c[:7] != e[:7]:
+        return (f'{_esc(dd)}<br><span style="font-size:10px;color:var(--ink2)" title="Competência informada na nota">'
+                f'comp. {c[5:7]}/{c[:4]}</span>')
+    return _esc(dd)
+
+
 def _numx(s):
     """Converte float no formato de XML (ponto decimal) — diferente de
     _num(), que é pra formato SPED (vírgula decimal)."""
@@ -3743,6 +3779,7 @@ def parse_nfse_xml(path):
     chave = chave_m.group(1) if chave_m else ''
     nnfse = _campo(t, 'nNFSe')
     dcompet = _campo(t, 'dCompet') or (_campo(t, 'dhProc')[:10] if _campo(t, 'dhProc') else '')
+    demissao = _emissao_nfse(t) or dcompet[:10]      # sem data de emissão no XML, cai na competência para a nota não sumir
 
     prest_cnpj = _campo(bloco_emit, 'CNPJ') or _campo(bloco_prest, 'CNPJ')
     prest_cpf = _campo(bloco_emit, 'CPF') or _campo(bloco_prest, 'CPF')
@@ -3791,7 +3828,7 @@ def parse_nfse_xml(path):
         inconsistencia_piscofins = f'A situação da nota diz que não houve retenção, mas tem R$ {_brl(v_ret_pis_cofins_csll)} lançado como retido de PIS/COFINS/CSLL.'
 
     return {
-        'chave': chave, 'nnfse': nnfse, 'competencia': dcompet,
+        'chave': chave, 'nnfse': nnfse, 'competencia': dcompet, 'emissao': demissao,
         'prestador_cnpj': prest_cnpj or prest_cpf, 'prestador_doc_tipo': 'CNPJ' if prest_cnpj else ('CPF' if prest_cpf else ''),
         'prestador_nome': _campo(bloco_emit, 'xNome') or '(não identificado)',
         'tomador_cnpj': toma_cnpj or toma_cpf, 'tomador_doc_tipo': 'CNPJ' if toma_cnpj else ('CPF' if toma_cpf else ''),
@@ -4049,13 +4086,9 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                         chaves_canceladas.add(chave_cancelada)
                     continue
 
-                dhger = item.get('DataHoraGeracao', '')
-                data_doc = None
-                if dhger:
-                    try:
-                        data_doc = _dt.strptime(dhger[:10], '%Y-%m-%d').date()
-                    except ValueError:
-                        pass
+                # uma só regra de período, a mesma do relatório: a EMISSÃO que está dentro do XML
+                # (a DataHoraGeracao da Receita só entra se o XML não trouxer a data)
+                data_doc = _data_da_nota(xml_texto, item)
                 if data_doc and not (dt_ini <= data_doc <= dt_fim):
                     ignorados_fora_periodo += 1
                     continue
@@ -4134,8 +4167,10 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
     períodos ao longo do tempo (é uma boa coisa, forma um arquivo
     histórico) — mas o painel não pode misturar tudo junto quando o
     pedido foi só de um mês específico. `data_inicial`/`data_final`,
-    quando passados, filtram pela competência da própria nota (não pela
-    pasta onde ela está salva) antes de somar qualquer coisa."""
+    quando passados, filtram pela data de EMISSÃO da própria nota (não pela
+    competência nem pela pasta onde ela está salva) antes de somar qualquer coisa:
+    uma nota emitida em 03/09 com competência de agosto entra no período de
+    setembro, e só nele."""
     from datetime import datetime as _dt
     dt_ini = _dt.strptime(data_inicial, '%Y-%m-%d').date() if data_inicial else None
     dt_fim = _dt.strptime(data_final, '%Y-%m-%d').date() if data_final else None
@@ -4153,7 +4188,7 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
             continue
         if dt_ini or dt_fim:
             try:
-                data_nota = _dt.strptime(d['competencia'][:10], '%Y-%m-%d').date()
+                data_nota = _dt.strptime(d['emissao'][:10], '%Y-%m-%d').date()
             except (ValueError, TypeError):
                 data_nota = None
             if data_nota:
@@ -4195,7 +4230,7 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
     # faz sentido sinalizar isso numa nota que já está cancelada
     inconsistencias_piscofins = sorted(
         [n for n in validas if n['inconsistencia_piscofins']],
-        key=lambda n: n['competencia'], reverse=True)
+        key=lambda n: n['emissao'], reverse=True)
 
     return {
         'total_notas': len(validas), 'total_valor': round(sum(n['vserv'] for n in validas), 2),
@@ -4206,8 +4241,8 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
         'emitidas': emitidas, 'recebidas': recebidas,
         'valor_emitidas': valor_emitidas, 'valor_recebidas': valor_recebidas,
         'qtd_canceladas': len(canceladas), 'valor_canceladas': round(sum(n['vserv'] for n in canceladas), 2),
-        'notas_com_retencao': sorted(com_ret, key=lambda n: n['competencia'], reverse=True),
-        'notas_sem_retencao': sorted(sem_ret, key=lambda n: n['competencia'], reverse=True),
+        'notas_com_retencao': sorted(com_ret, key=lambda n: n['emissao'], reverse=True),
+        'notas_sem_retencao': sorted(sem_ret, key=lambda n: n['emissao'], reverse=True),
         'top_parceiros': top_parceiros[:10],
         'inconsistencias_piscofins': inconsistencias_piscofins,
     }
@@ -4280,7 +4315,7 @@ def _bloco_inconsistencias_piscofins(inconsistencias):
         f'<div style="background:#fff;border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:8px">'
         f'<div style="display:flex;justify-content:space-between;margin-bottom:3px">'
         f'<span style="font-weight:700">NFS-e {_esc(n["nnfse"])} · {_esc(n["parceiro_nome"])[:34]}</span>'
-        f'<span style="color:var(--ink2)">{_esc(n["competencia"])}</span></div>'
+        f'<span style="color:var(--ink2)">{_fmt_emissao_nfse(n)}</span></div>'
         f'<div style="color:#791f1f">{_esc(n["inconsistencia_piscofins"])}</div></div>'
         for n in inconsistencias
     )
@@ -4333,7 +4368,7 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
     def _linha_sem(n):
         opacidade = 'opacity:.6' if n.get('cancelada') else ''
         return (f'<tr style="{opacidade}"><td style="text-align:center">{_selo_status(n)}</td>'
-                f'<td>{_esc(n["competencia"])}</td><td>NFS-e {_esc(n["nnfse"])}</td>'
+                f'<td>{_fmt_emissao_nfse(n)}</td><td>NFS-e {_esc(n["nnfse"])}</td>'
                 f'<td style="font-family:monospace;font-size:9.5px;word-break:break-all">{_esc(n["chave"])}</td>'
                 f'<td>{_esc(n["parceiro_nome"])[:30]}<br><span style="font-size:10px;color:var(--ink2)">{_doc(n)}</span></td>'
                 f'<td style="text-align:right;{"text-decoration:line-through" if n.get("cancelada") else ""}">R$ {_brl(n["vserv"])}</td>' + _btn_pdf(n) + '</tr>')
@@ -4354,7 +4389,7 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
         return (
             f'<tr class="lb-ret" data-alvo="{det_id}" style="cursor:pointer;{opacidade}">'
             f'<td style="text-align:center">{_selo_status(n)}</td>'
-            f'<td>{_esc(n["competencia"])}</td><td>NFS-e {_esc(n["nnfse"])}</td>'
+            f'<td>{_fmt_emissao_nfse(n)}</td><td>NFS-e {_esc(n["nnfse"])}</td>'
             f'<td style="font-family:monospace;font-size:9.5px;word-break:break-all">{_esc(n["chave"])}</td>'
             f'<td>{_esc(n["parceiro_nome"])[:26]}<br><span style="font-size:10px;color:var(--ink2)">{_doc(n)}</span></td>'
             f'<td style="text-align:right;color:#e8632b;font-weight:700;{"text-decoration:line-through" if n.get("cancelada") else ""}">R$ {_brl(n["vserv"])}</td>'
@@ -4379,7 +4414,7 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
         canceladas = [n for n in notas if n.get('cancelada')]
         return (f'<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
                 f'<thead><tr><th style="padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Sit.</th>'
-                f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Compet.</th>'
+                f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Emissão</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Nota</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Chave de acesso</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Parceiro</th>'
@@ -4397,7 +4432,7 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
         retido_str = f' · retido: R$ {_brl(sum(n["total_retido"] for n in validas))}'
         return (f'<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
                 f'<thead><tr><th style="padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Sit.</th>'
-                f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Compet.</th>'
+                f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Emissão</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Nota</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Chave de acesso</th>'
                 f'<th style="text-align:left;padding:8px;color:var(--ink2);font-size:9.5px;text-transform:uppercase">Parceiro</th>'
