@@ -16,7 +16,11 @@ Detectores implementados (todos calculados só com o que está nos arquivos):
      movimentação de imobilização (G125/IM) no arquivo.
 """
 import re
+import io
+import os
 import json
+import zipfile
+import xml.etree.ElementTree as ET
 from collections import defaultdict, OrderedDict
 
 # ----------------------------------------------------------------------------- utilidades
@@ -85,6 +89,9 @@ REGRAS_MONOFASICO = [
     {'grupo': 'Álcool para fins carburantes', 'tabela': '112/113', 'lei': 'Lei 9.718/1998, art. 5º',
      'prefixos': ['22071000', '22072010'], 'excecoes': [], 'confianca': 'Média',
      'obs': 'Álcool vendido por comerciante varejista tem alíquota zero (art. 5º). Confirmar a modalidade da venda.'},
+    {'grupo': 'Bebidas frias (águas, refrigerantes, cervejas)', 'tabela': '4xx (bebidas frias)', 'lei': 'Lei 13.097/2015, art. 28',
+     'prefixos': ['2201', '2202', '2203'], 'excecoes': [], 'confianca': 'Baixa',
+     'obs': 'Posições 22.01 (águas), 22.02 (refrigerantes, refrescos, isotônicos) e 22.03 (cervejas). A própria Tabela 4.3.10 cita o art. 28 da Lei 13.097/2015 para a revenda a alíquota zero por pessoas jurídicas varejistas. O texto da lei não foi conferido nesta versão e há ex-tarifários (por exemplo, águas minerais naturais) e regras por embalagem: conferir antes de qualquer pedido.'},
 ]
 
 
@@ -109,6 +116,8 @@ LEGAL = {
              'texto': 'Fabricantes e importadores de produtos farmacêuticos e de perfumaria/higiene recolhem PIS/COFINS em alíquotas diferenciadas. A receita da venda desses produtos por quem não é industrial nem importador tem alíquota zero.'},
             {'norma': 'Lei 9.718/1998, arts. 4º e 5º', 'fonte': 'Texto oficial (Planalto), lido em 05/10/2026',
              'texto': 'Combustíveis derivados de petróleo e álcool: a tributação é concentrada em produtores e importadores, e o revendedor varejista tem alíquota zero.'},
+            {'norma': 'Lei 13.097/2015, art. 28 (bebidas frias)', 'fonte': 'Citada na observação do código 004 da Tabela 4.3.10; texto da lei não lido',
+             'texto': 'Revenda de bebidas frias (águas, refrigerantes, cervejas) por pessoa jurídica varejista a alíquota zero de PIS/COFINS, conforme a observação da própria Tabela 4.3.10. Vigência e enquadramento a conferir.'},
             {'norma': 'Lei 10.485/2002 (veículos, autopeças e pneus)', 'fonte': 'Citada pela Tabela 4.3.10; artigo a conferir',
              'texto': 'Regime monofásico para veículos, autopeças e pneumáticos, com alíquota zero na revenda.'},
             {'norma': 'Tabela 4.3.10 da EFD-Contribuições', 'fonte': 'Tabelas oficiais carregadas no FiscoCont+ (30/09/2026)',
@@ -184,7 +193,9 @@ def _analisar_efdc(caminho):
     cob = {'regs': defaultdict(int), 'c100_saida': 0, 'c170_saida': 0, 'c170_icms_cst01': 0, 'c170_com_ncm': 0,
            'c180_itens': 0, 'c180_com_ncm': 0, 'mono_itens': 0, 'mono_cst': defaultdict(int), 'mono_ok': 0,
            'cst_saida': defaultdict(int), 'c175_linhas': 0, 'st_cst01_linhas': 0, 'st_cst01_valor': 0.0,
-           'st_cst01_base': 0.0, 'mod65_saida': 0}
+           'st_cst01_base': 0.0, 'mod65_saida': 0,
+           'notas': {}, 'c170_chaves': set(), 'c175_ev': defaultdict(list)}
+    chave_atual = ''
     c180 = None            # item consolidado corrente (C180) para somar C181/C185
     for l in linhas:
         c = _campos(l)
@@ -192,10 +203,13 @@ def _analisar_efdc(caminho):
         cob['regs'][r] += 1
         if r == 'C100' and len(c) > 10:
             oper, sit, nota, dt = c[2], c[6], c[8], c[10]
+            chave_atual = c[9].strip() if len(c) > 9 else ''
             if oper == '1' and sit not in ('02', '03', '04', '05'):
                 cob['c100_saida'] += 1
                 if c[5] == '65':
                     cob['mod65_saida'] += 1
+                if len(chave_atual) == 44:
+                    cob['notas'][chave_atual] = {'mod': c[5], 'dt': dt, 'nota': nota}
             continue
         if r == 'C175' and oper == '1' and sit not in ('02', '03', '04', '05') and len(c) > 16:
             # NFC-e: o registro é analítico por CFOP/CST e NÃO traz NCM. Só dá para agir pelo CFOP.
@@ -216,10 +230,12 @@ def _analisar_efdc(caminho):
                 if len(g['exemplos']) < 6:
                     g['exemplos'].append({'nota': nota, 'data': _data(dt), 'produto': 'NFC-e, CFOP ' + cfop, 'ncm': '(sem NCM no C175)',
                                           'cst': cst_p, 'valor': round(v_p + v_c, 2)})
+                cob['c175_ev'][chave_atual].append(('comb', (reg['grupo'], reg['tabela'], reg['lei'], reg['confianca'], reg['obs'] + ' Identificado pelo CFOP de combustível (NFC-e, registro C175, sem NCM).'), _num(c[6]), v_p, v_c))
             elif cfop[1:] in CFOP_ST and cst_p in ('01', '02') and (v_p > 0 or v_c > 0):
                 cob['st_cst01_linhas'] += 1
                 cob['st_cst01_valor'] += v_p + v_c
                 cob['st_cst01_base'] += _num(c[6])
+                cob['c175_ev'][chave_atual].append(('st', None, _num(c[6]), v_p, v_c))
             continue
         if r == 'C180' and len(c) > 8:
             cod, ncm180 = c[5], re.sub(r'\D', '', c[6] or '') or ncm_item.get(c[5], '')
@@ -262,6 +278,8 @@ def _analisar_efdc(caminho):
         if not cfop or cfop[0] not in '567':
             continue
         cob['c170_saida'] += 1
+        if chave_atual:
+            cob['c170_chaves'].add(chave_atual)
         cob['cst_saida'][c[25]] += 1
         if ncm_item.get(c[3]):
             cob['c170_com_ncm'] += 1
@@ -306,6 +324,116 @@ def _analisar_efdc(caminho):
     return cab, comp, mono, t69, cob
 
 
+
+# ----------------------------------------------------------------------------- XML de NF-e / NFC-e
+def _tag(e):
+    return e.tag.split('}')[-1]
+
+
+def _filho(e, nome):
+    if e is None:
+        return None
+    for x in e:
+        if _tag(x) == nome:
+            return x
+    return None
+
+
+def _txt(e, nome, padrao=''):
+    x = _filho(e, nome)
+    return (x.text or '').strip() if x is not None and x.text else padrao
+
+
+def _iter_xmls(caminhos):
+    """Gera (nome, bytes) de arquivos .xml, de pastas (recursivo) e de .zip (inclusive zip dentro de zip)."""
+    def do_zip(origem, nome, nivel=0):
+        try:
+            with zipfile.ZipFile(origem if isinstance(origem, str) else io.BytesIO(origem)) as z:
+                for info in z.infolist():
+                    if info.is_dir():
+                        continue
+                    n = info.filename
+                    low = n.lower()
+                    if low.endswith('.xml'):
+                        yield n, z.read(info)
+                    elif low.endswith('.zip') and nivel < 2:
+                        yield from do_zip(z.read(info), n, nivel + 1)
+        except zipfile.BadZipFile:
+            return
+    for c in caminhos:
+        if os.path.isdir(c):
+            for raiz, _, arqs in os.walk(c):
+                for a in arqs:
+                    low = a.lower()
+                    cam = os.path.join(raiz, a)
+                    if low.endswith('.xml'):
+                        with open(cam, 'rb') as f:
+                            yield a, f.read()
+                    elif low.endswith('.zip'):
+                        yield from do_zip(cam, a)
+        elif c.lower().endswith('.zip'):
+            yield from do_zip(c, c)
+        elif c.lower().endswith('.xml') and os.path.exists(c):
+            with open(c, 'rb') as f:
+                yield os.path.basename(c), f.read()
+
+
+def _ler_nfe(dados):
+    """Lê um XML de NF-e/NFC-e. Devolve ('nota', dict) ou ('cancelamento', chave) ou None."""
+    try:
+        raiz = ET.fromstring(dados)
+    except ET.ParseError:
+        return None
+    tr = _tag(raiz)
+    if tr in ('procEventoNFe', 'envEvento', 'evento'):
+        for e in raiz.iter():
+            if _tag(e) == 'infEvento':
+                if _txt(e, 'tpEvento') == '110111':
+                    return ('cancelamento', _txt(e, 'chNFe'))
+        return None
+    inf = None
+    for e in raiz.iter():
+        if _tag(e) == 'infNFe':
+            inf = e
+            break
+    if inf is None:
+        return None
+    chave = (inf.get('Id') or '').replace('NFe', '')
+    ide, emit = _filho(inf, 'ide'), _filho(inf, 'emit')
+    status = ''
+    for e in raiz.iter():
+        if _tag(e) == 'infProt':
+            status = _txt(e, 'cStat')
+    itens = []
+    for det in inf:
+        if _tag(det) != 'det':
+            continue
+        prod, imp = _filho(det, 'prod'), _filho(det, 'imposto')
+        if prod is None or imp is None:
+            continue
+        icms = _filho(imp, 'ICMS')
+        v_icms = 0.0
+        if icms is not None and len(icms):
+            v_icms = _num(_txt(list(icms)[0], 'vICMS', '0'))
+        def trib(nome, sub):
+            bloco = _filho(imp, nome)
+            if bloco is None or not len(bloco):
+                return '', 0.0, 0.0, 0.0
+            b = list(bloco)[0]
+            return _txt(b, 'CST'), _num(_txt(b, 'vBC', '0')), _num(_txt(b, 'p' + sub, '0')), _num(_txt(b, 'v' + sub, '0'))
+        cst_p, bc_p, al_p, v_p = trib('PIS', 'PIS')
+        cst_c, bc_c, al_c, v_c = trib('COFINS', 'COFINS')
+        itens.append({
+            'cod': _txt(prod, 'cProd'), 'produto': _txt(prod, 'xProd'), 'ncm': re.sub(r'\D', '', _txt(prod, 'NCM')),
+            'cfop': _txt(prod, 'CFOP'), 'v_prod': _num(_txt(prod, 'vProd', '0')), 'v_desc': _num(_txt(prod, 'vDesc', '0')),
+            'v_acess': _num(_txt(prod, 'vFrete', '0')) + _num(_txt(prod, 'vSeg', '0')) + _num(_txt(prod, 'vOutro', '0')),
+            'v_icms': v_icms, 'cst_pis': cst_p, 'bc_pis': bc_p, 'al_pis': al_p, 'v_pis': v_p,
+            'cst_cof': cst_c, 'al_cof': al_c, 'v_cof': v_c})
+    return ('nota', {'chave': chave, 'mod': _txt(ide, 'mod'), 'tp': _txt(ide, 'tpNF', '1'), 'num': _txt(ide, 'nNF'),
+                     'emissao': (_txt(ide, 'dhEmi') or _txt(ide, 'dEmi'))[:10], 'cnpj': _txt(emit, 'CNPJ'), 'status': status,
+                     'itens': itens})
+
+
 # ----------------------------------------------------------------------------- EFD ICMS/IPI (CIAP)
 CFOP_ATIVO = ('1551', '2551', '1552', '2552', '1406', '2406')
 CST_CREDITO = ('00', '10', '20', '51', '70', '90')
@@ -342,9 +470,11 @@ def _mes(comp):
     return f'{comp[5:7]}/{comp[0:4]}' if len(comp) == 7 else comp
 
 
-def analisar(efdc, fiscal=None):
-    """efdc: lista de caminhos da EFD-Contribuições; fiscal: lista de caminhos da EFD ICMS/IPI."""
+def analisar(efdc, fiscal=None, xmls=None):
+    """efdc: caminhos da EFD-Contribuições; fiscal: caminhos da EFD ICMS/IPI; xmls: arquivos .xml/.zip ou pastas com NF-e/NFC-e."""
     fiscal = fiscal or []
+    xmls = xmls or []
+    notas_efd, chaves_c170, c175_ev = {}, set(), defaultdict(list)
     aviso = []
     cliente = {'nome': '', 'cnpj': ''}
     periodos, mono_tot, t69_tot = [], OrderedDict(), {'itens': 0, 'icms': 0.0, 'valor': 0.0, 'ja_excluido': 0, 'indef': 0, 'exemplos': [], 'por_mes': {}, 'fora': 0.0, 'fora_meses': []}
@@ -366,6 +496,10 @@ def analisar(efdc, fiscal=None):
                 aviso.append(f'{nome_arq}: não parece uma EFD-Contribuições (sem registro 0000 válido).')
             continue
         cobt['arquivos'] += 1
+        notas_efd.update(cob['notas'])
+        chaves_c170 |= cob['c170_chaves']
+        for k, v in cob['c175_ev'].items():
+            c175_ev[k].extend(v)
         for k in ('c100_saida', 'c170_saida', 'c170_com_ncm', 'c170_icms_cst01', 'c180_itens', 'c180_com_ncm', 'mono_itens', 'mono_ok'):
             cobt[k] += cob[k]
         for k in ('c175_linhas', 'st_cst01_linhas', 'st_cst01_valor', 'st_cst01_base', 'mod65_saida'):
@@ -403,6 +537,109 @@ def analisar(efdc, fiscal=None):
     if len(cnpjs) > 1:
         aviso.append('Os arquivos são de mais de um CNPJ. Analise um cliente por vez para o resultado fazer sentido.')
 
+
+    # ---- XML das notas (NF-e / NFC-e): traz o NCM que a EFD não tem nas NFC-e
+    xml_info = None
+    if xmls:
+        xml_info = {'lidos': 0, 'nota_ok': 0, 'sem_efd': 0, 'ja_c170': 0, 'outro_emit': 0, 'cancelada': 0, 'dup': 0,
+                    'invalidos': 0, 'itens': 0, 'itens_ncm_mono': 0, 'por_mes': defaultdict(int)}
+        cnpj_cli = next(iter(cnpjs)) if len(cnpjs) == 1 else ''
+        vistos, cancel = set(), set()
+        pendentes = []
+        for nome_x, dados in _iter_xmls(xmls):
+            xml_info['lidos'] += 1
+            r = _ler_nfe(dados)
+            if not r:
+                xml_info['invalidos'] += 1
+                continue
+            if r[0] == 'cancelamento':
+                cancel.add(r[1])
+                continue
+            pendentes.append(r[1])
+        for n in pendentes:
+            ch = n['chave']
+            if ch in vistos:
+                xml_info['dup'] += 1
+                continue
+            vistos.add(ch)
+            if ch in cancel or (n['status'] and n['status'] not in ('100', '150')):
+                xml_info['cancelada'] += 1
+                continue
+            if cnpj_cli and n['cnpj'] != cnpj_cli:
+                xml_info['outro_emit'] += 1
+                continue
+            if n['tp'] != '1':
+                continue
+            # só vale a nota que a EFD declarou como saída: é o que de fato foi tributado no período
+            if ch not in notas_efd:
+                xml_info['sem_efd'] += 1
+                continue
+            if ch in chaves_c170:
+                xml_info['ja_c170'] += 1
+                continue
+            xml_info['nota_ok'] += 1
+            comp = n['emissao'][:7]
+            xml_info['por_mes'][comp] += 1
+            # a nota sai da leitura por C175 (sem NCM) e passa a valer pelo XML
+            for tipo_ev, chave_g, base_ev, v_p_ev, v_c_ev in c175_ev.get(ch, []):
+                if tipo_ev == 'comb' and chave_g in mono_tot:
+                    d = mono_tot[chave_g]
+                    d['itens'] -= 1; d['base'] -= base_ev; d['pis'] -= v_p_ev; d['cofins'] -= v_c_ev
+                    d['exemplos'] = [e for e in d['exemplos'] if e.get('nota') != notas_efd[ch]['nota']]
+                    if d['itens'] <= 0 or d['pis'] + d['cofins'] < 0.01:
+                        del mono_tot[chave_g]
+                elif tipo_ev == 'st':
+                    cobt['st_cst01_linhas'] -= 1
+                    cobt['st_cst01_valor'] -= v_p_ev + v_c_ev
+                    cobt['st_cst01_base'] -= base_ev
+            for it in n['itens']:
+                if not it['cfop'] or it['cfop'][0] not in '567':
+                    continue
+                xml_info['itens'] += 1
+                reg = _regra_ncm(it['ncm'])
+                if reg:
+                    xml_info['itens_ncm_mono'] += 1
+                    cobt['mono_itens'] += 1
+                    cobt['mono_cst'][it['cst_pis']] += 1
+                    if it['cst_pis'] in ('01', '02') and (it['v_pis'] > 0 or it['v_cof'] > 0):
+                        g = mono_tot.setdefault((reg['grupo'], reg['tabela'], reg['lei'], reg['confianca'], reg['obs']),
+                                                {'itens': 0, 'base': 0.0, 'pis': 0.0, 'cofins': 0.0, 'exemplos': [], 'meses': set()})
+                        g['itens'] += 1
+                        g['base'] += it['bc_pis']
+                        g['pis'] += it['v_pis']
+                        g['cofins'] += it['v_cof']
+                        g['meses'].add(comp)
+                        if len(g['exemplos']) < 8:
+                            g['exemplos'].append({'nota': n['num'] + (' (NFC-e)' if n['mod'] == '65' else ''), 'data': '/'.join([n['emissao'][8:10], n['emissao'][5:7], n['emissao'][:4]]),
+                                                  'produto': it['produto'][:48], 'ncm': it['ncm'], 'cst': it['cst_pis'], 'valor': round(it['v_pis'] + it['v_cof'], 2)})
+                        mono_mes[comp] += it['v_pis'] + it['v_cof']
+                    else:
+                        cobt['mono_ok'] += 1
+                # Tema 69: ICMS ainda dentro da base do PIS/COFINS
+                if it['cst_pis'] in ('01', '02') and it['v_icms'] > 0:
+                    liquido = it['v_prod'] - it['v_desc'] + it['v_acess']
+                    valor69 = it['v_icms'] * (it['al_pis'] + it['al_cof']) / 100.0
+                    cobt['c170_icms_cst01'] += 1
+                    if comp < '2017-03':
+                        if abs(it['bc_pis'] - liquido) < 0.02:
+                            t69_tot['fora'] += valor69
+                            if comp not in t69_tot['fora_meses']:
+                                t69_tot['fora_meses'].append(comp)
+                    elif abs(it['bc_pis'] - liquido) < 0.02:
+                        t69_tot['itens'] += 1
+                        t69_tot['icms'] += it['v_icms']
+                        t69_tot['valor'] += valor69
+                        t69_tot['por_mes'][comp] = t69_tot['por_mes'].get(comp, 0.0) + valor69
+                        if len(t69_tot['exemplos']) < 8:
+                            t69_tot['exemplos'].append({'nota': n['num'] + (' (NFC-e)' if n['mod'] == '65' else ''), 'data': '/'.join([n['emissao'][8:10], n['emissao'][5:7], n['emissao'][:4]]),
+                                                        'produto': it['produto'][:48], 'icms': round(it['v_icms'], 2), 'valor': round(valor69, 2)})
+                    elif abs(it['bc_pis'] - (liquido - it['v_icms'])) < 0.02:
+                        t69_tot['ja_excluido'] += 1
+                    else:
+                        t69_tot['indef'] += 1
+        if not cnpj_cli and len(cnpjs) > 1:
+            aviso.append('XML: como há mais de um CNPJ nas EFD, o emitente dos XMLs não foi conferido.')
+
     oportunidades = []
     meses_txt = lambda ms: ', '.join(_mes(m) for m in sorted(ms))
 
@@ -413,7 +650,7 @@ def analisar(efdc, fiscal=None):
             continue
         oportunidades.append({
             'tipo': 'monofasico', 'titulo': 'PIS/COFINS monofásico na revenda: ' + grupo,
-            'valor': round(valor, 2), 'confianca': conf, 'base_legal_status': 'conferida',
+            'valor': round(valor, 2), 'confianca': conf, 'base_legal_status': 'conferida' if conf == 'Alta' else 'revalidar',
             'resumo': f'{_pl(d["itens"], "item vendido", "itens vendidos")} com CST 01/02 em ' + ('CFOP de combustível (NFC-e, sem NCM)' if any(str(e.get('ncm', '')).startswith('(sem') for e in d['exemplos']) else 'NCM de incidência monofásica') + f'. PIS {_brl(d["pis"])} e COFINS {_brl(d["cofins"])}.',
             'periodos': sorted(d['meses']),
             'como': f'Percorri os itens de saída (C170) e separei os que têm NCM de {grupo.lower()} e CST de PIS 01 ou 02 com tributo destacado. {obs}',
@@ -486,7 +723,7 @@ def analisar(efdc, fiscal=None):
             csts = ', '.join(f'CST {k}: {v}' for k, v in sorted(cobt['mono_cst'].items()))
             cobertura.append(f'{_pl(cobt["mono_itens"], "item de venda tem", "itens de venda têm")} NCM de incidência monofásica ({csts}). {cobt["mono_ok"]} já estão com tratamento correto (sem tributo).')
         else:
-            cobertura.append('Nenhum item de venda tem NCM de produto monofásico (farmacêutico, perfumaria, pneus, combustíveis).')
+            cobertura.append('Nenhum item de venda tem NCM de produto monofásico (farmacêutico, perfumaria, pneus, combustíveis, bebidas frias).')
         if cobt['c170_icms_cst01']:
             cobertura.append(f'{_pl(cobt["c170_icms_cst01"], "item de venda tem", "itens de venda têm")} CST 01/02 e ICMS destacado (base do Tema 69).')
         else:
@@ -495,15 +732,33 @@ def analisar(efdc, fiscal=None):
             aviso.append('Nenhum item de venda foi encontrado (registros C170 ou C180). Se o cliente declara as vendas de outra forma, o Radar ainda não cobre esse caso.')
         if cobt['mod65_saida']:
             cobertura.append(f'{cobt["mod65_saida"]} das notas de saída são NFC-e (modelo 65). Na EFD-Contribuições a NFC-e vem só resumida por CFOP e CST (C175), sem NCM nem ICMS. Por isso o produto não pode ser identificado e as vendas dessas notas só são analisadas pelo CFOP de combustível.')
+        if xml_info is not None:
+            xi = xml_info
+            partes = [f'{xi["lidos"]} arquivos XML lidos']
+            partes.append(f'{xi["nota_ok"]} notas analisadas pelo XML (NCM, CST e valores por item) em {len(xi["por_mes"])} {"mês" if len(xi["por_mes"]) == 1 else "meses"}')
+            if xi['ja_c170']:
+                partes.append(f'{xi["ja_c170"]} já detalhadas na EFD (C170) e mantidas como estão na EFD')
+            if xi['sem_efd']:
+                partes.append(f'{xi["sem_efd"]} sem correspondência nas EFD enviadas (outro período ou não declaradas) e ignoradas')
+            if xi['cancelada']:
+                partes.append(f'{xi["cancelada"]} canceladas/não autorizadas ignoradas')
+            if xi['outro_emit']:
+                partes.append(f'{xi["outro_emit"]} de outro emitente ignoradas')
+            if xi['dup']:
+                partes.append(f'{xi["dup"]} repetidas')
+            if xi['invalidos']:
+                partes.append(f'{xi["invalidos"]} arquivos que não eram NF-e (eventos, resumos ou outros)')
+            cobertura.append('XML: ' + '; '.join(partes) + '.')
+            cobertura.append(f'Nos XMLs: {xi["itens"]} itens de venda, dos quais {xi["itens_ncm_mono"]} têm NCM monofásico. Só entram os XMLs de notas que a EFD declara como saída, porque o valor só é recuperável se foi realmente tributado na EFD.')
         if cobt['c400']:
             cobertura.append(f'{cobt["c400"]} linhas de cupom/ECF (C400/C490) não foram analisadas por falta de NCM no registro.')
         if cobt['st_cst01_linhas']:
-            aviso.append(f'Indício (não entra no total): em NFC-e, {_pl(cobt["st_cst01_linhas"], "linha", "linhas")} com CFOP de mercadoria com ICMS-ST e CST 01 pagaram {_brl(cobt["st_cst01_valor"])} de PIS/COFINS sobre {_brl(cobt["st_cst01_base"])} de vendas. Produtos com ST (bebidas, higiene, medicamentos, pneus) costumam ser monofásicos, mas o NCM não está na EFD. Para confirmar, é preciso analisar os XMLs das NFC-e do período.')
+            aviso.append(f'Indício (não entra no total): em NFC-e, {_pl(cobt["st_cst01_linhas"], "linha", "linhas")} com CFOP de mercadoria com ICMS-ST e CST 01 pagaram {_brl(cobt["st_cst01_valor"])} de PIS/COFINS sobre {_brl(cobt["st_cst01_base"])} de vendas. Produtos com ST (bebidas, higiene, medicamentos, pneus) costumam ser monofásicos, mas o NCM não está na EFD. ' + ('Os XMLs enviados já foram descontados deste valor; para as demais notas, envie os XMLs das NFC-e do período.' if xml_info is not None else 'Para confirmar, é preciso analisar os XMLs das NFC-e do período (botão 3 do Radar).'))
     legal_usado = {t: LEGAL[t] for t in {o['tipo'] for o in oportunidades}}
     return {
         'cliente': cliente, 'periodos': sorted(set(periodos)), 'arquivos_efdc': len(efdc), 'arquivos_fiscal': len(fiscal),
         'oportunidades': oportunidades, 'legal': LEGAL, 'em_desenvolvimento': EM_DESENVOLVIMENTO,
-        'cobertura': cobertura, 'avisos': aviso, 'total': round(sum(o['valor'] for o in oportunidades), 2),
+        'cobertura': cobertura, 'com_xml': xml_info is not None, 'avisos': aviso, 'total': round(sum(o['valor'] for o in oportunidades), 2),
     }
 
 
@@ -517,12 +772,12 @@ def main_cli(argv):
         while i < len(argv) and not argv[i].startswith('--'):
             out.append(argv[i]); i += 1
         return out
-    efdc, fiscal, js = grupo('--efdc'), grupo('--fiscal'), (grupo('--json') or [''])[0]
+    efdc, fiscal, xmls, js = grupo('--efdc'), grupo('--fiscal'), grupo('--xml'), (grupo('--json') or [''])[0]
     if not efdc or not js:
-        print('uso: radar-oportunidades --efdc ARQ.txt [ARQ2.txt ...] [--fiscal SPED.txt ...] --json saida.json')
+        print('uso: radar-oportunidades --efdc ARQ.txt [ARQ2.txt ...] [--fiscal SPED.txt ...] [--xml ARQ.xml|PASTA|ARQ.zip ...] --json saida.json')
         return 1
     try:
-        res = analisar(efdc, fiscal)
+        res = analisar(efdc, fiscal, xmls)
     except Exception as e:
         res = {'erro': str(e)}
     with open(js, 'w', encoding='utf-8') as f:

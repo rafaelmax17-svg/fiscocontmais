@@ -2715,7 +2715,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 // Radar de Oportunidades Fiscais + Levantamento Legalização. Só aparecem para o papel Admin
 // (menu "admin-only") e os handlers do processo principal também exigem Admin.
 const ADM = {
-  radar: { efdc: [], fiscal: [], res: null, status: {}, filtro: 'Todos', aberta: null },
+  radar: { efdc: [], fiscal: [], xml: [], res: null, status: {}, filtro: 'Todos', aberta: null },
   legal: { cnpj: '', res: null, itens: {}, sujo: false },
 };
 const escA = (s) => esc(s).replace(/"/g, '&quot;');
@@ -2745,6 +2745,7 @@ function radarSelecao() {
   const pecas = [];
   r.efdc.forEach((p) => pecas.push('EFD-C · ' + admNome(p)));
   r.fiscal.forEach((p) => pecas.push('ICMS/IPI · ' + admNome(p)));
+  r.xml.forEach((p) => pecas.push('XML · ' + admNome(p)));
   el.hidden = !pecas.length;
   el.innerHTML = pecas.map((t) => `<span>${esc(t)}</span>`).join('');
   $('#btnRadarRodar').disabled = !r.efdc.length;
@@ -2926,16 +2927,23 @@ function initAdminModulos() {
   const pick = (tipo, btn) => async () => {
     const r = await adm.radarPick(tipo);
     if (!r || r.canceled || !r.paths) return;
-    ADM.radar[tipo === 'fiscal' ? 'fiscal' : 'efdc'] = r.paths;
+    if (tipo === 'xml' || tipo === 'xmlpasta') {
+      // soma às seleções anteriores (zips de meses diferentes, pastas e arquivos avulsos)
+      ADM.radar.xml = [...new Set([...(ADM.radar.xml || []), ...r.paths])];
+    } else {
+      ADM.radar[tipo === 'fiscal' ? 'fiscal' : 'efdc'] = r.paths;
+    }
     btn.classList.add('ok');
     radarSelecao();
   };
   $('#btnRadarEfdc').addEventListener('click', pick('efdc', $('#btnRadarEfdc')));
   $('#btnRadarFiscal').addEventListener('click', pick('fiscal', $('#btnRadarFiscal')));
+  $('#btnRadarXml').addEventListener('click', pick('xml', $('#btnRadarXml')));
+  $('#btnRadarXmlPasta').addEventListener('click', pick('xmlpasta', $('#btnRadarXmlPasta')));
   $('#btnRadarRodar').addEventListener('click', async () => {
-    overlay(true, 'Procurando oportunidades nos arquivos…');
+    overlay(true, (ADM.radar.xml && ADM.radar.xml.length) ? 'Lendo as EFD e os XMLs. Com muitos XMLs isso pode levar alguns minutos…' : 'Procurando oportunidades nos arquivos…');
     try {
-      const r = await adm.radarAnalisar({ efdc: ADM.radar.efdc, fiscal: ADM.radar.fiscal });
+      const r = await adm.radarAnalisar({ efdc: ADM.radar.efdc, fiscal: ADM.radar.fiscal, xml: ADM.radar.xml });
       overlay(false);
       if (!r || r.error) { toast((r && r.error) || 'Falha na análise.', true); return; }
       ADM.radar.res = r.res; ADM.radar.status = r.status || {}; ADM.radar.filtro = 'Todos'; ADM.radar.aberta = null;

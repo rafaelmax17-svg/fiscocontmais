@@ -1525,23 +1525,30 @@ function _salvarJsonUser(nome, dados) {
 
 ipcMain.handle('admin:radarPick', async (_evt, { tipo }) => {
   const bloq = _soAdmin(); if (bloq) return bloq;
-  const fiscal = tipo === 'fiscal';
-  const r = await dialog.showOpenDialog(mainWindow, {
-    title: fiscal ? 'Selecione as EFD ICMS/IPI do cliente (opcional, para o CIAP)' : 'Selecione as EFD-Contribuições do cliente (um ou mais meses)',
-    properties: ['openFile', 'multiSelections'],
-    filters: [{ name: fiscal ? 'EFD ICMS/IPI' : 'EFD-Contribuições', extensions: ['txt'] }],
-  });
+  let opts;
+  if (tipo === 'xml') {
+    opts = { title: 'Selecione os XMLs das notas (arquivos .xml ou .zip)', properties: ['openFile', 'multiSelections'],
+             filters: [{ name: 'XML ou ZIP', extensions: ['xml', 'zip'] }] };
+  } else if (tipo === 'xmlpasta') {
+    opts = { title: 'Selecione a pasta com os XMLs das notas', properties: ['openDirectory', 'multiSelections'] };
+  } else {
+    const fiscal = tipo === 'fiscal';
+    opts = { title: fiscal ? 'Selecione as EFD ICMS/IPI do cliente (opcional, para o CIAP)' : 'Selecione as EFD-Contribuições do cliente (um ou mais meses)',
+             properties: ['openFile', 'multiSelections'], filters: [{ name: fiscal ? 'EFD ICMS/IPI' : 'EFD-Contribuições', extensions: ['txt'] }] };
+  }
+  const r = await dialog.showOpenDialog(mainWindow, opts);
   if (r.canceled || !r.filePaths.length) return { canceled: true };
   return { paths: r.filePaths };
 });
 
-ipcMain.handle('admin:radarAnalisar', async (_evt, { efdc, fiscal }) => {
+ipcMain.handle('admin:radarAnalisar', async (_evt, { efdc, fiscal, xml }) => {
   const bloq = _soAdmin(); if (bloq) return bloq;
   if (!efdc || !efdc.length) return { error: 'Selecione ao menos uma EFD-Contribuições.' };
   const jsonOut = path.join(os.tmpdir(), `fc_radar_${Date.now()}.json`);
   try {
     const args = ['radar-oportunidades', '--efdc', ...efdc];
     if (fiscal && fiscal.length) args.push('--fiscal', ...fiscal);
+    if (xml && xml.length) args.push('--xml', ...xml);
     args.push('--json', jsonOut);
     await runFiscal(args, jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
