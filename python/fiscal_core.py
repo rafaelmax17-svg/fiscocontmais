@@ -2793,6 +2793,14 @@ def main(argv):
         print('Relatório do lote gerado:', saida)
         return 0
 
+    # Módulos exclusivos do Admin (Radar de Oportunidades e Levantamento para a Legalização)
+    if modo == 'radar-oportunidades':
+        import oportunidades as _op
+        return _op.main_cli(argv[1:])
+    if modo == 'legalizacao-levantamento':
+        import legalizacao as _lg
+        return _lg.main_cli(argv[1:])
+
     if modo == 'efd-cliente':
         if len(argv) < 2:
             print('uso: fiscal_core.py efd-cliente ARQUIVO.txt [--anterior MES_ANTERIOR.txt] [--opcoes opcoes.json] --html saida.html [--html-estatico saida_pdf.html] [--json meta.json]'); return 1

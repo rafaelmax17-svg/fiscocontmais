@@ -367,9 +367,11 @@ const AUTH_SENHAS = {
   'Liddera@2': 'contabil',
   'Liddera@7092': 'admin',
 };
+let sessionRole = null; // papel da sessão atual (usado para travar os módulos exclusivos do Admin)
 ipcMain.handle('auth:login', (_evt, senha) => {
   const role = AUTH_SENHAS[String(senha || '')];
   if (!role) return { ok: false };
+  sessionRole = role;
   return { ok: true, role };
 });
 
@@ -1507,6 +1509,121 @@ ipcMain.handle('fiscal:pickSped', async () => {
   });
   if (r.canceled || !r.filePaths[0]) return { canceled: true };
   return { path: r.filePaths[0] };
+});
+
+// ---------------------------------------------------------------------------
+// Módulos exclusivos do Admin: Radar de Oportunidades e Levantamento para a Legalização.
+// Tudo aqui exige papel "admin" também no processo principal (não só no menu).
+// ---------------------------------------------------------------------------
+function _soAdmin() { return sessionRole === 'admin' ? null : { error: 'Acesso restrito ao Admin.' }; }
+function _jsonUser(nome, padrao) {
+  try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), nome), 'utf-8')); } catch (_) { return padrao; }
+}
+function _salvarJsonUser(nome, dados) {
+  fs.writeFileSync(path.join(app.getPath('userData'), nome), JSON.stringify(dados, null, 1), 'utf-8');
+}
+
+ipcMain.handle('admin:radarPick', async (_evt, { tipo }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  const fiscal = tipo === 'fiscal';
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: fiscal ? 'Selecione as EFD ICMS/IPI do cliente (opcional, para o CIAP)' : 'Selecione as EFD-Contribuições do cliente (um ou mais meses)',
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: fiscal ? 'EFD ICMS/IPI' : 'EFD-Contribuições', extensions: ['txt'] }],
+  });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  return { paths: r.filePaths };
+});
+
+ipcMain.handle('admin:radarAnalisar', async (_evt, { efdc, fiscal }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!efdc || !efdc.length) return { error: 'Selecione ao menos uma EFD-Contribuições.' };
+  const jsonOut = path.join(os.tmpdir(), `fc_radar_${Date.now()}.json`);
+  try {
+    const args = ['radar-oportunidades', '--efdc', ...efdc];
+    if (fiscal && fiscal.length) args.push('--fiscal', ...fiscal);
+    args.push('--json', jsonOut);
+    await runFiscal(args, jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    const status = _jsonUser('radar-status.json', {});
+    return { ok: true, res, status };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
+ipcMain.handle('admin:radarStatus', async (_evt, { chave, status, nota }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  const st = _jsonUser('radar-status.json', {});
+  st[chave] = { status, nota: nota || '', em: new Date().toISOString() };
+  try { _salvarJsonUser('radar-status.json', st); return { ok: true, status: st }; }
+  catch (e) { return { error: String(e.message || e) }; }
+});
+
+async function _rodarLegalizacao(cnpj, comHtml) {
+  const base = _jsonUser('legalizacao.json', { clientes: {} });
+  const cli = base.clientes[cnpj];
+  if (!cli || !cli.api) return { error: 'Consulte o CNPJ primeiro.' };
+  const stamp = Date.now();
+  const apiP = path.join(os.tmpdir(), `fc_leg_api_${stamp}.json`);
+  const estP = path.join(os.tmpdir(), `fc_leg_est_${stamp}.json`);
+  const outP = path.join(os.tmpdir(), `fc_leg_out_${stamp}.json`);
+  const htmlP = path.join(os.tmpdir(), `fc_leg_${stamp}.html`);
+  fs.writeFileSync(apiP, JSON.stringify(cli.api), 'utf-8');
+  fs.writeFileSync(estP, JSON.stringify({ itens: cli.itens || {} }), 'utf-8');
+  const args = ['legalizacao-levantamento', '--api', apiP, '--estado', estP, '--json', outP];
+  if (comHtml) args.push('--html', htmlP);
+  await runFiscal(args, outP);
+  const res = JSON.parse(fs.readFileSync(outP, 'utf-8'));
+  let html = null;
+  if (comHtml && fs.existsSync(htmlP)) html = fs.readFileSync(htmlP, 'utf-8');
+  [apiP, estP, outP, htmlP].forEach((p) => fs.unlink(p, () => {}));
+  if (res.erro) return { error: res.erro };
+  return { ok: true, res, html, itens: cli.itens || {}, consultadoEm: cli.consultadoEm };
+}
+
+ipcMain.handle('admin:legalLista', async () => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  const base = _jsonUser('legalizacao.json', { clientes: {} });
+  const lista = Object.entries(base.clientes).map(([cnpj, c]) => ({ cnpj, nome: (c.api && c.api.razao_social) || cnpj, consultadoEm: c.consultadoEm }));
+  lista.sort((a, b) => String(b.consultadoEm || '').localeCompare(String(a.consultadoEm || '')));
+  return { ok: true, lista };
+});
+
+ipcMain.handle('admin:legalConsultar', async (_evt, { cnpj, usarCache }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  const dig = String(cnpj || '').replace(/\D/g, '');
+  if (dig.length !== 14) return { error: 'Informe um CNPJ com 14 dígitos.' };
+  const base = _jsonUser('legalizacao.json', { clientes: {} });
+  try {
+    if (!(usarCache && base.clientes[dig] && base.clientes[dig].api)) {
+      let api;
+      try {
+        const resp = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${dig}`, { headers: { Accept: 'application/json' } });
+        if (resp.status === 404) return { error: 'CNPJ não encontrado na base da Receita (BrasilAPI).' };
+        if (!resp.ok) return { error: `A consulta falhou (HTTP ${resp.status}). Tente de novo em instantes.` };
+        api = await resp.json();
+      } catch (e) {
+        return { error: 'Sem acesso à consulta de CNPJ. Verifique a internet. ' + String(e.message || e) };
+      }
+      const antigo = base.clientes[dig] || {};
+      base.clientes[dig] = { api, itens: antigo.itens || {}, consultadoEm: new Date().toISOString() };
+      _salvarJsonUser('legalizacao.json', base);
+    }
+    return await _rodarLegalizacao(dig, false);
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
+ipcMain.handle('admin:legalSalvar', async (_evt, { cnpj, itens, html }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  const dig = String(cnpj || '').replace(/\D/g, '');
+  const base = _jsonUser('legalizacao.json', { clientes: {} });
+  if (!base.clientes[dig]) return { error: 'Consulte o CNPJ primeiro.' };
+  try {
+    base.clientes[dig].itens = itens || {};
+    _salvarJsonUser('legalizacao.json', base);
+    return await _rodarLegalizacao(dig, !!html);
+  } catch (e) { return { error: String(e.message || e) }; }
 });
 
 // ---- Correção do SPED Fiscal (restrito ao Admin) ----

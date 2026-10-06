@@ -556,6 +556,8 @@ function switchView(name) {
   if (name === 'admin-corrigir-sped') { $('#view-admin-corrigir-sped').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-corrigir-efd') { $('#view-admin-corrigir-efd').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-lmc') { $('#view-admin-lmc').hidden = false; $('#empty').hidden = true; return; }
+  if (name === 'admin-radar') { $('#view-admin-radar').hidden = false; $('#empty').hidden = true; return; }
+  if (name === 'admin-legal') { $('#view-admin-legal').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'historico') { $('#view-historico').hidden = false; $('#empty').hidden = true; loadHistoricoEmpresas(); return; }
   if (name === 'lote-balancetes') { $('#view-lote-balancetes').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'conciliacao') { $('#view-conciliacao').hidden = false; $('#empty').hidden = true; return; }
@@ -2610,6 +2612,7 @@ function _esc(s) {
 
 window.addEventListener('DOMContentLoaded', async () => {
   iniciarTema();
+  initAdminModulos();
 
   // Selo "NOVO" do módulo Simples Nacional — some sozinho depois de 5 dias
   // do lançamento (data fixa, não depende de quando cada PC abre o app pela 1ª vez).
@@ -2707,3 +2710,282 @@ window.addEventListener('DOMContentLoaded', async () => {
   switchView('overview'); // mostra estado vazio
   startupCheck();
 });
+
+// ================================================================== módulos Admin (teste)
+// Radar de Oportunidades Fiscais + Levantamento Legalização. Só aparecem para o papel Admin
+// (menu "admin-only") e os handlers do processo principal também exigem Admin.
+const ADM = {
+  radar: { efdc: [], fiscal: [], res: null, status: {}, filtro: 'Todos', aberta: null },
+  legal: { cnpj: '', res: null, itens: {}, sujo: false },
+};
+const escA = (s) => esc(s).replace(/"/g, '&quot;');
+const ADM_TIPO = { monofasico: 'PIS/COFINS monofásico', tema69: 'ICMS na base do PIS/COFINS', ciap: 'CIAP' };
+const ADM_COR = { monofasico: '#2a78d6', tema69: '#eb6834', ciap: '#1baf7a' };
+const admNome = (p) => String(p).split(/[\\/]/).pop();
+
+function admContar(el, ate, dinheiro) {
+  if (!el) return;
+  const t0 = performance.now(), dur = 800;
+  function passo(t) {
+    const k = Math.min((t - t0) / dur, 1), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = dinheiro ? brl(ate * e) : String(Math.round(ate * e));
+    if (k < 1) requestAnimationFrame(passo);
+  }
+  requestAnimationFrame(passo);
+}
+const admMes = (c) => (c && c.length === 7 ? c.slice(5) + '/' + c.slice(0, 4) : c);
+const admData = (iso) => (iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '');
+
+// ------------------------------------------------------------------ Radar
+function radarChave(o) { return `${ADM.radar.res.cliente.cnpj}|${o.tipo}|${o.titulo}`; }
+function radarEstado(o) { return (ADM.radar.status[radarChave(o)] || {}).status || 'nova'; }
+
+function radarSelecao() {
+  const r = ADM.radar, el = $('#radarSel');
+  const pecas = [];
+  r.efdc.forEach((p) => pecas.push('EFD-C · ' + admNome(p)));
+  r.fiscal.forEach((p) => pecas.push('ICMS/IPI · ' + admNome(p)));
+  el.hidden = !pecas.length;
+  el.innerHTML = pecas.map((t) => `<span>${esc(t)}</span>`).join('');
+  $('#btnRadarRodar').disabled = !r.efdc.length;
+}
+
+function radarTabela(o) {
+  const ev = o.evidencias || [];
+  if (!ev.length) return '';
+  let cab, lin;
+  if (o.tipo === 'monofasico') {
+    cab = ['Nota', 'Data', 'Produto', 'NCM', 'CST', 'PIS+COFINS'];
+    lin = ev.map((e) => [e.nota, e.data, e.produto, e.ncm, e.cst, brl(e.valor)]);
+  } else if (o.tipo === 'tema69') {
+    cab = ['Nota', 'Data', 'Produto', 'ICMS destacado', 'PIS+COFINS a mais'];
+    lin = ev.map((e) => [e.nota, e.data, e.produto, brl(e.icms), brl(e.valor)]);
+  } else {
+    cab = ['Competência', 'Nota', 'Data', 'Produto', 'CFOP', 'ICMS'];
+    lin = ev.map((e) => [e.competencia, e.nota, e.data, e.produto, e.cfop, brl(e.icms)]);
+  }
+  return `<table class="adm-tab"><thead><tr>${cab.map((c) => `<th>${c}</th>`).join('')}</tr></thead><tbody>${
+    lin.map((l) => `<tr>${l.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+    <div style="font-size:11.5px;color:var(--ink2);margin-top:4px">Mostrando até ${ev.length} exemplos. A lista completa sai da própria EFD.</div>`;
+}
+
+function radarDetalhe(o) {
+  const L = ADM.radar.res.legal[o.tipo];
+  const fn = L.fundamento.map((f) => `<div class="fn"><b>${esc(f.norma)}</b><span class="fonte">${esc(f.fonte)}</span><br>${esc(f.texto)}</div>`).join('');
+  const aten = [...L.atencao, ...(o.tipo === 'monofasico' ? [] : [])].map((a) => `<li>${esc(a)}</li>`).join('');
+  const est = radarEstado(o);
+  const k = escA(radarChave(o));
+  return `<div class="adm-det">
+    <div style="font-size:12.5px;color:var(--ink2);margin:2px 0 4px">${esc(o.resumo)}</div>
+    <div class="adm-lg"><b class="t">Fundamento legal</b>${fn}</div>
+    <div class="adm-lg"><b class="t">Como o sistema apurou</b>${esc(o.como)}</div>
+    <div class="adm-lg"><b class="t">Prazo e forma de recuperar</b>${esc(L.prazo)}</div>
+    <div class="adm-lg at"><b class="t">Pontos de atenção</b><ul>${aten}</ul></div>
+    <div class="adm-lg" style="background:transparent;border-left-color:var(--line);color:inherit"><b class="t">Exemplos nos arquivos</b>${radarTabela(o)}</div>
+    <div class="adm-acoes">
+      ${est !== 'validada' ? `<button class="p" data-st="validada" data-k="${k}">Marcar como validada</button>` : ''}
+      ${est !== 'descartada' ? `<button data-st="descartada" data-k="${k}">Descartar</button>` : ''}
+      ${est !== 'nova' ? `<button data-st="nova" data-k="${k}">Reabrir</button>` : ''}
+    </div></div>`;
+}
+
+function radarRender() {
+  const R = ADM.radar, res = R.res, el = $('#radarPainel');
+  const ops = res.oportunidades;
+  if (!ops.length) {
+    el.innerHTML = `<div class="adm-hero"><div><h2>${esc(res.cliente.nome || 'Cliente')}</h2><small>Nenhuma oportunidade encontrada nos arquivos analisados</small></div></div>
+      ${res.avisos.length ? `<div class="adm-aviso">${res.avisos.map(esc).join('<br>')}</div>` : ''}`;
+    el.hidden = false; return;
+  }
+  const tipos = ['Todos', ...new Set(ops.map((o) => o.tipo))];
+  const vis = ops.filter((o) => R.filtro === 'Todos' || o.tipo === R.filtro);
+  const tot = vis.reduce((a, o) => a + o.valor, 0);
+  const val = vis.filter((o) => radarEstado(o) === 'validada').reduce((a, o) => a + o.valor, 0);
+  const desc = vis.filter((o) => radarEstado(o) === 'descartada').reduce((a, o) => a + o.valor, 0);
+  const aval = tot - val - desc;
+  const porTipo = {};
+  ops.forEach((o) => { porTipo[o.tipo] = (porTipo[o.tipo] || 0) + o.valor; });
+  const totalGeral = ops.reduce((a, o) => a + o.valor, 0);
+  let acc = 0;
+  const fatias = Object.entries(porTipo).map(([t, v]) => { const a = acc, b = acc + v / totalGeral * 100; acc = b; return `${ADM_COR[t]} ${a}% ${b}%`; });
+  const leg = Object.entries(porTipo).map(([t, v]) => `<div><span><i style="background:${ADM_COR[t]}"></i>${ADM_TIPO[t]}</span><b>${brl(v)}</b></div>`).join('');
+  const w = (v) => (tot ? Math.max(v / tot * 100, v > 0 ? 14 : 0) : 0);
+  const fun = [['Identificado', tot, '#8a7bd6'], ['A validar', aval, '#e8601c'], ['Validado', val, '#12a37a'], ['Descartado', desc, '#9aa3b8']]
+    .map(([n, v, c], i) => `<div class="l"><span>${n}</span><div class="tr"><b class="${v > 0 ? 'v' : ''}" style="--w:${w(v)}%;background:${c};animation-delay:${i * .12}s">${v > 0 ? brl(v) : ''}</b></div></div>`).join('');
+  const lista = vis.map((o, i) => {
+    const est = radarEstado(o), ab = R.aberta === radarChave(o);
+    const confCls = { Alta: 'ok', 'Média': 'av', Baixa: 'no' }[o.confianca] || 'na';
+    const estPill = est === 'validada' ? '<span class="adm-pill ok">Validada</span>' : est === 'descartada' ? '<span class="adm-pill na">Descartada</span>' : '';
+    return `<div class="adm-op${ab ? ' aberta' : ''}" style="animation:admUp .4s ease both;animation-delay:${i * .06}s">
+      <div class="adm-op-h" data-abrir="${escA(radarChave(o))}"><div><b>${esc(o.titulo)}</b>
+        <small>${esc(o.periodos.map(admMes).join(', '))}
+          <span class="adm-pill ${confCls}">Confiança ${esc(o.confianca.toLowerCase())}</span>
+          <span class="adm-pill ${o.base_legal_status === 'conferida' ? 'ok' : 'rx'}">${o.base_legal_status === 'conferida' ? 'Base legal conferida' : 'Revalidar norma estadual'}</span>${estPill}</small></div>
+        <div class="adm-val">${brl(o.valor)}</div></div>${radarDetalhe(o)}</div>`;
+  }).join('');
+  const soon = res.em_desenvolvimento.map((d) => `<div><b>${esc(d.titulo)}</b><br>${esc(d.norma)}<br><span style="color:var(--ink2)">${esc(d.texto)}</span></div>`).join('');
+  el.innerHTML = `
+    <div class="adm-hero"><div><h2>${esc(res.cliente.nome || 'Cliente')}</h2>
+      <small>CNPJ ${esc(res.cliente.cnpj)} · ${esc(res.periodos.map(admMes).join(', '))} · ${res.arquivos_efdc} EFD-Contribuições${res.arquivos_fiscal ? ' + ' + res.arquivos_fiscal + ' EFD ICMS/IPI' : ''}</small></div>
+      <span class="adm-tag">Módulo Admin · teste</span></div>
+    <div class="adm-kpis">
+      <div class="adm-kpi"><span>Potencial identificado</span><b id="radK1">R$ 0,00</b></div>
+      <div class="adm-kpi laranja" style="animation-delay:.08s"><span>A validar</span><b id="radK2">R$ 0,00</b></div>
+      <div class="adm-kpi verde" style="animation-delay:.16s"><span>Validado</span><b id="radK3">R$ 0,00</b></div>
+      <div class="adm-kpi" style="animation-delay:.24s"><span>Oportunidades</span><b id="radK4">0</b></div></div>
+    <div class="adm-cols">
+      <div class="adm-card"><h3>Potencial por tipo</h3><div class="adm-donut-wrap"><div class="adm-donut" style="background:conic-gradient(${fatias.join(',')})"></div><div class="adm-leg">${leg}</div></div></div>
+      <div class="adm-card"><h3>Do achado à validação</h3><div class="adm-fun">${fun}</div></div></div>
+    <div class="adm-card"><h3>Oportunidades <span style="font-weight:400;color:var(--ink2);font-size:12px">· clique para ver base legal, cálculo, prazo e exemplos</span></h3>
+      <div class="adm-chips" style="margin-bottom:8px">${tipos.map((t) => `<span class="adm-chip${R.filtro === t ? ' on' : ''}" data-filtro="${t}">${t === 'Todos' ? 'Todos' : ADM_TIPO[t]}</span>`).join('')}</div>
+      ${lista}</div>
+    ${res.avisos.length ? `<div class="adm-aviso"><b>Avisos da análise</b><br>${res.avisos.map(esc).join('<br>')}</div>` : ''}
+    <div class="adm-card"><h3>Próximas verificações (ainda não implementadas)</h3><div class="adm-soon">${soon}</div></div>
+    <div class="adm-rodape">Hipóteses para análise do contador. A base legal deve ser revalidada, e o histórico do cliente conferido (ações, compensações já feitas), antes de qualquer proposta ou pedido.</div>`;
+  el.hidden = false;
+  admContar($('#radK1'), tot, true); admContar($('#radK2'), aval, true); admContar($('#radK3'), val, true); admContar($('#radK4'), vis.length, false);
+}
+
+// ------------------------------------------------------------------ Legalização
+const LEG_STATUS = [['nao_verificado', 'Não verificado'], ['regular', 'Regular'], ['irregular', 'Irregular'], ['nao_aplica', 'Não se aplica']];
+const LEG_NIVEL = { ok: ['ok', 'Em dia'], atencao: ['av', 'Atenção'], critico: ['no', 'Crítico'], pendente: ['na', 'A verificar'], nao_aplica: ['na', 'Não se aplica'] };
+
+function legalRender() {
+  const L = ADM.legal, r = L.res, el = $('#legalPainel');
+  const off = 314 * (1 - r.indice / 100);
+  const cont = r.contagem;
+  const alertas = r.alertas.map((a) => `<div class="adm-aviso" style="${a.nivel === 'critico' ? 'background:#fdecec;color:#8a1f1f' : ''}">${esc(a.texto)}</div>`).join('');
+  const dados = r.dados.map((d) => `<span>${esc(d.rotulo)}</span><span>${esc(d.valor)}</span>`).join('');
+  const cnaes = `<div style="font-size:12.5px;line-height:1.7"><b>${esc(r.cnae_principal.codigo)}</b> ${esc(r.cnae_principal.descricao)} <span class="adm-pill rx">principal</span>${
+    r.cnaes_secundarios.map((c) => `<br>${esc(c.codigo)} ${esc(c.descricao)}`).join('')}</div>`;
+  const qsa = r.qsa.length ? `<div class="adm-kv">${r.qsa.map((q) => `<span>${esc(q.qualificacao)}</span><span>${esc(q.nome)}${q.entrada ? ' · desde ' + esc(q.entrada) : ''}</span>`).join('')}</div>` : '<div style="color:var(--ink2);font-size:12.5px">Sem dados de sócios.</div>';
+  let grupo = null, chk = `<div class="adm-chk h"><span>Item</span><span>Status</span><span>Validade</span><span>Observação</span><span>Situação</span></div>`;
+  r.itens.forEach((it) => {
+    if (it.grupo !== grupo) { grupo = it.grupo; chk += `<div class="adm-grp">${esc(grupo)}</div>`; }
+    const [cls, nome] = LEG_NIVEL[it.nivel];
+    const sel = LEG_STATUS.map(([v, n]) => `<option value="${v}"${it.status === v ? ' selected' : ''}>${n}</option>`).join('');
+    chk += `<div class="adm-chk"><span>${esc(it.nome)}<small>${esc(it.orgao)}${it.dica ? ' · ' + esc(it.dica) : ''}</small></span>
+      <select data-id="${it.id}" data-f="status">${sel}</select>
+      ${it.tem_validade ? `<input type="date" data-id="${it.id}" data-f="validade" value="${escA(it.validade)}">` : '<span style="color:var(--ink2)">—</span>'}
+      <input type="text" data-id="${it.id}" data-f="obs" value="${escA(it.obs)}" placeholder="Anotação">
+      <span><span class="adm-pill ${cls}" title="${nome}">${esc(it.rotulo)}</span></span></div>`;
+  });
+  const plano = r.plano.length ? r.plano.map((p, i) => `<div class="${p.nivel}" style="animation-delay:${i * .05}s"><span class="n">${i + 1}.</span><span><b>${esc(p.item)}</b> · ${esc(p.rotulo)}${p.dica ? '<br><small style="color:var(--ink2)">' + esc(p.dica) + '</small>' : ''}</span><span class="adm-pill ${LEG_NIVEL[p.nivel][0]}">${LEG_NIVEL[p.nivel][1]}</span></div>`).join('') : '<div class="atencao" style="background:#e8f6f0">Nenhuma pendência.</div>';
+  el.innerHTML = `
+    <div class="adm-hero"><div><h2>${esc(r.razao_social)}</h2><small>CNPJ ${esc(r.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5'))} · situação ${esc(r.situacao || '—')} · ${esc(r.regime)}</small></div>
+      <span class="adm-tag">Módulo Admin · teste</span></div>
+    <div class="adm-card"><div class="adm-score">
+      <div class="adm-ring"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="50" fill="none" stroke-width="12"/><circle class="fg" cx="60" cy="60" r="50" fill="none" stroke-width="12" style="--o:${off}"/></svg>
+        <div class="n"><span id="legIdx">0</span><small>de 100</small></div></div>
+      <div><h3 style="margin:0 0 8px">Índice de regularidade</h3>
+        <div class="adm-cont"><div class="c1"><b>${cont.critico}</b><span>Críticos</span></div><div class="c2"><b>${cont.atencao}</b><span>Atenção</span></div><div class="c3"><b>${cont.pendente}</b><span>A verificar</span></div><div class="c4"><b>${cont.ok}</b><span>Em dia</span></div></div></div></div>
+      ${alertas ? `<div style="display:grid;gap:6px;margin-top:10px">${alertas}</div>` : ''}</div>
+    <div class="adm-card"><h3>Plano de ação (por urgência)</h3><div class="adm-plano">${plano}</div></div>
+    <div class="adm-cols"><div class="adm-card"><h3>Dados cadastrais · Receita Federal (automático)</h3><div class="adm-kv">${dados}</div></div>
+      <div class="adm-card"><h3>Atividades (CNAE) e sócios</h3>${cnaes}<h3 style="margin-top:12px">Quadro societário</h3>${qsa}</div></div>
+    <div class="adm-card"><h3>Licenças, certidões e acessos <span style="font-weight:400;color:var(--ink2);font-size:12px">· preenchido pelo analista; a lista segue as atividades da empresa</span></h3>${chk}
+      <div style="font-size:11.5px;color:var(--ink2);margin-top:8px">A lista de licenças por atividade é uma referência do que costuma ser exigido. A exigência real é definida pela prefeitura, pelo Corpo de Bombeiros, pela vigilância, pelo órgão ambiental e demais órgãos competentes.</div></div>`;
+  el.hidden = false;
+  admContar($('#legIdx'), r.indice, false);
+  $('#btnLegalPdf').disabled = false;
+  $('#legalVazio').hidden = true;
+}
+
+function legalSujo(v) {
+  ADM.legal.sujo = v;
+  $('#legalSujo').hidden = !v;
+  $('#btnLegalSalvar').disabled = !v;
+}
+
+async function legalRecentes() {
+  const r = await window.fiscocont.admin.legalLista();
+  const sel = $('#legalRecentes');
+  if (!r || !r.ok) return;
+  sel.innerHTML = '<option value="">Consultadas recentemente…</option>' + r.lista.map((c) => `<option value="${escA(c.cnpj)}">${esc(c.nome)}</option>`).join('');
+}
+
+async function legalConsultar(cnpj, cache) {
+  overlay(true, cache ? 'Abrindo levantamento…' : 'Consultando o CNPJ na Receita…');
+  try {
+    const r = await window.fiscocont.admin.legalConsultar({ cnpj, usarCache: !!cache });
+    overlay(false);
+    if (!r || r.error) { toast((r && r.error) || 'Falha na consulta.', true); return; }
+    ADM.legal.cnpj = r.res.cnpj; ADM.legal.res = r.res; ADM.legal.itens = r.itens || {};
+    $('#legalCnpj').value = r.res.cnpj;
+    legalSujo(false); legalRender(); legalRecentes();
+  } catch (e) { overlay(false); toast('Falha: ' + e.message, true); }
+}
+
+// ------------------------------------------------------------------ ligações
+function initAdminModulos() {
+  const adm = window.fiscocont && window.fiscocont.admin;
+  if (!adm) return;
+  // Radar
+  const pick = (tipo, btn) => async () => {
+    const r = await adm.radarPick(tipo);
+    if (!r || r.canceled || !r.paths) return;
+    ADM.radar[tipo === 'fiscal' ? 'fiscal' : 'efdc'] = r.paths;
+    btn.classList.add('ok');
+    radarSelecao();
+  };
+  $('#btnRadarEfdc').addEventListener('click', pick('efdc', $('#btnRadarEfdc')));
+  $('#btnRadarFiscal').addEventListener('click', pick('fiscal', $('#btnRadarFiscal')));
+  $('#btnRadarRodar').addEventListener('click', async () => {
+    overlay(true, 'Procurando oportunidades nos arquivos…');
+    try {
+      const r = await adm.radarAnalisar({ efdc: ADM.radar.efdc, fiscal: ADM.radar.fiscal });
+      overlay(false);
+      if (!r || r.error) { toast((r && r.error) || 'Falha na análise.', true); return; }
+      ADM.radar.res = r.res; ADM.radar.status = r.status || {}; ADM.radar.filtro = 'Todos'; ADM.radar.aberta = null;
+      $('#radarVazio').hidden = true;
+      radarRender();
+    } catch (e) { overlay(false); toast('Falha: ' + e.message, true); }
+  });
+  $('#radarPainel').addEventListener('click', async (ev) => {
+    const f = ev.target.closest('[data-filtro]');
+    if (f) { ADM.radar.filtro = f.dataset.filtro; radarRender(); return; }
+    const b = ev.target.closest('button[data-st]');
+    if (b) {
+      const r = await adm.radarStatus({ chave: b.dataset.k, status: b.dataset.st });
+      if (r && r.ok) { ADM.radar.status = r.status; radarRender(); toast(b.dataset.st === 'validada' ? 'Marcada como validada.' : b.dataset.st === 'descartada' ? 'Oportunidade descartada.' : 'Reaberta.'); }
+      return;
+    }
+    const h = ev.target.closest('[data-abrir]');
+    if (h) {
+      const op = h.parentElement, abrir = !op.classList.contains('aberta');
+      $$('#radarPainel .adm-op').forEach((x) => x.classList.remove('aberta'));
+      if (abrir) op.classList.add('aberta');
+      ADM.radar.aberta = abrir ? h.dataset.abrir : null;
+    }
+  });
+  // Legalização
+  $('#btnLegalConsultar').addEventListener('click', () => legalConsultar($('#legalCnpj').value, false));
+  $('#legalCnpj').addEventListener('keydown', (e) => { if (e.key === 'Enter') legalConsultar($('#legalCnpj').value, false); });
+  $('#legalRecentes').addEventListener('change', (e) => { if (e.target.value) legalConsultar(e.target.value, true); });
+  $('#legalPainel').addEventListener('input', (ev) => {
+    const t = ev.target;
+    if (!t.dataset || !t.dataset.id) return;
+    const it = (ADM.legal.itens[t.dataset.id] = ADM.legal.itens[t.dataset.id] || {});
+    it[t.dataset.f] = t.value;
+    legalSujo(true);
+  });
+  $('#btnLegalSalvar').addEventListener('click', async () => {
+    overlay(true, 'Salvando e recalculando…');
+    const r = await adm.legalSalvar({ cnpj: ADM.legal.cnpj, itens: ADM.legal.itens });
+    overlay(false);
+    if (!r || r.error) { toast((r && r.error) || 'Falha ao salvar.', true); return; }
+    ADM.legal.res = r.res; ADM.legal.itens = r.itens || {};
+    legalSujo(false); legalRender(); toast('Levantamento salvo.');
+  });
+  $('#btnLegalPdf').addEventListener('click', async () => {
+    overlay(true, 'Preparando o PDF…');
+    const r = await adm.legalSalvar({ cnpj: ADM.legal.cnpj, itens: ADM.legal.itens, html: true });
+    overlay(false);
+    if (!r || r.error || !r.html) { toast((r && r.error) || 'Falha ao gerar o PDF.', true); return; }
+    ADM.legal.res = r.res; legalSujo(false); legalRender();
+    const out = await window.fiscocont.fiscal.efdClientePdf({ htmlEstatico: r.html, nomeSugerido: 'Levantamento-' + (r.res.razao_social || ADM.legal.cnpj) });
+    if (out && out.ok) toast('PDF salvo.');
+    else if (out && out.error) toast(out.error, true);
+  });
+  legalRecentes();
+}

@@ -264,6 +264,15 @@
         <svg viewBox="0 0 24 24" class="ic"><path d="M8 3v6l-4 9a2 2 0 002 3h12a2 2 0 002-3l-4-9V3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M6 15h12" stroke="currentColor" stroke-width="1.7"/></svg>
         <span>Substituir LMC (combustíveis)</span>
       </button>
+      <div class="nav-group nav-group-adm" data-group="admin-only">Módulos Admin · teste</div>
+      <button class="nav-item nav-item-adm" data-group="admin-only" data-view="admin-radar">
+        <svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 12L18 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span>Radar de Oportunidades</span>
+      </button>
+      <button class="nav-item nav-item-adm" data-group="admin-only" data-view="admin-legal">
+        <svg viewBox="0 0 24 24" class="ic"><rect x="5" y="4" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9 4V3h6v1M8.5 11.5l2 2 3.5-4M9 17h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Levantamento Legalização</span>
+      </button>
     </nav>
 
     <div class="side-foot">
@@ -991,6 +1000,51 @@
         </div>
         <div id="lmcResumo" hidden></div>
         <iframe id="lmcFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <!-- Admin (teste): Radar de Oportunidades Fiscais -->
+      <div class="view adm-view" id="view-admin-radar" hidden>
+        <div class="fiscal-bar adm-bar">
+          <button class="act inv-export adm-btn" id="btnRadarEfdc">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            1 · EFD-Contribuições (um ou mais meses)
+          </button>
+          <button class="act inv-export adm-btn" id="btnRadarFiscal">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            2 · EFD ICMS/IPI (opcional, para o CIAP)
+          </button>
+          <span class="fiscal-spacer"></span>
+          <button class="act adm-go" id="btnRadarRodar" disabled>Analisar</button>
+        </div>
+        <div class="adm-sel" id="radarSel" hidden></div>
+        <div class="fiscal-empty adm-empty" id="radarVazio">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M12 12L18 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <h2>Radar de Oportunidades Fiscais — módulo de teste do Admin</h2>
+          <p>Selecione as EFD-Contribuições de <b>um cliente</b> (pode ser de vários meses; quanto mais meses, maior o período analisado) e, se quiser checar o CIAP, as EFD ICMS/IPI dos mesmos meses.
+          O sistema procura valores que podem ser recuperados e mostra, para cada um, o <b>fundamento legal</b>, como foi calculado, o prazo e os pontos de atenção.
+          <b>Tudo é hipótese para análise do contador</b>: nada é pedido ou compensado automaticamente.</p>
+        </div>
+        <div id="radarPainel" class="adm-painel" hidden></div>
+      </div>
+
+      <!-- Admin (teste): Levantamento geral da empresa para a Legalização -->
+      <div class="view adm-view" id="view-admin-legal" hidden>
+        <div class="fiscal-bar adm-bar">
+          <input type="text" id="legalCnpj" class="adm-input" placeholder="CNPJ da empresa" maxlength="18" autocomplete="off">
+          <button class="act adm-go" id="btnLegalConsultar">Consultar CNPJ</button>
+          <select id="legalRecentes" class="adm-input" title="Empresas consultadas"><option value="">Consultadas recentemente…</option></select>
+          <span class="fiscal-spacer"></span>
+          <span class="adm-dirty" id="legalSujo" hidden>Alterações não salvas</span>
+          <button class="act inv-export adm-btn" id="btnLegalSalvar" disabled>Salvar e recalcular</button>
+          <button class="act inv-export adm-btn" id="btnLegalPdf" disabled>Salvar PDF</button>
+        </div>
+        <div class="fiscal-empty adm-empty" id="legalVazio">
+          <svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M9 4V3h6v1M8.5 11.5l2 2 3.5-4M9 17h6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2>Levantamento da empresa para a Legalização — módulo de teste do Admin</h2>
+          <p>Digite o CNPJ. O sistema busca o cadastro na Receita (situação, atividades, sócios, regime) e monta o checklist de licenças, certidões e acessos que costumam ser exigidos para <b>as atividades dessa empresa</b>.
+          O cadastro é automático. Licenças e certidões <b>não têm consulta pública sem certificado ou captcha</b>, então você marca o status e a validade de cada uma, e o sistema calcula o índice de regularidade e o plano de ação.</p>
+        </div>
+        <div id="legalPainel" class="adm-painel" hidden></div>
       </div>
     </section>
   </main>
