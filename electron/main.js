@@ -1559,6 +1559,27 @@ ipcMain.handle('admin:radarAnalisar', async (_evt, { efdc, fiscal, xml }) => {
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+ipcMain.handle('admin:audPick', async () => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'Selecione a EFD ICMS/IPI (SPED Fiscal) do cliente do Amazonas',
+    properties: ['openFile', 'multiSelections'], filters: [{ name: 'SPED Fiscal', extensions: ['txt'] }] });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  return { paths: r.filePaths };
+});
+
+ipcMain.handle('admin:audAnalisar', async (_evt, { sped }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!sped || !sped.length) return { error: 'Selecione ao menos um SPED Fiscal.' };
+  const jsonOut = path.join(os.tmpdir(), `fc_audam_${Date.now()}.json`);
+  try {
+    await runFiscal(['auditoria-icms-am', '--sped', ...sped, '--json', jsonOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    return { ok: true, res };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
 ipcMain.handle('admin:radarStatus', async (_evt, { chave, status, nota }) => {
   const bloq = _soAdmin(); if (bloq) return bloq;
   const st = _jsonUser('radar-status.json', {});

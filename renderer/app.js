@@ -556,6 +556,7 @@ function switchView(name) {
   if (name === 'admin-corrigir-sped') { $('#view-admin-corrigir-sped').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-corrigir-efd') { $('#view-admin-corrigir-efd').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-lmc') { $('#view-admin-lmc').hidden = false; $('#empty').hidden = true; return; }
+  if (name === 'admin-audam') { $('#view-admin-audam').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-radar') { $('#view-admin-radar').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-legal') { $('#view-admin-legal').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'historico') { $('#view-historico').hidden = false; $('#empty').hidden = true; loadHistoricoEmpresas(); return; }
@@ -2736,6 +2737,67 @@ function admContar(el, ate, dinheiro) {
 const admMes = (c) => (c && c.length === 7 ? c.slice(5) + '/' + c.slice(0, 4) : c);
 const admData = (iso) => (iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '');
 
+// ------------------------------------------------------------------ Auditoria ICMS/AM
+const AUDAM = { sped: [], res: null };
+const audEsc = (x) => String(x == null ? '' : x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function audRender() {
+  const res = AUDAM.res, el = $('#audPainel');
+  if (!res) { el.innerHTML = ''; return; }
+  const cb = res.cobertura || {};
+  const cab = `<div class="adm-card"><b>${audEsc(res.cliente.nome)}</b> · CNPJ ${audEsc(res.cliente.cnpj)} · ${audEsc(res.cliente.uf)} · ${audEsc(res.cliente.periodo)}<br>
+    <span class="muted">Lidos: ${cb.notas || 0} notas, ${cb.itens || 0} itens (C170), ${cb.c190 || 0} resumos (C190), ${cb.itens_cadastrados || 0} produtos cadastrados. Lista de ST (Lei 6.108/2022): ${cb.st_lista || 0} mercadorias.</span></div>`;
+  const av = (res.avisos || []).map((a) => `<div class="adm-aviso">${audEsc(a)}</div>`).join('');
+  const bloco = (fam, titulo, nota) => {
+    const L = (res.achados || []).filter((a) => a.familia === fam);
+    const corpo = L.length ? L.map((a, i) => {
+      const b = a.base_legal;
+      const ex = (a.exemplos || []).slice(0, 8).map((e) => '<li>' + Object.entries(e).map(([k, v]) => `<b>${audEsc(k)}</b> ${audEsc(Array.isArray(v) ? v.join(', ') : v)}`).join(' · ') + '</li>').join('');
+      return `<div class="adm-op"><div class="adm-op-h" data-abrirauda="${fam}${i}"><div><b>${audEsc(a.titulo)}</b></div>
+        <div><span class="adm-tag">${audEsc(a.gravidade)}</span><span class="adm-tag">${a.qtd} ocorrência(s)</span>${a.valor ? `<span class="adm-tag">${brl(a.valor)}</span>` : ''}</div></div>
+        <div class="adm-det"><p>${audEsc(a.descricao)}</p>
+        ${b ? `<p><b>Base legal (${audEsc(b.status === 'lida' ? 'lida no texto oficial' : 'não confirmada')}):</b> ${audEsc(b.norma)}<br>${audEsc(b.resumo)}<br>
+          ${b.links.map((u) => `<a href="${audEsc(u)}" target="_blank" rel="noopener">texto oficial</a>`).join(' · ')}<br>
+          <i>Não conferido:</i> ${audEsc(b.nao_conferido)}</p>` : '<p><i>Sem base legal associada: divergência do próprio arquivo.</i></p>'}
+        ${a.como_verificar ? `<p><b>Como verificar:</b> ${audEsc(a.como_verificar)}</p>` : ''}
+        <ul>${ex}</ul>${a.qtd > 8 ? `<p class="muted">Mostrando 8 de ${a.qtd}.</p>` : ''}</div></div>`;
+    }).join('') : '<p class="muted">Nada encontrado nesta família.</p>';
+    return `<h3 class="adm-h">${titulo}</h3><p class="muted">${nota}</p>${corpo}`;
+  };
+  const conc = (res.conciliacao || []).map((c) => `<tr><td>${audEsc(c.titulo)}</td><td>${brl(c.e110)}</td><td>${brl(c.c190)}</td><td>${brl(c.dif)}</td></tr>`).join('');
+  el.innerHTML = cab + av
+    + bloco('A', 'Com base legal lida no texto oficial', 'Cada item traz o dispositivo, o link oficial e o que NÃO foi conferido.')
+    + bloco('B', 'Consistência do arquivo (sem base legal)', 'Divergências matemáticas ou estruturais do SPED. Não afirmam infração.')
+    + (conc ? `<h3 class="adm-h">Conciliação da apuração (E110 × C190)</h3><table class="adm-tab"><tr><th></th><th>E110</th><th>C190</th><th>Diferença</th></tr>${conc}</table>` : '');
+}
+function audSelecao() {
+  const el = $('#audSel');
+  el.hidden = !AUDAM.sped.length;
+  el.innerHTML = AUDAM.sped.map((p) => `<span>SPED · ${audEsc(p.split(/[\\/]/).pop())}</span>`).join('');
+  $('#btnAudRodar').disabled = !AUDAM.sped.length;
+}
+function audInit() {
+  const adm = window.fiscocont && window.fiscocont.admin;
+  if (!adm || !$('#btnAudSped')) return;
+  $('#btnAudSped').addEventListener('click', async () => {
+    const r = await adm.audPick();
+    if (!r || r.canceled || !r.paths) return;
+    AUDAM.sped = r.paths; $('#btnAudSped').classList.add('ok'); audSelecao();
+  });
+  $('#btnAudRodar').addEventListener('click', async () => {
+    overlay(true, 'Auditando os itens do SPED Fiscal…');
+    try {
+      const r = await adm.audAnalisar({ sped: AUDAM.sped });
+      overlay(false);
+      if (!r || r.error) { toast((r && r.error) || 'Falha na auditoria.', true); return; }
+      AUDAM.res = r.res; $('#audVazio').hidden = true; audRender();
+    } catch (e) { overlay(false); toast('Falha: ' + e.message, true); }
+  });
+  $('#audPainel').addEventListener('click', (ev) => {
+    const h = ev.target.closest('[data-abrirauda]');
+    if (h) h.parentElement.classList.toggle('aberta');
+  });
+}
+
 // ------------------------------------------------------------------ Radar
 function radarChave(o) { return `${ADM.radar.res.cliente.cnpj}|${o.tipo}|${o.titulo}`; }
 function radarEstado(o) { return (ADM.radar.status[radarChave(o)] || {}).status || 'nova'; }
@@ -2921,6 +2983,7 @@ async function legalConsultar(cnpj, cache) {
 
 // ------------------------------------------------------------------ ligações
 function initAdminModulos() {
+  audInit();
   const adm = window.fiscocont && window.fiscocont.admin;
   if (!adm) return;
   // Radar

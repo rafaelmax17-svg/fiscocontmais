@@ -2797,6 +2797,9 @@ def main(argv):
     if modo == 'radar-oportunidades':
         import oportunidades as _op
         return _op.main_cli(argv[1:])
+    if modo == 'auditoria-icms-am':
+        import auditoria_am as _am
+        return _am.main_cli(argv[1:])
     if modo == 'legalizacao-levantamento':
         import legalizacao as _lg
         return _lg.main_cli(argv[1:])

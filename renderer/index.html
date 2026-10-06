@@ -269,6 +269,10 @@
         <svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 12L18 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         <span>Radar de Oportunidades</span>
       </button>
+      <button class="nav-item nav-item-adm" data-group="admin-only" data-view="admin-audam">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M5 4h14v16H5zM8 9h8M8 13h8M8 17h5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Auditoria ICMS · AM</span>
+      </button>
       <button class="nav-item nav-item-adm" data-group="admin-only" data-view="admin-legal">
         <svg viewBox="0 0 24 24" class="ic"><rect x="5" y="4" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9 4V3h6v1M8.5 11.5l2 2 3.5-4M9 17h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Levantamento Legalização</span>
@@ -1000,6 +1004,27 @@
         </div>
         <div id="lmcResumo" hidden></div>
         <iframe id="lmcFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <!-- Admin (teste): Auditoria de itens do SPED Fiscal — ICMS/AM -->
+      <div class="view adm-view" id="view-admin-audam" hidden>
+        <div class="fiscal-bar adm-bar">
+          <button class="act inv-export adm-btn" id="btnAudSped">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            EFD ICMS/IPI do cliente (Amazonas)
+          </button>
+          <span class="fiscal-spacer"></span>
+          <button class="act adm-go" id="btnAudRodar" disabled>Auditar</button>
+        </div>
+        <div class="adm-sel" id="audSel" hidden></div>
+        <div class="fiscal-empty adm-empty" id="audVazio">
+          <svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 9h8M8 13h8M8 17h5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+          <h2>Auditoria de itens do SPED Fiscal — ICMS/AM (módulo de teste do Admin)</h2>
+          <p>Selecione o SPED Fiscal de um cliente do Amazonas. As verificações <b>com base legal</b> usam só textos oficiais da SEFAZ-AM lidos
+          na íntegra (LC 19/97, RICMS/AM e Lei 6.108/2022). As verificações de <b>consistência do arquivo</b> aparecem separadas e não afirmam infração.
+          Tudo é hipótese para o contador conferir.</p>
+        </div>
+        <div id="audPainel"></div>
       </div>
 
       <!-- Admin (teste): Radar de Oportunidades Fiscais -->

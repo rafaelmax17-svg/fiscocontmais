@@ -622,3 +622,9 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 @keyframes admSpin{from{opacity:0;transform:rotate(-120deg) scale(.7)}to{opacity:1;transform:none}}
 @keyframes admRing{from{stroke-dashoffset:314}to{stroke-dashoffset:var(--o)}}
 @media print{.adm-bar,.adm-acoes{display:none}}
+.adm-h{margin:18px 0 4px;font-size:15px;color:var(--adm-ink)}
+#audPainel .muted{color:var(--ink2);font-size:12px;margin:2px 0 8px}
+#audPainel .adm-card{margin:10px 0}
+#audPainel .adm-op-h .adm-tag{background:var(--adm-soft);color:var(--adm-ink);margin-left:6px}
+#audPainel .adm-det ul{margin:6px 0 0 18px;font-size:12px;line-height:1.6}
+#audPainel .adm-det p{font-size:12.5px;line-height:1.55;margin:6px 0}

@@ -112,6 +112,8 @@ contextBridge.exposeInMainWorld('fiscocont', {
     radarPick: (tipo) => ipcRenderer.invoke('admin:radarPick', { tipo }),
     radarAnalisar: (params) => ipcRenderer.invoke('admin:radarAnalisar', params),
     radarStatus: (params) => ipcRenderer.invoke('admin:radarStatus', params),
+    audPick: () => ipcRenderer.invoke('admin:audPick'),
+    audAnalisar: (params) => ipcRenderer.invoke('admin:audAnalisar', params),
     legalLista: () => ipcRenderer.invoke('admin:legalLista'),
     legalConsultar: (params) => ipcRenderer.invoke('admin:legalConsultar', params),
     legalSalvar: (params) => ipcRenderer.invoke('admin:legalSalvar', params),

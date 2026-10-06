@@ -50,7 +50,7 @@ jobs:
             python -m PyInstaller --onefile --console --noconfirm --clean --name $n \
               --distpath ../pydist --workpath ../pybuild/work_$n --specpath ../pybuild/spec_$n \
               --paths . \
-              --hidden-import oportunidades --hidden-import legalizacao --hidden-import efd_cliente --hidden-import efd_contribuicoes \
+              --hidden-import auditoria_am --hidden-import st_am_dados --hidden-import oportunidades --hidden-import legalizacao --hidden-import efd_cliente --hidden-import efd_contribuicoes \
               --hidden-import efd_corretor --hidden-import efd_conferencia --hidden-import efd_tabelas_natureza_dados \
               --hidden-import nfse_danfse --hidden-import nfse_lote --hidden-import nfse_pdf_dados \
               --collect-all pdfplumber --collect-all pdfminer --collect-all reportlab \
