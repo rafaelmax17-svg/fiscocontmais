@@ -155,6 +155,11 @@ EM_DESENVOLVIMENTO = [
 ]
 
 
+# CFOP (sem o 1º dígito) de revenda de combustível e de mercadoria com ICMS-ST
+CFOP_COMBUSTIVEL = ('651', '652', '653', '654', '655', '656', '667')
+CFOP_ST = ('405', '404', '403')
+
+
 # ----------------------------------------------------------------------------- EFD-Contribuições
 def _analisar_efdc(caminho):
     linhas = _ler(caminho)
@@ -178,7 +183,8 @@ def _analisar_efdc(caminho):
     # Cobertura: o que foi lido, para o resultado "nenhuma oportunidade" poder ser conferido.
     cob = {'regs': defaultdict(int), 'c100_saida': 0, 'c170_saida': 0, 'c170_icms_cst01': 0, 'c170_com_ncm': 0,
            'c180_itens': 0, 'c180_com_ncm': 0, 'mono_itens': 0, 'mono_cst': defaultdict(int), 'mono_ok': 0,
-           'cst_saida': defaultdict(int)}
+           'cst_saida': defaultdict(int), 'c175_linhas': 0, 'st_cst01_linhas': 0, 'st_cst01_valor': 0.0,
+           'st_cst01_base': 0.0, 'mod65_saida': 0}
     c180 = None            # item consolidado corrente (C180) para somar C181/C185
     for l in linhas:
         c = _campos(l)
@@ -188,6 +194,32 @@ def _analisar_efdc(caminho):
             oper, sit, nota, dt = c[2], c[6], c[8], c[10]
             if oper == '1' and sit not in ('02', '03', '04', '05'):
                 cob['c100_saida'] += 1
+                if c[5] == '65':
+                    cob['mod65_saida'] += 1
+            continue
+        if r == 'C175' and oper == '1' and sit not in ('02', '03', '04', '05') and len(c) > 16:
+            # NFC-e: o registro é analítico por CFOP/CST e NÃO traz NCM. Só dá para agir pelo CFOP.
+            cfop = c[2]
+            if not cfop or cfop[0] not in '567':
+                continue
+            cob['c175_linhas'] += 1
+            cst_p, cst_c = c[5], c[11]
+            v_p, v_c = _num(c[10]), _num(c[16])
+            cob['cst_saida'][cst_p] += 1
+            if cfop[1:] in CFOP_COMBUSTIVEL and cst_p in ('01', '02') and (v_p > 0 or v_c > 0):
+                reg = REGRAS_MONOFASICO[3]
+                g = mono[(reg['grupo'], reg['tabela'], reg['lei'], reg['confianca'], reg['obs'] + ' Identificado pelo CFOP de combustível (NFC-e, registro C175, sem NCM).')]
+                g['itens'] += 1
+                g['base'] += _num(c[6])
+                g['pis'] += v_p
+                g['cofins'] += v_c
+                if len(g['exemplos']) < 6:
+                    g['exemplos'].append({'nota': nota, 'data': _data(dt), 'produto': 'NFC-e, CFOP ' + cfop, 'ncm': '(sem NCM no C175)',
+                                          'cst': cst_p, 'valor': round(v_p + v_c, 2)})
+            elif cfop[1:] in CFOP_ST and cst_p in ('01', '02') and (v_p > 0 or v_c > 0):
+                cob['st_cst01_linhas'] += 1
+                cob['st_cst01_valor'] += v_p + v_c
+                cob['st_cst01_base'] += _num(c[6])
             continue
         if r == 'C180' and len(c) > 8:
             cod, ncm180 = c[5], re.sub(r'\D', '', c[6] or '') or ncm_item.get(c[5], '')
@@ -318,7 +350,7 @@ def analisar(efdc, fiscal=None):
     periodos, mono_tot, t69_tot = [], OrderedDict(), {'itens': 0, 'icms': 0.0, 'valor': 0.0, 'ja_excluido': 0, 'indef': 0, 'exemplos': [], 'por_mes': {}, 'fora': 0.0, 'fora_meses': []}
     mono_mes = defaultdict(float)
     cnpjs = set()
-    cobt = {'arquivos': 0, 'c100_saida': 0, 'c170_saida': 0, 'c170_com_ncm': 0, 'c170_icms_cst01': 0, 'c180_itens': 0,
+    cobt = {'c175_linhas': 0, 'st_cst01_linhas': 0, 'st_cst01_valor': 0.0, 'st_cst01_base': 0.0, 'mod65_saida': 0, 'arquivos': 0, 'c100_saida': 0, 'c170_saida': 0, 'c170_com_ncm': 0, 'c170_icms_cst01': 0, 'c180_itens': 0,
             'c180_com_ncm': 0, 'mono_itens': 0, 'mono_ok': 0, 'c175': 0, 'c400': 0, 'cst': defaultdict(int), 'mono_cst': defaultdict(int)}
     for p in efdc:
         nome_arq = p.split('/')[-1].split(chr(92))[-1]
@@ -335,6 +367,8 @@ def analisar(efdc, fiscal=None):
             continue
         cobt['arquivos'] += 1
         for k in ('c100_saida', 'c170_saida', 'c170_com_ncm', 'c170_icms_cst01', 'c180_itens', 'c180_com_ncm', 'mono_itens', 'mono_ok'):
+            cobt[k] += cob[k]
+        for k in ('c175_linhas', 'st_cst01_linhas', 'st_cst01_valor', 'st_cst01_base', 'mod65_saida'):
             cobt[k] += cob[k]
         cobt['c175'] += cob['regs'].get('C175', 0)
         cobt['c400'] += cob['regs'].get('C400', 0) + cob['regs'].get('C490', 0)
@@ -380,7 +414,7 @@ def analisar(efdc, fiscal=None):
         oportunidades.append({
             'tipo': 'monofasico', 'titulo': 'PIS/COFINS monofásico na revenda: ' + grupo,
             'valor': round(valor, 2), 'confianca': conf, 'base_legal_status': 'conferida',
-            'resumo': f'{_pl(d["itens"], "item vendido", "itens vendidos")} com CST 01/02 em NCM de incidência monofásica. PIS {_brl(d["pis"])} e COFINS {_brl(d["cofins"])}.',
+            'resumo': f'{_pl(d["itens"], "item vendido", "itens vendidos")} com CST 01/02 em ' + ('CFOP de combustível (NFC-e, sem NCM)' if any(str(e.get('ncm', '')).startswith('(sem') for e in d['exemplos']) else 'NCM de incidência monofásica') + f'. PIS {_brl(d["pis"])} e COFINS {_brl(d["cofins"])}.',
             'periodos': sorted(d['meses']),
             'como': f'Percorri os itens de saída (C170) e separei os que têm NCM de {grupo.lower()} e CST de PIS 01 ou 02 com tributo destacado. {obs}',
             'evidencias': d['exemplos'], 'lei_regra': lei,
@@ -459,8 +493,12 @@ def analisar(efdc, fiscal=None):
             cobertura.append('Nenhum item de venda com CST 01/02 e ICMS destacado foi encontrado para o Tema 69.')
         if not itens_saida:
             aviso.append('Nenhum item de venda foi encontrado (registros C170 ou C180). Se o cliente declara as vendas de outra forma, o Radar ainda não cobre esse caso.')
-        if cobt['c175'] or cobt['c400']:
-            cobertura.append(f'Não analisados por falta de NCM no registro: {cobt["c175"]} linhas de NFC-e (C175) e {cobt["c400"]} linhas de cupom/ECF (C400/C490).')
+        if cobt['mod65_saida']:
+            cobertura.append(f'{cobt["mod65_saida"]} das notas de saída são NFC-e (modelo 65). Na EFD-Contribuições a NFC-e vem só resumida por CFOP e CST (C175), sem NCM nem ICMS. Por isso o produto não pode ser identificado e as vendas dessas notas só são analisadas pelo CFOP de combustível.')
+        if cobt['c400']:
+            cobertura.append(f'{cobt["c400"]} linhas de cupom/ECF (C400/C490) não foram analisadas por falta de NCM no registro.')
+        if cobt['st_cst01_linhas']:
+            aviso.append(f'Indício (não entra no total): em NFC-e, {_pl(cobt["st_cst01_linhas"], "linha", "linhas")} com CFOP de mercadoria com ICMS-ST e CST 01 pagaram {_brl(cobt["st_cst01_valor"])} de PIS/COFINS sobre {_brl(cobt["st_cst01_base"])} de vendas. Produtos com ST (bebidas, higiene, medicamentos, pneus) costumam ser monofásicos, mas o NCM não está na EFD. Para confirmar, é preciso analisar os XMLs das NFC-e do período.')
     legal_usado = {t: LEGAL[t] for t in {o['tipo'] for o in oportunidades}}
     return {
         'cliente': cliente, 'periodos': sorted(set(periodos)), 'arquivos_efdc': len(efdc), 'arquivos_fiscal': len(fiscal),
