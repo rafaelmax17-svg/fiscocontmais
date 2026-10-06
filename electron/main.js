@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, net } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -1598,13 +1598,34 @@ ipcMain.handle('admin:legalConsultar', async (_evt, { cnpj, usarCache }) => {
   try {
     if (!(usarCache && base.clientes[dig] && base.clientes[dig].api)) {
       let api;
-      try {
-        const resp = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${dig}`, { headers: { Accept: 'application/json' } });
-        if (resp.status === 404) return { error: 'CNPJ não encontrado na base da Receita (BrasilAPI).' };
-        if (!resp.ok) return { error: `A consulta falhou (HTTP ${resp.status}). Tente de novo em instantes.` };
-        api = await resp.json();
-      } catch (e) {
-        return { error: 'Sem acesso à consulta de CNPJ. Verifique a internet. ' + String(e.message || e) };
+      const fontes = [
+        `https://brasilapi.com.br/api/cnpj/v1/${dig}`,
+        `https://minhareceita.org/${dig}`
+      ];
+      const hdrs = {
+        Accept: 'application/json',
+        'Accept-Language': 'pt-BR,pt;q=0.9',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 FiscoContPlus'
+      };
+      let ultimoErro = '';
+      let naoEncontrado = false;
+      for (const url of fontes) {
+        for (let tent = 0; tent < 2 && !api; tent++) {
+          try {
+            // net.fetch usa a rede do Chromium (mesma pilha do navegador), que passa melhor por firewalls de API
+            const resp = await (net && net.fetch ? net.fetch(url, { headers: hdrs }) : fetch(url, { headers: hdrs }));
+            if (resp.status === 404) { naoEncontrado = true; break; }
+            if (resp.ok) { api = await resp.json(); break; }
+            ultimoErro = `HTTP ${resp.status}`;
+            if (resp.status !== 429 && resp.status < 500) break;
+          } catch (e) { ultimoErro = String(e.message || e); }
+          await new Promise(r => setTimeout(r, 1200));
+        }
+        if (api) break;
+      }
+      if (!api) {
+        if (naoEncontrado) return { error: 'CNPJ não encontrado na base da Receita.' };
+        return { error: `A consulta falhou (${ultimoErro || 'sem resposta'}). Verifique a internet e tente de novo em instantes.` };
       }
       const antigo = base.clientes[dig] || {};
       base.clientes[dig] = { api, itens: antigo.itens || {}, consultadoEm: new Date().toISOString() };
