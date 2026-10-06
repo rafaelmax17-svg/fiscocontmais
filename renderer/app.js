@@ -2794,6 +2794,7 @@ function radarRender() {
   const ops = res.oportunidades;
   if (!ops.length) {
     el.innerHTML = `<div class="adm-hero"><div><h2>${esc(res.cliente.nome || 'Cliente')}</h2><small>Nenhuma oportunidade encontrada nos arquivos analisados</small></div></div>
+      ${(res.cobertura || []).length ? `<div class="adm-card"><h3>O que foi analisado</h3><div style="font-size:13px;line-height:1.6">${res.cobertura.map((t) => '• ' + esc(t)).join('<br>')}</div></div>` : ''}
       ${res.avisos.length ? `<div class="adm-aviso">${res.avisos.map(esc).join('<br>')}</div>` : ''}`;
     el.hidden = false; return;
   }
@@ -2839,6 +2840,7 @@ function radarRender() {
     <div class="adm-card"><h3>Oportunidades <span style="font-weight:400;color:var(--ink2);font-size:12px">· clique para ver base legal, cálculo, prazo e exemplos</span></h3>
       <div class="adm-chips" style="margin-bottom:8px">${tipos.map((t) => `<span class="adm-chip${R.filtro === t ? ' on' : ''}" data-filtro="${t}">${t === 'Todos' ? 'Todos' : ADM_TIPO[t]}</span>`).join('')}</div>
       ${lista}</div>
+    ${(res.cobertura || []).length ? `<div class="adm-card"><h3>O que foi analisado</h3><div style="font-size:13px;line-height:1.6">${res.cobertura.map((t) => '• ' + esc(t)).join('<br>')}</div></div>` : ''}
     ${res.avisos.length ? `<div class="adm-aviso"><b>Avisos da análise</b><br>${res.avisos.map(esc).join('<br>')}</div>` : ''}
     <div class="adm-card"><h3>Próximas verificações (ainda não implementadas)</h3><div class="adm-soon">${soon}</div></div>
     <div class="adm-rodape">Hipóteses para análise do contador. A base legal deve ser revalidada, e o histórico do cliente conferido (ações, compensações já feitas), antes de qualquer proposta ou pedido.</div>`;

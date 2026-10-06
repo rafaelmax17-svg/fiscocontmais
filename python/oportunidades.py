@@ -163,7 +163,11 @@ def _analisar_efdc(caminho):
     for l in linhas:
         c = _campos(l)
         if c[1] == '0000' and len(c) > 9:
-            cab = {'ini': c[6], 'fim': c[7], 'nome': c[8], 'cnpj': c[9]}
+            # EFD-Contribuições: c[9] é o CNPJ (14 dígitos). Na EFD ICMS/IPI essa posição é a UF.
+            if re.fullmatch(r'\d{14}', c[9].strip()):
+                cab = {'ini': c[6], 'fim': c[7], 'nome': c[8], 'cnpj': c[9].strip()}
+            else:
+                cab = {'nome': c[6] if len(c) > 6 else '', 'cnpj': '', 'ini': '', 'fim': '', 'parece_fiscal': True}
         elif c[1] == '0200' and len(c) > 8:
             ncm_item[c[2]] = c[8]
             desc_item[c[2]] = c[3]
@@ -171,17 +175,72 @@ def _analisar_efdc(caminho):
     mono = defaultdict(lambda: {'itens': 0, 'base': 0.0, 'pis': 0.0, 'cofins': 0.0, 'exemplos': []})
     t69 = {'itens': 0, 'icms': 0.0, 'valor': 0.0, 'ja_excluido': 0, 'indef': 0, 'exemplos': []}
     oper, sit, nota, dt = None, '', '', ''
+    # Cobertura: o que foi lido, para o resultado "nenhuma oportunidade" poder ser conferido.
+    cob = {'regs': defaultdict(int), 'c100_saida': 0, 'c170_saida': 0, 'c170_icms_cst01': 0, 'c170_com_ncm': 0,
+           'c180_itens': 0, 'c180_com_ncm': 0, 'mono_itens': 0, 'mono_cst': defaultdict(int), 'mono_ok': 0,
+           'cst_saida': defaultdict(int)}
+    c180 = None            # item consolidado corrente (C180) para somar C181/C185
     for l in linhas:
         c = _campos(l)
         r = c[1]
+        cob['regs'][r] += 1
         if r == 'C100' and len(c) > 10:
             oper, sit, nota, dt = c[2], c[6], c[8], c[10]
+            if oper == '1' and sit not in ('02', '03', '04', '05'):
+                cob['c100_saida'] += 1
+            continue
+        if r == 'C180' and len(c) > 8:
+            cod, ncm180 = c[5], re.sub(r'\D', '', c[6] or '') or ncm_item.get(c[5], '')
+            c180 = {'cod': cod, 'ncm': ncm180, 'ini': c[3], 'fim': c[4]}
+            cob['c180_itens'] += 1
+            if ncm180:
+                cob['c180_com_ncm'] += 1
+            continue
+        if r in ('C181', 'C185') and c180 and len(c) > 10:
+            cfop = c[3]
+            if not cfop or cfop[0] not in '567':
+                continue
+            cst, v_trib = c[2], _num(c[10])
+            cob['cst_saida'][cst] += 1 if r == 'C181' else 0
+            reg = _regra_ncm(c180['ncm'])
+            if reg:
+                if r == 'C181':
+                    cob['mono_itens'] += 1
+                    cob['mono_cst'][cst] += 1
+                if cst in ('01', '02') and v_trib > 0:
+                    g = mono[(reg['grupo'], reg['tabela'], reg['lei'], reg['confianca'], reg['obs'])]
+                    if r == 'C181':
+                        g['itens'] += 1
+                        g['base'] += _num(c[6])
+                        g['pis'] += v_trib
+                        if len(g['exemplos']) < 6:
+                            g['exemplos'].append({'nota': 'consolidado (C180)', 'data': _data(c180['ini']) + ' a ' + _data(c180['fim']),
+                                                  'produto': desc_item.get(c180['cod'], c180['cod'])[:48], 'ncm': c180['ncm'],
+                                                  'cst': cst, 'valor': round(v_trib, 2)})
+                    else:
+                        g['cofins'] += v_trib
+                        if g['exemplos'] and g['exemplos'][-1].get('nota') == 'consolidado (C180)' and g['exemplos'][-1].get('ncm') == c180['ncm']:
+                            g['exemplos'][-1]['valor'] = round(g['exemplos'][-1]['valor'] + v_trib, 2)
+                elif r == 'C181':
+                    cob['mono_ok'] += 1
             continue
         if r != 'C170' or oper != '1' or sit in ('02', '03', '04', '05') or len(c) < 37:
             continue
         cfop = c[11]
         if not cfop or cfop[0] not in '567':
             continue
+        cob['c170_saida'] += 1
+        cob['cst_saida'][c[25]] += 1
+        if ncm_item.get(c[3]):
+            cob['c170_com_ncm'] += 1
+        if c[25] in ('01', '02') and _num(c[15]) > 0:
+            cob['c170_icms_cst01'] += 1
+        _reg_diag = _regra_ncm(ncm_item.get(c[3], ''))
+        if _reg_diag:
+            cob['mono_itens'] += 1
+            cob['mono_cst'][c[25]] += 1
+            if not (c[25] in ('01', '02') and (_num(c[30]) > 0 or _num(c[36]) > 0)):
+                cob['mono_ok'] += 1
         cst_pis, cst_cof = c[25], c[31]
         vl_item, vl_desc, vl_icms = _num(c[7]), _num(c[8]), _num(c[15])
         bc_pis, al_pis, v_pis = _num(c[26]), _num(c[27]), _num(c[30])
@@ -212,7 +271,7 @@ def _analisar_efdc(caminho):
                 t69['ja_excluido'] += 1
             else:
                 t69['indef'] += 1
-    return cab, comp, mono, t69
+    return cab, comp, mono, t69, cob
 
 
 # ----------------------------------------------------------------------------- EFD ICMS/IPI (CIAP)
@@ -259,15 +318,30 @@ def analisar(efdc, fiscal=None):
     periodos, mono_tot, t69_tot = [], OrderedDict(), {'itens': 0, 'icms': 0.0, 'valor': 0.0, 'ja_excluido': 0, 'indef': 0, 'exemplos': [], 'por_mes': {}, 'fora': 0.0, 'fora_meses': []}
     mono_mes = defaultdict(float)
     cnpjs = set()
+    cobt = {'arquivos': 0, 'c100_saida': 0, 'c170_saida': 0, 'c170_com_ncm': 0, 'c170_icms_cst01': 0, 'c180_itens': 0,
+            'c180_com_ncm': 0, 'mono_itens': 0, 'mono_ok': 0, 'c175': 0, 'c400': 0, 'cst': defaultdict(int), 'mono_cst': defaultdict(int)}
     for p in efdc:
+        nome_arq = p.split('/')[-1].split(chr(92))[-1]
         try:
-            cab, comp, mono, t69 = _analisar_efdc(p)
+            cab, comp, mono, t69, cob = _analisar_efdc(p)
         except Exception as e:
-            aviso.append(f'Não consegui ler {p.split("/")[-1].split(chr(92))[-1]}: {e}')
+            aviso.append(f'Não consegui ler {nome_arq}: {e}')
             continue
         if not cab['cnpj']:
-            aviso.append(f'{p.split("/")[-1].split(chr(92))[-1]}: não parece uma EFD-Contribuições (sem registro 0000).')
+            if cab.get('parece_fiscal'):
+                aviso.append(f'{nome_arq}: este arquivo parece ser a EFD ICMS/IPI (SPED Fiscal), não a EFD-Contribuições. Coloque-o no campo da EFD ICMS/IPI.')
+            else:
+                aviso.append(f'{nome_arq}: não parece uma EFD-Contribuições (sem registro 0000 válido).')
             continue
+        cobt['arquivos'] += 1
+        for k in ('c100_saida', 'c170_saida', 'c170_com_ncm', 'c170_icms_cst01', 'c180_itens', 'c180_com_ncm', 'mono_itens', 'mono_ok'):
+            cobt[k] += cob[k]
+        cobt['c175'] += cob['regs'].get('C175', 0)
+        cobt['c400'] += cob['regs'].get('C400', 0) + cob['regs'].get('C490', 0)
+        for k, v in cob['cst_saida'].items():
+            cobt['cst'][k] += v
+        for k, v in cob['mono_cst'].items():
+            cobt['mono_cst'][k] += v
         cnpjs.add(cab['cnpj'])
         cliente = {'nome': cab['nome'], 'cnpj': cab['cnpj']}
         periodos.append(comp)
@@ -365,11 +439,33 @@ def analisar(efdc, fiscal=None):
     elif not fiscal:
         aviso.append('CIAP não analisado: nenhuma EFD ICMS/IPI foi selecionada.')
 
+    # Cobertura: mostra o que foi lido, para o "nenhuma oportunidade" poder ser conferido.
+    cobertura = []
+    if cobt['arquivos']:
+        itens_saida = cobt['c170_saida'] + cobt['c180_itens']
+        cobertura.append(f'{_pl(cobt["arquivos"], "EFD-Contribuições lida", "EFD-Contribuições lidas")}, com {_pl(cobt["c100_saida"], "nota de saída", "notas de saída")} detalhadas (C100) e {_pl(cobt["c170_saida"], "item de venda", "itens de venda")} (C170).')
+        if cobt['c180_itens']:
+            cobertura.append(f'{_pl(cobt["c180_itens"], "item", "itens")} de vendas consolidadas (C180/C181/C185) também foram lidos.')
+        if cobt['c170_saida']:
+            cobertura.append(f'NCM identificado em {cobt["c170_com_ncm"]} de {cobt["c170_saida"]} itens de venda (C170).' + (' Itens sem NCM no cadastro (registro 0200) não podem ser avaliados.' if cobt['c170_com_ncm'] < cobt['c170_saida'] else ''))
+        if cobt['mono_itens']:
+            csts = ', '.join(f'CST {k}: {v}' for k, v in sorted(cobt['mono_cst'].items()))
+            cobertura.append(f'{_pl(cobt["mono_itens"], "item de venda tem", "itens de venda têm")} NCM de incidência monofásica ({csts}). {cobt["mono_ok"]} já estão com tratamento correto (sem tributo).')
+        else:
+            cobertura.append('Nenhum item de venda tem NCM de produto monofásico (farmacêutico, perfumaria, pneus, combustíveis).')
+        if cobt['c170_icms_cst01']:
+            cobertura.append(f'{_pl(cobt["c170_icms_cst01"], "item de venda tem", "itens de venda têm")} CST 01/02 e ICMS destacado (base do Tema 69).')
+        else:
+            cobertura.append('Nenhum item de venda com CST 01/02 e ICMS destacado foi encontrado para o Tema 69.')
+        if not itens_saida:
+            aviso.append('Nenhum item de venda foi encontrado (registros C170 ou C180). Se o cliente declara as vendas de outra forma, o Radar ainda não cobre esse caso.')
+        if cobt['c175'] or cobt['c400']:
+            cobertura.append(f'Não analisados por falta de NCM no registro: {cobt["c175"]} linhas de NFC-e (C175) e {cobt["c400"]} linhas de cupom/ECF (C400/C490).')
     legal_usado = {t: LEGAL[t] for t in {o['tipo'] for o in oportunidades}}
     return {
         'cliente': cliente, 'periodos': sorted(set(periodos)), 'arquivos_efdc': len(efdc), 'arquivos_fiscal': len(fiscal),
         'oportunidades': oportunidades, 'legal': LEGAL, 'em_desenvolvimento': EM_DESENVOLVIMENTO,
-        'avisos': aviso, 'total': round(sum(o['valor'] for o in oportunidades), 2),
+        'cobertura': cobertura, 'avisos': aviso, 'total': round(sum(o['valor'] for o in oportunidades), 2),
     }
 
 
