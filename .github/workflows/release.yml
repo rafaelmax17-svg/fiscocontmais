@@ -1,0 +1,95 @@
+name: Gerar instalador e rascunho da release
+
+# Roda sozinho quando uma tag de versao (v1.5.7, v1.5.8...) e enviada ao GitHub.
+# Tambem pode ser rodado a mao (Actions > Gerar instalador > Run workflow) informando a tag.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag da versao (ex.: v1.5.6)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Dependencias Python
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller pdfplumber reportlab requests cryptography python-docx pillow
+          if [ -f python/requirements.txt ]; then python -m pip install -r python/requirements.txt; fi
+
+      - name: Compilar os nucleos Python (exe)
+        shell: bash
+        run: |
+          mkdir -p pydist
+          cd python
+          for n in fiscal_core balancete_core extrato_core; do
+            echo "== $n"
+            python -m PyInstaller --onefile --console --noconfirm --clean --name $n \
+              --distpath ../pydist --workpath ../pybuild/work_$n --specpath ../pybuild/spec_$n \
+              --paths . \
+              --hidden-import oportunidades --hidden-import legalizacao --hidden-import efd_cliente --hidden-import efd_contribuicoes \
+              --hidden-import efd_corretor --hidden-import efd_conferencia --hidden-import efd_tabelas_natureza_dados \
+              --hidden-import nfse_danfse --hidden-import nfse_lote --hidden-import nfse_pdf_dados \
+              --collect-all pdfplumber --collect-all pdfminer --collect-all reportlab \
+              $n.py
+          done
+          ls -la ../pydist
+
+      - name: Dependencias do app
+        shell: bash
+        run: npm ci
+
+      - name: Gerar o instalador
+        shell: bash
+        run: npx electron-builder --win nsis --publish never
+
+      - name: Conferir arquivos gerados
+        shell: bash
+        run: |
+          ls -la dist
+          V="${TAG#v}"
+          test -f "dist/fiscocont-plus-setup-$V.exe"
+          test -f "dist/fiscocont-plus-setup-$V.exe.blockmap"
+          test -f dist/latest.yml
+          grep -q "version: $V" dist/latest.yml
+
+      - name: Criar o rascunho da release com as novidades
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V="${TAG#v}"
+          NOTES="release-notes/$TAG.md"
+          mkdir -p release-notes
+          if [ ! -f "$NOTES" ]; then
+            echo "Ajustes internos e melhorias de desempenho." > "$NOTES"
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Ja existe uma release para $TAG; enviando os arquivos para ela."
+            gh release upload "$TAG" "dist/fiscocont-plus-setup-$V.exe" "dist/fiscocont-plus-setup-$V.exe.blockmap" dist/latest.yml --clobber
+          else
+            gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes-file "$NOTES" \
+              "dist/fiscocont-plus-setup-$V.exe" "dist/fiscocont-plus-setup-$V.exe.blockmap" dist/latest.yml
+          fi

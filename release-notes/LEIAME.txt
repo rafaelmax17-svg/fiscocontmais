@@ -1,0 +1,3 @@
+Para cada versao, o texto das novidades fica em release-notes/vX.Y.Z.md
+(linguagem simples, sem citar recursos internos). O GitHub Actions usa esse
+arquivo como descricao do rascunho da release. Sem o arquivo, usa um texto padrao.
