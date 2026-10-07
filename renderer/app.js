@@ -2747,9 +2747,9 @@ const AUD_GRAV = {
   'Média': { cor: '#e8901c', cls: 'media' },
   Baixa: { cor: '#7c8db5', cls: 'baixa' },
 };
-const AUD_FAM = { A: 'Com base legal', B: 'Consistência do arquivo' };
+const AUD_FAM = { A: 'Base legal', B: 'Regra de escrituração' };
 const AUD_COL = {
-  nota: 'Nota', item: 'Item', cod: 'Código', descr: 'Descrição', ncm: 'NCM', cest: 'CEST', cst: 'CST', cfop: 'CFOP',
+  motivo: 'Por que foi apontado', nota: 'Nota', item: 'Item', origem: 'Origem', cod: 'Código', descr: 'Descrição', ncm: 'NCM', cest: 'CEST', cst: 'CST', cfop: 'CFOP',
   aliq: 'Alíq. %', bc: 'Base', icms: 'ICMS', valor_item: 'Valor item', esperado: 'ICMS esperado', anexo: 'Anexo',
   segmento: 'Segmento', cest_lista: 'CEST da lista', cest_candidatos: 'CEST possíveis', qtd_candidatos: 'Qtd. possíveis',
   bc_itens: 'Base itens', bc_c190: 'Base C190', icms_itens: 'ICMS itens', icms_c190: 'ICMS C190',
@@ -2770,22 +2770,33 @@ function audExemplos(a) {
   if (!ex.length) return '';
   const cols = [];
   ex.forEach((e) => Object.keys(e).forEach((k) => { if (!cols.includes(k)) cols.push(k); }));
+  if (cols.includes('motivo')) cols.splice(0, cols.length, 'motivo', ...cols.filter((k) => k !== 'motivo'));
   const num = (k) => AUD_MOEDA.has(k) || k === 'aliq' || k === 'qtd_candidatos';
   const head = cols.map((k) => `<th class="${num(k) ? 'n' : ''}">${audEsc(AUD_COL[k] || k)}</th>`).join('');
-  const rows = ex.map((e) => '<tr>' + cols.map((k) => `<td class="${num(k) ? 'n' : ''}">${e[k] == null || e[k] === '' ? '<span class="aud-vazio">—</span>' : audCel(k, e[k])}</td>`).join('') + '</tr>').join('');
+  const rows = ex.map((e) => '<tr>' + cols.map((k) => `<td class="${num(k) ? 'n' : ''}${k === 'motivo' ? ' aud-mot' : ''}">${e[k] == null || e[k] === '' ? '<span class="aud-vazio">—</span>' : audCel(k, e[k])}</td>`).join('') + '</tr>').join('');
   return `<div class="aud-sub">Exemplos ${a.qtd > ex.length ? `<span>· ${ex.length} de ${audNum(a.qtd)} ocorrências</span>` : ''}</div>
     <div class="aud-tabwrap"><table class="aud-tab"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+const AUD_STATUS = {
+  lida: ['ok', 'texto oficial lido'],
+  indireta: ['av', 'aplicação direta da lei'],
+};
+function audBaseHTML(b, compacto) {
+  if (!b) return '<div class="adm-lg aud-semlei"><b class="t">Sem dispositivo associado</b>Verificação sem norma vinculada.</div>';
+  const st = AUD_STATUS[b.status] || ['av', 'não confirmada'];
+  const disp = (b.dispositivos || []).map((d) => `<div class="aud-disp">
+      <div class="aud-disp-h"><b>${audEsc(d.ref)}</b><a href="${audEsc(d.url)}" target="_blank" rel="noopener">texto oficial ↗</a></div>
+      <blockquote>“${audEsc(d.texto)}”</blockquote></div>`).join('');
+  return `<div class="adm-lg aud-base"><b class="t">Fundamento ${compacto ? '' : `<span class="adm-pill ${st[0]}">${st[1]}</span>`}${b.lido_em ? `<span class="aud-lido">lido em ${audEsc(b.lido_em)}</span>` : ''}</b>
+      <div class="aud-norma-full">${audEsc(b.norma)}</div>
+      ${b.resumo ? `<p class="aud-resumo">${audEsc(b.resumo)}</p>` : ''}
+      ${disp}
+      ${b.nao_conferido ? `<div class="fn"><b>Limite da verificação:</b> ${audEsc(b.nao_conferido)}</div>` : ''}</div>`;
+}
+
 function audDetalhe(a) {
-  const b = a.base_legal;
-  const base = b
-    ? `<div class="adm-lg"><b class="t">Base legal ${b.status === 'lida' ? '<span class="adm-pill ok">lida no texto oficial</span>' : '<span class="adm-pill av">não confirmada</span>'}</b>
-        <b>${audEsc(b.norma)}</b><br>${audEsc(b.resumo)}
-        ${(b.links || []).length ? `<div class="aud-links">${b.links.map((u, i) => `<a href="${audEsc(u)}" target="_blank" rel="noopener">Texto oficial${b.links.length > 1 ? ' ' + (i + 1) : ''} ↗</a>`).join('')}</div>` : ''}
-        ${b.nao_conferido ? `<div class="fn"><b>Não conferido:</b> ${audEsc(b.nao_conferido)}</div>` : ''}</div>`
-    : '<div class="adm-lg aud-semlei"><b class="t">Sem base legal associada</b>Divergência matemática ou estrutural do próprio arquivo. Não afirma infração.</div>';
-  return `<div class="adm-det"><p>${audEsc(a.descricao)}</p>${base}
+  return `<div class="adm-det"><p>${audEsc(a.descricao)}</p>${audBaseHTML(a.base_legal)}
     ${a.como_verificar ? `<div class="adm-lg at"><b class="t">Como verificar</b>${audEsc(a.como_verificar)}</div>` : ''}
     ${audExemplos(a)}</div>`;
 }
@@ -2794,7 +2805,7 @@ function audLista() {
   const res = AUDAM.res, f = AUDAM.filtro, q = AUDAM.busca.trim().toLowerCase();
   const L = (res.achados || []).filter((a) =>
     (f === 'todos' || a.familia === f || a.gravidade === f) &&
-    (!q || (a.titulo + ' ' + a.descricao + ' ' + ((a.base_legal || {}).norma || '')).toLowerCase().includes(q)));
+    (!q || (a.titulo + ' ' + a.descricao + ' ' + ((a.base_legal || {}).norma || '') + ' ' + ((a.base_legal || {}).dispositivos || []).map((d) => d.ref + ' ' + d.texto).join(' ')).toLowerCase().includes(q)));
   if (!L.length) return '<div class="aud-nada">Nenhum apontamento com esse filtro.</div>';
   return L.map((a, i) => {
     const g = AUD_GRAV[a.gravidade] || AUD_GRAV.Baixa, id = audId(a);
@@ -2817,7 +2828,8 @@ function audConciliacao(conc) {
       <div class="aud-conc-h"><b>${audEsc(c.titulo)}</b>${ok ? '<span class="adm-pill ok">Fecha</span>' : `<span class="adm-pill no">Diferença ${brl(c.dif)}</span>`}</div>
       <div class="aud-bar"><span>E110</span><div class="tr"><b style="--w:${w(c.e110)};background:var(--adm);animation-delay:${i * .15}s"></b></div><em>${brl(c.e110)}</em></div>
       <div class="aud-bar"><span>C190</span><div class="tr"><b style="--w:${w(c.c190)};background:#0ea5e9;animation-delay:${i * .15 + .08}s"></b></div><em>${brl(c.c190)}</em></div>
-      ${c.nota ? `<small>${audEsc(c.nota)}</small>` : ''}</div>`;
+      ${c.nota ? `<small>${audEsc(c.nota)}</small>` : ''}
+      ${c.base_legal ? `<details class="aud-conc-base"><summary>Fundamento: ${audEsc((c.base_legal.dispositivos[0] || {}).ref || c.base_legal.norma)}</summary>${audBaseHTML(c.base_legal, true)}</details>` : ''}</div>`;
   }).join('');
   return `<div class="adm-card"><h3>Conciliação da apuração · E110 × C190</h3>${linhas}</div>`;
 }
@@ -2845,8 +2857,8 @@ function audRender() {
   const fw = (v) => (tot ? Math.max(v / tot * 100, v ? 6 : 0) : 0).toFixed(1) + '%';
   const famBar = `<div class="aud-split">
       <div class="aud-split-bar"><b style="width:${fw(famA)};background:var(--adm)"></b><b style="width:${fw(famB)};background:#94a3b8"></b></div>
-      <div class="adm-leg"><div><span><i style="background:var(--adm)"></i>Com base legal</span><b>${audNum(famA)}</b></div>
-      <div><span><i style="background:#94a3b8"></i>Consistência do arquivo</span><b>${audNum(famB)}</b></div></div></div>`;
+      <div class="adm-leg"><div><span><i style="background:var(--adm)"></i>Base legal (lei, Resolução, Convênio)</span><b>${audNum(famA)}</b></div>
+      <div><span><i style="background:#94a3b8"></i>Regra de escrituração (Guia Prático EFD)</span><b>${audNum(famB)}</b></div></div></div>`;
 
   // ranking das verificações
   const maxQ = Math.max(1, ...A.map((a) => a.qtd));
@@ -2856,7 +2868,7 @@ function audRender() {
       <em>${audNum(a.qtd)}</em></div>`).join('');
 
   const cobItens = [['Notas', cb.notas], ['Itens (C170)', cb.itens], ['Resumos (C190)', cb.c190], ['Produtos cadastrados', cb.itens_cadastrados], ['Mercadorias na lista de ST', cb.st_lista]];
-  const filtros = [['todos', 'Todos', A.length], ['A', 'Com base legal', A.filter((a) => a.familia === 'A').length], ['B', 'Consistência', A.filter((a) => a.familia === 'B').length],
+  const filtros = [['todos', 'Todos', A.length], ['A', 'Base legal', A.filter((a) => a.familia === 'A').length], ['B', 'Escrituração', A.filter((a) => a.familia === 'B').length],
     ['Alta', 'Alta', A.filter((a) => a.gravidade === 'Alta').length], ['Média', 'Média', A.filter((a) => a.gravidade === 'Média').length], ['Baixa', 'Baixa', A.filter((a) => a.gravidade === 'Baixa').length]];
 
   el.innerHTML = `
@@ -2880,10 +2892,11 @@ function audRender() {
     ${A.length ? `<div class="adm-card"><h3>Ranking das verificações <span class="aud-h-sub">· clique para abrir o apontamento</span></h3><div class="aud-rank">${rank}</div></div>` : ''}
     ${audConciliacao(res.conciliacao || [])}
     <div class="adm-card"><div class="aud-lista-h"><h3>Apontamentos</h3>
-      <input class="adm-input aud-busca" id="audBusca" placeholder="Buscar por título, descrição ou norma…" value="${audEsc(AUDAM.busca)}"></div>
+      <input class="adm-input aud-busca" id="audBusca" placeholder="Buscar por título, descrição, norma ou artigo…" value="${audEsc(AUDAM.busca)}"></div>
       <div class="adm-chips" style="margin-bottom:8px">${filtros.map(([k, t, n]) => `<span class="adm-chip${AUDAM.filtro === k ? ' on' : ''}" data-audfiltro="${audEsc(k)}">${t} <b>${n}</b></span>`).join('')}</div>
       <div id="audLista">${audLista()}</div></div>
-    <div class="adm-rodape">Hipóteses para o contador conferir. As verificações com base legal citam o dispositivo lido no texto oficial; as de consistência apontam divergências do próprio arquivo e não afirmam infração.</div>`;
+    ${(res.fontes || []).length ? `<div class="adm-card"><h3>Normas consultadas <span class="aud-h-sub">· textos oficiais lidos em ${audEsc(res.lido_em || '')}</span></h3><div class="aud-fontes">${[...new Map(res.fontes.map((f) => [f.ref.split(',')[0], f])).values()].map((f) => `<a href="${audEsc(f.url)}" target="_blank" rel="noopener">${audEsc(f.ref.split(',')[0])} ↗</a>`).join('')}</div></div>` : ''}
+    <div class="adm-rodape">Hipóteses para o contador conferir. Cada apontamento transcreve o dispositivo lido no site oficial (SEFAZ-AM, CONFAZ, Senado/Planalto, Sped) e mostra, ocorrência por ocorrência, o que a norma exige e o que o arquivo traz. Benefícios e reduções de base ainda não são cruzados.</div>`;
   el.hidden = false;
   animateArcs(el);
   admContar($('#audK1'), A.length, false); admContar($('#audK2'), porGrav.Alta, false); admContar($('#audK3'), tot, false);
