@@ -2903,6 +2903,52 @@ function audRender() {
   admContar($('#audK4'), valor, true); admContar($('#audK5'), cb.itens || 0, false);
 }
 
+// Relatório HTML autônomo: o mesmo painel, com todos os apontamentos abertos, CSS embutido e sem depender do app.
+async function audHtmlRelatorio() {
+  const res = AUDAM.res;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = $('#audPainel').innerHTML;
+  const salvo = { filtro: AUDAM.filtro, busca: AUDAM.busca, aberta: AUDAM.aberta };
+  AUDAM.filtro = 'todos'; AUDAM.busca = '';
+  const lista = $('#audLista', tmp);
+  if (lista) lista.innerHTML = audLista();
+  Object.assign(AUDAM, salvo);
+  $$('.aud-op', tmp).forEach((o) => o.classList.add('aberta'));
+  $$('details', tmp).forEach((d) => d.setAttribute('open', ''));
+  $$('.aud-busca, .adm-chips, .aud-h-sub', tmp).forEach((n) => { if (!/textos oficiais/.test(n.textContent)) n.remove(); });
+  $$('[data-irpara]', tmp).forEach((n) => { n.removeAttribute('data-irpara'); n.removeAttribute('title'); });
+  // números finais dos indicadores (no app eles sobem animados)
+  const A = res.achados || [];
+  const fim = {
+    audK1: audNum(A.length), audK2: audNum(A.filter((a) => a.gravidade === 'Alta').reduce((x, a) => x + a.qtd, 0)),
+    audK3: audNum(A.reduce((x, a) => x + a.qtd, 0)), audK4: brl(A.reduce((x, a) => x + (a.valor || 0), 0)),
+    audK5: audNum((res.cobertura || {}).itens || 0),
+  };
+  Object.entries(fim).forEach(([id, v]) => { const n = $('#' + id, tmp); if (n) n.textContent = v; });
+  $$('.arc', tmp).forEach((c) => (c.style.strokeDashoffset = '0'));
+  let css = [...document.styleSheets].map((ss) => { try { return [...ss.cssRules].map((r) => r.cssText).join('\n'); } catch (_) { return ''; } }).join('\n');
+  if (css.length < 2000) { try { css = await (await fetch('styles.css')).text(); } catch (_) {} }
+  const cli = res.cliente || {};
+  const agora = new Date();
+  const quando = agora.toLocaleDateString('pt-BR') + ' ' + agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const arqs = AUDAM.sped.map((p) => audEsc(p.split(/[\\/]/).pop())).join(', ');
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Auditoria ICMS/AM — ${audEsc(cli.nome || '')} — ${audEsc(cli.periodo || '')}</title>
+<style>${css}
+body{display:block;height:auto;min-height:100%;padding:24px 16px 40px}
+.aud-rel{max-width:1240px;margin:0 auto}
+#audPainel{margin-top:0}
+.aud-rel-meta{color:var(--ink2);font-size:12px;margin:0 0 12px}
+.aud-op .adm-op-h{cursor:pointer}
+@media print{body{padding:0;background:#fff}.adm-card,.adm-kpi{box-shadow:none;border:1px solid var(--line)}.aud-op,.adm-card{break-inside:avoid}
+  *{animation:none!important;transition:none!important}.aud-rk .tr b,.aud-bar .tr b{width:var(--w)!important}.adm-det{display:block!important}}
+</style></head><body><div class="aud-rel">
+<p class="aud-rel-meta">Relatório gerado em ${audEsc(quando)} · Arquivo(s): ${arqs}</p>
+<div id="audPainel">${tmp.innerHTML}</div></div>
+<script>document.addEventListener('click',function(e){var h=e.target.closest('[data-abrirauda]');if(h&&!e.target.closest('a'))h.parentElement.classList.toggle('aberta');});</script>
+</body></html>`;
+}
+
 function audSelecao() {
   const el = $('#audSel');
   el.hidden = !AUDAM.sped.length;
@@ -2926,7 +2972,18 @@ function audInit() {
       if (!r || r.error) { toast((r && r.error) || 'Falha na auditoria.', true); return; }
       Object.assign(AUDAM, { res: r.res, filtro: 'todos', busca: '', aberta: null });
       $('#audVazio').hidden = true; audRender();
+      $('#btnAudHtml').disabled = false;
     } catch (e) { overlay(false); toast('Falha: ' + e.message, true); }
+  });
+  $('#btnAudHtml').addEventListener('click', async () => {
+    if (!AUDAM.res) return;
+    try {
+      const r = await window.fiscocont.fiscal.nfseExportarHtml(await audHtmlRelatorio(), 'auditoria-am', (AUDAM.res.cliente || {}).nome || '');
+      if (!r || r.canceled) return;
+      if (r.error) { toast(r.error, true); return; }
+      toast('Auditoria exportada.');
+      window.fiscocont.openPath(r.path);
+    } catch (e) { toast('Falha ao exportar: ' + e.message, true); }
   });
   const painel = $('#audPainel');
   painel.addEventListener('click', (ev) => {

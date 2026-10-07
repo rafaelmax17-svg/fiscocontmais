@@ -624,7 +624,8 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 @media print{.adm-bar,.adm-acoes{display:none}}
 .adm-h{margin:18px 0 4px;font-size:15px;color:var(--adm-ink)}
 /* ===== Auditoria ICMS/AM — dashboard ===== */
-#audPainel{margin-top:14px;display:grid;gap:14px}
+#audPainel{margin-top:14px;display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+#audPainel > *,#audPainel .adm-cols > *,.aud-op,.adm-det{min-width:0}
 #audPainel .adm-det p{font-size:12.5px;line-height:1.55;margin:6px 0}
 .aud-hero{align-items:flex-end}
 .aud-eyebrow{display:block;font-size:11px!important;letter-spacing:.08em;text-transform:uppercase;opacity:.75!important;margin-bottom:3px}

@@ -824,7 +824,7 @@ ipcMain.handle('fiscal:nfseAnalise', async (_evt, { empresaId, dataInicial, data
 });
 
 ipcMain.handle('fiscal:nfseExportarHtml', async (_evt, { html, tipo, empresaNome }) => {
-  const nomeArquivo = tipo === 'efd-contrib' ? 'Conferencia-EFD-Contribuicoes' : (tipo === 'efd-corrigir' ? 'Correcao-EFD-Contribuicoes' : 'Painel-NFSe');
+  const nomeArquivo = { 'efd-contrib': 'Conferencia-EFD-Contribuicoes', 'efd-corrigir': 'Correcao-EFD-Contribuicoes', 'auditoria-am': 'Auditoria-ICMS-AM' }[tipo] || 'Painel-NFSe';
   const save = await dialog.showSaveDialog(mainWindow, {
     title: 'Salvar HTML', defaultPath: `${nomeArquivo}-${(empresaNome || '').replace(/[^\w-]+/g, '_')}.html`,
     filters: [{ name: 'HTML', extensions: ['html'] }],
