@@ -2800,6 +2800,9 @@ def main(argv):
     if modo == 'auditoria-icms-am':
         import auditoria_am as _am
         return _am.main_cli(argv[1:])
+    if modo == 'evolucao-tributaria':
+        import evolucao_tributaria as _ev
+        return _ev.main_cli(argv[1:])
     if modo == 'legalizacao-levantamento':
         import legalizacao as _lg
         return _lg.main_cli(argv[1:])

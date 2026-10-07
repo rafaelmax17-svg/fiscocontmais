@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FiscoCont+</title>
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="evolucao.css">
 </head>
 <body>
 <div id="loginGate" class="login-gate">
@@ -272,6 +273,10 @@
       <button class="nav-item nav-item-adm" data-group="admin-only" data-view="admin-audam">
         <svg viewBox="0 0 24 24" class="ic"><path d="M5 4h14v16H5zM8 9h8M8 13h8M8 17h5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Auditoria ICMS · AM</span>
+      </button>
+      <button class="nav-item nav-item-adm" data-group="admin-only" data-view="admin-evo">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M4 20h16M6 16l4-5 3 3 5-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h3v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Evolução Tributária</span>
       </button>
       <button class="nav-item nav-item-adm" data-group="admin-only" data-view="admin-legal">
         <svg viewBox="0 0 24 24" class="ic"><rect x="5" y="4" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9 4V3h6v1M8.5 11.5l2 2 3.5-4M9 17h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1028,6 +1033,34 @@
         <div id="audPainel"></div>
       </div>
 
+      <!-- Admin: Evolução Tributária e de Faturamento (vários SPED Fiscais da mesma empresa) -->
+      <div class="view adm-view" id="view-admin-evo" hidden>
+        <div class="fiscal-bar adm-bar">
+          <button class="act inv-export adm-btn" id="btnEvoSped">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            SPED Fiscais do período (selecione todos os meses)
+          </button>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnEvoOpcoes" title="Nome do escritório, recado e anexo técnico do relatório do cliente">Opções do relatório</button>
+          <button class="act inv-export" id="btnEvoHtml" disabled>Exportar HTML</button>
+          <button class="act adm-go" id="btnEvoRodar" disabled>Analisar período</button>
+        </div>
+        <div class="adm-sel" id="evoSel" hidden></div>
+        <div class="evo-opcoes" id="evoOpcoes" hidden>
+          <label>Nome do escritório no relatório<input class="adm-input" id="evoEscritorio" value="Liddera | Inteligência em Negócios"></label>
+          <label class="evo-op-full">Recado do escritório (opcional, aparece no relatório do cliente)<textarea class="adm-input" id="evoRecado" rows="3" placeholder="Ex.: O crescimento do 3º trimestre manteve a carga estável. Vamos revisar juntos os créditos de antecipação."></textarea></label>
+          <label class="evo-op-chk"><input type="checkbox" id="evoTecnico" checked> Incluir o quadro "De onde vem cada número"</label>
+        </div>
+        <div class="fiscal-empty adm-empty" id="evoVazio">
+          <svg viewBox="0 0 24 24"><path d="M4 20h16M6 16l4-5 3 3 5-7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2>Evolução Tributária e de Faturamento</h2>
+          <p>Selecione os <b>SPED Fiscais (EFD ICMS/IPI) de uma mesma empresa</b>, um por mês, de todo o período que quer analisar (pode selecionar vários de uma vez).
+          O sistema monta a evolução do faturamento, dos tributos a recolher (ICMS próprio, ST, DIFAL, FCP e IPI), dos ajustes da apuração do E111 com destaque para o
+          <b>ICMS antecipado</b> e os benefícios fiscais, e das guias do E116. Depois é só <b>Exportar HTML</b> para enviar ao cliente.</p>
+        </div>
+        <div id="evoPainel" hidden></div>
+      </div>
+
       <!-- Admin (teste): Radar de Oportunidades Fiscais -->
       <div class="view adm-view" id="view-admin-radar" hidden>
         <div class="fiscal-bar adm-bar">
@@ -1121,6 +1154,7 @@
   </div>
 </div>
 
+<script src="evolucao_dash.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

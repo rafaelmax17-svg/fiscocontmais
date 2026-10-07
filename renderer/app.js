@@ -557,6 +557,7 @@ function switchView(name) {
   if (name === 'admin-corrigir-efd') { $('#view-admin-corrigir-efd').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-lmc') { $('#view-admin-lmc').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-audam') { $('#view-admin-audam').hidden = false; $('#empty').hidden = true; return; }
+  if (name === 'admin-evo') { $('#view-admin-evo').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-radar') { $('#view-admin-radar').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-legal') { $('#view-admin-legal').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'historico') { $('#view-historico').hidden = false; $('#empty').hidden = true; loadHistoricoEmpresas(); return; }
@@ -3018,6 +3019,73 @@ function audInit() {
   });
 }
 
+// ------------------------------------------------------------------ Evolução Tributária (Admin)
+const EVO = { sped: [], res: null };
+function evoOpcoes(cliente) {
+  return { escritorio: ($('#evoEscritorio').value || '').trim() || 'Liddera | Inteligência em Negócios',
+    recado: $('#evoRecado').value || '', tecnico: $('#evoTecnico').checked, cliente };
+}
+function evoRender() {
+  const el = $('#evoPainel');
+  if (!EVO.res || !window.EvoDash) { el.hidden = true; return; }
+  window.EvoDash.render(el, EVO.res, evoOpcoes(false));
+  el.hidden = false;
+}
+async function evoHtmlCliente() {
+  const a = await window.fiscocont.admin.evoAssets();
+  if (!a || a.error || !a.css || !a.js) throw new Error((a && a.error) || 'arquivos do painel ausentes.');
+  const css = a.css, js = a.js;
+  const d = EVO.res, e = d.empresa || {}, p = d.periodo || {};
+  const dados = JSON.stringify(d).replace(/</g, '\\u003c');
+  const op = JSON.stringify(evoOpcoes(true)).replace(/</g, '\\u003c');
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Evolução Tributária · ${audEsc(e.nome || '')} · ${audEsc(p.ini_rot || '')} a ${audEsc(p.fim_rot || '')}</title>
+<style>body{margin:0;background:#f4f6fb}.evo-pg{max-width:1180px;margin:0 auto;padding:24px 16px 32px}@page{size:A4;margin:10mm}@media print{body{background:#fff}.evo-pg{padding:0}}
+${css}</style></head><body><div class="evo-pg" id="evo"></div>
+<script>${js}</script>
+<script>EvoDash.render(document.getElementById('evo'), ${dados}, ${op});</script>
+</body></html>`;
+}
+function evoInit() {
+  const adm = window.fiscocont && window.fiscocont.admin;
+  if (!adm || !$('#btnEvoSped')) return;
+  $('#btnEvoSped').addEventListener('click', async () => {
+    const r = await adm.evoPick();
+    if (!r || r.canceled || !r.paths) { if (r && r.error) toast(r.error, true); return; }
+    EVO.sped = r.paths;
+    $('#btnEvoSped').classList.add('ok');
+    const sel = $('#evoSel');
+    sel.hidden = false;
+    sel.innerHTML = `<span><b>${EVO.sped.length}</b> arquivo(s)</span>` + EVO.sped.slice(0, 14).map((p) => `<span>${audEsc(p.split(/[\\/]/).pop())}</span>`).join('') +
+      (EVO.sped.length > 14 ? `<span>+ ${EVO.sped.length - 14}</span>` : '');
+    $('#btnEvoRodar').disabled = false;
+  });
+  $('#btnEvoOpcoes').addEventListener('click', () => { $('#evoOpcoes').hidden = !$('#evoOpcoes').hidden; });
+  ['#evoEscritorio', '#evoRecado', '#evoTecnico'].forEach((id) => $(id).addEventListener('change', () => { if (EVO.res) evoRender(); }));
+  $('#btnEvoRodar').addEventListener('click', async () => {
+    overlay(true, `Lendo ${EVO.sped.length} SPED Fiscal(is)…`);
+    try {
+      const r = await adm.evoAnalisar({ sped: EVO.sped });
+      overlay(false);
+      if (!r || r.error) { toast((r && r.error) || 'Falha na análise.', true); return; }
+      EVO.res = r.res;
+      $('#evoVazio').hidden = true;
+      $('#btnEvoHtml').disabled = false;
+      evoRender();
+    } catch (e) { overlay(false); toast('Falha: ' + e.message, true); }
+  });
+  $('#btnEvoHtml').addEventListener('click', async () => {
+    if (!EVO.res) return;
+    try {
+      const r = await window.fiscocont.fiscal.nfseExportarHtml(await evoHtmlCliente(), 'evolucao', (EVO.res.empresa || {}).nome || '');
+      if (!r || r.canceled) return;
+      if (r.error) { toast(r.error, true); return; }
+      toast('Relatório do cliente exportado.');
+      window.fiscocont.openPath(r.path);
+    } catch (e) { toast('Falha ao exportar: ' + e.message, true); }
+  });
+}
+
 // ------------------------------------------------------------------ Radar
 function radarChave(o) { return `${ADM.radar.res.cliente.cnpj}|${o.tipo}|${o.titulo}`; }
 function radarEstado(o) { return (ADM.radar.status[radarChave(o)] || {}).status || 'nova'; }
@@ -3204,6 +3272,7 @@ async function legalConsultar(cnpj, cache) {
 // ------------------------------------------------------------------ ligações
 function initAdminModulos() {
   audInit();
+  evoInit();
   const adm = window.fiscocont && window.fiscocont.admin;
   if (!adm) return;
   // Radar

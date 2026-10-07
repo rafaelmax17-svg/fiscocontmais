@@ -824,7 +824,7 @@ ipcMain.handle('fiscal:nfseAnalise', async (_evt, { empresaId, dataInicial, data
 });
 
 ipcMain.handle('fiscal:nfseExportarHtml', async (_evt, { html, tipo, empresaNome }) => {
-  const nomeArquivo = { 'efd-contrib': 'Conferencia-EFD-Contribuicoes', 'efd-corrigir': 'Correcao-EFD-Contribuicoes', 'auditoria-am': 'Auditoria-ICMS-AM' }[tipo] || 'Painel-NFSe';
+  const nomeArquivo = { 'efd-contrib': 'Conferencia-EFD-Contribuicoes', 'efd-corrigir': 'Correcao-EFD-Contribuicoes', 'auditoria-am': 'Auditoria-ICMS-AM', 'evolucao': 'Evolucao-Tributaria' }[tipo] || 'Painel-NFSe';
   const save = await dialog.showSaveDialog(mainWindow, {
     title: 'Salvar HTML', defaultPath: `${nomeArquivo}-${(empresaNome || '').replace(/[^\w-]+/g, '_')}.html`,
     filters: [{ name: 'HTML', extensions: ['html'] }],
@@ -1573,6 +1573,94 @@ ipcMain.handle('admin:audAnalisar', async (_evt, { sped }) => {
   const jsonOut = path.join(os.tmpdir(), `fc_audam_${Date.now()}.json`);
   try {
     await runFiscal(['auditoria-icms-am', '--sped', ...sped, '--json', jsonOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    return { ok: true, res };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
+// ---------------------------------------------------------------- Evolução Tributária (Admin)
+// Tabela 5.1.1 (códigos de ajuste do E111) da UF do SPED, baixada do serviço oficial de Tabelas Externas do Sped
+// e guardada no computador (renovada a cada 15 dias). Sem internet, o núcleo usa a cópia embutida (AM e RO)
+// ou a descrição complementar do próprio E111.
+const SPED_TABELAS = 'http://www.sped.fazenda.gov.br/spedtabelas';
+const UF_NOMES = { AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia', CE: 'Ceará', DF: 'Distrito Federal', ES: 'Espírito Santo',
+  GO: 'Goiás', MA: 'Maranhão', MT: 'Mato Grosso', MS: 'Mato Grosso do Sul', MG: 'Minas Gerais', PA: 'Pará', PB: 'Paraíba', PR: 'Paraná',
+  PE: 'Pernambuco', PI: 'Piauí', RJ: 'Rio de Janeiro', RN: 'Rio Grande do Norte', RS: 'Rio Grande do Sul', RO: 'Rondônia', RR: 'Roraima',
+  SC: 'Santa Catarina', SP: 'São Paulo', SE: 'Sergipe', TO: 'Tocantins' };
+function _ufDoSped(arq) {
+  try {
+    const fd = fs.openSync(arq, 'r'); const buf = Buffer.alloc(600); const n = fs.readSync(fd, buf, 0, 600, 0); fs.closeSync(fd);
+    const c = buf.slice(0, n).toString('latin1').split(/\r?\n/)[0].split('|');
+    return c[1] === '0000' ? (c[9] || '').trim() : '';
+  } catch (_) { return ''; }
+}
+async function _getTexto(url, ms) {
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), ms || 15000);
+  try {
+    const resp = await (net && net.fetch ? net.fetch(url, { signal: ctrl.signal }) : fetch(url, { signal: ctrl.signal }));
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const buf = Buffer.from(await resp.arrayBuffer());
+    const u = buf.toString('utf-8');
+    return u.includes('�') ? buf.toString('latin1') : u;
+  } finally { clearTimeout(t); }
+}
+async function _tabelaAjustesUF(uf) {
+  if (!UF_NOMES[uf]) return null;
+  const dir = path.join(app.getPath('userData'), 'tabelas-sped');
+  const arq = path.join(dir, `5.1.1-${uf}.txt`);
+  try { if (Date.now() - fs.statSync(arq).mtimeMs < 15 * 864e5) return arq; } catch (_) {}
+  try {
+    let lista = await _getTexto(`${SPED_TABELAS}/WsConsulta/WsConsulta.asmx/consultarVersoesTabelasExternas?codigoSistema=SpedFiscal`);
+    lista = lista.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+    const partes = lista.split(/desc="(Tabelas d[aoe]s? [^"]+)"/);
+    let alvo = null;
+    for (let k = 1; k < partes.length; k += 2) {
+      const nome = partes[k].replace(/^Tabelas d[aoe]s? /, '').trim();
+      if (nome !== UF_NOMES[uf]) continue;
+      const m = partes[k + 1].match(/<tabela id="(\d+)" tipo="AJ_APUR_DED"[^>]*versao="(\d+)"/);
+      if (m) alvo = { id: m[1], versao: m[2] };
+      break;
+    }
+    if (!alvo) return fs.existsSync(arq) ? arq : null;
+    const txt = await _getTexto(`${SPED_TABELAS}/wsconsulta/obterTabela.ashx?idTabela=${alvo.id}&versao=${alvo.versao}`);
+    if (!/\|/.test(txt)) throw new Error('tabela vazia');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(arq, txt, 'utf-8');
+    return arq;
+  } catch (_) {
+    return fs.existsSync(arq) ? arq : null;   // sem internet: usa a última cópia baixada, se houver
+  }
+}
+
+ipcMain.handle('admin:evoPick', async () => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'Selecione os SPED Fiscais (EFD ICMS/IPI) do período — um por mês, da mesma empresa',
+    properties: ['openFile', 'multiSelections'], filters: [{ name: 'SPED Fiscal', extensions: ['txt'] }] });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  return { paths: r.filePaths };
+});
+
+// Conteúdo do painel (CSS + JS) para embutir no HTML do cliente — lido aqui porque o renderer não pode dar fetch em file://
+ipcMain.handle('admin:evoAssets', async () => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  try {
+    const dir = path.join(__dirname, '..', 'renderer');
+    return { css: fs.readFileSync(path.join(dir, 'evolucao.css'), 'utf-8'), js: fs.readFileSync(path.join(dir, 'evolucao_dash.js'), 'utf-8') };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
+ipcMain.handle('admin:evoAnalisar', async (_evt, { sped }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!sped || !sped.length) return { error: 'Selecione os SPED Fiscais do período.' };
+  const jsonOut = path.join(os.tmpdir(), `fc_evo_${Date.now()}.json`);
+  try {
+    const uf = _ufDoSped(sped[sped.length - 1]);
+    const tabela = uf ? await _tabelaAjustesUF(uf) : null;
+    const args = ['evolucao-tributaria', '--sped', ...sped, '--json', jsonOut];
+    if (tabela) args.push('--tabela', tabela);
+    await runFiscal(args, jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
     fs.unlink(jsonOut, () => {});
     if (res.erro) return { error: res.erro };
