@@ -22,8 +22,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
+          ref: ${{ github.ref }}
           fetch-depth: 0
+
+      # Rodando a mao: se a tag ainda nao existe, cria a partir do commit escolhido (main); se existe, usa a tag.
+      - name: Preparar a tag da versao
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          git fetch --tags --force
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG ja existe; usando o codigo dela."
+            git checkout "refs/tags/$TAG"
+          else
+            echo "Tag $TAG nao existe; criando a partir de $(git rev-parse --short HEAD)."
+            git config user.name "github-actions"
+            git config user.email "github-actions@users.noreply.github.com"
+            git tag "$TAG"
+            git push origin "refs/tags/$TAG"
+          fi
 
       - uses: actions/setup-node@v4
         with:
