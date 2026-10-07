@@ -2729,7 +2729,7 @@ function admContar(el, ate, dinheiro) {
   const t0 = performance.now(), dur = 800;
   function passo(t) {
     const k = Math.min((t - t0) / dur, 1), e = 1 - Math.pow(1 - k, 3);
-    el.textContent = dinheiro ? brl(ate * e) : String(Math.round(ate * e));
+    el.textContent = dinheiro ? brl(ate * e) : Math.round(ate * e).toLocaleString('pt-BR');
     if (k < 1) requestAnimationFrame(passo);
   }
   requestAnimationFrame(passo);
@@ -2738,43 +2738,165 @@ const admMes = (c) => (c && c.length === 7 ? c.slice(5) + '/' + c.slice(0, 4) : 
 const admData = (iso) => (iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '');
 
 // ------------------------------------------------------------------ Auditoria ICMS/AM
-const AUDAM = { sped: [], res: null };
+// Painel em dashboard: resumo (KPIs), gravidade, ranking das verificações, conciliação
+// E110 × C190, cobertura do arquivo e lista filtrável de apontamentos com base legal.
+const AUDAM = { sped: [], res: null, filtro: 'todos', busca: '', aberta: null };
 const audEsc = (x) => String(x == null ? '' : x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const AUD_GRAV = {
+  Alta: { cor: '#dc3856', cls: 'alta' },
+  'Média': { cor: '#e8901c', cls: 'media' },
+  Baixa: { cor: '#7c8db5', cls: 'baixa' },
+};
+const AUD_FAM = { A: 'Com base legal', B: 'Consistência do arquivo' };
+const AUD_COL = {
+  nota: 'Nota', item: 'Item', cod: 'Código', descr: 'Descrição', ncm: 'NCM', cest: 'CEST', cst: 'CST', cfop: 'CFOP',
+  aliq: 'Alíq. %', bc: 'Base', icms: 'ICMS', valor_item: 'Valor item', esperado: 'ICMS esperado', anexo: 'Anexo',
+  segmento: 'Segmento', cest_lista: 'CEST da lista', cest_candidatos: 'CEST possíveis', qtd_candidatos: 'Qtd. possíveis',
+  bc_itens: 'Base itens', bc_c190: 'Base C190', icms_itens: 'ICMS itens', icms_c190: 'ICMS C190',
+};
+const AUD_MOEDA = new Set(['bc', 'icms', 'valor_item', 'esperado', 'bc_itens', 'bc_c190', 'icms_itens', 'icms_c190']);
+const audId = (a) => a.regra + '|' + a.titulo;
+const audNum = (n) => new Intl.NumberFormat('pt-BR').format(n || 0);
+
+function audCel(k, v) {
+  if (Array.isArray(v)) return audEsc(v.join(', '));
+  if (AUD_MOEDA.has(k) && typeof v === 'number') return nf.format(v);
+  if (k === 'aliq' && typeof v === 'number') return nf.format(v);
+  return audEsc(v);
+}
+
+function audExemplos(a) {
+  const ex = a.exemplos || [];
+  if (!ex.length) return '';
+  const cols = [];
+  ex.forEach((e) => Object.keys(e).forEach((k) => { if (!cols.includes(k)) cols.push(k); }));
+  const num = (k) => AUD_MOEDA.has(k) || k === 'aliq' || k === 'qtd_candidatos';
+  const head = cols.map((k) => `<th class="${num(k) ? 'n' : ''}">${audEsc(AUD_COL[k] || k)}</th>`).join('');
+  const rows = ex.map((e) => '<tr>' + cols.map((k) => `<td class="${num(k) ? 'n' : ''}">${e[k] == null || e[k] === '' ? '<span class="aud-vazio">—</span>' : audCel(k, e[k])}</td>`).join('') + '</tr>').join('');
+  return `<div class="aud-sub">Exemplos ${a.qtd > ex.length ? `<span>· ${ex.length} de ${audNum(a.qtd)} ocorrências</span>` : ''}</div>
+    <div class="aud-tabwrap"><table class="aud-tab"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function audDetalhe(a) {
+  const b = a.base_legal;
+  const base = b
+    ? `<div class="adm-lg"><b class="t">Base legal ${b.status === 'lida' ? '<span class="adm-pill ok">lida no texto oficial</span>' : '<span class="adm-pill av">não confirmada</span>'}</b>
+        <b>${audEsc(b.norma)}</b><br>${audEsc(b.resumo)}
+        ${(b.links || []).length ? `<div class="aud-links">${b.links.map((u, i) => `<a href="${audEsc(u)}" target="_blank" rel="noopener">Texto oficial${b.links.length > 1 ? ' ' + (i + 1) : ''} ↗</a>`).join('')}</div>` : ''}
+        ${b.nao_conferido ? `<div class="fn"><b>Não conferido:</b> ${audEsc(b.nao_conferido)}</div>` : ''}</div>`
+    : '<div class="adm-lg aud-semlei"><b class="t">Sem base legal associada</b>Divergência matemática ou estrutural do próprio arquivo. Não afirma infração.</div>';
+  return `<div class="adm-det"><p>${audEsc(a.descricao)}</p>${base}
+    ${a.como_verificar ? `<div class="adm-lg at"><b class="t">Como verificar</b>${audEsc(a.como_verificar)}</div>` : ''}
+    ${audExemplos(a)}</div>`;
+}
+
+function audLista() {
+  const res = AUDAM.res, f = AUDAM.filtro, q = AUDAM.busca.trim().toLowerCase();
+  const L = (res.achados || []).filter((a) =>
+    (f === 'todos' || a.familia === f || a.gravidade === f) &&
+    (!q || (a.titulo + ' ' + a.descricao + ' ' + ((a.base_legal || {}).norma || '')).toLowerCase().includes(q)));
+  if (!L.length) return '<div class="aud-nada">Nenhum apontamento com esse filtro.</div>';
+  return L.map((a, i) => {
+    const g = AUD_GRAV[a.gravidade] || AUD_GRAV.Baixa, id = audId(a);
+    return `<div class="adm-op aud-op ${g.cls}${AUDAM.aberta === id ? ' aberta' : ''}" data-audid="${audEsc(id)}" style="animation:admUp .35s ease both;animation-delay:${Math.min(i, 12) * .04}s">
+      <div class="adm-op-h" data-abrirauda="${audEsc(id)}">
+        <div><b>${audEsc(a.titulo)}</b>
+          <small><span class="aud-sev ${g.cls}">${audEsc(a.gravidade)}</span><span class="adm-pill ${a.familia === 'A' ? 'rx' : 'na'}">${AUD_FAM[a.familia] || a.familia}</span>${a.base_legal ? `<span class="aud-norma">${audEsc(a.base_legal.norma)}</span>` : ''}</small></div>
+        <div class="aud-op-n"><b>${audNum(a.qtd)}</b><span>ocorrência${a.qtd === 1 ? '' : 's'}</span>${a.valor ? `<em>${brl(a.valor)}</em>` : ''}</div>
+      </div>${audDetalhe(a)}</div>`;
+  }).join('');
+}
+
+function audConciliacao(conc) {
+  if (!conc.length) return '';
+  const linhas = conc.map((c, i) => {
+    const max = Math.max(Math.abs(c.e110), Math.abs(c.c190), 0.01);
+    const ok = Math.abs(c.dif) < 0.01;
+    const w = (v) => Math.max(Math.abs(v) / max * 100, v ? 2 : 0).toFixed(1) + '%';
+    return `<div class="aud-conc">
+      <div class="aud-conc-h"><b>${audEsc(c.titulo)}</b>${ok ? '<span class="adm-pill ok">Fecha</span>' : `<span class="adm-pill no">Diferença ${brl(c.dif)}</span>`}</div>
+      <div class="aud-bar"><span>E110</span><div class="tr"><b style="--w:${w(c.e110)};background:var(--adm);animation-delay:${i * .15}s"></b></div><em>${brl(c.e110)}</em></div>
+      <div class="aud-bar"><span>C190</span><div class="tr"><b style="--w:${w(c.c190)};background:#0ea5e9;animation-delay:${i * .15 + .08}s"></b></div><em>${brl(c.c190)}</em></div>
+      ${c.nota ? `<small>${audEsc(c.nota)}</small>` : ''}</div>`;
+  }).join('');
+  return `<div class="adm-card"><h3>Conciliação da apuração · E110 × C190</h3>${linhas}</div>`;
+}
+
 function audRender() {
   const res = AUDAM.res, el = $('#audPainel');
-  if (!res) { el.innerHTML = ''; return; }
-  const cb = res.cobertura || {};
-  const cab = `<div class="adm-card"><b>${audEsc(res.cliente.nome)}</b> · CNPJ ${audEsc(res.cliente.cnpj)} · ${audEsc(res.cliente.uf)} · ${audEsc(res.cliente.periodo)}<br>
-    <span class="muted">Lidos: ${cb.notas || 0} notas, ${cb.itens || 0} itens (C170), ${cb.c190 || 0} resumos (C190), ${cb.itens_cadastrados || 0} produtos cadastrados. Lista de ST (Lei 6.108/2022): ${cb.st_lista || 0} mercadorias.</span></div>`;
-  const av = (res.avisos || []).map((a) => `<div class="adm-aviso">${audEsc(a)}</div>`).join('');
-  const bloco = (fam, titulo, nota) => {
-    const L = (res.achados || []).filter((a) => a.familia === fam);
-    const corpo = L.length ? L.map((a, i) => {
-      const b = a.base_legal;
-      const ex = (a.exemplos || []).slice(0, 8).map((e) => '<li>' + Object.entries(e).map(([k, v]) => `<b>${audEsc(k)}</b> ${audEsc(Array.isArray(v) ? v.join(', ') : v)}`).join(' · ') + '</li>').join('');
-      return `<div class="adm-op"><div class="adm-op-h" data-abrirauda="${fam}${i}"><div><b>${audEsc(a.titulo)}</b></div>
-        <div><span class="adm-tag">${audEsc(a.gravidade)}</span><span class="adm-tag">${a.qtd} ocorrência(s)</span>${a.valor ? `<span class="adm-tag">${brl(a.valor)}</span>` : ''}</div></div>
-        <div class="adm-det"><p>${audEsc(a.descricao)}</p>
-        ${b ? `<p><b>Base legal (${audEsc(b.status === 'lida' ? 'lida no texto oficial' : 'não confirmada')}):</b> ${audEsc(b.norma)}<br>${audEsc(b.resumo)}<br>
-          ${b.links.map((u) => `<a href="${audEsc(u)}" target="_blank" rel="noopener">texto oficial</a>`).join(' · ')}<br>
-          <i>Não conferido:</i> ${audEsc(b.nao_conferido)}</p>` : '<p><i>Sem base legal associada: divergência do próprio arquivo.</i></p>'}
-        ${a.como_verificar ? `<p><b>Como verificar:</b> ${audEsc(a.como_verificar)}</p>` : ''}
-        <ul>${ex}</ul>${a.qtd > 8 ? `<p class="muted">Mostrando 8 de ${a.qtd}.</p>` : ''}</div></div>`;
-    }).join('') : '<p class="muted">Nada encontrado nesta família.</p>';
-    return `<h3 class="adm-h">${titulo}</h3><p class="muted">${nota}</p>${corpo}`;
-  };
-  const conc = (res.conciliacao || []).map((c) => `<tr><td>${audEsc(c.titulo)}</td><td>${brl(c.e110)}</td><td>${brl(c.c190)}</td><td>${brl(c.dif)}</td></tr>`).join('');
-  el.innerHTML = cab + av
-    + bloco('A', 'Com base legal lida no texto oficial', 'Cada item traz o dispositivo, o link oficial e o que NÃO foi conferido.')
-    + bloco('B', 'Consistência do arquivo (sem base legal)', 'Divergências matemáticas ou estruturais do SPED. Não afirmam infração.')
-    + (conc ? `<h3 class="adm-h">Conciliação da apuração (E110 × C190)</h3><table class="adm-tab"><tr><th></th><th>E110</th><th>C190</th><th>Diferença</th></tr>${conc}</table>` : '');
+  if (!res) { el.innerHTML = ''; el.hidden = true; return; }
+  const A = res.achados || [], cb = res.cobertura || {}, cli = res.cliente || {};
+  const tot = A.reduce((s, a) => s + a.qtd, 0);
+  const valor = A.reduce((s, a) => s + (a.valor || 0), 0);
+  const porGrav = { Alta: 0, 'Média': 0, Baixa: 0 };
+  A.forEach((a) => { porGrav[a.gravidade] = (porGrav[a.gravidade] || 0) + a.qtd; });
+  const fam = (k) => A.filter((a) => a.familia === k).reduce((s, a) => s + a.qtd, 0);
+  const famA = fam('A'), famB = fam('B');
+
+  // donut de gravidade
+  const segs = Object.entries(porGrav).filter(([, v]) => v > 0).map(([k, v]) => ({ label: k, value: v, color: AUD_GRAV[k].cor }));
+  const donut = segs.length
+    ? donutSVG(segs, { size: 150, stroke: 22, centerTop: audNum(tot), centerSub: 'OCORRÊNCIAS' })
+    : donutSVG([{ label: '', value: 1, color: '#d9f2e7' }], { size: 150, stroke: 22, centerTop: '0', centerSub: 'OCORRÊNCIAS' });
+  const leg = Object.entries(porGrav).map(([k, v]) =>
+    `<div><span><i style="background:${AUD_GRAV[k].cor}"></i>Gravidade ${k.toLowerCase()}</span><b>${audNum(v)}${tot ? ` <small>${pct(v / tot * 100, 0)}</small>` : ''}</b></div>`).join('');
+
+  // base legal × consistência
+  const fw = (v) => (tot ? Math.max(v / tot * 100, v ? 6 : 0) : 0).toFixed(1) + '%';
+  const famBar = `<div class="aud-split">
+      <div class="aud-split-bar"><b style="width:${fw(famA)};background:var(--adm)"></b><b style="width:${fw(famB)};background:#94a3b8"></b></div>
+      <div class="adm-leg"><div><span><i style="background:var(--adm)"></i>Com base legal</span><b>${audNum(famA)}</b></div>
+      <div><span><i style="background:#94a3b8"></i>Consistência do arquivo</span><b>${audNum(famB)}</b></div></div></div>`;
+
+  // ranking das verificações
+  const maxQ = Math.max(1, ...A.map((a) => a.qtd));
+  const rank = A.slice().sort((x, y) => y.qtd - x.qtd).map((a, i) =>
+    `<div class="aud-rk" data-irpara="${audEsc(audId(a))}" title="Abrir o apontamento"><span>${audEsc(a.titulo)}</span>
+      <div class="tr"><b style="--w:${Math.max(a.qtd / maxQ * 100, 3).toFixed(1)}%;background:${(AUD_GRAV[a.gravidade] || AUD_GRAV.Baixa).cor};animation-delay:${i * .06}s"></b></div>
+      <em>${audNum(a.qtd)}</em></div>`).join('');
+
+  const cobItens = [['Notas', cb.notas], ['Itens (C170)', cb.itens], ['Resumos (C190)', cb.c190], ['Produtos cadastrados', cb.itens_cadastrados], ['Mercadorias na lista de ST', cb.st_lista]];
+  const filtros = [['todos', 'Todos', A.length], ['A', 'Com base legal', A.filter((a) => a.familia === 'A').length], ['B', 'Consistência', A.filter((a) => a.familia === 'B').length],
+    ['Alta', 'Alta', A.filter((a) => a.gravidade === 'Alta').length], ['Média', 'Média', A.filter((a) => a.gravidade === 'Média').length], ['Baixa', 'Baixa', A.filter((a) => a.gravidade === 'Baixa').length]];
+
+  el.innerHTML = `
+    <div class="adm-hero aud-hero"><div>
+      <small class="aud-eyebrow">Auditoria de itens do SPED Fiscal · ICMS/AM</small>
+      <h2>${audEsc(cli.nome || 'Cliente')}</h2>
+      <small>CNPJ ${audEsc(cli.cnpj)} · ${audEsc(cli.uf || '—')} · Período ${audEsc(cli.periodo || '—')}</small></div>
+      <div class="aud-hero-r"><span class="adm-tag">Módulo Admin · teste</span>
+      <span class="aud-status ${porGrav.Alta ? 'alta' : tot ? 'media' : 'ok'}">${porGrav.Alta ? 'Requer atenção' : tot ? 'Pontos a conferir' : 'Sem apontamentos'}</span></div></div>
+    ${(res.avisos || []).length ? `<div class="adm-aviso"><b>Avisos da análise</b><br>${res.avisos.map(audEsc).join('<br>')}</div>` : ''}
+    <div class="adm-kpis">
+      <div class="adm-kpi"><span>Verificações apontadas</span><b id="audK1">0</b></div>
+      <div class="adm-kpi aud-k-alta" style="animation-delay:.06s"><span>Gravidade alta</span><b id="audK2">0</b></div>
+      <div class="adm-kpi laranja" style="animation-delay:.12s"><span>Total de ocorrências</span><b id="audK3">0</b></div>
+      <div class="adm-kpi" style="animation-delay:.18s"><span>Valor envolvido</span><b id="audK4">R$ 0,00</b></div>
+      <div class="adm-kpi verde" style="animation-delay:.24s"><span>Itens analisados</span><b id="audK5">0</b></div></div>
+    <div class="adm-cols">
+      <div class="adm-card"><h3>Ocorrências por gravidade</h3><div class="adm-donut-wrap"><div class="aud-donut">${donut}</div><div class="adm-leg">${leg}</div></div></div>
+      <div class="adm-card"><h3>Natureza dos apontamentos</h3>${famBar}
+        <div class="aud-cob">${cobItens.map(([k, v]) => `<div><b>${audNum(v)}</b><span>${k}</span></div>`).join('')}</div></div></div>
+    ${A.length ? `<div class="adm-card"><h3>Ranking das verificações <span class="aud-h-sub">· clique para abrir o apontamento</span></h3><div class="aud-rank">${rank}</div></div>` : ''}
+    ${audConciliacao(res.conciliacao || [])}
+    <div class="adm-card"><div class="aud-lista-h"><h3>Apontamentos</h3>
+      <input class="adm-input aud-busca" id="audBusca" placeholder="Buscar por título, descrição ou norma…" value="${audEsc(AUDAM.busca)}"></div>
+      <div class="adm-chips" style="margin-bottom:8px">${filtros.map(([k, t, n]) => `<span class="adm-chip${AUDAM.filtro === k ? ' on' : ''}" data-audfiltro="${audEsc(k)}">${t} <b>${n}</b></span>`).join('')}</div>
+      <div id="audLista">${audLista()}</div></div>
+    <div class="adm-rodape">Hipóteses para o contador conferir. As verificações com base legal citam o dispositivo lido no texto oficial; as de consistência apontam divergências do próprio arquivo e não afirmam infração.</div>`;
+  el.hidden = false;
+  animateArcs(el);
+  admContar($('#audK1'), A.length, false); admContar($('#audK2'), porGrav.Alta, false); admContar($('#audK3'), tot, false);
+  admContar($('#audK4'), valor, true); admContar($('#audK5'), cb.itens || 0, false);
 }
+
 function audSelecao() {
   const el = $('#audSel');
   el.hidden = !AUDAM.sped.length;
   el.innerHTML = AUDAM.sped.map((p) => `<span>SPED · ${audEsc(p.split(/[\\/]/).pop())}</span>`).join('');
   $('#btnAudRodar').disabled = !AUDAM.sped.length;
 }
+
 function audInit() {
   const adm = window.fiscocont && window.fiscocont.admin;
   if (!adm || !$('#btnAudSped')) return;
@@ -2789,12 +2911,40 @@ function audInit() {
       const r = await adm.audAnalisar({ sped: AUDAM.sped });
       overlay(false);
       if (!r || r.error) { toast((r && r.error) || 'Falha na auditoria.', true); return; }
-      AUDAM.res = r.res; $('#audVazio').hidden = true; audRender();
+      Object.assign(AUDAM, { res: r.res, filtro: 'todos', busca: '', aberta: null });
+      $('#audVazio').hidden = true; audRender();
     } catch (e) { overlay(false); toast('Falha: ' + e.message, true); }
   });
-  $('#audPainel').addEventListener('click', (ev) => {
+  const painel = $('#audPainel');
+  painel.addEventListener('click', (ev) => {
     const h = ev.target.closest('[data-abrirauda]');
-    if (h) h.parentElement.classList.toggle('aberta');
+    if (h) {
+      const id = h.dataset.abrirauda;
+      AUDAM.aberta = AUDAM.aberta === id ? null : id;
+      $$('.aud-op', painel).forEach((o) => o.classList.toggle('aberta', o.dataset.audid === AUDAM.aberta));
+      return;
+    }
+    const fl = ev.target.closest('[data-audfiltro]');
+    if (fl) {
+      AUDAM.filtro = fl.dataset.audfiltro;
+      $$('[data-audfiltro]', painel).forEach((c) => c.classList.toggle('on', c === fl));
+      $('#audLista').innerHTML = audLista();
+      return;
+    }
+    const rk = ev.target.closest('[data-irpara]');
+    if (rk) {
+      AUDAM.filtro = 'todos'; AUDAM.busca = ''; AUDAM.aberta = rk.dataset.irpara;
+      $$('[data-audfiltro]', painel).forEach((c) => c.classList.toggle('on', c.dataset.audfiltro === 'todos'));
+      $('#audBusca').value = '';
+      $('#audLista').innerHTML = audLista();
+      const alvo = $$('.aud-op', painel).find((o) => o.dataset.audid === AUDAM.aberta);
+      if (alvo) alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+  painel.addEventListener('input', (ev) => {
+    if (ev.target.id !== 'audBusca') return;
+    AUDAM.busca = ev.target.value;
+    $('#audLista').innerHTML = audLista();
   });
 }
 
