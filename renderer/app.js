@@ -791,7 +791,7 @@ function bindFiscal() {
       const pick = await window.fiscocont.fiscal.pickXmlsFolder();
       if (pick.canceled || !pick.path) return;
       FISCAL.confsXmls = pick.path;
-      overlay(true, 'Cruzando XMLs de saída com o SPED… (com milhares de arquivos, pode levar alguns minutos — o antivírus do Windows escaneando cada um conta mais que o processamento em si)');
+      overlay(true, 'Cruzando XMLs de saída com o SPED… (com dezenas de milhares de notas leva alguns segundos)');
       const res = await window.fiscocont.fiscal.conferenciaSaidas(FISCAL.confsSped, pick.path);
       overlay(false);
       if (res.error) { toast(res.error, true); return; }

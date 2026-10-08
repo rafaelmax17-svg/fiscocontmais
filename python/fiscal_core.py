@@ -29,6 +29,9 @@ def _nome_exibicao(path):
     return os.path.basename(path)
 
 
+_ZIPS_ABERTOS = {}   # caminho do .zip -> ZipFile já aberto (ver _read_text)
+
+
 def _read_text(path):
     # Se o caminho aponta pra dentro de um .zip (marcado com "::", ver
     # `coletar_xmls`), lê direto da memória sem nunca extrair o XML pro
@@ -36,8 +39,13 @@ def _read_text(path):
     # solto, que era o gargalo real em volumes grandes.
     if '::' in path:
         caminho_zip, nome_interno = path.split('::', 1)
-        with zipfile.ZipFile(caminho_zip) as z:
-            raw = z.read(nome_interno)
+        # O .zip fica ABERTO e é reaproveitado: reabrir a cada XML relia o índice inteiro do zip
+        # (dezenas de milhares de entradas) uma vez por nota — custo quadrático que fazia zips
+        # grandes (> ~50 MB, 25 mil+ notas) passarem de 45 min e estourarem o tempo limite.
+        z = _ZIPS_ABERTOS.get(caminho_zip)
+        if z is None:
+            z = _ZIPS_ABERTOS[caminho_zip] = zipfile.ZipFile(caminho_zip)
+        raw = z.read(nome_interno)
     else:
         raw = open(path, 'rb').read()
     for enc in ('utf-8-sig', 'utf-8', 'latin-1'):
@@ -2714,8 +2722,13 @@ def parse_pgdas_extrato(pdf_path):
 
 
 def _out(path, content):
-    with open(path, 'w', encoding='utf-8') as fh:
+    # Grava num temporário e renomeia: o Electron dá o processamento por concluído assim que o
+    # arquivo de saída existe com conteúdo, e encerra o núcleo nessa hora. Com relatórios grandes,
+    # gravar direto no destino deixava o arquivo pela metade (tela em branco / relatório cortado).
+    tmp = path + '.parcial'
+    with open(tmp, 'w', encoding='utf-8') as fh:
         fh.write(content)
+    os.replace(tmp, path)
 
 def main(argv):
     if len(argv) < 1:
