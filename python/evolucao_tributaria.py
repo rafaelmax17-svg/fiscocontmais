@@ -303,7 +303,14 @@ def analisar(caminhos, tabela_externa=None):
             'difal': _r(difal), 'fcp': _r(fcp), 'difal_por_uf': {k: _r(v['difal'] + v['deb_esp_difal']) for k, v in m['difal'].items()},
             'ipi': _r(ipi), 'total_icms': _r(total_icms), 'total_recolher': _r(total_icms + ipi),
             'carga': round(total_icms / liquido * 100, 2) if liquido > 0 else None,
-            'antecipado': {'deb_esp': _r(ant_deb_esp), 'creditos': _r(ant_cred), 'outros': _r(ant_outros)},
+            # Total do antecipado do mês, em um dos dois modelos de escrituração (sem somar o mesmo imposto 2x):
+            #  • recolhido NA apuração como débito especial (E111 natureza 5, ex.: AM050002) — o crédito que
+            #    aparece depois (ex.: AM020003) é a recuperação desse mesmo imposto, então não soma de novo;
+            #  • pago em guia própria FORA da apuração e só aproveitado como crédito (natureza 2/4, ex.: RO020003)
+            #    — aqui o crédito É o valor do antecipado pago.
+            'antecipado': {'deb_esp': _r(ant_deb_esp), 'creditos': _r(ant_cred), 'outros': _r(ant_outros),
+                           'total': _r(ant_deb_esp if ant_deb_esp > 0 else ant_cred),
+                           'modelo': 'debito_especial' if ant_deb_esp > 0 else ('credito' if ant_cred > 0 else '')},
             'beneficios': _r(benef),
             'ajustes': ajustes, 'obrigacoes': obrig,
             'e116_soma': _r(e116), 'e116_confere': (not m['obrig']) or abs(e116 - icms_prop) < 0.05,
@@ -339,6 +346,9 @@ def analisar(caminhos, tabela_externa=None):
         'deducoes': _r(sum(x['apur']['deducoes'] for x in meses)),
         'antecipado_deb_esp': _r(sum(x['antecipado']['deb_esp'] for x in meses)),
         'antecipado_creditos': _r(sum(x['antecipado']['creditos'] for x in meses)),
+        'antecipado_total': _r(sum(x['antecipado']['total'] for x in meses)),
+        'antecipado_modelo': ('misto' if len({x['antecipado']['modelo'] for x in meses if x['antecipado']['modelo']}) > 1
+                              else next((x['antecipado']['modelo'] for x in meses if x['antecipado']['modelo']), '')),
         'beneficios': soma('beneficios'),
         'sld_credor_inicial': meses[0]['apur']['sld_ant'], 'sld_credor_final': meses[-1]['sld_credor'],
     }

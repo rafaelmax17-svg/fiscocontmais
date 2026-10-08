@@ -198,19 +198,30 @@
     return '<em class="evo-var ' + c + '">' + (p > 0 ? '▲ ' : p < 0 ? '▼ ' : '') + pct(Math.abs(p), 1) + '</em>';
   }
 
+  function subAntecipado(t) {
+    if (!t.antecipado_total) return 'sem antecipação no período';
+    if (t.antecipado_modelo === 'credito') return 'pago em guia própria e creditado na apuração';
+    if (t.antecipado_modelo === 'debito_especial')
+      return 'recolhido na apuração (débito especial)' + (t.antecipado_creditos > 0 ? ' · crédito aproveitado: ' + brl(t.antecipado_creditos) : '');
+    return 'débito especial ' + brl(t.antecipado_deb_esp) + ' · creditado ' + brl(t.antecipado_creditos);
+  }
+
   /* ---------------- textos (frases fixas preenchidas com os números) */
   function resumo(d) {
     var t = d.totais, v = d.variacao, p = d.periodo, f = [];
     f.push('Entre ' + p.ini_rot + ' e ' + p.fim_rot + ' (' + p.meses + (p.meses === 1 ? ' mês' : ' meses') + '), o faturamento líquido somou <b>' + brl(t.liquido) +
       '</b>, com média de <b>' + brl(t.media_fat) + '</b> por mês.');
     if (v && v.pct != null)
-      f.push('Comparando a média dos ' + v.meses_base + (v.meses_base === 1 ? ' primeiro mês' : ' primeiros meses') + ' com a dos ' + v.meses_base +
-        (v.meses_base === 1 ? ' último' : ' últimos') + ', o faturamento ' + (v.pct >= 0.5 ? 'cresceu <b>' + pct(v.pct, 1) + '</b>' : v.pct <= -0.5 ? 'recuou <b>' + pct(-v.pct, 1) + '</b>' : 'ficou estável') +
+      f.push((v.meses_base === 1 ? 'Comparando o primeiro mês com o último' : 'Comparando a média dos ' + v.meses_base + ' primeiros meses com a dos ' + v.meses_base + ' últimos') +
+        ', o faturamento ' + (v.pct >= 0.5 ? 'cresceu <b>' + pct(v.pct, 1) + '</b>' : v.pct <= -0.5 ? 'recuou <b>' + pct(-v.pct, 1) + '</b>' : 'ficou estável') +
         (v.trib_pct != null ? ' e os tributos a recolher ' + (v.trib_pct >= 0.5 ? 'subiram <b>' + pct(v.trib_pct, 1) + '</b>' : v.trib_pct <= -0.5 ? 'caíram <b>' + pct(-v.trib_pct, 1) + '</b>' : 'ficaram estáveis') : '') + '.');
     f.push('O total a recolher no período foi de <b>' + brl(t.total_recolher) + '</b>' + (t.carga != null ? ', o que representa uma carga efetiva de ICMS de <b>' + pct(t.carga) + '</b> sobre o faturamento líquido' : '') + '.');
-    if (t.antecipado_deb_esp > 0 || t.antecipado_creditos > 0)
-      f.push('O ICMS antecipado ' + (t.antecipado_deb_esp > 0 ? 'recolhido fora da apuração somou <b>' + brl(t.antecipado_deb_esp) + '</b>' : '') +
-        (t.antecipado_deb_esp > 0 && t.antecipado_creditos > 0 ? ', e ' : '') + (t.antecipado_creditos > 0 ? 'o crédito de antecipação aproveitado na apuração foi de <b>' + brl(t.antecipado_creditos) + '</b>' : '') + '.');
+    if (t.antecipado_total > 0)
+      f.push('O ICMS antecipado somou <b>' + brl(t.antecipado_total) + '</b> no período' +
+        (t.antecipado_modelo === 'credito' ? ', pago em guias próprias e aproveitado como crédito na apuração'
+          : t.antecipado_modelo === 'debito_especial' ? ', recolhido junto à apuração como débito especial' +
+            (t.antecipado_creditos > 0 ? ' (com <b>' + brl(t.antecipado_creditos) + '</b> aproveitados como crédito)' : '')
+          : '') + '.');
     if (t.beneficios > 0) f.push('Os benefícios fiscais lançados na apuração (créditos presumidos, crédito estímulo e similares) reduziram o imposto em <b>' + brl(t.beneficios) + '</b>.');
     if (t.sld_credor_final > 0) f.push('A empresa encerrou o período com saldo credor de ICMS de <b>' + brl(t.sld_credor_final) + '</b> para os meses seguintes.');
     f.push('O mês de maior faturamento foi <b>' + esc(d.destaques.melhor_mes) + '</b> (' + brl(d.destaques.melhor_valor) + ').');
@@ -252,8 +263,7 @@
       kpi('Faturamento Médio Mensal', brl(t.media_fat), v.pct != null ? 'tendência ' + variacao(v.pct) : '') +
       kpi('Total a Recolher', brl(t.total_recolher), 'média de ' + brl(t.media_recolher) + '/mês' + (v.trib_pct != null ? ' · ' + variacao(v.trib_pct) : ''), 'k-trib') +
       kpi('Carga Efetiva de ICMS', pct(t.carga), 'ICMS, ST, DIFAL e FCP ÷ faturamento líquido', 'k-carga') +
-      kpi('ICMS Antecipado', brl(t.antecipado_deb_esp),
-        t.antecipado_creditos > 0 ? 'crédito aproveitado: ' + brl(t.antecipado_creditos) : 'recolhido fora da apuração', 'k-ant') +
+      kpi('ICMS Antecipado', brl(t.antecipado_total), subAntecipado(t), 'k-ant') +
       (t.beneficios > 0 ? kpi('Benefícios Fiscais', brl(t.beneficios), 'redução do imposto no período', 'k-ben')
         : kpi('Saldo Credor Final', brl(t.sld_credor_final), 'disponível para os próximos meses', 'k-ben')) +
       '</div>');
@@ -297,15 +307,19 @@
       ]) + leg([{ label: 'Vendas', cor: COR.fat }, { label: 'Compras', cor: COR.compras }])));
 
     // antecipado
-    var temAnt = t.antecipado_deb_esp > 0 || t.antecipado_creditos > 0;
+    var temAnt = t.antecipado_total > 0 || t.antecipado_creditos > 0;
     if (temAnt) {
       var ajAnt = (d.ajustes || []).filter(function (a) { return a.antecipado; });
-      h.push(card('ICMS antecipado', 'Valores lançados nos ajustes da apuração (E111) cujo código oficial ou descrição indica antecipação: o que foi recolhido à parte (débito especial) e o crédito aproveitado na apuração.',
-        barrasAgrupadas(M, [
-          { label: 'Antecipado recolhido (débito especial)', cor: COR.ant_rec, valores: mm(function (m) { return m.antecipado.deb_esp; }) },
-          { label: 'Crédito de antecipação aproveitado', cor: COR.ant_cred, valores: mm(function (m) { return m.antecipado.creditos; }) },
-        ]) + leg([{ label: 'Antecipado recolhido (débito especial)', cor: COR.ant_rec }, { label: 'Crédito de antecipação aproveitado', cor: COR.ant_cred }]) +
-        tabelaAjustes(ajAnt, M, true), 'evo-ant'));
+      var serAnt = [];
+      if (t.antecipado_deb_esp > 0) serAnt.push({ label: 'Antecipado recolhido na apuração (débito especial)', cor: COR.ant_rec, valores: mm(function (m) { return m.antecipado.deb_esp; }) });
+      if (t.antecipado_creditos > 0) serAnt.push({ label: t.antecipado_deb_esp > 0 ? 'Crédito de antecipação aproveitado' : 'Antecipado pago em guia e creditado na apuração',
+        cor: COR.ant_cred, valores: mm(function (m) { return m.antecipado.creditos; }) });
+      h.push(card('ICMS antecipado · ' + brl(t.antecipado_total) + ' no período',
+        'Ajustes da apuração (E111) cujo código oficial ou descrição indica antecipação. ' +
+        (t.antecipado_modelo === 'credito' ? 'Nesta empresa o antecipado é pago em guia própria, fora da apuração, e aproveitado como crédito: o valor creditado é o antecipado do mês.'
+          : t.antecipado_modelo === 'debito_especial' ? 'Nesta empresa o antecipado é recolhido junto à apuração como débito especial; o crédito, quando há, é a recuperação desse mesmo imposto e não é somado de novo.'
+          : 'Há meses recolhidos como débito especial e meses pagos em guia própria e creditados; o total usa, mês a mês, o modelo de cada um.'),
+        barrasAgrupadas(M, serAnt) + leg(serAnt) + tabelaAjustes(ajAnt, M, true), 'evo-ant'));
     }
 
     // cascata com seletor de mês
@@ -401,7 +415,7 @@
       ['ICMS-ST', 'Campos VL_ICMS_RECOL_ST + DEB_ESP_ST do registro E210, somados para todas as UFs do E200.'],
       ['DIFAL e FCP', 'Campos VL_RECOL_DIFAL + DEB_ESP_DIFAL e VL_RECOL_FCP + DEB_ESP_FCP do registro E310.'],
       ['IPI', 'Campo VL_SD_IPI (saldo devedor) do registro E520.'],
-      ['ICMS antecipado', 'Ajustes E111 cuja descrição oficial (Tabela 5.1.1 da UF) ou descrição complementar indica antecipação: natureza 5 = recolhido à parte; naturezas 2 e 4 = crédito aproveitado.'],
+      ['ICMS antecipado', 'Ajustes E111 cuja descrição oficial (Tabela 5.1.1 da UF) ou descrição complementar indica antecipação. Total do mês: o débito especial de antecipação (natureza 5), quando a empresa recolhe junto à apuração; ou o crédito de antecipação (naturezas 2 e 4), quando paga em guia própria e credita depois. O mesmo imposto nunca é somado duas vezes.'],
       ['Benefícios fiscais', 'Ajustes que reduzem o imposto (naturezas 2, 3 e 4) identificados como crédito presumido, crédito estímulo ou incentivo, ou marcados no campo IND_BENEFICIO.'],
       ['Carga efetiva', '(ICMS próprio + débitos especiais + ST + DIFAL + FCP) ÷ faturamento líquido do mês. O IPI não entra nesta conta.'],
     ];
