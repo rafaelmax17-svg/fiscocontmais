@@ -61,8 +61,9 @@ def _r(v):
 
 # ------------------------------------------------------------------ CFOP (Ajuste SINIEF 07/01)
 def classifica_cfop(cfop):
-    """Devolve (sentido, grupo). Grupos de saída: venda, transferencia, devol_compra, remessa, outras.
-    Grupos de entrada: compra, uso_ativo, devol_venda, transferencia, outras."""
+    """Devolve (sentido, grupo) pela tabela CFOP do Convênio s/nº de 1970 (Ajuste SINIEF 07/01).
+    Saída:   venda, transferencia, devol_compra, devol_frete, outras.
+    Entrada: compra, frete, energia_com, uso_ativo, devol_venda, transferencia, outras."""
     c = re.sub(r'\D', '', cfop or '')
     if len(c) != 4:
         return ('?', 'outras')
@@ -71,19 +72,25 @@ def classifica_cfop(cfop):
         if 101 <= r <= 127 or 251 <= r <= 258 or 301 <= r <= 307 or 351 <= r <= 360 or r in (401, 402, 403, 405) \
                 or 651 <= r <= 656 or r == 667 or (d == '7' and r == 501):
             return ('saida', 'venda')
-        if 151 <= r <= 159 or r in (408, 409) or r in (658, 659) or r == 552 or r == 557:
+        if 151 <= r <= 159 or r in (208, 209, 408, 409) or r in (658, 659) or r == 552 or r == 557:
             return ('saida', 'transferencia')
-        if 201 <= r <= 213 or 410 <= r <= 413 or 660 <= r <= 662 or r in (553, 556):
+        if r in (201, 202, 210, 410, 411, 660, 661):      # devolução de compra para industrialização/comercialização
             return ('saida', 'devol_compra')
+        if r == 206:                                       # anulação de valor relativo a aquisição de serviço de transporte
+            return ('saida', 'devol_frete')
         return ('saida', 'outras')
     if d in '123':
         if 201 <= r <= 209 or r in (410, 411) or 660 <= r <= 662 or (d == '3' and r in (201, 202, 211)):
             return ('entrada', 'devol_venda')
-        if 101 <= r <= 128 or r in (401, 403, 408) or 651 <= r <= 652 or 251 <= r <= 257 or 301 <= r <= 307 or 351 <= r <= 360:
+        if 351 <= r <= 360 or r in (931, 932):            # aquisição de serviço de transporte (frete contratado)
+            return ('entrada', 'frete')
+        if 101 <= r <= 128 or r in (401, 403, 651, 652):  # compra para industrialização / comercialização
             return ('entrada', 'compra')
+        if 251 <= r <= 257 or 301 <= r <= 307:            # energia elétrica e serviço de comunicação
+            return ('entrada', 'energia_com')
         if 551 <= r <= 557 or r in (406, 407, 653):
             return ('entrada', 'uso_ativo')
-        if 151 <= r <= 159 or r in (409,) or r in (658, 659):
+        if 151 <= r <= 159 or r in (408, 409) or r in (658, 659):
             return ('entrada', 'transferencia')
         return ('entrada', 'outras')
     return ('?', 'outras')
@@ -104,6 +111,7 @@ def ler_sped(path):
     L = _linhas(path)
     m = {'arquivo': os.path.basename(path), 'cab': {}, 'fat': defaultdict(float), 'ent': defaultdict(float),
          'icms_saidas': 0.0, 'icms_entradas': 0.0, 'icms_st_saidas': 0.0, 'ipi_saidas': 0.0,
+         'icms_ent': defaultdict(float), 'icms_sai': defaultdict(float), 'compra_orig': defaultdict(float),
          'cfop_saida': defaultdict(float), 'cfop_entrada': defaultdict(float),
          'e110': None, 'ajustes': [], 'obrig': [], 'st': {}, 'difal': {}, 'e520': None, 'qtd': defaultdict(int)}
     sit = ''
@@ -138,6 +146,7 @@ def ler_sped(path):
                     if cfop[1:] in ('401', '402', '403', '405'):
                         m['fat']['venda_st'] += vl_opr
                 m['icms_saidas'] += vl_icms
+                m['icms_sai'][grupo] += vl_icms
                 if r == 'C190' and len(c) > 11:
                     m['icms_st_saidas'] += _n(c[9])
                     m['ipi_saidas'] += _n(c[11])
@@ -145,6 +154,9 @@ def ler_sped(path):
                 m['ent'][grupo] += vl_opr
                 m['cfop_entrada'][cfop] += vl_opr
                 m['icms_entradas'] += vl_icms
+                m['icms_ent'][grupo] += vl_icms
+                if grupo == 'compra':
+                    m['compra_orig'][cfop[0]] += vl_opr
             continue
         if r == 'E110' and len(c) > 15:
             m['e110'] = {k: _n(c[i]) for i, k in enumerate(
@@ -171,6 +183,20 @@ def ler_sped(path):
         elif r == 'E520' and len(c) > 8:
             m['e520'] = {'deb': _n(c[3]), 'cred': _n(c[4]), 'recolher': _n(c[8]), 'sld_transp': _n(c[7])}
     return m
+
+
+def _aquisicoes(m):
+    """Compras (revenda/industrialização) e fretes contratados, separados e líquidos das devoluções/anulações."""
+    comp, dev = m['ent']['compra'], m['fat']['devol_compra']
+    fre, dev_f = m['ent']['frete'], m['fat']['devol_frete']
+    liq_c, liq_f = comp - dev, fre - dev_f
+    icms_c = m['icms_ent']['compra'] - m['icms_sai']['devol_compra']
+    icms_f = m['icms_ent']['frete'] - m['icms_sai']['devol_frete']
+    o = m['compra_orig']
+    return {'compras': _r(comp), 'devol_compras': _r(dev), 'compras_liquidas': _r(liq_c),
+            'internas': _r(o['1']), 'interestaduais': _r(o['2']), 'importacao': _r(o['3']),
+            'icms_compras': _r(icms_c), 'fretes': _r(fre), 'anul_fretes': _r(dev_f), 'fretes_liquidos': _r(liq_f),
+            'icms_fretes': _r(icms_f), 'frete_pct': round(liq_f / liq_c * 100, 2) if liq_c > 0 else None}
 
 
 # ------------------------------------------------------------------ tabela de ajustes
@@ -293,6 +319,7 @@ def analisar(caminhos, tabela_externa=None):
                     'interna': _r(f['venda_interna']), 'interestadual': _r(f['venda_interestadual']), 'exterior': _r(f['venda_exterior']),
                     'com_st': _r(f['venda_st']), 'transferencias': _r(f['transferencia']), 'devol_compra': _r(f['devol_compra']),
                     'outras_saidas': _r(f['outras']), 'total_saidas': _r(sum(v for k, v in f.items() if not k.startswith('venda_')))},
+            'aq': _aquisicoes(m),
             'ent': {'compras': _r(m['ent']['compra']), 'uso_ativo': _r(m['ent']['uso_ativo']), 'devol_venda': _r(devol),
                     'transferencias': _r(m['ent']['transferencia']), 'outras': _r(m['ent']['outras']),
                     'total': _r(sum(m['ent'].values()))},
@@ -351,8 +378,15 @@ def analisar(caminhos, tabela_externa=None):
                               else next((x['antecipado']['modelo'] for x in meses if x['antecipado']['modelo']), '')),
         'beneficios': soma('beneficios'),
         'sld_credor_inicial': meses[0]['apur']['sld_ant'], 'sld_credor_final': meses[-1]['sld_credor'],
+        'aq': {k: _r(sum(x['aq'][k] for x in meses)) for k in ('compras', 'devol_compras', 'compras_liquidas', 'internas', 'interestaduais',
+                                                                 'importacao', 'icms_compras', 'fretes', 'anul_fretes', 'fretes_liquidos', 'icms_fretes')},
     }
     tot['carga'] = round(tot['total_icms'] / tot['liquido'] * 100, 2) if tot['liquido'] > 0 else None
+    aq = tot['aq']
+    aq['frete_pct'] = round(aq['fretes_liquidos'] / aq['compras_liquidas'] * 100, 2) if aq['compras_liquidas'] > 0 else None
+    aq['media_compras'] = _r(aq['compras_liquidas'] / len(meses))
+    aq['media_fretes'] = _r(aq['fretes_liquidos'] / len(meses))
+    aq['compras_sobre_fat'] = round(aq['compras_liquidas'] / tot['liquido'] * 100, 1) if tot['liquido'] > 0 else None
     tot['media_fat'] = _r(tot['liquido'] / len(meses))
     tot['media_recolher'] = _r(tot['total_recolher'] / len(meses))
     # variação: média do último terço vs. primeiro terço (quando há pelo menos 2 meses)

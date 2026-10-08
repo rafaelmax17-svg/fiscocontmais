@@ -3023,7 +3023,7 @@ function audInit() {
 const EVO = { sped: [], res: null };
 function evoOpcoes(cliente) {
   return { escritorio: ($('#evoEscritorio').value || '').trim() || 'Liddera | Inteligência em Negócios',
-    recado: $('#evoRecado').value || '', tecnico: $('#evoTecnico').checked, cliente };
+    recado: $('#evoRecado').value || '', cliente };
 }
 function evoRender() {
   const el = $('#evoPainel');
@@ -3061,7 +3061,7 @@ function evoInit() {
     $('#btnEvoRodar').disabled = false;
   });
   $('#btnEvoOpcoes').addEventListener('click', () => { $('#evoOpcoes').hidden = !$('#evoOpcoes').hidden; });
-  ['#evoEscritorio', '#evoRecado', '#evoTecnico'].forEach((id) => $(id).addEventListener('change', () => { if (EVO.res) evoRender(); }));
+  ['#evoEscritorio', '#evoRecado'].forEach((id) => $(id).addEventListener('change', () => { if (EVO.res) evoRender(); }));
   $('#btnEvoRodar').addEventListener('click', async () => {
     overlay(true, `Lendo ${EVO.sped.length} SPED Fiscal(is)…`);
     try {

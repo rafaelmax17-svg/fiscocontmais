@@ -79,8 +79,17 @@
 .evo-tip div.s{color:var(--e-ink2);font-size:11.5px}.evo-tip div.s span{font-weight:600}
 .evo-tip div.t{border-top:1px solid var(--e-line);margin-top:3px;padding-top:4px}
 .evo-tip i{width:9px;height:9px;border-radius:2px;flex:none}
+/* aquisições */
+.evo-minis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:4px 0 14px}
+.evo-mini{background:var(--e-bg);border-radius:12px;padding:10px 12px}
+.evo-mini span{display:block;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--e-ink2)}
+.evo-mini b{display:block;font-size:18px;margin-top:2px;font-variant-numeric:tabular-nums}
+.evo-mini small{display:block;font-size:11px;color:var(--e-ink2);margin-top:2px}
+.evo-aq-h{font-size:12.5px;font-weight:700;color:var(--e-navy);margin:12px 0 2px}
+.evo-nota{font-size:11.5px;color:var(--e-ink3);margin:8px 0 0;line-height:1.5}
+.evo-card h3 .evo-so-app{font-size:11.5px;font-weight:400;color:var(--e-ink3)}
 @keyframes evoUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @keyframes evoGrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 @keyframes evoFade{from{opacity:0}to{opacity:1}}
-@media (max-width:1000px){.evo-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.evo-duo{grid-template-columns:1fr}.evo-gl{grid-template-columns:1fr}}
+@media (max-width:1000px){.evo-minis{grid-template-columns:repeat(2,minmax(0,1fr))}.evo-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.evo-duo{grid-template-columns:1fr}.evo-gl{grid-template-columns:1fr}}
 @media print{.evo-card,.evo-kpi,.evo-resumo,.evo-hero,.evo-recado{box-shadow:none!important;break-inside:avoid}.evo *{animation:none!important}.evo-tw{max-height:none;overflow:visible}.evo-tip,.evo-sel select{display:none}}

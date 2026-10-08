@@ -1,24 +1,25 @@
 /* Evolução Tributária e de Faturamento — painel de gráficos.
  * Arquivo autônomo (sem dependência do app): o mesmo código desenha a tela do sistema
  * e vai embutido no HTML enviado ao cliente, por isso tudo aqui é JS puro + SVG.
- * Uso: EvoDash.render(elemento, dados, { escritorio, recado, tecnico, cliente })
+ * Uso: EvoDash.render(elemento, dados, { escritorio, recado, cliente })
+ * cliente=true: versão enviada ao cliente — sem avisos internos, sem nomes de registros do SPED e sem o quadro técnico.
  */
 (function (g) {
   'use strict';
   var COR = {
-    fat: '#4a3aa7', dev: '#c3c8d6', compras: '#8a93a8',
+    fat: '#4a3aa7', dev: '#c3c8d6', compras: '#8a93a8', aq_int: '#2a78d6', aq_est: '#eb6834', aq_imp: '#1baf7a', frete: '#4a3aa7',
     icms: '#2a78d6', deb_esp: '#eb6834', st: '#1baf7a', difal: '#eda100', fcp: '#e87ba4', ipi: '#008300',
     carga: '#1f2a5a', ant_rec: '#eb6834', ant_cred: '#2a78d6',
   };
   var NF = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   function brl(v) { return (v < 0 ? '-R$ ' : 'R$ ') + NF.format(Math.abs(v || 0)); }
-  function pct(v, d) { return v == null ? '—' : new Intl.NumberFormat('pt-BR', { minimumFractionDigits: d == null ? 2 : d, maximumFractionDigits: d == null ? 2 : d }).format(v) + '%'; }
+  function pct(v, d) { if (v != null && Math.abs(v) < 0.005) v = 0; return v == null ? '—' : new Intl.NumberFormat('pt-BR', { minimumFractionDigits: d == null ? 2 : d, maximumFractionDigits: d == null ? 2 : d }).format(v) + '%'; }
   function compacto(v) {
     var a = Math.abs(v || 0), s = v < 0 ? '-' : '';
     if (a >= 1e9) return s + 'R$ ' + (a / 1e9).toFixed(1).replace('.', ',') + ' bi';
     if (a >= 1e6) return s + 'R$ ' + (a / 1e6).toFixed(1).replace('.', ',') + ' mi';
     if (a >= 1e4) return s + 'R$ ' + Math.round(a / 1e3) + ' mil';
-    if (a >= 1e3) return s + 'R$ ' + (Math.round(a / 100) / 10).toString().replace('.', ',') + ' mil';
+    if (a >= 1e3) return s + 'R$ ' + (Math.round(a / 10) / 100).toString().replace('.', ',') + ' mil';
     return s + 'R$ ' + Math.round(a);
   }
   function esc(x) { return String(x == null ? '' : x).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -32,6 +33,8 @@
   }
 
   var TIPS = {};      // tooltips por gráfico
+  var CLI = false;    // versão do cliente (linguagem simples)
+  function tx(tecnico, simples) { return CLI ? simples : tecnico; }
   var seq = 0;
 
   /* ---------------- barras (simples ou empilhadas) + linha opcional na MESMA escala */
@@ -190,7 +193,7 @@
     return '<div class="evo-kpi ' + (cls || '') + '"><span>' + esc(rot) + '</span><b>' + val + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>';
   }
   function card(titulo, sub, corpo, cls) {
-    return '<section class="evo-card ' + (cls || '') + '"><h3>' + esc(titulo) + '</h3>' + (sub ? '<p class="evo-sub">' + sub + '</p>' : '') + corpo + '</section>';
+    return '<section class="evo-card ' + (cls || '') + '"><h3>' + (/<span/.test(titulo) ? titulo : esc(titulo)) + '</h3>' + (sub ? '<p class="evo-sub">' + sub + '</p>' : '') + corpo + '</section>';
   }
   function variacao(p) {
     if (p == null) return '';
@@ -222,6 +225,11 @@
           : t.antecipado_modelo === 'debito_especial' ? ', recolhido junto à apuração como débito especial' +
             (t.antecipado_creditos > 0 ? ' (com <b>' + brl(t.antecipado_creditos) + '</b> aproveitados como crédito)' : '')
           : '') + '.');
+    var aq = t.aq || {};
+    if (aq.compras_liquidas > 0)
+      f.push('As compras para revenda ou industrialização somaram <b>' + brl(aq.compras_liquidas) + '</b>' +
+        (aq.compras_sobre_fat != null ? ' (' + pct(aq.compras_sobre_fat, 1) + ' do faturamento)' : '') +
+        (aq.fretes_liquidos > 0 ? ', e os fretes contratados <b>' + brl(aq.fretes_liquidos) + '</b>, o equivalente a <b>' + pct(aq.frete_pct) + '</b> das compras' : '') + '.');
     if (t.beneficios > 0) f.push('Os benefícios fiscais lançados na apuração (créditos presumidos, crédito estímulo e similares) reduziram o imposto em <b>' + brl(t.beneficios) + '</b>.');
     if (t.sld_credor_final > 0) f.push('A empresa encerrou o período com saldo credor de ICMS de <b>' + brl(t.sld_credor_final) + '</b> para os meses seguintes.');
     f.push('O mês de maior faturamento foi <b>' + esc(d.destaques.melhor_mes) + '</b> (' + brl(d.destaques.melhor_valor) + ').');
@@ -231,7 +239,7 @@
   /* ---------------- montagem */
   function render(root, d, opts) {
     opts = opts || {};
-    seq = 0; TIPS = {};
+    seq = 0; TIPS = {}; CLI = !!opts.cliente;
     var M = d.meses, t = d.totais, p = d.periodo, e = d.empresa;
     var mm = function (fn) { return M.map(fn); };
     var media3 = M.map(function (_, i) { if (i < 2) return null; return (M[i].fat.liquido + M[i - 1].fat.liquido + M[i - 2].fat.liquido) / 3; });
@@ -280,7 +288,8 @@
           } }) + leg([{ label: 'Faturamento líquido', cor: COR.fat }, { label: 'Média móvel de 3 meses (tracejada)', cor: '#1f2a5a' }])));
 
     // tributos
-    h.push(card('Tributos a recolher por mês', 'ICMS próprio (E110), débitos especiais como o ICMS antecipado, ICMS-ST (E210), DIFAL e FCP (E310) e IPI (E520).',
+    h.push(card('Tributos a recolher por mês', tx('ICMS próprio (E110), débitos especiais como o ICMS antecipado, ICMS-ST (E210), DIFAL e FCP (E310) e IPI (E520).',
+      'Impostos de cada mês: ICMS, ICMS antecipado e outros recolhimentos à parte, ICMS-ST, DIFAL, FCP e IPI.'),
       barras(M, serieTrib, { rotularUltimo: true, aria: 'Tributos a recolher por mês' }) + leg(serieTrib)));
 
     // carga + mix
@@ -300,11 +309,44 @@
       '</div>');
 
     // compras x vendas
-    h.push(card('Vendas e compras', 'Vendas (saídas de venda) e compras para revenda ou industrialização, mês a mês.',
+    h.push(card('Vendas e compras', 'Vendas e compras para revenda ou industrialização (já descontadas as devoluções), mês a mês.',
       barrasAgrupadas(M, [
-        { label: 'Vendas', cor: COR.fat, valores: mm(function (m) { return m.fat.vendas; }) },
-        { label: 'Compras', cor: COR.compras, valores: mm(function (m) { return m.ent.compras; }) },
+        { label: 'Vendas', cor: COR.fat, valores: mm(function (m) { return m.fat.liquido; }) },
+        { label: 'Compras', cor: COR.compras, valores: mm(function (m) { return Math.max(0, m.aq.compras_liquidas); }) },
       ]) + leg([{ label: 'Vendas', cor: COR.fat }, { label: 'Compras', cor: COR.compras }])));
+
+    // aquisições: compras e fretes, separados
+    var A = t.aq || {};
+    if ((A.compras || 0) > 0 || (A.fretes || 0) > 0) {
+      var serComp = [
+        { label: 'Do estado', cor: COR.aq_int, valores: mm(function (m) { return m.aq.internas; }) },
+        { label: 'De outros estados', cor: COR.aq_est, valores: mm(function (m) { return m.aq.interestaduais; }) },
+        { label: 'Importação', cor: COR.aq_imp, valores: mm(function (m) { return m.aq.importacao; }) },
+      ].filter(function (x) { return soma(x.valores) > 0; });
+      var mini = function (rot, val, sub) { return '<div class="evo-mini"><span>' + esc(rot) + '</span><b>' + val + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>'; };
+      h.push('<section class="evo-card evo-aq"><h3>Evolução das aquisições</h3><p class="evo-sub">Compras para revenda ou industrialização e fretes contratados, mostrados separadamente.</p>' +
+        '<div class="evo-minis">' +
+        mini('Compras líquidas', brl(A.compras_liquidas), 'média de ' + brl(A.media_compras) + '/mês' + (A.devol_compras > 0 ? ' · devoluções ' + brl(A.devol_compras) : '')) +
+        mini('Crédito de ICMS das compras', brl(A.icms_compras), A.compras_liquidas > 0 ? pct(A.icms_compras / A.compras_liquidas * 100) + ' do valor comprado' : '') +
+        mini('Fretes contratados', brl(A.fretes_liquidos), 'média de ' + brl(A.media_fretes) + '/mês') +
+        mini('Frete sobre as compras', pct(A.frete_pct), 'crédito de ICMS do frete: ' + brl(A.icms_fretes)) +
+        '</div>' +
+        (A.compras > 0 ? '<div class="evo-aq-h">Compras por origem</div>' +
+          barras(M, serComp, { rotularUltimo: true, aria: 'Compras por origem e mês', extraTip: function (i) {
+            var q = M[i].aq;
+            return (q.devol_compras ? '<div class="s">Devoluções<span>− ' + brl(q.devol_compras) + '</span></div>' : '') +
+              '<div class="s">Compras líquidas<span>' + brl(q.compras_liquidas) + '</span></div><div class="s">Crédito de ICMS<span>' + brl(q.icms_compras) + '</span></div>';
+          } }) + leg(serComp) : '') +
+        (A.fretes > 0 ? '<div class="evo-aq-h">Fretes contratados</div>' +
+          barras(M, [{ label: 'Fretes contratados', cor: COR.frete, valores: mm(function (m) { return Math.max(0, m.aq.fretes_liquidos); }) }], {
+            h: 220, rotularUltimo: true, aria: 'Fretes contratados por mês', extraTip: function (i) {
+              var q = M[i].aq;
+              return '<div class="s">Sobre as compras<span>' + pct(q.frete_pct) + '</span></div><div class="s">Crédito de ICMS<span>' + brl(q.icms_fretes) + '</span></div>' +
+                (q.anul_fretes ? '<div class="s">Anulações<span>− ' + brl(q.anul_fretes) + '</span></div>' : '');
+            } }) +
+          '<p class="evo-nota">Aparece aqui o transporte contratado pela própria empresa, tanto de compras quanto de entregas de vendas. Quando o frete vem embutido na nota do fornecedor, ele já está no valor da compra.</p>' : '') +
+        '</section>');
+    }
 
     // antecipado
     var temAnt = t.antecipado_total > 0 || t.antecipado_creditos > 0;
@@ -315,7 +357,7 @@
       if (t.antecipado_creditos > 0) serAnt.push({ label: t.antecipado_deb_esp > 0 ? 'Crédito de antecipação aproveitado' : 'Antecipado pago em guia e creditado na apuração',
         cor: COR.ant_cred, valores: mm(function (m) { return m.antecipado.creditos; }) });
       h.push(card('ICMS antecipado · ' + brl(t.antecipado_total) + ' no período',
-        'Ajustes da apuração (E111) cujo código oficial ou descrição indica antecipação. ' +
+        tx('Ajustes da apuração (E111) cujo código oficial ou descrição indica antecipação. ', 'Quanto foi pago de ICMS antecipado em cada mês. ') +
         (t.antecipado_modelo === 'credito' ? 'Nesta empresa o antecipado é pago em guia própria, fora da apuração, e aproveitado como crédito: o valor creditado é o antecipado do mês.'
           : t.antecipado_modelo === 'debito_especial' ? 'Nesta empresa o antecipado é recolhido junto à apuração como débito especial; o crédito, quando há, é a recuperação desse mesmo imposto e não é somado de novo.'
           : 'Há meses recolhidos como débito especial e meses pagos em guia própria e creditados; o total usa, mês a mês, o modelo de cada um.'),
@@ -324,19 +366,22 @@
 
     // cascata com seletor de mês
     var opcoesMes = M.map(function (m, i) { return '<option value="' + i + '"' + (i === M.length - 1 ? ' selected' : '') + '>' + esc(m.rotulo) + '</option>'; }).join('');
-    h.push(card('Como chegamos ao ICMS a recolher', 'Apuração do ICMS próprio (registro E110) do mês escolhido. Débitos especiais, como o antecipado, são recolhidos à parte e não entram nesta conta.',
+    h.push(card('Como chegamos ao ICMS a recolher', tx('Apuração do ICMS próprio (registro E110) do mês escolhido. Débitos especiais, como o antecipado, são recolhidos à parte e não entram nesta conta.',
+      'O passo a passo do ICMS do mês escolhido: o imposto das vendas, menos os créditos das compras e as deduções. O ICMS antecipado é pago à parte e não entra nesta conta.'),
       '<div class="evo-sel">Mês: <select class="evo-mes">' + opcoesMes + '</select><span class="evo-sel-extra"></span></div><div class="evo-casc">' + cascata(M[M.length - 1]) + '</div>'));
 
     // ajustes
     if ((d.ajustes || []).length)
-      h.push(card('Ajustes da apuração', 'Todos os lançamentos dos registros E111 (ICMS próprio), E220 (ST) e E311 (DIFAL/FCP), com a descrição oficial da Tabela 5.1.1 da UF.' +
-        (d.fonte_tabela ? ' <span class="evo-fonte">Fonte: ' + esc(d.fonte_tabela) + '.</span>' : ''), tabelaAjustes(d.ajustes, M, false)));
+      h.push(card('Ajustes da apuração', tx('Todos os lançamentos dos registros E111 (ICMS próprio), E220 (ST) e E311 (DIFAL/FCP), com a descrição oficial da Tabela 5.1.1 da UF.' +
+        (d.fonte_tabela ? ' <span class="evo-fonte">Fonte: ' + esc(d.fonte_tabela) + '.</span>' : ''),
+        'Lançamentos que aumentaram ou reduziram o imposto em cada mês, como antecipação, créditos e benefícios fiscais.'), tabelaAjustes(d.ajustes, M, false)));
 
     // obrigações
     var obr = [];
     M.forEach(function (m) { (m.obrigacoes || []).forEach(function (o) { obr.push([m, o]); }); });
     if (obr.length)
-      h.push(card('Guias a recolher', 'Obrigações declaradas nos registros E116 (ICMS próprio) e E250 (ST), com o código da Tabela 5.4, o vencimento e o código de receita.',
+      h.push(card('Guias a recolher', tx('Obrigações declaradas nos registros E116 (ICMS próprio) e E250 (ST), com o código da Tabela 5.4, o vencimento e o código de receita.',
+        'Guias de ICMS de cada mês, com o vencimento e o código de receita.'),
         '<div class="evo-tw"><table class="evo-tab"><thead><tr><th>Mês</th><th>Obrigação</th><th>Cód. receita</th><th>Vencimento</th><th class="n">Valor</th></tr></thead><tbody>' +
         obr.map(function (x) {
           var m = x[0], o = x[1];
@@ -347,7 +392,7 @@
     // tabela mensal (visão em tabela de todos os gráficos)
     var cols = [['Faturamento líquido', function (m) { return m.fat.liquido; }], ['Vendas internas', function (m) { return m.fat.interna; }],
       ['Interestaduais', function (m) { return m.fat.interestadual; }], ['Devoluções', function (m) { return m.fat.devolucoes; }],
-      ['Compras', function (m) { return m.ent.compras; }], ['ICMS próprio', function (m) { return m.icms_proprio; }],
+      ['Compras líquidas', function (m) { return m.aq.compras_liquidas; }], ['Fretes', function (m) { return m.aq.fretes_liquidos; }], ['ICMS próprio', function (m) { return m.icms_proprio; }],
       ['Déb. especiais', function (m) { return m.deb_esp; }], ['ICMS-ST', function (m) { return m.st; }], ['DIFAL', function (m) { return m.difal; }],
       ['FCP', function (m) { return m.fcp; }], ['IPI', function (m) { return m.ipi; }], ['Total a recolher', function (m) { return m.total_recolher; }]]
       .filter(function (c) { return soma(M.map(c[1])) !== 0 || /Faturamento|Total|ICMS próprio/.test(c[0]); });
@@ -358,8 +403,9 @@
 
     if ((opts.recado || '').trim())
       h.push('<section class="evo-recado"><div class="evo-rt">Recado do escritório</div><p>' + esc(opts.recado.trim()).replace(/\n/g, '<br>') + '</p></section>');
-    if (opts.tecnico !== false) h.push(card('De onde vem cada número', 'Todos os valores foram lidos dos SPED Fiscais (EFD ICMS/IPI) entregues pela empresa, sem estimativas.', glossario(d), 'evo-glos'));
-    h.push('<footer class="evo-rod">Relatório gerencial elaborado a partir das EFD ICMS/IPI de ' + esc(p.ini_rot) + ' a ' + esc(p.fim_rot) +
+    if (!CLI) h.push(card('De onde vem cada número <span class="evo-so-app">· só aparece aqui no sistema, não vai para o cliente</span>',
+      'Todos os valores foram lidos dos SPED Fiscais (EFD ICMS/IPI) entregues pela empresa, sem estimativas.', glossario(d), 'evo-glos'));
+    h.push('<footer class="evo-rod">Relatório gerencial elaborado a partir das escriturações fiscais (SPED Fiscal) de ' + esc(p.ini_rot) + ' a ' + esc(p.fim_rot) +
       '. Documento destinado ao acompanhamento tributário da empresa. Em caso de dúvidas, fale com sua equipe contábil. · ' + esc(opts.escritorio || 'Liddera | Inteligência em Negócios') + '</footer>');
 
     root.innerHTML = '<div class="evo">' + h.join('') + '<div class="evo-tip" hidden></div></div>';
@@ -399,7 +445,7 @@
     var linhas = lista.map(function (a) {
       var tags = (a.antecipado ? '<span class="evo-tag ant">Antecipado</span>' : '') + (a.beneficio ? '<span class="evo-tag ben">Benefício</span>' : '');
       var desc = esc(a.desc_oficial || a.compl || 'Sem descrição') + (a.desc_oficial && a.compl ? '<small>' + esc(a.compl) + '</small>' : '');
-      return '<tr><td class="cod">' + esc(a.cod) + '<small>' + esc(a.reg) + ' · ' + esc(a.apuracao) + '</small></td><td class="desc">' + tags + desc + '</td><td>' + esc(a.nat_rotulo) + '</td>' +
+      return '<tr><td class="cod">' + esc(a.cod) + '<small>' + (CLI ? '' : esc(a.reg) + ' · ') + esc(a.apuracao) + '</small></td><td class="desc">' + tags + desc + '</td><td>' + esc(a.nat_rotulo) + '</td>' +
         (compacta ? '' : M.map(function (m) { var v = a.por_mes[m.comp]; return '<td class="n">' + (v ? NF.format(v) : '<span class="z">—</span>') + '</td>'; }).join('')) +
         '<td class="n"><b>' + brl(a.total) + '</b></td></tr>';
     }).join('');
@@ -409,7 +455,8 @@
   function glossario(d) {
     var itens = [
       ['Faturamento líquido', 'Soma do campo VL_OPR dos registros analíticos (C190, C590, D190 e demais) com CFOP de venda (5.1xx, 5.4xx, 6.1xx, 7.1xx…), menos as devoluções de venda recebidas (1.2xx, 2.2xx, 1.410/1.411…). Notas canceladas ou denegadas não entram.'],
-      ['Compras', 'Entradas com CFOP de compra para revenda ou industrialização (1.1xx, 2.1xx, 1.403, 2.403…).'],
+      ['Compras', 'Entradas com CFOP de compra para revenda ou industrialização (1.101–1.128, 1.401, 1.403, 1.651, 1.652, os equivalentes 2.xxx e a importação 3.xxx), menos as devoluções de compra (5.201, 5.202, 5.210, 5.410, 5.411, 6.xxx…). Uso e consumo, ativo, energia, comunicação e transferências não entram.'],
+      ['Fretes contratados', 'Aquisição de serviço de transporte (CFOP 1.351–1.360, 2.351–2.360, 1.931/1.932 e 2.931/2.932), principalmente dos CT-e no D190, menos as anulações (5.206/6.206). Vale para qualquer transporte que a empresa contratou: de compras e de entregas de vendas. Frete embutido na nota do fornecedor (CIF) já está no valor da compra.'],
       ['ICMS próprio', 'Campo VL_ICMS_RECOLHER do registro E110 (apuração do ICMS das operações próprias).'],
       ['Débitos especiais', 'Campo DEB_ESP do E110: valores recolhidos fora da apuração normal, como o ICMS antecipado. O detalhe está nos ajustes E111 de natureza 5.'],
       ['ICMS-ST', 'Campos VL_ICMS_RECOL_ST + DEB_ESP_ST do registro E210, somados para todas as UFs do E200.'],
