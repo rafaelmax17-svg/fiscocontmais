@@ -1293,6 +1293,7 @@ function bindFiscal() {
   const bCorrPick = $('#btnCorrSpedPick');
   if (bCorrPick) {
     let corrSpedPath = null;
+    const XMLS = { path: null };   // XMLs de entrada (.zip) do Corretor: usados no DIFAL e no crédito do Simples
     let corrFeito = false;   // true depois de "Corrigir SPED" ou de aplicar o DIFAL neste arquivo
     bCorrPick.addEventListener('click', async () => {
       const pick = await window.fiscocont.fiscal.pickSped();
@@ -1304,7 +1305,7 @@ function bindFiscal() {
       $('#btnCorrDifal').disabled = false;
       $('#btnCorrSimples').disabled = false;
       corrFeito = false;
-      SN.an = null; SN.xmls = null;
+      SN.an = null; XMLS.path = null;
       $('#corrSimples').hidden = true; $('#corrSimples').innerHTML = '';
       $('#corrSpedResumo').hidden = true;
       $('#corrDifal').hidden = true; $('#corrDifal').innerHTML = '';
@@ -1409,14 +1410,14 @@ function bindFiscal() {
     const STATUS = {
       faltando: ['Falta DIFAL', 'b-err'], divergente: ['DIFAL divergente', 'b-warn'], ok: ['DIFAL ok', 'b-ok'],
       pago_fora: ['Pago fora da apuração', 'b-info'], interna: ['Operação interna', 'b-mute'],
-      cancelada: ['Cancelada', 'b-mute'], sem_uf: ['UF não identificada', 'b-warn'],
+      cancelada: ['Cancelada', 'b-mute'], sem_uf: ['UF não identificada', 'b-warn'], st_nota: ['ICMS-ST retido na nota', 'b-info'],
     };
     const podeDifal = (d) => d.interestadual && (d.status === 'faltando' || d.status === 'divergente');
 
     async function difalAbrir() {
       if (!corrSpedPath) return;
       overlay(true, 'Conferindo notas de uso e consumo / ativo e o DIFAL de RO…');
-      const res = await window.fiscocont.admin.difalAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito });
+      const res = await window.fiscocont.admin.difalAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path });
       overlay(false);
       if (res.error) { toast(res.error, true); return; }
       DIF.an = res.res; DIF.origem = res.origem;
@@ -1446,6 +1447,7 @@ function bindFiscal() {
             </select>
             <input data-interna type="number" step="0.01" min="0" max="99" value="${g.aliq_interna}" ${ok ? '' : 'disabled'} title="Alíquota interna de RO">
             <b class="dif-val" data-val>${d.interestadual ? 'R$ ' + fm(g.difal) : '—'}</b>
+            ${d.interestadual ? `<small class="dif-gsrc ${d.fonte === 'xml' ? 'xml' : ''}">${d.fonte === 'xml' ? `XML · ${g.itens || 0} item(ns) · origem ${esc((g.origens || []).join(', '))}` : 'alíquota deduzida pelo SPED'}</small>` : ''}
           </div>`).join('');
         return `
           <tr data-id="${d.id}" class="${ok ? '' : 'dif-off'}">
@@ -1470,8 +1472,11 @@ function bindFiscal() {
               arquivo <b>${DIF.origem === 'corrigido' ? 'já corrigido nesta sessão' : 'original'}</b> ·
               ${an.base_dupla ? 'base dupla (desde 01/04/2022)' : 'base única'} · alíquota interna ${fa(an.aliq_interna_padrao)}</div>
           </div>
-          <button class="act inv-export" id="btnDifFechar">Fechar</button>
+          <div class="sn-hbtn"><button class="act inv-export" id="btnDifXmls">${XMLS.path ? 'Trocar XMLs' : 'Anexar XMLs de entrada'}</button><button class="act inv-export" id="btnDifFechar">Fechar</button></div>
         </div>
+        ${XMLS.path ? `<div class="dif-av ok dif-xmlbar"><b>XMLs de entrada anexados:</b> ${rs.xml_lidos ?? 0} lido(s) · ${rs.xml_usados ?? 0} nota(s) conferida(s) item a item pelo XML (origem, alíquota destacada, IPI, frete e ICMS-ST)${rs.sem_xml ? ` · <b>${rs.sem_xml}</b> nota(s) interestadual(is) sem XML, pela regra do SPED` : ''}.</div>`
+          : `<div class="dif-av dif-xmlbar"><b>Sem XMLs:</b> a alíquota interestadual está sendo deduzida pelo SPED (alíquota do C190 ou CST e UF). Anexe os XMLs de entrada para conferir item a item: produto importado a 4%, origem, IPI e ICMS-ST retido.
+            <button class="act inv-export" id="btnDifXmls2">Anexar XMLs (.zip)</button></div>`}
         ${naoRO ? `<div class="dif-av err">Este SPED é de empresa de <b>${esc(emp.uf)}</b>. O lançamento automático do DIFAL só é feito para RO; a correção de CFOP continua disponível.</div>` : ''}
         ${(an.avisos || []).length ? `<div class="dif-av"><b>Atenção</b><ul>${an.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
         <div class="dif-kpis">
@@ -1481,7 +1486,10 @@ function bindFiscal() {
           <div class="k-warn"><span>DIFAL divergente</span><b data-n="${rs.divergente || 0}">0</b></div>
           <div class="k-ok"><span>DIFAL correto</span><b data-n="${rs.ok || 0}">0</b></div>
           <div><span>Pago fora (RO90000002)</span><b data-n="${rs.pago_fora || 0}">0</b></div>
+          ${XMLS.path ? `<div class="k-warn"><span>Alíquota XML × SPED</span><b data-n="${rs.aliq_xml_diverge || 0}">0</b><small>DIFAL ${rs.dif_xml_sped >= 0 ? 'a mais' : 'a menos'} pelo XML: R$ ${fm(Math.abs(rs.dif_xml_sped || 0))}</small></div>
+          <div><span>ICMS-ST retido na nota</span><b data-n="${rs.st_nota || 0}">0</b><small>sem DIFAL a lançar</small></div>` : ''}
         </div>
+        ${difCompHtml(docs)}
         ${docs.length ? `
         <div class="dif-tw"><table class="dif-tab">
           <thead><tr><th><input type="checkbox" id="difTodos" title="Marcar/desmarcar o DIFAL de todas"></th><th>Nota</th><th>Fornecedor</th><th>UF</th><th>CFOP</th>
@@ -1505,6 +1513,14 @@ function bindFiscal() {
       DIF.temE116 = !!e116;
 
       $('#btnDifFechar').addEventListener('click', () => { box.hidden = true; $('#corrSpedEmpty').hidden = false; });
+      const anexar = async () => {
+        const pick = await window.fiscocont.fiscal.pickXmlsFolder();
+        if (pick.canceled || !pick.path) return;
+        XMLS.path = pick.path; SN.an = null;
+        await difalAbrir();
+      };
+      $('#btnDifXmls').addEventListener('click', anexar);
+      if ($('#btnDifXmls2')) $('#btnDifXmls2').addEventListener('click', anexar);
       box.querySelectorAll('select[data-inter], input[data-interna], input[data-difal], input[data-cfop]').forEach((el) =>
         el.addEventListener('input', () => difalAtualiza()));
       const todos = $('#difTodos');
@@ -1515,6 +1531,35 @@ function bindFiscal() {
       if (todosC) todosC.addEventListener('change', () => { box.querySelectorAll('input[data-cred]').forEach((c) => { c.checked = todosC.checked; }); difalAtualiza(); });
       $('#btnDifAplicar').addEventListener('click', difalAplicar);
       difalAtualiza();
+    }
+
+    // ---- XML × SPED: alíquota interestadual conferida item a item ----
+    function difCompHtml(docs) {
+      const cs = docs.filter((d) => d.comparacao);
+      if (!cs.length) return '';
+      const mx = Math.max(1, ...cs.flatMap((d) => [d.comparacao.difal_sped, d.comparacao.difal_xml]));
+      const al = (a) => a.length ? a.map((x) => fa(x)).join(' + ') : '—';
+      return `
+        <div class="dif-sec">
+          <div class="dif-k">Alíquota do XML × alíquota deduzida pelo SPED</div>
+          <p class="dif-sub" style="margin:0">Notas em que o XML do fornecedor muda a alíquota interestadual ou o valor do DIFAL (produto importado a 4%, itens com alíquotas diferentes, IPI e despesas na base, ICMS-ST retido). O cálculo da tabela abaixo já usa o XML.</p>
+          <div class="dif-tw"><table class="dif-tab">
+            <thead><tr><th>Nota</th><th>Fornecedor</th><th>UF</th><th>Origem (XML)</th><th class="n">Alíq. pelo SPED</th><th class="n">Alíq. pelo XML</th>
+              <th class="n">DIFAL pelo SPED</th><th class="n">DIFAL pelo XML</th><th class="n">Diferença</th><th>Comparação</th></tr></thead>
+            <tbody>${cs.map((d, i) => {
+              const c = d.comparacao, df = r2(c.difal_xml - c.difal_sped);
+              return `<tr>
+                <td><b>${esc(d.num)}</b><small>${dt(d.data)}</small></td><td>${esc(d.fornecedor)}</td><td><b>${esc(d.uf_origem)}</b></td>
+                <td>${esc((c.origens || []).join(', ') || '—')}</td>
+                <td class="n">${al(c.aliq_sped)}</td><td class="n"><b>${al(c.aliq_xml)}</b></td>
+                <td class="n">R$ ${fm(c.difal_sped)}</td><td class="n"><b>R$ ${fm(c.difal_xml)}</b></td>
+                <td class="n ${df >= 0 ? 'dif-mais' : 'dif-menos'}">${df >= 0 ? '+' : '−'} R$ ${fm(Math.abs(df))}</td>
+                <td class="dif-cmp" style="--i:${i}"><i class="a" style="--w:${(c.difal_sped / mx * 100).toFixed(1)}%"></i><i class="d" style="--w:${(c.difal_xml / mx * 100).toFixed(1)}%"></i></td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table></div>
+          <div class="sn-leg"><span><i style="background:#c9cfdc"></i>pelo SPED</span><span><i style="background:#1f2a5a"></i>pelo XML</span></div>
+        </div>`;
     }
 
     // ---- crédito de ICMS tomado em uso e consumo / ativo (LC 87/96, art. 33, I; art. 20, § 5º) ----
@@ -1675,7 +1720,7 @@ function bindFiscal() {
         return;
       }
       overlay(true, 'Lançando no SPED e recalculando E110, E116 e Bloco 9…');
-      const res = await window.fiscocont.admin.difalAplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, selecao });
+      const res = await window.fiscocont.admin.difalAplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, selecao, xmls: XMLS.path });
       overlay(false);
       b.dataset.conf = ''; b.textContent = 'Aplicar no SPED (gera arquivo novo)';
       if (res.error) { toast(res.error, true); return; }
@@ -1743,7 +1788,7 @@ function bindFiscal() {
     // Crédito de fornecedor do Simples Nacional — C195 + C197 RO00000001 (só Admin)
     // SEFIN/RO, IN 017/2016 (Tabela 5.3 e manual da EFD, item 19); LC 123/2006, art. 23, §§ 1º a 5º
     // =====================================================================
-    const SN = { an: null, xmls: null, origem: null, filtro: 'pend' };
+    const SN = { an: null, origem: null, filtro: 'pend' };
     const SN_ST = {
       incluir: ['Crédito a incluir', 'b-err', '#2a78d6'],
       lugar_errado: ['Crédito no lugar errado', 'b-err', '#eb6834'],
@@ -1763,7 +1808,7 @@ function bindFiscal() {
       $('#corrDifal').hidden = true;
       const box = $('#corrSimples');
       box.hidden = false;
-      if (!SN.xmls) { snVazio(); return; }
+      if (!XMLS.path) { snVazio(); return; }
       await snAnalisar();
     }
 
@@ -1788,13 +1833,13 @@ function bindFiscal() {
     async function snEscolherXmls() {
       const pick = await window.fiscocont.fiscal.pickXmlsFolder();
       if (pick.canceled || !pick.path) return;
-      SN.xmls = pick.path;
+      XMLS.path = pick.path;
       await snAnalisar();
     }
 
     async function snAnalisar() {
       overlay(true, 'Lendo os XMLs e conferindo o crédito do Simples Nacional…');
-      const res = await window.fiscocont.admin.simplesAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: SN.xmls });
+      const res = await window.fiscocont.admin.simplesAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path });
       overlay(false);
       if (res.error) { toast(res.error, true); if (!SN.an) snVazio(); return; }
       SN.an = res.res; SN.origem = res.origem;
@@ -1810,7 +1855,7 @@ function bindFiscal() {
     function snRender() {
       const an = SN.an, emp = an.empresa || {}, rs = an.resumo || {}, box = $('#corrSimples');
       const docs = an.docs || [];
-      const nArq = String(SN.xmls || '').split(/[;:](?![\\/])/).filter(Boolean).length;
+      const nArq = String(XMLS.path || '').split(/[;:](?![\\/])/).filter(Boolean).length;
       const pend = docs.filter((d) => d.status !== 'ok');
       const grupos = Object.keys(SN_ST).map((k) => {
         const ds = docs.filter((d) => d.status === k);
@@ -2015,7 +2060,7 @@ function bindFiscal() {
         return;
       }
       overlay(true, 'Lançando o crédito do Simples e recalculando E110, E116 e Bloco 9…');
-      const res = await window.fiscocont.admin.simplesAplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: SN.xmls, selecao });
+      const res = await window.fiscocont.admin.simplesAplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path, selecao });
       overlay(false);
       b.dataset.conf = ''; b.textContent = 'Aplicar no SPED (gera arquivo novo)';
       if (res.error) { toast(res.error, true); return; }

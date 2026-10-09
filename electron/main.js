@@ -1806,20 +1806,20 @@ function _difalBase(spedPath, usarCorrigido) {
   if (usarCorrigido && lastSpedCorrigidoPath && fs.existsSync(lastSpedCorrigidoPath)) return { arq: lastSpedCorrigidoPath, origem: 'corrigido' };
   return { arq: spedPath, origem: 'original' };
 }
-ipcMain.handle('admin:difalAnalisar', async (_evt, { spedPath, usarCorrigido }) => {
+ipcMain.handle('admin:difalAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
   const bloq = _soAdmin(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const jsonOut = path.join(os.tmpdir(), `fc_difal_${Date.now()}.json`);
   try {
-    await runFiscal(['difal-ro', '--sped', base.arq, '--json', jsonOut], jsonOut);
+    await runFiscal(['difal-ro', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--json', jsonOut], jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
     fs.unlink(jsonOut, () => {});
     if (res.erro) return { error: res.erro };
     return { ok: true, res, origem: base.origem };
   } catch (e) { return { error: String(e.message || e) }; }
 });
-ipcMain.handle('admin:difalAplicar', async (_evt, { spedPath, usarCorrigido, selecao }) => {
+ipcMain.handle('admin:difalAplicar', async (_evt, { spedPath, usarCorrigido, selecao, xmls }) => {
   const bloq = _soAdmin(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
@@ -1829,7 +1829,7 @@ ipcMain.handle('admin:difalAplicar', async (_evt, { spedPath, usarCorrigido, sel
   const saida = path.join(os.tmpdir(), `fc_difal_sped_${stamp}.txt`);
   try {
     fs.writeFileSync(selJson, JSON.stringify(selecao || {}), 'utf-8');
-    await runFiscal(['difal-ro', '--sped', base.arq, '--json', jsonOut, '--aplicar', selJson, '--saida', saida], jsonOut);
+    await runFiscal(['difal-ro', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--json', jsonOut, '--aplicar', selJson, '--saida', saida], jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
     fs.unlink(jsonOut, () => {}); fs.unlink(selJson, () => {});
     if (res.erro) return { error: res.erro };

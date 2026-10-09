@@ -142,7 +142,7 @@ def _estrutura(linhas):
         elif cur is not None and r in FILHOS_C100:
             cur['fim'] = i
             if r == 'C170' and len(c) > 11:
-                cur['c170'].append({'i': i, 'cst': c[10], 'cfop': c[11], 'vl': _n(c[7]) - _n(c[8]), 'item': c[3], 'descr': c[4],
+                cur['c170'].append({'i': i, 'num': c[2].lstrip('0'), 'cst': c[10], 'cfop': c[11], 'vl': _n(c[7]) - _n(c[8]), 'item': c[3], 'descr': c[4],
                                     'bc': _n(c[13]) if len(c) > 15 else 0.0, 'aliq': _n(c[14]) if len(c) > 15 else 0.0,
                                     'icms': _n(c[15]) if len(c) > 15 else 0.0})
             elif r == 'C190' and len(c) > 7:
@@ -194,7 +194,58 @@ def _uf_emitente(doc, part):
 
 
 # ------------------------------------------------------------------ análise
-def analisar_texto(texto):
+def _grupos_xml(d, x, alvo, uf_or, interna):
+    """Grupos (tipo, alíquota interestadual) montados item a item pelo XML do fornecedor.
+    Devolve (grupos | None, obs, itens_st, itens_usados). None = não deu para casar os itens (usa o SPED)."""
+    cf_alvo = {c['cfop'] for c in alvo}
+    todos_alvo = all(c['cfop'] in cf_alvo for c in d['c190'])
+    tipos_alvo = {TIPOS[c[1:]][0] for c in cf_alvo}
+    c170_por_n = {c['num']: c['cfop'] for c in d['c170'] if c.get('num')}
+    itens = []
+    for it in x.get('itens') or []:
+        cf = c170_por_n.get((it['n'] or '').lstrip('0'))
+        if cf is not None:
+            if cf not in cf_alvo:
+                continue
+            tipo = TIPOS[cf[1:]][0]
+        elif todos_alvo and len(tipos_alvo) == 1:
+            tipo = next(iter(tipos_alvo))
+        else:
+            return None, [], [], []
+        itens.append((it, tipo))
+    if not itens:
+        return None, [], [], []
+    grupos, obs, st, usados = {}, [], [], []
+    for it, tipo in itens:
+        if it['vicmsst'] > 0.004:
+            st.append(it)
+            continue
+        orig = it['orig']
+        if it['picms'] in (4.0, 7.0, 12.0):
+            ai = it['picms']
+            fonte = f'XML: destacada na nota (origem {orig})'
+            if orig in ('6', '7') and ai == 4.0:
+                obs.append(f'Item "{it["xprod"][:40]}": origem {orig} (importado sem similar) não leva 4%; '
+                           'a nota foi emitida com 4% e o DIFAL foi calculado sobre essa alíquota. Confira com o fornecedor.')
+        else:
+            ai, fonte = _aliq_inter(0.0, (orig or '0') + '00', uf_or)
+            fonte = f'XML: origem {orig or "?"}, sem alíquota destacada ({fonte})'
+        cod_aj, descr = (TIPOS['556'][1], TIPOS['556'][2]) if tipo == 'uso' else (TIPOS['551'][1], TIPOS['551'][2])
+        g = grupos.setdefault((tipo, ai), {'tipo': tipo, 'cod_aj': cod_aj, 'descr': descr, 'aliq_inter': ai, 'fonte_aliq': fonte,
+                                           'aliq_interna': interna, 'valor': 0.0, 'cfops': set(), 'itens': 0, 'origens': set()})
+        g['valor'] += it['valor_oper']
+        g['itens'] += 1
+        g['origens'].add(orig or '?')
+        g['cfops'] |= {c for c in cf_alvo if TIPOS[c[1:]][0] == tipo}
+        usados.append(it)
+    if st:
+        obs.append(f'{len(st)} item(ns) com ICMS-ST retido na nota (R$ {_f(sum(i["vicmsst"] for i in st))}): o diferencial já foi cobrado '
+                   'por substituição e esses itens ficam fora do DIFAL.')
+    return grupos, obs, st, usados
+
+
+def analisar_texto(texto, xmls=None):
+    xmls = xmls or {}
     linhas = texto.splitlines()
     cab, part, obs460, docs, e110, e111_difal = _estrutura(linhas)
     uf_emp = (cab.get('uf') or '').strip()
@@ -238,11 +289,40 @@ def analisar_texto(texto):
                                                'aliq_interna': interna, 'valor': 0.0, 'cfops': set()})
             g['valor'] += x['vl_opr']
             g['cfops'].add(x['cfop'])
-        lista_g = []
-        for g in grupos.values():
-            base, dif = calcular_difal(g['valor'], g['aliq_inter'], g['aliq_interna'], dupla)
-            lista_g.append({**g, 'cfops': sorted(g['cfops']), 'valor': float(_d(g['valor'])), 'base': float(base), 'difal': float(dif)})
+        def _lista(gs):
+            out = []
+            for g in gs.values():
+                base, dif = calcular_difal(g['valor'], g['aliq_inter'], g['aliq_interna'], dupla)
+                out.append({**g, 'cfops': sorted(g['cfops']), 'origens': sorted(g.get('origens', [])), 'valor': float(_d(g['valor'])),
+                            'base': float(base), 'difal': float(dif)})
+            return out
+        lista_sped = _lista(grupos)
+        calc_sped = float(_d(sum(g['difal'] for g in lista_sped))) if interestadual else 0.0
+        x = xmls.get(re.sub(r'\D', '', d['chave'] or ''))
+        fonte, obs_xml, st_itens, comp = 'sped', [], [], None
+        if x and interestadual:
+            gx, obs_xml, st_itens, usados = _grupos_xml(d, x, alvo, uf_or, interna)
+            if gx is not None:
+                fonte = 'xml'
+                lista_g = _lista(gx)
+                v_xml = sum(i['valor_oper'] for i in usados) + sum(i['valor_oper'] for i in st_itens)
+                v_sped = sum(c['vl_opr'] for c in alvo)
+                if abs(v_xml - v_sped) > 1:
+                    obs_xml.append(f'Valor da operação no SPED (R$ {_f(v_sped)}) diferente do XML (R$ {_f(v_xml)}, com IPI, frete e despesas). '
+                                   'O DIFAL foi calculado pelo XML.')
+            else:
+                lista_g = lista_sped
+                obs_xml.append('Nota com itens de uso/consumo e de outras finalidades sem os itens (C170) para casar com o XML: '
+                               'alíquota deduzida pelo SPED.')
+        else:
+            lista_g = lista_sped
         calc = float(_d(sum(g['difal'] for g in lista_g))) if interestadual else 0.0
+        if fonte == 'xml':
+            a_sped = sorted({g['aliq_inter'] for g in lista_sped})
+            a_xml = sorted({g['aliq_inter'] for g in lista_g})
+            if a_sped != a_xml or abs(calc - calc_sped) > 0.05:
+                comp = {'aliq_sped': a_sped, 'aliq_xml': a_xml, 'difal_sped': calc_sped, 'difal_xml': calc,
+                        'origens': sorted({o for g in lista_g for o in g.get('origens', [])})}
         existente = float(_d(sum(x['icms'] for x in d['c197'] if x['cod'] in COD_DIFAL_APUR)))
         fora = float(_d(sum(x['icms'] for x in d['c197'] if x['cod'] in COD_DIFAL_FORA)))
         obs_doc = []
@@ -250,6 +330,8 @@ def analisar_texto(texto):
             status = 'cancelada'
         elif not interestadual:
             status = 'interna' if uf_or else 'sem_uf'
+        elif fonte == 'xml' and not lista_g and st_itens and existente <= 0:
+            status = 'st_nota'
         elif existente > 0:
             status = 'ok' if abs(existente - calc) <= 0.05 else 'divergente'
         elif fora > 0:
@@ -258,7 +340,8 @@ def analisar_texto(texto):
             status = 'faltando'
         if d['sit'] in EXTEMP:
             obs_doc.append('Documento extemporâneo: o DIFAL vai no débito especial, não no campo 03 do E110. Não incluir por aqui.')
-        if tem_st and interestadual:
+        obs_doc.extend(obs_xml)
+        if tem_st and interestadual and fonte != 'xml':
             obs_doc.append('Há item com substituição tributária: se o ICMS-ST para RO foi retido na nota, o diferencial normalmente já está nele. Confira antes de incluir.')
         if cst_sem_trib and interestadual:
             obs_doc.append('Há item isento/não tributado na origem: confira se há benefício que afaste ou reduza o DIFAL.')
@@ -267,13 +350,18 @@ def analisar_texto(texto):
         if not uf_or:
             obs_doc.append('Não foi possível identificar a UF do emitente (sem chave de acesso e sem município no cadastro do participante).')
         sugerido_cfop = bool(correcoes) and d['sit'] not in CANC
-        sugerido_difal = status in ('faltando', 'divergente') and d['sit'] not in CANC and d['sit'] not in EXTEMP and not tem_st and not cst_sem_trib and uf_emp == 'RO'
+        sem_bloqueio = (not tem_st and not cst_sem_trib) if fonte != 'xml' else not cst_sem_trib
+        sugerido_difal = (status in ('faltando', 'divergente') and d['sit'] not in CANC and d['sit'] not in EXTEMP and sem_bloqueio
+                          and uf_emp == 'RO' and calc > 0)
         saida.append({
             'id': d['i'], 'num': d['num'], 'serie': d['serie'], 'chave': d['chave'], 'data': d['dt'], 'sit': d['sit'],
             'fornecedor': p.get('nome', d['part']), 'cnpj': p.get('cnpj', ''), 'uf_origem': uf_or, 'fonte_uf': fonte_uf,
             'interestadual': interestadual, 'correcoes_cfop': correcoes, 'grupos': lista_g,
             'difal_calculado': calc, 'difal_lancado': existente, 'difal_pago_fora': fora, 'status': status,
             'obs': obs_doc, 'sugerido_cfop': sugerido_cfop, 'sugerido_difal': sugerido_difal,
+            'fonte': fonte, 'tem_xml': bool(x), 'comparacao': comp,
+            'itens_xml': [{'xprod': i['xprod'], 'ncm': i['ncm'], 'orig': i['orig'], 'cst': i['cst'] or i['csosn'], 'picms': i['picms'],
+                           'valor': i['valor_oper'], 'st': i['vicmsst']} for i in (x or {}).get('itens', [])][:30] if fonte == 'xml' else [],
         })
     prod = {c[2]: c[3] for c in (ln.split('|') for ln in linhas if ln.startswith('|0200|')) if len(c) > 3}
     creditos = _analisar_creditos(docs, part, uf_emp, prod)
@@ -323,6 +411,11 @@ def analisar_texto(texto):
             'ok': sum(1 for x in saida if x['status'] == 'ok'),
             'pago_fora': sum(1 for x in saida if x['status'] == 'pago_fora'),
             'difal_faltando': float(_d(sum(x['difal_calculado'] for x in saida if x['status'] == 'faltando'))),
+            'xml_usados': sum(1 for x in saida if x['fonte'] == 'xml'),
+            'sem_xml': sum(1 for x in saida if x['interestadual'] and not x['tem_xml']),
+            'aliq_xml_diverge': sum(1 for x in saida if x['comparacao']),
+            'dif_xml_sped': float(_d(sum(x['comparacao']['difal_xml'] - x['comparacao']['difal_sped'] for x in saida if x['comparacao']))),
+            'st_nota': sum(1 for x in saida if x['status'] == 'st_nota'),
         },
     }
 
@@ -512,12 +605,12 @@ def monta_arquivo(linhas, remover, insercoes, novos_0460, novas_e111, novas_e116
     return quebra.join(saida) + (quebra if final_vazio else '')
 
 
-def aplicar_texto(texto, selecao):
+def aplicar_texto(texto, selecao, xmls=None):
     """selecao = {'docs': [{'id', 'corrigir_cfop', 'incluir_difal', 'grupos': [{'tipo','aliq_inter','aliq_interna'}]}],
                   'creditos': {'modo': 'zerar' | 'estorno', 'cod_aj': 'RO010011', 'docs': [id, ...]},
                   'e116': {'cod_rec': '', 'venc': 'ddmmaaaa'}}  ->  (texto_novo, resumo)"""
     linhas, quebra, final_vazio = dividir(texto)
-    an = analisar_texto(texto)
+    an = analisar_texto(texto, xmls)
     por_id = {d['id']: d for d in an['docs']}
     cab, part, obs460, docs, e110, _ = _estrutura(linhas)
     docs_por_i = {d['i']: d for d in docs}
@@ -665,20 +758,25 @@ def main_cli(argv):
         return argv[argv.index(n) + 1] if n in argv and argv.index(n) + 1 < len(argv) else None
     sped, js = opt('--sped'), opt('--json')
     if not sped or not js:
-        print('uso: difal-ro --sped ARQ.txt --json saida.json [--aplicar selecao.json --saida novo.txt]'); return 1
+        print('uso: difal-ro --sped ARQ.txt --json saida.json [--xmls "a.zip;b.zip"] [--aplicar selecao.json --saida novo.txt]'); return 1
     texto, enc = _ler(sped)
     try:
+        xmls, lidos = {}, 0
+        if opt('--xmls'):
+            from xml_entradas import ler_xmls
+            xmls, lidos, _ = ler_xmls([c for c in opt('--xmls').split(os.pathsep) if c])
         if opt('--aplicar'):
             with open(opt('--aplicar'), 'r', encoding='utf-8') as fh:
                 sel = json.load(fh)
-            novo, res = aplicar_texto(texto, sel)
+            novo, res = aplicar_texto(texto, sel, xmls)
             if not res.get('erro'):
                 tmp = opt('--saida') + '.parcial'
                 with open(tmp, 'w', encoding=enc, newline='') as fh:
                     fh.write(novo)
                 os.replace(tmp, opt('--saida'))
         else:
-            res = analisar_texto(texto)
+            res = analisar_texto(texto, xmls)
+            res['resumo']['xml_lidos'] = lidos
     except Exception as e:  # pragma: no cover
         res = {'erro': f'Falha ao processar o SPED: {e}'}
     tmp = js + '.parcial'

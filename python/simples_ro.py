@@ -16,7 +16,6 @@ import os
 import re
 import sys
 import json
-import xml.etree.ElementTree as ET
 from decimal import Decimal
 
 import difal_ro as dr
@@ -26,87 +25,8 @@ OBS_SN = ('CSN', 'CRÉDITO SIMPLES NACIONAL')
 CANC = {'02', '03', '04', '05'}
 
 
-# ------------------------------------------------------------------ XML
-def _t(el, tag):
-    x = el.find(tag)
-    return (x.text or '').strip() if x is not None and x.text else ''
-
-
-def _fx(s):
-    try:
-        return float(s) if s else 0.0
-    except ValueError:
-        return 0.0
-
-
-def ler_xml(texto):
-    """Devolve dados de crédito do Simples de uma NF-e, ou None se não for nota."""
-    if '<infNFe' not in texto:
-        return None
-    m = re.search(r'<infNFe[^>]*Id="NFe(\d{44})"', texto)
-    if not m:
-        return None
-    chave = m.group(1)
-    if 'ICMSSN' not in texto:
-        return {'chave': chave, 'simples': False}
-    limpo = re.sub(r'\sxmlns(:\w+)?="[^"]*"', '', texto, count=0)
-    limpo = re.sub(r'<(/?)\w+:', r'<\1', limpo)
-    try:
-        raiz = ET.fromstring(re.sub(r'^\s*<\?xml[^>]*\?>', '', limpo))
-    except ET.ParseError:
-        return {'chave': chave, 'simples': False, 'erro': 'XML ilegível'}
-    inf = raiz if raiz.tag == 'infNFe' else raiz.find('.//infNFe')
-    if inf is None:
-        return None
-    emit = inf.find('emit')
-    itens, csosns = [], set()
-    base = cred = 0.0
-    aliqs = set()
-    tem_credito_previsto = False
-    for det in inf.findall('det'):
-        prod = det.find('prod')
-        icms = det.find('imposto/ICMS')
-        if prod is None or icms is None:
-            continue
-        g = next((x for x in list(icms) if x.tag.startswith('ICMSSN')), None)
-        if g is None:
-            continue
-        csosn = _t(g, 'CSOSN')
-        csosns.add(csosn)
-        vl = _fx(_t(prod, 'vProd')) - _fx(_t(prod, 'vDesc')) + _fx(_t(prod, 'vFrete')) + _fx(_t(prod, 'vSeg')) + _fx(_t(prod, 'vOutro'))
-        p = _fx(_t(g, 'pCredSN'))
-        v = _fx(_t(g, 'vCredICMSSN'))
-        if csosn in ('101', '201') or v > 0:
-            tem_credito_previsto = True
-            base += vl
-            cred += v
-            if p > 0:
-                aliqs.add(round(p, 4))
-        itens.append({'csosn': csosn, 'valor': round(vl, 2), 'p': p, 'v': v})
-    tot = inf.find('total/ICMSTot')
-    return {
-        'chave': chave, 'simples': bool(csosns), 'csosn': sorted(csosns),
-        'crt': _t(emit, 'CRT') if emit is not None else '', 'emit_nome': _t(emit, 'xNome') if emit is not None else '',
-        'emit_uf': _t(emit, 'enderEmit/UF') if emit is not None else '',
-        'vnf': _fx(_t(tot, 'vNF')) if tot is not None else 0.0,
-        'base': round(base, 2), 'credito': round(cred, 2), 'aliqs': sorted(aliqs),
-        'credito_previsto': tem_credito_previsto, 'itens': len(itens),
-    }
-
-
-def ler_xmls(caminhos):
-    from fiscal_core import coletar_xmls, _read_text
-    out, lidos, erros = {}, 0, 0
-    for p in coletar_xmls(caminhos):
-        try:
-            x = ler_xml(_read_text(p))
-        except Exception:
-            erros += 1
-            continue
-        if x:
-            lidos += 1
-            out[x['chave']] = x
-    return out, lidos, erros
+# ------------------------------------------------------------------ XML (leitura compartilhada com o DIFAL)
+from xml_entradas import ler_xml, ler_xmls  # noqa: E402,F401
 
 
 # ------------------------------------------------------------------ análise

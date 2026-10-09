@@ -833,3 +833,13 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .sn-kpis b{white-space:nowrap;font-size:24px}
 .sn-tab td small{white-space:normal}
 .sn-tab td:nth-child(7){min-width:150px}
+/* DIFAL × XML */
+.dif-gsrc{grid-column:1/-1;font-size:11px;color:#8a93a8;white-space:normal!important;margin-top:-2px}
+.dif-gsrc.xml{color:#1c5fae;font-weight:600}
+.dif-xmlbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px}
+.dif-xmlbar button{margin-left:auto}
+.dif-mais{color:#b3261e;font-weight:800}.dif-menos{color:#0b6b4f;font-weight:800}
+.dif-cmp{min-width:170px}
+.dif-cmp i{display:block;height:8px;border-radius:4px;width:var(--w);margin:3px 0;animation:snGrow 1s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:calc(var(--i) * 60ms + .2s)}
+.dif-cmp i.a{background:#c9cfdc}.dif-cmp i.d{background:#1f2a5a}
+.dif-xmlbar{display:block;line-height:1.6}.dif-xmlbar button{margin-left:10px;vertical-align:middle}
