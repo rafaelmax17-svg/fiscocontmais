@@ -3012,8 +3012,13 @@ def main(argv):
         cest_invalidos = [c.strip() for c in cest_str.split(',') if c.strip()]
         corrigido, resumo = corrigir_sped_fiscal(texto, cest_invalidos)
         saida = optc('--saida', 'sped_corrigido.txt')
-        with open(saida, 'w', encoding='utf-8', newline='') as fh:
+        with open(saida + '.parcial', 'w', encoding='utf-8', newline='') as fh:
             fh.write(corrigido)
+        os.replace(saida + '.parcial', saida)
+        # o dashboard é gravado antes do resumo: quem espera pelo .json já encontra o HTML pronto
+        if '--html' in args:
+            import corretor_dash as _cd
+            _out(optc('--html', 'corretor.html'), _cd.gerar_html(texto, corrigido, resumo, _logo_uri()))
         if '--json' in args:
             _out(optc('--json', 'resumo.json'), json.dumps(resumo, ensure_ascii=False))
         print('SPED corrigido gerado:', saida)

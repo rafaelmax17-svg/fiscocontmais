@@ -70,7 +70,7 @@ jobs:
               --hidden-import auditoria_am --hidden-import st_am_dados --hidden-import oportunidades --hidden-import legalizacao --hidden-import efd_cliente --hidden-import efd_contribuicoes \
               --hidden-import efd_corretor --hidden-import efd_conferencia --hidden-import efd_tabelas_natureza_dados \
               --hidden-import nfse_danfse --hidden-import nfse_lote --hidden-import nfse_pdf_dados \
-              --hidden-import difal_ro --hidden-import simples_ro --hidden-import tabela_ajustes_dados --hidden-import evolucao_tributaria \
+              --hidden-import difal_ro --hidden-import simples_ro --hidden-import corretor_dash --hidden-import tabela_ajustes_dados --hidden-import evolucao_tributaria \
               --collect-all pdfplumber --collect-all pdfminer --collect-all reportlab \
               $n.py
           done

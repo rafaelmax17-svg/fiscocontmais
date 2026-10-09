@@ -1784,14 +1784,19 @@ ipcMain.handle('fiscal:corrigirSped', async (_evt, { spedPath, cestInvalidos }) 
   const resumoTmp = path.join(os.tmpdir(), `fc_resumo_${Date.now()}.json`);
   try {
     const cestArg = (cestInvalidos || []).filter(Boolean).join(',');
-    const args = ['corrigir', spedPath, '--saida', saidaTmp, '--json', resumoTmp];
+    const htmlTmp = path.join(os.tmpdir(), `fc_corr_dash_${Date.now()}.html`);
+    const args = ['corrigir', spedPath, '--saida', saidaTmp, '--html', htmlTmp, '--json', resumoTmp];
     if (cestArg) args.push('--cest', cestArg);
-    await runFiscal(args, saidaTmp);
+    // o .json é o último arquivo gravado pelo núcleo: esperar por ele garante SPED e dashboard completos
+    await runFiscal(args, resumoTmp);
     const resumo = JSON.parse(fs.readFileSync(resumoTmp, 'utf-8'));
     fs.unlink(resumoTmp, () => {});
+    let html = '';
+    try { html = fs.readFileSync(htmlTmp, 'utf-8'); fs.unlink(htmlTmp, () => {}); } catch (_) {}
     if (lastSpedCorrigidoPath) fs.unlink(lastSpedCorrigidoPath, () => {});
     lastSpedCorrigidoPath = saidaTmp;
-    return { ok: true, resumo };
+    lastCorretorDash = { spedPath, html };
+    return { ok: true, resumo, html };
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
@@ -1873,8 +1878,10 @@ ipcMain.handle('admin:simplesAplicar', async (_evt, { spedPath, usarCorrigido, x
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+let lastCorretorDash = null;   // dashboard da última correção (mostrado de imediato, sem rodar de novo)
 ipcMain.handle('fiscal:corrigirSpedDashboard', async (_evt, spedPath) => {
   if (!spedPath) return { error: 'Selecione o SPED.' };
+  if (lastCorretorDash && lastCorretorDash.spedPath === spedPath && lastCorretorDash.html) return { ok: true, html: lastCorretorDash.html };
   const htmlTmp = path.join(os.tmpdir(), `fc_corr_dash_${Date.now()}.html`);
   try {
     await runFiscal(['corrigir', spedPath, '--saida', path.join(os.tmpdir(), `fc_corr_dash_sped_${Date.now()}.txt`), '--html', htmlTmp], htmlTmp);

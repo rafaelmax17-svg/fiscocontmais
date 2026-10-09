@@ -1379,7 +1379,14 @@ function bindFiscal() {
         toast('SPED corrigido salvo.');
         window.fiscocont.openPath(res3.path);
       });
-      toast('Correção concluída — confira o resumo.');
+      // o dashboard animado já vem junto com a correção e abre sozinho
+      if (res.html) {
+        const fr = $('#corrSpedFrame');
+        fr.srcdoc = res.html;
+        fr.hidden = false; $('#corrSpedEmpty').hidden = true;
+        $('#corrDifal').hidden = true; $('#corrSimples').hidden = true;
+      }
+      toast('Correção concluída — confira o dashboard.');
     });
 
     // ---- Uso e consumo / ativo: CFOP 1.xxx x 2.xxx e DIFAL de RO (conferência + confirmação) ----
