@@ -1408,11 +1408,23 @@ function bindFiscal() {
       return { base: r2(v), difal: r2(v * (an - ai)) };
     }
     const STATUS = {
-      faltando: ['Falta DIFAL', 'b-err'], divergente: ['DIFAL divergente', 'b-warn'], ok: ['DIFAL ok', 'b-ok'],
+      faltando: ['Falta DIFAL', 'b-err'], balcao: ['Balcão · sem DIFAL', 'b-info'], nf_fora: ['NF-e fora do SPED', 'b-warn'], divergente: ['DIFAL divergente', 'b-warn'], ok: ['DIFAL ok', 'b-ok'],
       pago_fora: ['Pago fora da apuração', 'b-info'], interna: ['Operação interna', 'b-mute'],
       cancelada: ['Cancelada', 'b-mute'], sem_uf: ['UF não identificada', 'b-warn'], st_nota: ['ICMS-ST retido na nota', 'b-info'],
     };
-    const podeDifal = (d) => d.interestadual && (d.status === 'faltando' || d.status === 'divergente');
+    // compra de balcão: a classificação (consumo × ativo) pode ser trocada na tela e muda o que é sugerido
+    function efe(d) {
+      const cl = d.balcao && DIF.classe && DIF.classe[d.id];
+      if (cl && cl !== d.balcao.classe) {
+        if (cl === 'ativo') {
+          const st = d.difal_lancado > 0 ? (Math.abs(d.difal_lancado - d.difal_calculado) <= 0.05 ? 'ok' : 'divergente') : 'faltando';
+          return { status: st, sugDifal: st !== 'ok', sugRem: false, classe: cl };
+        }
+        return { status: 'balcao', sugDifal: false, sugRem: d.difal_lancado > 0, classe: cl };
+      }
+      return { status: d.status, sugDifal: d.sugerido_difal, sugRem: d.sugerido_remover, classe: d.balcao ? d.balcao.classe : null };
+    }
+    const podeDifal = (d) => d.interestadual && (efe(d).status === 'faltando' || efe(d).status === 'divergente');
 
     async function difalAbrir() {
       if (!corrSpedPath) return;
@@ -1420,7 +1432,7 @@ function bindFiscal() {
       const res = await window.fiscocont.admin.difalAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path });
       overlay(false);
       if (res.error) { toast(res.error, true); return; }
-      DIF.an = res.res; DIF.origem = res.origem;
+      DIF.an = res.res; DIF.origem = res.origem; DIF.classe = {};
       $('#corrSpedEmpty').hidden = true; $('#corrSpedFrame').hidden = true; $('#corrSpedResumo').hidden = true;
       $('#corrSimples').hidden = true;
       difalRender();
@@ -1433,7 +1445,8 @@ function bindFiscal() {
       box.hidden = false;
       const naoRO = emp.uf && emp.uf !== 'RO';
       const linhas = docs.map((d) => {
-        const st = STATUS[d.status] || [d.status, 'b-mute'];
+        const ef = efe(d);
+        const st = STATUS[ef.status] || [ef.status, 'b-mute'];
         const cfop = d.correcoes_cfop.length
           ? `<label class="dif-ck"><input type="checkbox" data-cfop="${d.id}" ${d.sugerido_cfop ? 'checked' : ''}> ${d.correcoes_cfop.map((c) => `${c.de} → <b>${c.para}</b>`).join('<br>')}</label>`
           : `<span class="dif-mute">${[...new Set(d.grupos.flatMap((g) => g.cfops))].join(', ')}</span>`;
@@ -1451,7 +1464,8 @@ function bindFiscal() {
           </div>`).join('');
         return `
           <tr data-id="${d.id}" class="${ok ? '' : 'dif-off'}">
-            <td>${ok ? `<input type="checkbox" data-difal="${d.id}" ${d.sugerido_difal ? 'checked' : ''} title="Lançar DIFAL (C195/C197)">` : ''}</td>
+            <td>${ok ? `<input type="checkbox" data-difal="${d.id}" ${ef.sugDifal ? 'checked' : ''} title="Lançar DIFAL (C195/C197)">`
+              : (ef.status === 'balcao' && d.difal_lancado > 0 ? `<input type="checkbox" data-rem="${d.id}" ${ef.sugRem ? 'checked' : ''} title="Retirar o DIFAL lançado (compra de balcão)">` : '')}</td>
             <td><b>${esc(d.num)}</b><small>${dt(d.data)}${d.serie ? ' · série ' + esc(d.serie) : ''}</small></td>
             <td>${esc(d.fornecedor)}<small>${esc(d.cnpj)}</small></td>
             <td><b>${esc(d.uf_origem || '?')}</b><small>${esc(d.fonte_uf || '')}</small></td>
@@ -1486,10 +1500,14 @@ function bindFiscal() {
           <div class="k-warn"><span>DIFAL divergente</span><b data-n="${rs.divergente || 0}">0</b></div>
           <div class="k-ok"><span>DIFAL correto</span><b data-n="${rs.ok || 0}">0</b></div>
           <div><span>Pago fora (RO90000002)</span><b data-n="${rs.pago_fora || 0}">0</b></div>
+          ${rs.balcao ? `<div class="k-err"><span>Compras de balcão</span><b data-n="${rs.balcao}">0</b><small>DIFAL a retirar: R$ ${fm(rs.balcao_difal_indevido)}</small></div>` : ''}
+          ${rs.fretes ? `<div class="k-err"><span>DIFAL do frete (CT-e)</span><b data-n="${rs.fretes_difal_faltando || 0}" data-fmt="brl">R$ 0,00</b><small>${rs.fretes_faltando || 0} de ${rs.fretes} CT-e sem DIFAL</small></div>` : ''}
           ${XMLS.path ? `<div class="k-warn"><span>Alíquota XML × SPED</span><b data-n="${rs.aliq_xml_diverge || 0}">0</b><small>DIFAL ${rs.dif_xml_sped >= 0 ? 'a mais' : 'a menos'} pelo XML: R$ ${fm(Math.abs(rs.dif_xml_sped || 0))}</small></div>
           <div><span>ICMS-ST retido na nota</span><b data-n="${rs.st_nota || 0}">0</b><small>sem DIFAL a lançar</small></div>` : ''}
         </div>
         ${difCompHtml(docs)}
+        ${difBalcaoHtml(an)}
+        ${difFreteHtml(an)}
         ${docs.length ? `
         <div class="dif-tw"><table class="dif-tab">
           <thead><tr><th><input type="checkbox" id="difTodos" title="Marcar/desmarcar o DIFAL de todas"></th><th>Nota</th><th>Fornecedor</th><th>UF</th><th>CFOP</th>
@@ -1521,8 +1539,26 @@ function bindFiscal() {
       };
       $('#btnDifXmls').addEventListener('click', anexar);
       if ($('#btnDifXmls2')) $('#btnDifXmls2').addEventListener('click', anexar);
-      box.querySelectorAll('select[data-inter], input[data-interna], input[data-difal], input[data-cfop]').forEach((el) =>
+      box.querySelectorAll('select[data-inter], input[data-interna], input[data-difal], input[data-cfop], input[data-rem], input[data-frete]').forEach((el) =>
         el.addEventListener('input', () => difalAtualiza()));
+      box.querySelectorAll('select[data-classe]').forEach((el) => el.addEventListener('change', () => {
+        DIF.classe = DIF.classe || {};
+        DIF.classe[el.dataset.classe] = el.value;
+        difalRender(); animaNumeros($('#corrDifal'));
+        toast('Classificação alterada: confira as marcações da nota.');
+      }));
+      box.querySelectorAll('input[name="difBalcCfop"]').forEach((el) => el.addEventListener('change', () => {
+        DIF.balcCfop = el.value;
+        (an.docs || []).filter((d) => efe(d).status === 'balcao').forEach((d) => {
+          const c = box.querySelector(`input[data-cfop="${d.id}"]`);
+          if (c) c.checked = el.value === 'trocar';
+        });
+        box.querySelectorAll('.dif-bmodo label').forEach((l) => l.classList.toggle('on', !!l.querySelector('input:checked')));
+        difalAtualiza();
+      }));
+      if (DIF.balcCfop === 'trocar') (an.docs || []).filter((d) => efe(d).status === 'balcao').forEach((d) => {
+        const c = box.querySelector(`input[data-cfop="${d.id}"]`); if (c) c.checked = true;
+      });
       const todos = $('#difTodos');
       if (todos) todos.addEventListener('change', () => { box.querySelectorAll('input[data-difal]').forEach((c) => { c.checked = todos.checked; }); difalAtualiza(); });
       box.querySelectorAll('input[data-cred], input[name="difCredModo"], #difCredCod').forEach((el) =>
@@ -1531,6 +1567,107 @@ function bindFiscal() {
       if (todosC) todosC.addEventListener('change', () => { box.querySelectorAll('input[data-cred]').forEach((c) => { c.checked = todosC.checked; }); difalAtualiza(); });
       $('#btnDifAplicar').addEventListener('click', difalAplicar);
       difalAtualiza();
+    }
+
+    // ---- compras no balcão em outro estado (Parecer 053/2019/GETRI/CRE/SEFIN-RO) ----
+    function difBalcaoHtml(an) {
+      const bs = (an.docs || []).filter((d) => d.balcao);
+      if (!bs.length) return '';
+      const credPor = {};
+      ((an.creditos || {}).docs || []).forEach((c) => { credPor[c.id] = c; });
+      const g = { rem: [0, 0], cred: [0, 0], ok: [0, 0], ativo: [0, 0], nfce: [0, 0] };
+      bs.forEach((d) => {
+        const ef = efe(d);
+        if (d.balcao.mod === '65') { g.nfce[0]++; g.nfce[1] += d.grupos.reduce((t, x) => t + x.valor, 0); }
+        else if (ef.classe === 'ativo') { g.ativo[0]++; g.ativo[1] += d.difal_calculado; }
+        else if (d.difal_lancado > 0) { g.rem[0]++; g.rem[1] += d.difal_lancado; }
+        else if (!credPor[d.id]) g.ok[0]++;
+        if (credPor[d.id] && ef.classe !== 'ativo') { g.cred[0]++; g.cred[1] += credPor[d.id].credito; }
+      });
+      const mx = Math.max(1, ...Object.values(g).map((x) => x[0]));
+      const barra = (t, k, cor, i) => g[k][0] ? `<div class="sn-bar" style="--i:${i}"><span class="sn-bl">${t}</span><span class="sn-bt"><i style="--w:${(g[k][0] / mx * 100).toFixed(1)}%;background:${cor}"></i></span><b>${g[k][0]}</b><small>${g[k][1] ? 'R$ ' + fm(g[k][1]) : '—'}</small></div>` : '';
+      const trocar = DIF.balcCfop === 'trocar';
+      const linhas = bs.map((d) => {
+        const ef = efe(d), b = d.balcao, st = STATUS[ef.status] || [ef.status, 'b-mute'], cr = credPor[d.id];
+        const sped = [];
+        sped.push(`<span class="pill p-s">CFOP ${esc([...new Set(d.grupos.flatMap((x) => x.cfops))].join(', ') || (d.correcoes_cfop[0] || {}).de || '—')}</span>`);
+        if (d.difal_lancado) sped.push(`DIFAL lançado <b>R$ ${fm(d.difal_lancado)}</b>`);
+        if (cr) sped.push(`crédito R$ ${fm(cr.credito)} <i>(quadro de crédito)</i>`);
+        if (b.mod === '65') sped.push('NFC-e escriturada no C100');
+        const acao = b.mod === '65' ? 'Só aviso: NFC-e não entra na EFD de entradas'
+          : ef.classe === 'ativo' ? (d.difal_lancado > 0 && ef.status === 'ok' ? 'Manter o DIFAL' : 'Lançar o DIFAL (marque na tabela abaixo)')
+          : [d.difal_lancado > 0 ? 'Retirar o DIFAL' : '', cr ? 'retirar o crédito' : ''].filter(Boolean).join(' e ') || 'Nada a corrigir';
+        return `<tr>
+          <td><b>${esc(d.num)}</b><small>${dt(d.data)} · ${b.mod === '65' ? 'NFC-e 65' : 'NF-e 55'}</small></td>
+          <td>${esc(d.fornecedor)}<small>${esc(d.uf_origem)}</small></td>
+          <td><div class="dif-xs">${b.mod === '65' ? '<span class="pill p-x">NFC-e</span><span class="pill p-x">consumidor</span>'
+            : `<span><span class="pill p-x">CFOP ${esc(b.cfop_xml.join(', ') || '—')}</span><span class="pill p-x">interna</span>${b.ind_pres === '1' ? '<span class="pill p-x">presencial</span>' : ''}</span>
+               <span>${b.aliq_xml.length ? 'ICMS ' + b.aliq_xml.map((x) => fa(x)).join(' / ') + ' (alíquota interna da origem)' : ''}</span>`}</div></td>
+          <td><div class="dif-xs">${sped.join('<br>')}</div></td>
+          <td>${esc((b.itens || []).join(', ') || '—')}</td>
+          <td>${b.mod === '65' ? 'Consumo imediato' : `<select class="dif-cls" data-classe="${d.id}">
+              <option value="consumo" ${ef.classe === 'consumo' ? 'selected' : ''}>Consumo imediato / em trânsito</option>
+              <option value="ativo" ${ef.classe === 'ativo' ? 'selected' : ''}>Bem do ativo (segue interestadual)</option></select>
+              <small>${esc(b.motivo)}</small>`}</td>
+          <td>${acao}</td>
+          <td><span class="dif-b ${st[1]}">${st[0]}</span></td></tr>`;
+      }).join('');
+      return `
+        <div class="dif-sec">
+          <div class="dif-k">Compras no balcão em outro estado</div>
+          <div class="dif-lei"><b>Regra da SEFIN/RO (Parecer 053/2019/GETRI/CRE):</b> compra feita no balcão em outro estado é <b>operação interna da origem</b>,
+            com a alíquota interna de lá, e <b>não gera DIFAL para RO</b>. A NF-e entra no SPED <b>sem crédito</b>; a NFC-e não entra na EFD de entradas.
+            <b>Exceção:</b> bem do ativo (o parecer cita motor, carroceria, eixo e jogo de pneus) segue interestadual e o DIFAL é devido.
+            O sistema reconhece pelo XML: destino da operação "interna", CFOP 5.xxx e fornecedor de fora de RO.</div>
+          <div class="sn-dash">
+            <div class="sn-card"><div class="dif-k">Situação das compras de balcão</div><div class="sn-bars">
+              ${barra('Retirar DIFAL lançado', 'rem', '#e34948', 0)}${barra('Retirar crédito tomado', 'cred', '#eb6834', 1)}
+              ${barra('Correto (sem DIFAL e sem crédito)', 'ok', '#1baf7a', 2)}${barra('Bem do ativo · DIFAL devido', 'ativo', '#4a3aa7', 3)}
+              ${barra('NFC-e na EFD (aviso)', 'nfce', '#eda100', 4)}</div></div>
+            <div class="sn-card"><div class="dif-k">CFOP de entrada nas compras de balcão</div>
+              <div class="dif-modo dif-bmodo">
+                <label class="${trocar ? '' : 'on'}"><input type="radio" name="difBalcCfop" value="manter" ${trocar ? '' : 'checked'}> <b>Manter como está</b><br>O parecer não define o CFOP de entrada.</label>
+                <label class="${trocar ? 'on' : ''}"><input type="radio" name="difBalcCfop" value="trocar" ${trocar ? 'checked' : ''}> <b>Trocar 2.xxx para 1.xxx</b><br>Trata a compra como interna no SPED.</label>
+              </div>
+              <p class="dif-sub" style="margin:0">A troca marca o CFOP de cada compra de balcão na tabela de notas; dá para desmarcar nota a nota.</p></div>
+          </div>
+          <div class="dif-tw"><table class="dif-tab">
+            <thead><tr><th>Nota</th><th>Fornecedor</th><th>No XML (fornecedor)</th><th>No SPED (cliente)</th><th>Itens</th><th>Classificação</th><th>O que será feito</th><th>Situação</th></tr></thead>
+            <tbody>${linhas}</tbody></table></div>
+        </div>`;
+    }
+
+    // ---- DIFAL do frete (CT-e) de uso e consumo / ativo — mesmo código da mercadoria, no D197 ----
+    function difFreteHtml(an) {
+      const fs = an.fretes || [];
+      if (!fs.length) return '';
+      const linhas = fs.map((f) => {
+        const st = STATUS[f.status] || [f.status, 'b-mute'];
+        const pode = ['faltando', 'divergente'].includes(f.status) && f.difal_calculado > 0;
+        return `<tr class="${pode ? '' : 'dif-off'}">
+          <td>${pode ? `<input type="checkbox" data-frete="${f.id}" ${f.sugerido ? 'checked' : ''} title="Lançar o DIFAL do frete (D195/D197)">` : ''}</td>
+          <td><b>${esc(f.num)}</b><small>${dt(f.data)} · CT-e</small></td>
+          <td>${esc(f.transportadora)}<small>${esc(f.cnpj)}</small></td>
+          <td><b>${esc(f.uf_ini)}</b> → ${esc(f.uf_fim || 'RO')}</td>
+          <td>${f.nfes_sped} de ${f.nfes} no SPED<small>${esc((f.notas || []).join(', '))}</small></td>
+          <td class="n">R$ ${fm(f.valor)}</td>
+          <td>${f.grupos.map((g) => `<div>${g.tipo === 'ativo' ? 'Ativo' : 'Uso/consumo'} · ${fa(g.proporcao)} · R$ ${fm(g.valor)} · ${fa(g.aliq_inter)}<small>${esc(g.fonte_aliq)}</small></div>`).join('') || '—'}</td>
+          <td class="n"><b>${f.difal_calculado ? 'R$ ' + fm(f.difal_calculado) : '—'}</b></td>
+          <td class="n">${f.difal_lancado ? 'R$ ' + fm(f.difal_lancado) : '—'}</td>
+          <td><span class="dif-b ${st[1]}">${st[0]}</span>${(f.obs || []).map((o) => `<small class="dif-obs">${esc(o)}</small>`).join('')}</td></tr>`;
+      }).join('');
+      return `
+        <div class="dif-sec">
+          <div class="dif-k">DIFAL do frete (CT-e) de uso e consumo e ativo</div>
+          <div class="dif-lei"><b>Quando incide:</b> frete contratado pela empresa (tomador do CT-e), com transporte iniciado em outro estado e mercadoria de uso e consumo
+            ou ativo (LC 87/96, art. 12, XIII). Usa o mesmo código da mercadoria (RO40000002 / RO40000001), lançado em <b>D195 + D197</b> no CT-e e somado no campo 03 do E110.
+            Frete CIF (tomador = fornecedor) não entra: já está no valor da NF-e. Quando o CT-e leva também mercadoria de outra finalidade, o frete é rateado pelo valor das notas.</div>
+          <div class="dif-tw"><table class="dif-tab">
+            <thead><tr><th></th><th>CT-e</th><th>Transportadora</th><th>Trajeto</th><th>NF-e transportadas</th><th class="n">Frete</th><th>Parte de uso/ativo · alíquota</th>
+              <th class="n">DIFAL</th><th class="n">Lançado</th><th>Situação</th></tr></thead>
+            <tbody>${linhas}</tbody></table></div>
+          ${(an.resumo || {}).ctes_sem_xml ? `<p class="dif-sub" style="margin:0">${an.resumo.ctes_sem_xml} CT-e de entrada sem XML anexado: não dá para saber o tomador nem as notas transportadas.</p>` : ''}
+        </div>`;
     }
 
     // ---- XML × SPED: alíquota interestadual conferida item a item ----
@@ -1641,7 +1778,7 @@ function bindFiscal() {
 
     function difalSelecao() {
       const an = DIF.an, box = $('#corrDifal'), sel = [];
-      let delta = 0, nCfop = 0, nDif = 0;
+      let delta = 0, nCfop = 0, nDif = 0, nRem = 0;
       for (const d of an.docs || []) {
         const cCfop = box.querySelector(`input[data-cfop="${d.id}"]`);
         const cDif = box.querySelector(`input[data-difal="${d.id}"]`);
@@ -1653,24 +1790,37 @@ function bindFiscal() {
           const inter = Number(row.querySelector('[data-inter]').value);
           const interna = Number(String(row.querySelector('[data-interna]').value).replace(',', '.'));
           const c = difCalc(g.valor, inter, interna, an.base_dupla);
-          row.querySelector('[data-val]').textContent = d.interestadual ? 'R$ ' + fm(c.difal) : '—';
+          row.querySelector('[data-val]').textContent = d.interestadual && efe(d).status !== 'balcao' ? 'R$ ' + fm(c.difal) : '—';
           tot += c.difal;
           grupos.push({ tipo: g.tipo, aliq_inter: g.aliq_inter, aliq_inter_nova: inter, aliq_interna: interna });
         });
+        const cRem = box.querySelector(`input[data-rem="${d.id}"]`);
+        const rem = !!(cRem && cRem.checked);
+        if (rem) { delta -= d.difal_lancado || 0; nRem++; }
         if (incluir) { delta += tot - (d.difal_lancado || 0); nDif++; }
         if (corrigir) nCfop++;
-        if (corrigir || incluir) sel.push({ id: d.id, corrigir_cfop: corrigir, incluir_difal: incluir, grupos });
+        if (rem) sel.push({ id: d.id, corrigir_cfop: corrigir, remover_difal: true, grupos: [] });
+        else if (corrigir || incluir) sel.push({ id: d.id, corrigir_cfop: corrigir, incluir_difal: incluir, grupos });
       }
-      return { sel, delta: r2(delta), nCfop, nDif, cred: credSelecao() };
+      const fretes = [];
+      let nFrete = 0, vFrete = 0;
+      for (const f of an.fretes || []) {
+        const c = box.querySelector(`input[data-frete="${f.id}"]`);
+        if (!c || !c.checked) continue;
+        nFrete++; vFrete += f.difal_calculado - (f.difal_lancado || 0);
+        delta += f.difal_calculado - (f.difal_lancado || 0);
+        fretes.push({ id: f.id, incluir: true, grupos: f.grupos.map((g) => ({ tipo: g.tipo, aliq_inter: g.aliq_inter, aliq_interna: g.aliq_interna })) });
+      }
+      return { sel, fretes, delta: r2(delta), nCfop, nDif, nRem, nFrete, vFrete: r2(vFrete), cred: credSelecao() };
     }
 
     // prévia do E110 pelas fórmulas do Guia Prático (campos 11, 13 e 14)
     function difalAtualiza() {
-      const an = DIF.an, e = an.e110, { delta, nCfop, nDif, cred } = difalSelecao();
+      const an = DIF.an, e = an.e110, { delta, nCfop, nDif, nRem, nFrete, cred } = difalSelecao();
       const prev = $('#difPrev');
       const nCred = cred.ids.length;
       const b = $('#btnDifAplicar');
-      b.disabled = !(nCfop || nDif || nCred);
+      b.disabled = !(nCfop || nDif || nCred || nRem || nFrete);
       b.dataset.conf = '';
       b.textContent = 'Aplicar no SPED (gera arquivo novo)';
       if (!e) { prev.innerHTML = '<div class="dif-av err">SPED sem registro E110: o DIFAL e o crédito não podem ser lançados (só a troca de CFOP).</div>'; return; }
@@ -1684,7 +1834,7 @@ function bindFiscal() {
       const lin = (t, a, b) => `<tr><td>${t}</td><td class="n">R$ ${fm(a)}</td><td class="n ${r2(a) !== r2(b) ? 'mud' : ''}">R$ ${fm(b)}</td></tr>`;
       prev.innerHTML = `
         <div class="dif-k">Conferência da apuração (E110) com o que está marcado</div>
-        <p class="dif-sub">${nCfop} nota(s) com CFOP a corrigir · ${nDif} nota(s) com DIFAL a lançar (R$ ${fm(delta)}) ·
+        <p class="dif-sub">${nCfop} nota(s) com CFOP a corrigir · ${nDif} nota(s) com DIFAL a lançar${nFrete ? ` · ${nFrete} CT-e com DIFAL do frete` : ''}${nRem ? ` · ${nRem} compra(s) de balcão com DIFAL retirado` : ''} · diferença no campo 03: R$ ${fm(delta)} ·
           ${nCred} nota(s) com crédito ${cred.modo === 'zerar' ? 'zerado' : 'estornado'} (<b>R$ ${fm(cred.total)}</b>)</p>
         <table class="dif-mini"><thead><tr><th></th><th class="n">Antes</th><th class="n">Depois</th></tr></thead><tbody>
           ${lin('Ajustes a débito das notas (campo 03)', A.aj, D.aj)}
@@ -1701,9 +1851,9 @@ function bindFiscal() {
 
     async function difalAplicar() {
       const b = $('#btnDifAplicar');
-      const { sel, delta, nCfop, nDif, cred } = difalSelecao();
-      if (!sel.length && !cred.ids.length) return;
-      const selecao = { docs: sel };
+      const { sel, fretes, delta, nCfop, nDif, nRem, nFrete, vFrete, cred } = difalSelecao();
+      if (!sel.length && !cred.ids.length && !fretes.length) return;
+      const selecao = { docs: sel, fretes };
       if (cred.ids.length) selecao.creditos = { modo: cred.modo, cod_aj: cred.cod, docs: cred.ids };
       if (DIF.precisaE116) {
         const venc = ($('#difVenc').value || '').replace(/\D/g, ''), cod = ($('#difCodRec').value || '').trim();
@@ -1714,7 +1864,9 @@ function bindFiscal() {
         b.dataset.conf = '1';
         const partes = [];
         if (nCfop) partes.push(`${nCfop} CFOP`);
-        if (nDif) partes.push(`DIFAL R$ ${fm(delta)}`);
+        if (nDif || nRem || nFrete) partes.push(`campo 03 ${delta >= 0 ? '+' : '−'} R$ ${fm(Math.abs(delta))}`);
+        if (nFrete) partes.push(`${nFrete} CT-e (R$ ${fm(vFrete)})`);
+        if (nRem) partes.push(`${nRem} balcão sem DIFAL`);
         if (cred.ids.length) partes.push(`${cred.modo === 'zerar' ? 'retirar' : 'estornar'} R$ ${fm(cred.total)} de crédito`);
         b.textContent = `Confirmar: ${partes.join(' · ')} (gera arquivo novo)`;
         return;
@@ -1733,6 +1885,8 @@ function bindFiscal() {
           <div class="dif-kpis">
             <div><span>CFOP corrigidos</span><b data-n="${r.cfop_corrigidos || 0}">0</b><small>em ${r.notas_cfop ?? 0} nota(s) · C170 e C190</small></div>
             <div><span>Notas com DIFAL</span><b data-n="${r.difal_incluidos || 0}">0</b><small>${r.c195_inseridos ?? 0} C195 · ${r.c197_inseridos ?? 0} C197</small></div>
+            ${r.fretes_incluidos ? `<div class="k-err"><span>DIFAL do frete (D197)</span><b data-n="${r.frete_difal || 0}" data-fmt="brl">R$ 0,00</b><small>${r.fretes_incluidos} CT-e · ${r.d197_inseridos || 0} D197</small></div>` : ''}
+            ${r.notas_balcao_retiradas ? `<div class="k-ok"><span>DIFAL retirado (balcão)</span><b data-n="${r.difal_retirado_balcao || 0}" data-fmt="brl">R$ 0,00</b><small>${r.notas_balcao_retiradas} nota(s) · Parecer 053/2019</small></div>` : ''}
             <div class="k-err"><span>DIFAL lançado</span><b data-n="${r.difal_total || 0}" data-fmt="brl">R$ 0,00</b>${r.difal_removido ? `<small>substituiu R$ ${fm(r.difal_removido)} anterior</small>` : ''}</div>
             ${r.cred_notas ? `<div class="k-err"><span>Crédito ${r.cred_modo === 'zerar' ? 'retirado' : 'estornado'}</span><b data-n="${r.cred_total || 0}" data-fmt="brl">R$ 0,00</b><small>${r.cred_notas} nota(s)${r.cred_modo === 'zerar' ? ` · ${r.cred_c170} C170 · ${r.cred_c190} C190` : ' · E111'}</small></div>` : ''}
             ${ea && ed ? `<div><span>ICMS a recolher</span><b>R$ ${fm(ed.recolher)}</b><small>antes R$ ${fm(ea.recolher)}</small></div>` : ''}

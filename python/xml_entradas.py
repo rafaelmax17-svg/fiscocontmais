@@ -23,18 +23,66 @@ def _fx(s):
         return 0.0
 
 
+def _limpa(texto):
+    limpo = re.sub(r'\sxmlns(:\w+)?="[^"]*"', '', texto)
+    limpo = re.sub(r'<(/?)\w+:', r'<\1', limpo)
+    return ET.fromstring(re.sub(r'^\s*<\?xml[^>]*\?>', '', limpo.lstrip('\ufeff')))
+
+
+def ler_cte(texto):
+    """CT-e: UF de início/fim, valor da prestação, ICMS, tomador e chaves das NF-e transportadas."""
+    m = re.search(r'<infCte[^>]*Id="CTe(\d{44})"', texto)
+    if not m:
+        return None
+    chave = m.group(1)
+    try:
+        raiz = _limpa(texto)
+    except ET.ParseError:
+        return {'chave': chave, 'tipo': 'cte', 'simples': False, 'itens': [], 'erro': 'XML ilegível'}
+    inf = raiz if raiz.tag == 'infCte' else raiz.find('.//infCte')
+    if inf is None:
+        return None
+    ide = inf.find('ide')
+    toma, toma_cnpj = '', ''
+    t3 = ide.find('toma3') if ide is not None else None
+    t4 = ide.find('toma4') if ide is not None else None
+    if t3 is not None:
+        toma = _t(t3, 'toma')
+        papel = {'0': 'rem', '1': 'exped', '2': 'receb', '3': 'dest'}.get(toma, '')
+        p = inf.find(papel) if papel else None
+        toma_cnpj = _t(p, 'CNPJ') or _t(p, 'CPF')
+    elif t4 is not None:
+        toma = '4'
+        toma_cnpj = _t(t4, 'CNPJ') or _t(t4, 'CPF')
+    icms = inf.find('imp/ICMS')
+    g = list(icms)[0] if icms is not None and len(list(icms)) else None
+    emit = inf.find('emit')
+    nfes = [(_t(x, 'chave') or '') for x in inf.findall('.//infDoc/infNFe')]
+    return {
+        'chave': chave, 'tipo': 'cte', 'simples': False, 'itens': [],
+        'cfop': _t(ide, 'CFOP'), 'uf_ini': _t(ide, 'UFIni'), 'uf_fim': _t(ide, 'UFFim'),
+        'toma': toma, 'toma_cnpj': toma_cnpj,
+        'emit_nome': _t(emit, 'xNome'), 'emit_cnpj': _t(emit, 'CNPJ'), 'emit_uf': _t(emit, 'enderEmit/UF'),
+        'vtprest': _fx(_t(inf, 'vPrest/vTPrest')),
+        'cst': _t(g, 'CST') or (g.tag if g is not None else ''),
+        'picms': _fx(_t(g, 'pICMS')) or _fx(_t(g, 'pICMSOutraUF')),
+        'vicms': _fx(_t(g, 'vICMS')) or _fx(_t(g, 'vICMSOutraUF')),
+        'nfes': [c for c in nfes if len(c) == 44],
+    }
+
+
 def ler_xml(texto):
-    """Devolve os dados da NF-e ou None se o arquivo não for uma nota."""
+    """Devolve os dados da NF-e (ou do CT-e) ou None se o arquivo não for nenhum dos dois."""
+    if '<infCte' in texto:
+        return ler_cte(texto)
     if '<infNFe' not in texto:
         return None
     m = re.search(r'<infNFe[^>]*Id="NFe(\d{44})"', texto)
     if not m:
         return None
     chave = m.group(1)
-    limpo = re.sub(r'\sxmlns(:\w+)?="[^"]*"', '', texto)
-    limpo = re.sub(r'<(/?)\w+:', r'<\1', limpo)
     try:
-        raiz = ET.fromstring(re.sub(r'^\s*<\?xml[^>]*\?>', '', limpo.lstrip('﻿')))
+        raiz = _limpa(texto)
     except ET.ParseError:
         return {'chave': chave, 'simples': False, 'itens': [], 'erro': 'XML ilegível'}
     inf = raiz if raiz.tag == 'infNFe' else raiz.find('.//infNFe')
@@ -55,7 +103,7 @@ def ler_xml(texto):
         ipi = imp.find('IPI/IPITrib')
         it = {
             'n': det.get('nItem', ''), 'cprod': _t(prod, 'cProd'), 'xprod': _t(prod, 'xProd'), 'ncm': _t(prod, 'NCM'),
-            'cfop': _t(prod, 'CFOP'),
+            'cfop': _t(prod, 'CFOP'), 'qcom': _fx(_t(prod, 'qCom')), 'ucom': _t(prod, 'uCom'),
             'vprod': _fx(_t(prod, 'vProd')), 'vdesc': _fx(_t(prod, 'vDesc')), 'vfrete': _fx(_t(prod, 'vFrete')),
             'vseg': _fx(_t(prod, 'vSeg')), 'voutro': _fx(_t(prod, 'vOutro')), 'vipi': _fx(_t(ipi, 'vIPI')),
             'orig': _t(g, 'orig'), 'cst': _t(g, 'CST'), 'csosn': _t(g, 'CSOSN'),
@@ -74,8 +122,12 @@ def ler_xml(texto):
                 if it['pcredsn'] > 0:
                     aliqs_sn.add(round(it['pcredsn'], 4))
     tot = inf.find('total/ICMSTot')
+    ide = inf.find('ide')
+    dest = inf.find('dest')
     return {
-        'chave': chave, 'simples': bool(csosns), 'csosn': sorted(csosns),
+        'chave': chave, 'tipo': 'nfe', 'simples': bool(csosns), 'csosn': sorted(csosns),
+        'mod': _t(ide, 'mod'), 'id_dest': _t(ide, 'idDest'), 'ind_pres': _t(ide, 'indPres'),
+        'dest_uf': _t(dest, 'enderDest/UF'), 'dest_cnpj': _t(dest, 'CNPJ'),
         'crt': _t(emit, 'CRT'), 'emit_nome': _t(emit, 'xNome'), 'emit_uf': _t(emit, 'enderEmit/UF'),
         'vnf': _fx(_t(tot, 'vNF')), 'vst': _fx(_t(tot, 'vST')),
         'base': round(base_sn, 2), 'credito': round(cred_sn, 2), 'aliqs': sorted(aliqs_sn),

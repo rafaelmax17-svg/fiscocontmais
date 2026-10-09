@@ -160,6 +160,58 @@ def _estrutura(linhas):
     return cab, part, obs460, docs, e110, e111_difal
 
 
+FILHOS_D100 = {'D101', 'D110', 'D120', 'D130', 'D140', 'D150', 'D160', 'D161', 'D162', 'D170', 'D180', 'D190', 'D195', 'D197'}
+
+
+def _estrutura_d(linhas):
+    """CT-e e demais documentos de transporte (D100 e filhos)."""
+    ctes, cur = [], None
+    for i, ln in enumerate(linhas):
+        c = ln.split('|')
+        if len(c) < 3:
+            continue
+        r = c[1]
+        if r == 'D100' and len(c) > 20:
+            cur = {'i': i, 'fim': i, 'oper': c[2], 'emit': c[3], 'part': c[4], 'mod': c[5], 'sit': c[6], 'serie': c[7],
+                   'num': c[9], 'chave': c[10], 'dt': c[12] or c[11], 'vl_doc': _n(c[15]), 'vl_serv': _n(c[18]),
+                   'mun_ori': c[24] if len(c) > 24 else '', 'd190': [], 'd195': [], 'd197': []}
+            ctes.append(cur)
+        elif cur is not None and r in FILHOS_D100:
+            cur['fim'] = i
+            if r == 'D190' and len(c) > 7:
+                cur['d190'].append({'i': i, 'cst': c[2], 'cfop': c[3], 'aliq': _n(c[4]), 'vl_opr': _n(c[5]), 'vl_icms': _n(c[7])})
+            elif r == 'D195':
+                cur['d195'].append({'i': i, 'cod_obs': c[2] if len(c) > 2 else ''})
+            elif r == 'D197' and len(c) > 7:
+                cur['d197'].append({'i': i, 'cod': c[2], 'icms': _n(c[7]), 'aliq': _n(c[6]), 'bc': _n(c[5])})
+        else:
+            cur = None
+    return ctes
+
+
+# Parecer 053/2019/GETRI/CRE/SEFIN-RO: compra no balcão em outro estado é operação interna da origem, sem DIFAL para RO —
+# exceto bem do ativo (o parecer cita motor, carroceria, eixo e jogo de pneus), que segue interestadual.
+ATIVO_PALAVRAS = ('MOTOR', 'CARROCERIA', 'EIXO')
+ATIVO_NCM = ('8407', '8408', '8707', '870850')
+
+
+def _classe_balcao(x, alvo):
+    """'ativo' ou 'consumo' para a compra de balcão; devolve (classe, motivo)."""
+    if any(TIPOS[c['cfop'][1:]][0] == 'ativo' for c in alvo):
+        return 'ativo', 'CFOP de ativo no SPED'
+    pneus = 0.0
+    for it in x.get('itens') or []:
+        desc = (it.get('xprod') or '').upper()
+        ncm = it.get('ncm') or ''
+        if any(p in desc for p in ATIVO_PALAVRAS) or ncm.startswith(ATIVO_NCM):
+            return 'ativo', f'item "{it.get("xprod", "")[:40]}" (motor, carroceria ou eixo)'
+        if ncm.startswith('4011') or 'PNEU' in desc:
+            pneus += it.get('qcom') or 0
+    if pneus >= 4:
+        return 'ativo', f'jogo de pneus ({int(pneus)} unidades)'
+    return 'consumo', 'consumo imediato ou em trânsito'
+
+
 def _e111_estornos(linhas):
     """E111 de estorno de crédito (ICMS próprio: 3º caractere 0, 4º caractere 1)."""
     out = []
@@ -229,7 +281,8 @@ def _grupos_xml(d, x, alvo, uf_or, interna):
                            'a nota foi emitida com 4% e o DIFAL foi calculado sobre essa alíquota. Confira com o fornecedor.')
         else:
             ai, fonte = _aliq_inter(0.0, (orig or '0') + '00', uf_or)
-            fonte = f'XML: origem {orig or "?"}, sem alíquota destacada ({fonte})'
+            fonte = (f'XML: alíquota interna da origem ({_f(it["picms"])}%); usada a interestadual ({fonte})' if it['picms'] > 0
+                     else f'XML: origem {orig or "?"}, sem alíquota destacada ({fonte})')
         cod_aj, descr = (TIPOS['556'][1], TIPOS['556'][2]) if tipo == 'uso' else (TIPOS['551'][1], TIPOS['551'][2])
         g = grupos.setdefault((tipo, ai), {'tipo': tipo, 'cod_aj': cod_aj, 'descr': descr, 'aliq_inter': ai, 'fonte_aliq': fonte,
                                            'aliq_interna': interna, 'valor': 0.0, 'cfops': set(), 'itens': 0, 'origens': set()})
@@ -299,6 +352,17 @@ def analisar_texto(texto, xmls=None):
         lista_sped = _lista(grupos)
         calc_sped = float(_d(sum(g['difal'] for g in lista_sped))) if interestadual else 0.0
         x = xmls.get(re.sub(r'\D', '', d['chave'] or ''))
+        if x and x.get('tipo') != 'nfe':
+            x = None
+        balcao = None
+        if d['mod'] == '65' and interestadual:
+            balcao = {'classe': 'consumo', 'motivo': 'NFC-e', 'ind_pres': '1', 'cfop_xml': [], 'aliq_xml': [], 'itens': [], 'mod': '65'}
+        elif x and interestadual and x.get('id_dest') == '1' and x.get('emit_uf') and x.get('emit_uf') != uf_emp:
+            classe, motivo = _classe_balcao(x, alvo)
+            cf_xml = sorted({i['cfop'] for i in x.get('itens') or [] if i.get('cfop')})
+            balcao = {'classe': classe, 'motivo': motivo, 'ind_pres': x.get('ind_pres', ''), 'cfop_xml': cf_xml,
+                      'aliq_xml': sorted({i['picms'] for i in x.get('itens') or [] if i.get('picms')}),
+                      'itens': [i['xprod'] for i in (x.get('itens') or [])][:6], 'mod': d['mod']}
         fonte, obs_xml, st_itens, comp = 'sped', [], [], None
         if x and interestadual:
             gx, obs_xml, st_itens, usados = _grupos_xml(d, x, alvo, uf_or, interna)
@@ -330,6 +394,8 @@ def analisar_texto(texto, xmls=None):
             status = 'cancelada'
         elif not interestadual:
             status = 'interna' if uf_or else 'sem_uf'
+        elif balcao and balcao['classe'] == 'consumo':
+            status = 'balcao'
         elif fonte == 'xml' and not lista_g and st_itens and existente <= 0:
             status = 'st_nota'
         elif existente > 0:
@@ -349,7 +415,21 @@ def analisar_texto(texto, xmls=None):
             obs_doc.append('A nota tem crédito de ICMS tomado: veja o quadro "Crédito de ICMS em uso e consumo".')
         if not uf_or:
             obs_doc.append('Não foi possível identificar a UF do emitente (sem chave de acesso e sem município no cadastro do participante).')
-        sugerido_cfop = bool(correcoes) and d['sit'] not in CANC
+        if balcao:
+            # compra de balcão: o parecer não define o CFOP de entrada — a troca para 1.xxx é opcional (escolha na tela)
+            if balcao['classe'] == 'consumo':
+                correcoes = [{'de': cf, 'para': '1' + cf[1:]} for cf in sorted({c['cfop'] for c in alvo}) if cf[:1] == '2']
+                if balcao['mod'] == '65':
+                    obs_doc.insert(0, 'NFC-e de compra no balcão: não entra na EFD de entradas, só na contabilidade; sem DIFAL '
+                                   'e sem crédito (Parecer 053/2019/GETRI/CRE/SEFIN).')
+                else:
+                    obs_doc.insert(0, 'Compra no balcão em outro estado (NF-e de operação interna na origem'
+                                   + (', presencial' if balcao['ind_pres'] == '1' else '') + '): sem DIFAL para RO e sem crédito '
+                                   '(Parecer 053/2019/GETRI/CRE/SEFIN).')
+            else:
+                obs_doc.insert(0, f'Compra no balcão de bem do ativo ({balcao["motivo"]}): pelo Parecer 053/2019 segue interestadual, '
+                               'com DIFAL devido.')
+        sugerido_cfop = bool(correcoes) and d['sit'] not in CANC and not balcao
         sem_bloqueio = (not tem_st and not cst_sem_trib) if fonte != 'xml' else not cst_sem_trib
         sugerido_difal = (status in ('faltando', 'divergente') and d['sit'] not in CANC and d['sit'] not in EXTEMP and sem_bloqueio
                           and uf_emp == 'RO' and calc > 0)
@@ -359,10 +439,12 @@ def analisar_texto(texto, xmls=None):
             'interestadual': interestadual, 'correcoes_cfop': correcoes, 'grupos': lista_g,
             'difal_calculado': calc, 'difal_lancado': existente, 'difal_pago_fora': fora, 'status': status,
             'obs': obs_doc, 'sugerido_cfop': sugerido_cfop, 'sugerido_difal': sugerido_difal,
-            'fonte': fonte, 'tem_xml': bool(x), 'comparacao': comp,
+            'fonte': fonte, 'tem_xml': bool(x), 'comparacao': comp, 'balcao': balcao,
+            'sugerido_remover': bool(balcao and balcao['classe'] == 'consumo' and existente > 0),
             'itens_xml': [{'xprod': i['xprod'], 'ncm': i['ncm'], 'orig': i['orig'], 'cst': i['cst'] or i['csosn'], 'picms': i['picms'],
                            'valor': i['valor_oper'], 'st': i['vicmsst']} for i in (x or {}).get('itens', [])][:30] if fonte == 'xml' else [],
         })
+    fretes, ctes_sem_xml = _analisar_fretes(linhas, docs, part, cab, xmls, interna, dupla, {x['id']: x for x in saida})
     prod = {c[2]: c[3] for c in (ln.split('|') for ln in linhas if ln.startswith('|0200|')) if len(c) > 3}
     creditos = _analisar_creditos(docs, part, uf_emp, prod)
     est_ex = _e111_estornos(linhas)
@@ -402,10 +484,12 @@ def analisar_texto(texto, xmls=None):
         'empresa': {'nome': cab.get('nome', ''), 'cnpj': cab.get('cnpj', ''), 'uf': uf_emp, 'dt_ini': cab.get('dt_ini', ''), 'dt_fin': cab.get('dt_fin', ''),
                     'cod_ver': cab.get('cod_ver', '')},
         'base_dupla': dupla, 'aliq_interna_padrao': interna, 'docs': saida, 'avisos': avisos, 'e110': apur, 'e116': e116,
-        'e111_difal': e111_difal, 'creditos': creditos,
+        'e111_difal': e111_difal, 'creditos': creditos, 'fretes': fretes,
+        'nfce_entradas': [{'id': d['i'], 'num': d['num'], 'data': d['dt'], 'fornecedor': part.get(d['part'], {}).get('nome', d['part'])}
+                          for d in docs if d['oper'] == '0' and d['mod'] == '65' and d['sit'] not in CANC],
         'resumo': {
             'notas': len(saida),
-            'cfop_errado': sum(1 for x in saida if x['correcoes_cfop']),
+            'cfop_errado': sum(1 for x in saida if x['correcoes_cfop'] and not x['balcao']),
             'faltando': sum(1 for x in saida if x['status'] == 'faltando'),
             'divergente': sum(1 for x in saida if x['status'] == 'divergente'),
             'ok': sum(1 for x in saida if x['status'] == 'ok'),
@@ -416,8 +500,93 @@ def analisar_texto(texto, xmls=None):
             'aliq_xml_diverge': sum(1 for x in saida if x['comparacao']),
             'dif_xml_sped': float(_d(sum(x['comparacao']['difal_xml'] - x['comparacao']['difal_sped'] for x in saida if x['comparacao']))),
             'st_nota': sum(1 for x in saida if x['status'] == 'st_nota'),
+            'balcao': sum(1 for x in saida if x['balcao']),
+            'balcao_consumo': sum(1 for x in saida if x['status'] == 'balcao'),
+            'balcao_difal_indevido': float(_d(sum(x['difal_lancado'] for x in saida if x['status'] == 'balcao'))),
+            'fretes': len(fretes), 'fretes_faltando': sum(1 for f in fretes if f['status'] == 'faltando'),
+            'fretes_difal_faltando': float(_d(sum(f['difal_calculado'] for f in fretes if f['status'] == 'faltando'))),
+            'ctes_sem_xml': ctes_sem_xml,
         },
     }
+
+
+def _analisar_fretes(linhas, docs, part, cab, xmls, interna, dupla, docs_analisados):
+    """DIFAL do frete (CT-e) de mercadoria de uso e consumo ou ativo — LC 87/96, art. 12, XIII: serviço de transporte
+    iniciado em outro estado e não vinculado a operação seguinte tributada. Mesmo código da mercadoria (RO40000002 /
+    RO40000001), lançado no D197 do CT-e. Precisa do XML do CT-e (tomador e NF-e transportadas)."""
+    uf_emp = (cab.get('uf') or '').strip()
+    cnpj_emp = re.sub(r'\D', '', cab.get('cnpj') or '')
+    por_chave = {re.sub(r'\D', '', d['chave'] or ''): d for d in docs if d['oper'] == '0'}
+    out, sem_xml = [], 0
+    for t in _estrutura_d(linhas):
+        if t['oper'] != '0' or t['sit'] in CANC or t['mod'] not in ('57', '67'):
+            continue
+        x = xmls.get(re.sub(r'\D', '', t['chave'] or ''))
+        if not x or x.get('tipo') != 'cte':
+            if xmls:
+                sem_xml += 1
+            continue
+        if re.sub(r'\D', '', x.get('toma_cnpj') or '') != cnpj_emp:
+            continue                    # frete não contratado pela empresa (CIF): já está no valor da NF-e
+        uf_ini = x.get('uf_ini') or ''
+        if not uf_ini or uf_ini == uf_emp:
+            continue                    # prestação iniciada no próprio estado
+        ligadas = [por_chave[k] for k in x.get('nfes') or [] if k in por_chave]
+        tot = sum(sum(c['vl_opr'] for c in d['c190']) for d in ligadas)
+        partes = {'uso': 0.0, 'ativo': 0.0}
+        balcao = 0
+        for d in ligadas:
+            a = docs_analisados.get(d['i'])
+            if a and a.get('status') == 'balcao':
+                balcao += 1
+                continue
+            for c in d['c190']:
+                if c['cfop'][1:] in TIPOS and c['cfop'][:1] in '12':
+                    partes[TIPOS[c['cfop'][1:]][0]] += c['vl_opr']
+        p = part.get(t['part'], {})
+        obs = []
+        if not ligadas:
+            if not x.get('nfes'):
+                continue
+            status, grupos = 'nf_fora', []
+            obs.append('As NF-e transportadas por este CT-e não estão no SPED do período: não dá para saber a finalidade.')
+        else:
+            if not (partes['uso'] or partes['ativo']):
+                continue                # frete de mercadoria para revenda/industrialização: sem DIFAL
+            if x.get('picms') in (4.0, 7.0, 12.0):
+                ai, fonte = x['picms'], 'alíquota do CT-e'
+            else:
+                ai, fonte = (7.0, 'regra: início no Sul/Sudeste') if uf_ini in SUL_SUDESTE_SEM_ES else (12.0, 'regra geral interestadual')
+            grupos = []
+            for tipo in ('uso', 'ativo'):
+                if partes[tipo] <= 0:
+                    continue
+                cod_aj, descr = (TIPOS['556'][1], TIPOS['556'][2]) if tipo == 'uso' else (TIPOS['551'][1], TIPOS['551'][2])
+                valor = float(_d(x['vtprest'] * partes[tipo] / tot)) if tot else 0.0
+                base, dif = calcular_difal(valor, ai, interna, dupla)
+                grupos.append({'tipo': tipo, 'cod_aj': cod_aj, 'descr': descr, 'aliq_inter': ai, 'fonte_aliq': fonte,
+                               'aliq_interna': interna, 'valor': valor, 'base': float(base), 'difal': float(dif),
+                               'proporcao': round(partes[tipo] / tot * 100, 2) if tot else 0.0})
+            if tot and (partes['uso'] + partes['ativo']) < tot - 0.01:
+                obs.append(f'O CT-e também leva mercadoria de outra finalidade: frete rateado pelo valor das notas '
+                           f'({_f((partes["uso"] + partes["ativo"]) / tot * 100)}% de uso/consumo e ativo).')
+            if (x.get('cst') or '') in ('40', '41', '51', 'ICMS45'):
+                obs.append('Prestação isenta ou não tributada na origem: confira se há benefício que afaste o DIFAL.')
+            status = None
+        calc = float(_d(sum(g['difal'] for g in grupos)))
+        lanc = float(_d(sum(y['icms'] for y in t['d197'] if y['cod'] in COD_DIFAL_APUR)))
+        if status is None:
+            status = 'faltando' if lanc <= 0.004 else ('ok' if abs(lanc - calc) <= 0.05 else 'divergente')
+        out.append({
+            'id': t['i'], 'num': t['num'], 'serie': t['serie'], 'data': t['dt'], 'chave': t['chave'],
+            'transportadora': p.get('nome') or x.get('emit_nome', ''), 'cnpj': p.get('cnpj', '') or x.get('emit_cnpj', ''),
+            'uf_ini': uf_ini, 'uf_fim': x.get('uf_fim', ''), 'valor': x.get('vtprest', 0.0), 'cfop_sped': sorted({c['cfop'] for c in t['d190']}),
+            'nfes': len(x.get('nfes') or []), 'nfes_sped': len(ligadas), 'nfes_balcao': balcao,
+            'notas': [d['num'] for d in ligadas][:8],
+            'grupos': grupos, 'difal_calculado': calc, 'difal_lancado': lanc, 'status': status, 'obs': obs,
+            'sugerido': status in ('faltando', 'divergente') and uf_emp == 'RO' and calc > 0 and not any('isenta' in o for o in obs),
+        })
+    return out, sem_xml
 
 
 def _analisar_creditos(docs, part, uf_emp, prod=None):
@@ -623,6 +792,31 @@ def aplicar_texto(texto, selecao, xmls=None):
     insercoes = {}      # índice da última linha do documento -> linhas a inserir depois dela
     remover = set()
     usados_obs = set()
+    resumo.update({'difal_retirado_balcao': 0.0, 'notas_balcao_retiradas': 0, 'fretes_incluidos': 0, 'frete_difal': 0.0, 'd197_inseridos': 0})
+
+    def obs_difal(tipo):
+        cod_obs = next((k for k, t in obs460.items() if 'DIFERENCIAL' in t.upper() and (('USO' in t.upper()) if tipo == 'uso' else ('ATIVO' in t.upper()))), None)
+        if not cod_obs:
+            cod_obs = OBS[tipo][0]
+            if cod_obs not in obs460:
+                obs460[cod_obs] = OBS[tipo][1]
+                resumo['obs_0460_criados'].append(cod_obs)
+        usados_obs.add(cod_obs)
+        return cod_obs
+
+    def tira_ajustes(filhos_aj, pais_obs, fim):
+        """Remove os ajustes de DIFAL (RO40000001/2) e o C195/D195 que ficar sem nenhum filho. Devolve o valor retirado."""
+        tirado = 0.0
+        for x in filhos_aj:
+            if x['cod'] in COD_DIFAL_APUR:
+                remover.add(x['i'])
+                tirado += x['icms']
+        for k, ob in enumerate(pais_obs):
+            prox = pais_obs[k + 1]['i'] if k + 1 < len(pais_obs) else fim + 1
+            filhos = [x for x in filhos_aj if ob['i'] < x['i'] < prox]
+            if filhos and all(x['i'] in remover for x in filhos):
+                remover.add(ob['i'])
+        return tirado
 
     for sel in selecao.get('docs', []):
         a = por_id.get(sel.get('id'))
@@ -640,6 +834,13 @@ def aplicar_texto(texto, selecao, xmls=None):
                         linhas[x['i']] = '|'.join(c)
                         resumo['cfop_corrigidos'] += 1
             _junta_c190(linhas, d, remover)
+        if sel.get('remover_difal'):
+            tirado = tira_ajustes(d['c197'], d['c195'], d['fim'])
+            if tirado:
+                resumo['difal_removido'] += tirado
+                resumo['difal_retirado_balcao'] += tirado
+                resumo['notas_balcao_retiradas'] += 1
+            continue
         if sel.get('incluir_difal') and a['interestadual'] and an['empresa']['uf'] == 'RO':
             ed = {(g.get('tipo'), float(g.get('aliq_inter'))): g for g in sel.get('grupos', [])}
             novos = []
@@ -654,28 +855,13 @@ def aplicar_texto(texto, selecao, xmls=None):
             if not novos:
                 continue
             # substitui lançamento anterior de DIFAL na apuração (se houver) pelo recalculado
-            for x in d['c197']:
-                if x['cod'] in COD_DIFAL_APUR:
-                    remover.add(x['i'])
-                    resumo['difal_removido'] += x['icms']
-            # C195 que ficou sem nenhum C197 depois da remoção (era só do DIFAL antigo) também sai
-            for k, c195 in enumerate(d['c195']):
-                prox = d['c195'][k + 1]['i'] if k + 1 < len(d['c195']) else d['fim'] + 1
-                filhos = [x for x in d['c197'] if c195['i'] < x['i'] < prox]
-                if filhos and all(x['i'] in remover for x in filhos):
-                    remover.add(c195['i'])
+            resumo['difal_removido'] += tira_ajustes(d['c197'], d['c195'], d['fim'])
             bloco = []
             for tipo in ('uso', 'ativo'):
                 gs = [n for n in novos if n[0]['tipo'] == tipo]
                 if not gs:
                     continue
-                cod_obs = next((k for k, t in obs460.items() if 'DIFERENCIAL' in t.upper() and (('USO' in t.upper()) if tipo == 'uso' else ('ATIVO' in t.upper()))), None)
-                if not cod_obs:
-                    cod_obs = OBS[tipo][0]
-                    if cod_obs not in obs460:
-                        obs460[cod_obs] = OBS[tipo][1]
-                        resumo['obs_0460_criados'].append(cod_obs)
-                usados_obs.add(cod_obs)
+                cod_obs = obs_difal(tipo)
                 bloco.append(f'|C195|{cod_obs}||')
                 resumo['c195_inseridos'] += 1
                 for g, base, dif, ai, an_ in gs:
@@ -686,6 +872,40 @@ def aplicar_texto(texto, selecao, xmls=None):
             resumo['difal_incluidos'] += 1
             resumo['detalhe'].append({'num': a['num'], 'fornecedor': a['fornecedor'], 'uf': a['uf_origem'],
                                       'difal': float(_d(sum(n[2] for n in novos)))})
+
+    # DIFAL do frete (CT-e): D195 + D197 com o mesmo código da mercadoria
+    fr_por_id = {f['id']: f for f in an.get('fretes') or []}
+    n197d = next((len(ln.split('|')) - 2 for ln in linhas if ln.startswith('|D197|')), n197)   # segue o D197 que o arquivo já tem
+    ctes_por_i = {t['i']: t for t in _estrutura_d(linhas)}
+    for sel in selecao.get('fretes', []):
+        f, t = fr_por_id.get(sel.get('id')), ctes_por_i.get(sel.get('id'))
+        if not f or not t or not sel.get('incluir') or an['empresa']['uf'] != 'RO':
+            continue
+        ed = {(g.get('tipo'), float(g.get('aliq_inter'))): g for g in sel.get('grupos', [])}
+        novos = []
+        for g in f['grupos']:
+            e = ed.get((g['tipo'], float(g['aliq_inter'])), {})
+            ai = float(e.get('aliq_inter_nova', g['aliq_inter']))
+            an_ = float(e.get('aliq_interna', g['aliq_interna']))
+            base, dif = calcular_difal(g['valor'], ai, an_, dupla)
+            if dif > 0:
+                novos.append((g, base, dif, ai, an_))
+        if not novos:
+            continue
+        resumo['difal_removido'] += tira_ajustes(t['d197'], t['d195'], t['fim'])
+        bloco = []
+        for tipo in ('uso', 'ativo'):
+            gs = [n for n in novos if n[0]['tipo'] == tipo]
+            if not gs:
+                continue
+            bloco.append(f'|D195|{obs_difal(tipo)}||')
+            for g, base, dif, ai, an_ in gs:
+                bloco.append(linha_c197(g['cod_aj'], g['descr'], base, ai, dif, an_, n197d).replace('|C197|', '|D197|', 1))
+                resumo['d197_inseridos'] += 1
+                resumo['difal_total'] += float(dif)
+                resumo['frete_difal'] += float(dif)
+        insercoes.setdefault(t['fim'], []).extend(bloco)
+        resumo['fretes_incluidos'] += 1
 
     # crédito de ICMS em uso e consumo / ativo (LC 87/96, art. 33, I; art. 20, § 5º)
     cred = selecao.get('creditos') or {}
@@ -748,6 +968,8 @@ def aplicar_texto(texto, selecao, xmls=None):
                              novas_e111, novas_e116, quebra, final_vazio)
     resumo['difal_total'] = float(_d(resumo['difal_total']))
     resumo['difal_removido'] = float(_d(resumo['difal_removido']))
+    resumo['difal_retirado_balcao'] = float(_d(resumo['difal_retirado_balcao']))
+    resumo['frete_difal'] = float(_d(resumo['frete_difal']))
     resumo['delta_e110'] = delta
     return novo_txt, resumo
 

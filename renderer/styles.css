@@ -843,3 +843,8 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .dif-cmp i{display:block;height:8px;border-radius:4px;width:var(--w);margin:3px 0;animation:snGrow 1s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:calc(var(--i) * 60ms + .2s)}
 .dif-cmp i.a{background:#c9cfdc}.dif-cmp i.d{background:#1f2a5a}
 .dif-xmlbar{display:block;line-height:1.6}.dif-xmlbar button{margin-left:10px;vertical-align:middle}
+/* balcão e frete */
+.dif-xs{display:grid;gap:3px;font-size:12px;line-height:1.45}
+.dif .pill{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:1px 7px;margin:1px 3px 1px 0}
+.dif .p-x{background:#e3f1fd;color:#1c5fae}.dif .p-s{background:#fdecee;color:#b3261e}
+.dif-cls{border:1px solid #d8dcea;border-radius:7px;padding:3px 6px;font-size:12.5px;background:#fff;max-width:240px}
