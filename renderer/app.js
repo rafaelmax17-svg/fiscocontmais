@@ -1451,7 +1451,7 @@ function bindFiscal() {
       box.innerHTML = `
         <div class="dif-head">
           <div>
-            <div class="dif-k">Uso e consumo / ativo · DIFAL de Rondônia</div>
+            <div class="dif-k">Uso e consumo / ativo · DIFAL de Rondônia e crédito de ICMS</div>
             <h3>${esc(emp.nome || '')}</h3>
             <div class="dif-sub">CNPJ ${esc(emp.cnpj || '')} · período ${dt(emp.dt_ini)} a ${dt(emp.dt_fin)} ·
               arquivo <b>${DIF.origem === 'corrigido' ? 'já corrigido nesta sessão' : 'original'}</b> ·
@@ -1474,12 +1474,13 @@ function bindFiscal() {
           <thead><tr><th><input type="checkbox" id="difTodos" title="Marcar/desmarcar o DIFAL de todas"></th><th>Nota</th><th>Fornecedor</th><th>UF</th><th>CFOP</th>
             <th>Itens · alíq. interestadual · interna · DIFAL</th><th class="n">Lançado</th><th>Situação</th></tr></thead>
           <tbody>${linhas}</tbody>
-        </table></div>` : '<div class="dif-av">Nenhuma nota de uso e consumo (CFOP x.556/x.407) ou ativo (x.551/x.406) neste SPED.</div>'}
+        </table></div>` : '<div class="dif-av">Nenhuma nota de uso e consumo (CFOP x.556/x.407) ou ativo (x.551/x.406) de outro estado ou com CFOP a corrigir neste SPED.</div>'}
+        ${credHtml(an)}
         <div class="dif-foot">
           <div class="dif-prev" id="difPrev"></div>
           <div class="dif-e116" id="difE116" hidden>
             <div class="dif-k">Guia de ICMS (E116)</div>
-            <p>O SPED não tem obrigação 000 e, com o DIFAL, passa a haver ICMS a recolher. Informe a guia:</p>
+            <p>O SPED não tem obrigação 000 e, com a correção, passa a haver ICMS a recolher. Informe a guia:</p>
             <label>Vencimento <input id="difVenc" placeholder="dd/mm/aaaa" value="${e116Qq.venc ? dt(e116Qq.venc) : ''}"></label>
             <label>Código de receita <input id="difCodRec" placeholder="ex.: 1210" value="${esc(e116Qq.cod_rec || '')}"></label>
           </div>
@@ -1495,8 +1496,89 @@ function bindFiscal() {
         el.addEventListener('input', () => difalAtualiza()));
       const todos = $('#difTodos');
       if (todos) todos.addEventListener('change', () => { box.querySelectorAll('input[data-difal]').forEach((c) => { c.checked = todos.checked; }); difalAtualiza(); });
+      box.querySelectorAll('input[data-cred], input[name="difCredModo"], #difCredCod').forEach((el) =>
+        el.addEventListener('input', () => difalAtualiza()));
+      const todosC = $('#difCredTodos');
+      if (todosC) todosC.addEventListener('change', () => { box.querySelectorAll('input[data-cred]').forEach((c) => { c.checked = todosC.checked; }); difalAtualiza(); });
       $('#btnDifAplicar').addEventListener('click', difalAplicar);
       difalAtualiza();
+    }
+
+    // ---- crédito de ICMS tomado em uso e consumo / ativo (LC 87/96, art. 33, I; art. 20, § 5º) ----
+    function credHtml(an) {
+      const cr = an.creditos || { docs: [], codigos_estorno: [] }, cd = cr.docs || [];
+      const ro = (an.empresa || {}).uf;
+      const nUso = cd.filter((x) => x.sugerido).length, nAt = cd.length - nUso;
+      const tAt = r2(cd.filter((x) => !x.sugerido).reduce((t, x) => t + x.credito, 0));
+      const v = (a, b) => `<span class="v-old">${a}</span><span class="v-new">${b}</span>`;
+      const linhas = cd.map((x) => {
+        const it = x.itens.length
+          ? x.itens.map((i) => `${esc(i.descr || i.item)}`).join('<br>')
+          : '<span class="dif-mute">nota sem itens (resumo C190)</span>';
+        const g = x.c190;
+        return `
+          <tr data-cid="${x.id}">
+            <td><input type="checkbox" data-cred="${x.id}" ${x.sugerido ? 'checked' : ''}></td>
+            <td><b>${esc(x.num)}</b><small>${dt(x.data)}</small></td>
+            <td>${esc(x.fornecedor)}<small>${esc(x.cnpj)}</small></td>
+            <td><b>${esc(x.uf_origem || '?')}</b></td>
+            <td>${g.map((c) => c.cfop).join('<br>')}</td>
+            <td>${it}</td>
+            <td>${g.map((c) => c.cst).join('<br>')}</td>
+            <td class="n">${g.map((c) => 'R$ ' + fm(c.vl_opr)).join('<br>')}</td>
+            <td class="n">${g.map((c) => v(fm(c.bc), '0,00')).join('<br>')}</td>
+            <td class="n">${g.map((c) => v(fa(c.aliq), '0%')).join('<br>')}</td>
+            <td class="n">${g.map((c) => v(fm(c.icms), '0,00')).join('<br>')}<span class="v-est">estornado no E111</span></td>
+            <td><span class="dif-b ${x.sugerido ? 'b-err' : 'b-warn'}">${x.sugerido ? 'Crédito indevido' : (x.tipo === 'ativo' ? 'Ativo · conferir CIAP' : 'Conferir')}</span>
+              ${x.difal_lancado ? `<small class="dif-obs">DIFAL lançado: R$ ${fm(x.difal_lancado)} (não muda)</small>` : ''}
+              ${(x.obs || []).map((o) => `<small class="dif-obs">${esc(o)}</small>`).join('')}</td>
+          </tr>`;
+      }).join('');
+      const cods = cr.codigos_estorno || [];
+      return `
+        <div class="dif-sec">
+          <div class="dif-sec-h"><div class="dif-k">Crédito de ICMS em uso e consumo e ativo</div></div>
+          <div class="dif-lei"><b>Por que isso é corrigido:</b> material de uso e consumo só dá direito a crédito de ICMS a partir de 01/01/2033
+            (LC 87/96, art. 33, I). No ativo imobilizado o crédito é apropriado em 48 parcelas pelo CIAP (art. 20, § 5º), não direto na nota.
+            Crédito tomado na nota reduz indevidamente o ICMS a recolher.</div>
+          ${cd.length ? `
+          <div class="dif-kpis">
+            <div class="k-err"><span>Uso e consumo com crédito</span><b>${nUso}</b><small>R$ ${fm(cr.total_uso)}</small></div>
+            <div class="k-warn"><span>Ativo com crédito na nota</span><b>${nAt}</b><small>R$ ${fm(tAt)} · conferir o CIAP</small></div>
+            <div><span>Crédito tomado (total)</span><b>R$ ${fm(cr.total)}</b></div>
+          </div>
+          <div class="dif-modo">
+            <label class="on"><input type="radio" name="difCredModo" value="zerar" checked> <b>Zerar o crédito na nota</b>
+              Zera base, alíquota e ICMS dos itens (C170), refaz o C190 e o total da nota (C100). O total de créditos do E110 (campo 06) diminui. <span class="dif-tag">recomendado</span></label>
+            <label><input type="radio" name="difCredModo" value="estorno" ${cods.length ? '' : 'disabled'}> <b>Manter a nota e estornar no E111</b>
+              A nota fica como veio e entra um estorno de crédito no E111 (campo 05 do E110).
+              ${cods.length ? `<select id="difCredCod">${cods.map((c) => `<option value="${c.cod}" ${c.cod === cr.cod_estorno_padrao ? 'selected' : ''}>${c.cod} · ${esc(c.descr.slice(0, 90))}</option>`).join('')}</select>`
+                : `<small>Sem tabela de códigos de ajuste para ${esc(ro || 'esta UF')}.</small>`}</label>
+          </div>
+          <div class="dif-tw"><table class="dif-tab dif-cred">
+            <thead><tr><th><input type="checkbox" id="difCredTodos" title="Marcar/desmarcar todas"></th><th>Nota</th><th>Fornecedor</th><th>UF</th><th>CFOP</th><th>Item</th><th>CST</th>
+              <th class="n">Valor</th><th class="n">Base</th><th class="n">Alíq.</th><th class="n">ICMS creditado</th><th>Situação</th></tr></thead>
+            <tbody>${linhas}</tbody>
+          </table></div>` : '<div class="dif-av ok">Nenhuma nota de uso e consumo ou ativo com crédito de ICMS tomado neste SPED.</div>'}
+        </div>`;
+    }
+
+    function credSelecao() {
+      const an = DIF.an, box = $('#corrDifal'), cd = (an.creditos || {}).docs || [];
+      const m = box.querySelector('input[name="difCredModo"]:checked');
+      const modo = m ? m.value : 'zerar';
+      box.querySelectorAll('.dif-modo label').forEach((l) => l.classList.toggle('on', !!l.querySelector('input:checked')));
+      const ids = [];
+      let total = 0;
+      for (const x of cd) {
+        const c = box.querySelector(`input[data-cred="${x.id}"]`);
+        const on = !!(c && c.checked);
+        const tr = box.querySelector(`tr[data-cid="${x.id}"]`);
+        if (tr) { tr.classList.toggle('z', on && modo === 'zerar'); tr.classList.toggle('es', on && modo === 'estorno'); }
+        if (on) { ids.push(x.id); total += x.credito; }
+      }
+      const codEl = $('#difCredCod');
+      return { modo, ids, total: r2(total), cod: codEl ? codEl.value : '' };
     }
 
     function difalSelecao() {
@@ -1521,26 +1603,35 @@ function bindFiscal() {
         if (corrigir) nCfop++;
         if (corrigir || incluir) sel.push({ id: d.id, corrigir_cfop: corrigir, incluir_difal: incluir, grupos });
       }
-      return { sel, delta: r2(delta), nCfop, nDif };
+      return { sel, delta: r2(delta), nCfop, nDif, cred: credSelecao() };
     }
 
     // prévia do E110 pelas fórmulas do Guia Prático (campos 11, 13 e 14)
     function difalAtualiza() {
-      const an = DIF.an, e = an.e110, { delta, nCfop, nDif } = difalSelecao();
+      const an = DIF.an, e = an.e110, { delta, nCfop, nDif, cred } = difalSelecao();
       const prev = $('#difPrev');
-      if (!e) { prev.innerHTML = '<div class="dif-av err">SPED sem registro E110 — o DIFAL não pode ser lançado.</div>'; return; }
-      const calc = (aj) => {
-        const expr = (e.deb + aj + e.tot_aj_deb + e.est_cred) - (e.cred + e.aj_cred + e.tot_aj_cred + e.est_deb + e.sld_ant);
+      const nCred = cred.ids.length;
+      const b = $('#btnDifAplicar');
+      b.disabled = !(nCfop || nDif || nCred);
+      b.dataset.conf = '';
+      b.textContent = 'Aplicar no SPED (gera arquivo novo)';
+      if (!e) { prev.innerHTML = '<div class="dif-av err">SPED sem registro E110: o DIFAL e o crédito não podem ser lançados (só a troca de CFOP).</div>'; return; }
+      const calc = (aj, est, cr) => {
+        const expr = (e.deb + aj + e.tot_aj_deb + est) - (cr + e.aj_cred + e.tot_aj_cred + e.est_deb + e.sld_ant);
         const sa = Math.max(0, expr);
-        return { aj, sa, rec: Math.max(0, sa - e.ded), cred: Math.max(0, -(expr - e.ded)) };
+        return { aj, est, cr, sa, rec: Math.max(0, sa - e.ded), cred: Math.max(0, -(expr - e.ded)) };
       };
-      const A = calc(e.aj_deb), D = calc(r2(e.aj_deb + delta));
+      const est = cred.modo === 'estorno' ? cred.total : 0, menos = cred.modo === 'zerar' ? cred.total : 0;
+      const A = calc(e.aj_deb, e.est_cred, e.cred), D = calc(r2(e.aj_deb + delta), r2(e.est_cred + est), r2(e.cred - menos));
       const lin = (t, a, b) => `<tr><td>${t}</td><td class="n">R$ ${fm(a)}</td><td class="n ${r2(a) !== r2(b) ? 'mud' : ''}">R$ ${fm(b)}</td></tr>`;
       prev.innerHTML = `
         <div class="dif-k">Conferência da apuração (E110) com o que está marcado</div>
-        <p class="dif-sub">${nCfop} nota(s) com CFOP a corrigir · ${nDif} nota(s) com DIFAL a lançar · diferença no débito: <b>R$ ${fm(delta)}</b></p>
+        <p class="dif-sub">${nCfop} nota(s) com CFOP a corrigir · ${nDif} nota(s) com DIFAL a lançar (R$ ${fm(delta)}) ·
+          ${nCred} nota(s) com crédito ${cred.modo === 'zerar' ? 'zerado' : 'estornado'} (<b>R$ ${fm(cred.total)}</b>)</p>
         <table class="dif-mini"><thead><tr><th></th><th class="n">Antes</th><th class="n">Depois</th></tr></thead><tbody>
           ${lin('Ajustes a débito das notas (campo 03)', A.aj, D.aj)}
+          ${lin('Estornos de crédito (campo 05)', A.est, D.est)}
+          ${lin('Créditos das notas (campo 06)', A.cr, D.cr)}
           ${lin('Saldo devedor (campo 11)', A.sa, D.sa)}
           ${lin('ICMS a recolher (campo 13)', A.rec, D.rec)}
           ${lin('Saldo credor a transportar (campo 14)', A.cred, D.cred)}
@@ -1548,17 +1639,14 @@ function bindFiscal() {
         ${r2(A.cred) !== r2(D.cred) ? '<p class="dif-warn">O saldo credor muda: o SPED do mês seguinte terá de receber o novo saldo credor anterior.</p>' : ''}`;
       DIF.precisaE116 = !DIF.temE116 && r2(D.rec) > 0 && r2(D.rec) !== r2(A.rec);
       $('#difE116').hidden = !DIF.precisaE116;
-      const b = $('#btnDifAplicar');
-      b.disabled = !(nCfop || nDif);
-      b.dataset.conf = '';
-      b.textContent = 'Aplicar no SPED (gera arquivo novo)';
     }
 
     async function difalAplicar() {
       const b = $('#btnDifAplicar');
-      const { sel, delta, nCfop, nDif } = difalSelecao();
-      if (!sel.length) return;
+      const { sel, delta, nCfop, nDif, cred } = difalSelecao();
+      if (!sel.length && !cred.ids.length) return;
       const selecao = { docs: sel };
+      if (cred.ids.length) selecao.creditos = { modo: cred.modo, cod_aj: cred.cod, docs: cred.ids };
       if (DIF.precisaE116) {
         const venc = ($('#difVenc').value || '').replace(/\D/g, ''), cod = ($('#difCodRec').value || '').trim();
         if (venc.length !== 8 || !cod) { toast('Informe o vencimento (dd/mm/aaaa) e o código de receita da guia.', true); return; }
@@ -1566,7 +1654,11 @@ function bindFiscal() {
       }
       if (b.dataset.conf !== '1') {
         b.dataset.conf = '1';
-        b.textContent = `Confirmar: ${nCfop} CFOP · ${nDif} DIFAL · R$ ${fm(delta)} no E110`;
+        const partes = [];
+        if (nCfop) partes.push(`${nCfop} CFOP`);
+        if (nDif) partes.push(`DIFAL R$ ${fm(delta)}`);
+        if (cred.ids.length) partes.push(`${cred.modo === 'zerar' ? 'retirar' : 'estornar'} R$ ${fm(cred.total)} de crédito`);
+        b.textContent = `Confirmar: ${partes.join(' · ')} (gera arquivo novo)`;
         return;
       }
       overlay(true, 'Lançando no SPED e recalculando E110, E116 e Bloco 9…');
@@ -1584,8 +1676,10 @@ function bindFiscal() {
             <div><span>CFOP corrigidos</span><b>${r.cfop_corrigidos ?? 0}</b><small>em ${r.notas_cfop ?? 0} nota(s) · C170 e C190</small></div>
             <div><span>Notas com DIFAL</span><b>${r.difal_incluidos ?? 0}</b><small>${r.c195_inseridos ?? 0} C195 · ${r.c197_inseridos ?? 0} C197</small></div>
             <div class="k-err"><span>DIFAL lançado</span><b>R$ ${fm(r.difal_total)}</b>${r.difal_removido ? `<small>substituiu R$ ${fm(r.difal_removido)} anterior</small>` : ''}</div>
+            ${r.cred_notas ? `<div class="k-err"><span>Crédito ${r.cred_modo === 'zerar' ? 'retirado' : 'estornado'}</span><b>R$ ${fm(r.cred_total)}</b><small>${r.cred_notas} nota(s)${r.cred_modo === 'zerar' ? ` · ${r.cred_c170} C170 · ${r.cred_c190} C190` : ' · E111'}</small></div>` : ''}
             ${ea && ed ? `<div><span>ICMS a recolher</span><b>R$ ${fm(ed.recolher)}</b><small>antes R$ ${fm(ea.recolher)}</small></div>` : ''}
           </div>
+          ${r.cred_e111 ? `<p class="dif-sub">${esc(r.cred_e111)}</p>` : ''}
           ${r.e116 ? `<p class="dif-sub">${esc(r.e116)}</p>` : ''}
           ${(r.obs_0460_criados || []).length ? `<p class="dif-sub">Observação 0460 criada: ${r.obs_0460_criados.map(esc).join(', ')}</p>` : ''}
           ${(r.avisos || []).length ? `<div class="dif-av"><ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}

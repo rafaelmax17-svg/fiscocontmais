@@ -760,3 +760,16 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .dif-acts button:disabled{opacity:.5;cursor:not-allowed}
 .dif-done{background:#f1fbf6;border:1px solid #bfe8d5;border-radius:14px;padding:14px 16px;display:grid;gap:10px}
 @media (max-width:1000px){.dif-foot{grid-template-columns:1fr}}
+.dif-sec{display:grid;gap:12px;background:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 4px 14px rgba(20,27,45,.06)}
+.dif-lei{font-size:12.5px;color:#3a4566;background:#f6f7fb;border-left:4px solid #2f4090;border-radius:10px;padding:10px 14px;line-height:1.55}
+.dif-av.ok{background:#f1fbf6;border-color:#bfe8d5;color:#0b6b4f}
+.dif-modo{display:flex;gap:10px;flex-wrap:wrap}
+.dif-modo label{flex:1;min-width:280px;display:block;background:#fff;border:2px solid #e8ebf3;border-radius:12px;padding:10px 14px;font-size:12.5px;color:#5a6785;cursor:pointer;line-height:1.5}
+.dif-modo label.on{border-color:#2f4090;background:#f3f5ff}
+.dif-modo b{color:#141b2d;font-size:13px}
+.dif-modo select{display:block;width:100%;margin-top:6px;border:1px solid #d8dcea;border-radius:6px;padding:4px 6px;font-size:12px;background:#fff}
+.dif-tag{font-size:10.5px;background:#eef0f6;color:#5a6785;border-radius:20px;padding:1px 8px;margin-left:4px}
+.dif-cred .v-new,.dif-cred .v-est{display:none}
+.dif-cred tr.z .v-old{text-decoration:line-through;color:#8a93a8;margin-right:6px}
+.dif-cred tr.z .v-new{display:inline;color:#b3261e;font-weight:800}
+.dif-cred tr.es .v-est{display:block;font-size:11px;color:#1c5fae;font-weight:700}

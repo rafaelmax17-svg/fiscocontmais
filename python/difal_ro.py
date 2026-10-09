@@ -9,6 +9,9 @@ O que faz
      valor diferente, pago fora da apuração (informativo) ou faltando.
   3) Aplica só o que for confirmado na tela: troca o CFOP (C170 e C190), inclui C195 + C197 por nota (0460 se faltar),
      soma o DIFAL no campo 03 do E110, recalcula o E110, ajusta/cria o E116 e reconta os blocos.
+  4) Crédito de ICMS tomado em uso e consumo / ativo (LC 87/96, art. 33, I — só a partir de 01/01/2033; ativo pelo CIAP,
+     art. 20, § 5º): zera base, alíquota e ICMS no C170/C190/C100 (campo 06 do E110 diminui) ou mantém a nota e lança
+     estorno de crédito no E111 (campo 05 do E110), com o código da tabela 5.1.1 da UF que o usuário confirmar.
 
 Fontes oficiais (lidas em 09/10/2026)
   • Lei 688/96 (RO), art. 17, XIII; art. 18, IX "a" e "b", § 1º e § 7º (redação da Lei 5.369/2022, efeitos a partir de
@@ -139,9 +142,11 @@ def _estrutura(linhas):
         elif cur is not None and r in FILHOS_C100:
             cur['fim'] = i
             if r == 'C170' and len(c) > 11:
-                cur['c170'].append({'i': i, 'cst': c[10], 'cfop': c[11], 'vl': _n(c[7]) - _n(c[8])})
+                cur['c170'].append({'i': i, 'cst': c[10], 'cfop': c[11], 'vl': _n(c[7]) - _n(c[8]), 'item': c[3], 'descr': c[4],
+                                    'bc': _n(c[13]) if len(c) > 15 else 0.0, 'aliq': _n(c[14]) if len(c) > 15 else 0.0,
+                                    'icms': _n(c[15]) if len(c) > 15 else 0.0})
             elif r == 'C190' and len(c) > 7:
-                cur['c190'].append({'i': i, 'cst': c[2], 'cfop': c[3], 'aliq': _n(c[4]), 'vl_opr': _n(c[5]), 'vl_icms': _n(c[7])})
+                cur['c190'].append({'i': i, 'cst': c[2], 'cfop': c[3], 'aliq': _n(c[4]), 'vl_opr': _n(c[5]), 'vl_bc': _n(c[6]), 'vl_icms': _n(c[7])})
             elif r == 'C195':
                 cur['c195'].append({'i': i, 'cod_obs': c[2] if len(c) > 2 else ''})
             elif r == 'C197' and len(c) > 7:
@@ -153,6 +158,26 @@ def _estrutura(linhas):
             elif r == 'E111' and len(c) > 4 and re.search(r'DIF(ERENCIAL|AL)', (c[3] or '').upper()):
                 e111_difal.append({'cod': c[2], 'descr': c[3], 'valor': _n(c[4])})
     return cab, part, obs460, docs, e110, e111_difal
+
+
+def _e111_estornos(linhas):
+    """E111 de estorno de crédito (ICMS próprio: 3º caractere 0, 4º caractere 1)."""
+    out = []
+    for ln in linhas:
+        c = ln.split('|')
+        if len(c) > 4 and c[1] == 'E111' and len(c[2]) == 8 and c[2][2:4] == '01':
+            out.append({'cod': c[2], 'descr': c[3], 'valor': _n(c[4]), 'uso': bool(re.search(r'USO|CONSUMO', (c[3] or '').upper()))})
+    return out
+
+
+def codigos_estorno(uf):
+    """Códigos de estorno de crédito (ICMS próprio) da tabela 5.1.1 da UF."""
+    try:
+        from tabela_ajustes_dados import TABELA_5_1_1
+    except Exception:
+        return []
+    tab = TABELA_5_1_1.get(uf or '', {})
+    return [{'cod': k, 'descr': v} for k, v in sorted(tab.items()) if k[2:4] == '01']
 
 
 def _uf_emitente(doc, part):
@@ -238,7 +263,7 @@ def analisar_texto(texto):
         if cst_sem_trib and interestadual:
             obs_doc.append('Há item isento/não tributado na origem: confira se há benefício que afaste ou reduza o DIFAL.')
         if any(x['vl_icms'] > 0 for x in alvo):
-            obs_doc.append('A nota aproveita crédito de ICMS em CFOP de uso e consumo/ativo. Pelo manual da SEFIN/RO, a nota é escriturada sem o crédito; confira.')
+            obs_doc.append('A nota tem crédito de ICMS tomado: veja o quadro "Crédito de ICMS em uso e consumo".')
         if not uf_or:
             obs_doc.append('Não foi possível identificar a UF do emitente (sem chave de acesso e sem município no cadastro do participante).')
         sugerido_cfop = bool(correcoes) and d['sit'] not in CANC
@@ -250,6 +275,13 @@ def analisar_texto(texto):
             'difal_calculado': calc, 'difal_lancado': existente, 'difal_pago_fora': fora, 'status': status,
             'obs': obs_doc, 'sugerido_cfop': sugerido_cfop, 'sugerido_difal': sugerido_difal,
         })
+    prod = {c[2]: c[3] for c in (ln.split('|') for ln in linhas if ln.startswith('|0200|')) if len(c) > 3}
+    creditos = _analisar_creditos(docs, part, uf_emp, prod)
+    est_ex = _e111_estornos(linhas)
+    if creditos['docs'] and any(x['uso'] for x in est_ex):
+        tot = sum(x['valor'] for x in est_ex if x['uso'])
+        avisos.append(f'Já existe estorno de crédito de uso e consumo no E111 (R$ {_f(tot)}). Confira se ele já cobre as notas do quadro de '
+                      'crédito, para não estornar duas vezes.')
     # Guia Prático, E110 campo 03: soma do VL_ICMS dos C197/C597/C857/C897/D197/D737 com 3º caractere 3, 4 ou 5 e
     # 4º caractere 0, 3, 4, 5, 6, 7 ou 8 (sem documentos extemporâneos). Confere se o arquivo original já fechava.
     soma03, sit_doc = Decimal('0'), ''
@@ -282,7 +314,7 @@ def analisar_texto(texto):
         'empresa': {'nome': cab.get('nome', ''), 'cnpj': cab.get('cnpj', ''), 'uf': uf_emp, 'dt_ini': cab.get('dt_ini', ''), 'dt_fin': cab.get('dt_fin', ''),
                     'cod_ver': cab.get('cod_ver', '')},
         'base_dupla': dupla, 'aliq_interna_padrao': interna, 'docs': saida, 'avisos': avisos, 'e110': apur, 'e116': e116,
-        'e111_difal': e111_difal,
+        'e111_difal': e111_difal, 'creditos': creditos,
         'resumo': {
             'notas': len(saida),
             'cfop_errado': sum(1 for x in saida if x['correcoes_cfop']),
@@ -295,25 +327,96 @@ def analisar_texto(texto):
     }
 
 
+def _analisar_creditos(docs, part, uf_emp, prod=None):
+    """Entradas de uso e consumo (x.556/x.407) e ativo (x.551/x.406) com ICMS creditado no C190.
+    LC 87/96, art. 33, I (redação da LC 171/2019): crédito de uso e consumo só a partir de 01/01/2033.
+    LC 87/96, art. 20, § 5º: o crédito do ativo é apropriado em 48 parcelas (CIAP, Bloco G), não na nota."""
+    out = []
+    for d in docs:
+        if d['oper'] != '0' or d['sit'] in CANC:
+            continue
+        alvo = [x for x in d['c190'] if x['cfop'][1:] in TIPOS and x['cfop'][:1] in '123' and x['vl_icms'] > 0.004]
+        if not alvo:
+            continue
+        cfops = {x['cfop'] for x in alvo}
+        uf_or, _ = _uf_emitente(d, part)
+        p = part.get(d['part'], {})
+        tipos = {TIPOS[x['cfop'][1:]][0] for x in alvo}
+        tipo = 'ativo' if tipos == {'ativo'} else ('misto' if len(tipos) > 1 else 'uso')
+        itens = [{'item': x['item'], 'descr': x['descr'] or (prod or {}).get(x['item'], ''), 'cfop': x['cfop'], 'cst': x['cst'], 'valor': float(_d(x['vl'])),
+                  'bc': x['bc'], 'aliq': x['aliq'], 'icms': x['icms']}
+                 for x in d['c170'] if x['cfop'] in cfops and x['icms'] > 0.004]
+        obs = []
+        if 'ativo' in tipos:
+            obs.append('Ativo imobilizado: o crédito vem pelo CIAP em 48 parcelas (Bloco G), não direto na nota. Se a empresa controla o CIAP, '
+                       'retire o crédito da nota e confira o G125.')
+        if not d['c170']:
+            obs.append('Nota sem itens (C170): a correção é feita no resumo da nota (C190).')
+        if d['sit'] in EXTEMP:
+            obs.append('Documento extemporâneo.')
+        out.append({
+            'id': d['i'], 'num': d['num'], 'serie': d['serie'], 'data': d['dt'], 'sit': d['sit'],
+            'fornecedor': p.get('nome', d['part']), 'cnpj': p.get('cnpj', ''), 'uf_origem': uf_or, 'tipo': tipo,
+            'c190': [{'cst': x['cst'], 'cfop': x['cfop'], 'aliq': x['aliq'], 'vl_opr': x['vl_opr'], 'bc': x['vl_bc'], 'icms': x['vl_icms']} for x in alvo],
+            'itens': itens,
+            'valor': float(_d(sum(x['vl_opr'] for x in alvo))),
+            'credito': float(_d(sum(x['vl_icms'] for x in alvo))),
+            'difal_lancado': float(_d(sum(x['icms'] for x in d['c197'] if x['cod'] in COD_DIFAL_APUR))),
+            'sugerido': tipo == 'uso',
+            'obs': obs,
+        })
+    cods = codigos_estorno(uf_emp)
+    padrao = next((c['cod'] for c in cods if c['cod'] == f'{uf_emp}010011'), None) or \
+        next((c['cod'] for c in cods if c['cod'].endswith('9999')), None) or (cods[0]['cod'] if cods else '')
+    return {'docs': out, 'codigos_estorno': cods, 'cod_estorno_padrao': padrao,
+            'total': float(_d(sum(x['credito'] for x in out))),
+            'total_uso': float(_d(sum(x['credito'] for x in out if x['sugerido'])))}
+
+
 # ------------------------------------------------------------------ aplicação
-def _novo_e110(c, delta03):
+CAMPOS_E110 = (('aj_deb', 3), ('est_cred', 5), ('cred', 6), ('sld_apurado', 11), ('recolher', 13), ('sld_transp', 14))
+
+
+def _novo_e110(c, deltas):
+    """deltas = {campo: valor} somado aos campos 03 (ajustes a débito), 05 (estornos de crédito) ou 06 (créditos)."""
     v = [Decimal('0')] * 16
     for i in range(2, 16):
         v[i] = Decimal(str(_n(c[i])))
-    v[3] += Decimal(str(delta03))
+    for i, dv in deltas.items():
+        v[i] += Decimal(str(dv))
     expr = (v[2] + v[3] + v[4] + v[5]) - (v[6] + v[7] + v[8] + v[9] + v[10])     # Guia Prático, E110 campos 11 e 14
     v[11] = expr if expr >= 0 else Decimal('0')
     v[13] = max(Decimal('0'), v[11] - v[12])                                         # campo 13
     resto = expr - v[12]
     v[14] = -resto if resto < 0 else Decimal('0')                                    # campo 14
     novo = list(c)
-    for i in (3, 11, 13, 14):
+    for i in set(deltas) | {11, 13, 14}:
         novo[i] = _f(v[i])
-    return novo, {k: float(_d(v[i])) for k, i in (('aj_deb', 3), ('sld_apurado', 11), ('recolher', 13), ('sld_transp', 14))}
+    return novo, {k: float(_d(v[i])) for k, i in CAMPOS_E110}
+
+
+def _junta_c190(linhas, d, remover):
+    """C190 não pode repetir a combinação CST + CFOP + alíquota: junta as linhas repetidas da nota."""
+    vistos = {}
+    for x in d['c190']:
+        if x['i'] in remover:
+            continue
+        c = linhas[x['i']].split('|')
+        k = (c[2], c[3], _f(_n(c[4])))
+        if k in vistos:
+            alvo = linhas[vistos[k]].split('|')
+            for j in range(5, min(len(c), len(alvo))):
+                if j in (5, 6, 7, 8, 9, 10, 11):
+                    alvo[j] = _f(_n(alvo[j]) + _n(c[j]))
+            linhas[vistos[k]] = '|'.join(alvo)
+            remover.add(x['i'])
+        else:
+            vistos[k] = x['i']
 
 
 def aplicar_texto(texto, selecao):
     """selecao = {'docs': [{'id', 'corrigir_cfop', 'incluir_difal', 'grupos': [{'tipo','aliq_inter','aliq_interna'}]}],
+                  'creditos': {'modo': 'zerar' | 'estorno', 'cod_aj': 'RO010011', 'docs': [id, ...]},
                   'e116': {'cod_rec': '', 'venc': 'ddmmaaaa'}}  ->  (texto_novo, resumo)"""
     from fiscal_core import _recalcula_bloco9_global, _recalcula_fechamentos_bloco
     quebra = '\r\n' if '\r\n' in texto else '\n'
@@ -329,7 +432,8 @@ def aplicar_texto(texto, selecao):
     dupla = an['base_dupla']
     resumo = {'cfop_corrigidos': 0, 'notas_cfop': 0, 'difal_incluidos': 0, 'difal_total': 0.0, 'difal_removido': 0.0,
               'c197_inseridos': 0, 'c195_inseridos': 0, 'obs_0460_criados': [], 'e110_antes': None, 'e110_depois': None,
-              'e116': '', 'detalhe': [], 'avisos': []}
+              'e116': '', 'detalhe': [], 'avisos': [],
+              'cred_modo': '', 'cred_notas': 0, 'cred_c170': 0, 'cred_c190': 0, 'cred_total': 0.0, 'cred_e111': ''}
     insercoes = {}      # índice da última linha do documento -> linhas a inserir depois dela
     remover = set()
     usados_obs = set()
@@ -349,20 +453,7 @@ def aplicar_texto(texto, selecao):
                         c[campo] = mapa[x['cfop']]
                         linhas[x['i']] = '|'.join(c)
                         resumo['cfop_corrigidos'] += 1
-            # C190 não pode repetir a combinação CST + CFOP + alíquota: junta se a troca criou repetição
-            vistos = {}
-            for x in d['c190']:
-                c = linhas[x['i']].split('|')
-                k = (c[2], c[3], c[4])
-                if k in vistos:
-                    alvo = linhas[vistos[k]].split('|')
-                    for j in range(5, min(len(c), len(alvo))):
-                        if j in (5, 6, 7, 8, 9, 10, 11):
-                            alvo[j] = _f(_n(alvo[j]) + _n(c[j]))
-                    linhas[vistos[k]] = '|'.join(alvo)
-                    remover.add(x['i'])
-                else:
-                    vistos[k] = x['i']
+            _junta_c190(linhas, d, remover)
         if sel.get('incluir_difal') and a['interestadual'] and an['empresa']['uf'] == 'RO':
             ed = {(g.get('tipo'), float(g.get('aliq_inter'))): g for g in sel.get('grupos', [])}
             novos = []
@@ -413,13 +504,66 @@ def aplicar_texto(texto, selecao):
             resumo['detalhe'].append({'num': a['num'], 'fornecedor': a['fornecedor'], 'uf': a['uf_origem'],
                                       'difal': float(_d(sum(n[2] for n in novos)))})
 
+    # crédito de ICMS em uso e consumo / ativo (LC 87/96, art. 33, I; art. 20, § 5º)
+    cred = selecao.get('creditos') or {}
+    cred_por_id = {x['id']: x for x in an['creditos']['docs']}
+    modo = cred.get('modo') or 'zerar'
+    d05 = d06 = Decimal('0')
+    nums = []
+    for cid in cred.get('docs', []):
+        a, d = cred_por_id.get(cid), docs_por_i.get(cid)
+        if not a or not d:
+            continue
+        resumo['cred_notas'] += 1
+        nums.append(a['num'])
+        if modo == 'estorno':
+            d05 += Decimal(str(a['credito']))
+            continue
+        for x in d['c170']:
+            c = linhas[x['i']].split('|')
+            if len(c) > 15 and c[11][1:] in TIPOS and c[11][:1] in '123' and _n(c[15]) > 0.004:
+                c[13] = c[14] = c[15] = '0,00'
+                linhas[x['i']] = '|'.join(c)
+                resumo['cred_c170'] += 1
+        bc_tot = icms_tot = Decimal('0')
+        for x in d['c190']:
+            if x['i'] in remover:
+                continue
+            c = linhas[x['i']].split('|')
+            if len(c) > 7 and c[3][1:] in TIPOS and c[3][:1] in '123' and _n(c[7]) > 0.004:
+                bc_tot += Decimal(str(_n(c[6])))
+                icms_tot += Decimal(str(_n(c[7])))
+                c[4], c[6], c[7] = '0,00', '0,00', '0,00'
+                linhas[x['i']] = '|'.join(c)
+                resumo['cred_c190'] += 1
+        _junta_c190(linhas, d, remover)
+        c = linhas[d['i']].split('|')
+        if len(c) > 22:
+            c[21] = _f(max(Decimal('0'), Decimal(str(_n(c[21]))) - bc_tot))
+            c[22] = _f(max(Decimal('0'), Decimal(str(_n(c[22]))) - icms_tot))
+            linhas[d['i']] = '|'.join(c)
+        d06 -= icms_tot
+    novas_e111 = []
+    if resumo['cred_notas']:
+        resumo['cred_modo'] = modo
+        if modo == 'estorno' and d05 > 0:
+            cod = (cred.get('cod_aj') or an['creditos']['cod_estorno_padrao'] or '').strip().upper()
+            if len(cod) != 8 or cod[2:4] != '01':
+                return texto, {'erro': 'Escolha um código de ajuste de estorno de crédito válido (E111, 3º e 4º caracteres "01").'}
+            lista = ', '.join(nums[:12]) + (f' E MAIS {len(nums) - 12}' if len(nums) > 12 else '')
+            descr = f'ESTORNO DE CREDITO DE ICMS DE MATERIAL DE USO E CONSUMO/ATIVO (LC 87/96, ART. 33, I E ART. 20, PAR. 5) - NF {lista}'
+            novas_e111.append(f'|E111|{cod}|{descr}|{_f(d05)}|')
+            resumo['cred_e111'] = f'E111 {cod} de R$ {_f(d05)} incluído (estorno de crédito, campo 05 do E110).'
+        resumo['cred_total'] = float(_d(d05 if modo == 'estorno' else -d06))
+
     delta = float(_d(resumo['difal_total'] - resumo['difal_removido']))
+    deltas = {k: float(v) for k, v in ((3, Decimal(str(delta))), (5, d05), (6, d06)) if abs(v) >= Decimal('0.005')}
     # E110 / E116
     novas_e116 = []
-    if e110 and abs(delta) >= 0.005:
+    if e110 and deltas:
         c = linhas[e110['i']].split('|')
-        antes = {k: _n(c[i]) for k, i in (('aj_deb', 3), ('sld_apurado', 11), ('recolher', 13), ('sld_transp', 14))}
-        novo, depois = _novo_e110(c, delta)
+        antes = {k: _n(c[i]) for k, i in CAMPOS_E110}
+        novo, depois = _novo_e110(c, deltas)
         linhas[e110['i']] = '|'.join(novo)
         resumo['e110_antes'], resumo['e110_depois'] = antes, depois
         d13 = Decimal(str(depois['recolher'])) - Decimal(str(antes['recolher']))
@@ -436,7 +580,7 @@ def aplicar_texto(texto, selecao):
                 venc = re.sub(r'\D', '', e.get('venc', ''))
                 cod_rec = (e.get('cod_rec') or '').strip()
                 if len(venc) != 8 or not cod_rec:
-                    return texto, {'erro': 'Com o DIFAL a empresa passa a ter ICMS a recolher e o SPED não tem guia (E116) de ICMS normal. '
+                    return texto, {'erro': 'Com a correção a empresa passa a ter ICMS a recolher e o SPED não tem guia (E116) de ICMS normal. '
                                            'Informe o vencimento e o código de receita da guia para continuar.'}
                 mes_ref = (cab.get('dt_ini') or '')[2:]
                 novas_e116.append(f'|E116|000|{_f(depois["recolher"])}|{venc}|{cod_rec}||||ICMS A RECOLHER|{mes_ref}|')
@@ -444,8 +588,8 @@ def aplicar_texto(texto, selecao):
         if depois['sld_transp'] != antes['sld_transp']:
             resumo['avisos'].append(f'O saldo credor a transportar mudou de R$ {_f(antes["sld_transp"])} para R$ {_f(depois["sld_transp"])}: '
                                     'o SPED do mês seguinte precisa receber esse novo saldo credor anterior.')
-    elif abs(delta) >= 0.005:
-        return texto, {'erro': 'O SPED não tem o registro E110 (apuração do ICMS); não dá para lançar o DIFAL.'}
+    elif deltas:
+        return texto, {'erro': 'O SPED não tem o registro E110 (apuração do ICMS); não dá para lançar a correção.'}
 
     # monta o arquivo novo
     saida = []
@@ -461,10 +605,12 @@ def aplicar_texto(texto, selecao):
                                           '0220', '0221', '0300', '0305', '0400', '0450', '0460') else ultimo_bloco0
     if obs_novos and pos_0460 is None:
         pos_0460 = ultimo_bloco0
-    pos_e116 = None
+    pos_e116 = pos_e111 = None
     for i, l in enumerate(linhas):
         if l[:6] in ('|E110|', '|E111|', '|E112|', '|E113|', '|E115|', '|E116|'):
             pos_e116 = i
+        if l[:6] in ('|E110|', '|E111|', '|E112|', '|E113|'):
+            pos_e111 = i
     for i, l in enumerate(linhas):
         if i not in remover:
             saida.append(l)
@@ -472,6 +618,8 @@ def aplicar_texto(texto, selecao):
             saida.extend(obs_novos)
         if i in insercoes:
             saida.extend(insercoes[i])
+        if i == pos_e111 and novas_e111:
+            saida.extend(novas_e111)
         if i == pos_e116 and novas_e116:
             saida.extend(novas_e116)
     saida = _recalcula_bloco9_global(saida)
