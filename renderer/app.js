@@ -1293,6 +1293,7 @@ function bindFiscal() {
   const bCorrPick = $('#btnCorrSpedPick');
   if (bCorrPick) {
     let corrSpedPath = null;
+    let corrFeito = false;   // true depois de "Corrigir SPED" ou de aplicar o DIFAL neste arquivo
     bCorrPick.addEventListener('click', async () => {
       const pick = await window.fiscocont.fiscal.pickSped();
       if (pick.canceled || !pick.path) return;
@@ -1300,7 +1301,10 @@ function bindFiscal() {
       FISCAL.corrSpedPath = pick.path;
       $('#btnCorrSpedVerOriginal').disabled = false;
       $('#btnCorrSpedRodar').disabled = false;
+      $('#btnCorrDifal').disabled = false;
+      corrFeito = false;
       $('#corrSpedResumo').hidden = true;
+      $('#corrDifal').hidden = true; $('#corrDifal').innerHTML = '';
       toast('SPED selecionado: ' + pick.path.split(/[\\/]/).pop());
     });
 
@@ -1321,6 +1325,8 @@ function bindFiscal() {
       const res = await window.fiscocont.fiscal.corrigirSped(corrSpedPath, []);
       overlay(false);
       if (res.error) { toast(res.error, true); return; }
+      corrFeito = true;
+      $('#corrDifal').hidden = true;
       const r = res.resumo || {};
       const box = $('#corrSpedResumo');
       box.hidden = false;
@@ -1372,6 +1378,242 @@ function bindFiscal() {
       });
       toast('Correção concluída — confira o resumo.');
     });
+
+    // ---- Uso e consumo / ativo: CFOP 1.xxx x 2.xxx e DIFAL de RO (conferência + confirmação) ----
+    $('#btnCorrDifal').addEventListener('click', () => difalAbrir());
+
+    const DIF = { an: null, origem: null };
+    const fm = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fa = (v) => (Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%';
+    const dt = (d) => d && d.length === 8 ? `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}` : (d || '');
+    const r2 = (x) => Math.round((x + Number.EPSILON) * 100) / 100;
+    const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    // espelho de difal_ro.calcular_difal (Lei 688/96, art. 18, IX, §§ 1º e 7º)
+    function difCalc(valor, inter, interna, dupla) {
+      const v = Number(valor) || 0, ai = (Number(inter) || 0) / 100, an = (Number(interna) || 0) / 100;
+      if (an <= ai || v <= 0 || an >= 1) return { base: r2(v), difal: 0 };
+      if (dupla) { const io = v * ai, base = (v - io) / (1 - an); return { base: r2(base), difal: r2(base * an - io) }; }
+      return { base: r2(v), difal: r2(v * (an - ai)) };
+    }
+    const STATUS = {
+      faltando: ['Falta DIFAL', 'b-err'], divergente: ['DIFAL divergente', 'b-warn'], ok: ['DIFAL ok', 'b-ok'],
+      pago_fora: ['Pago fora da apuração', 'b-info'], interna: ['Operação interna', 'b-mute'],
+      cancelada: ['Cancelada', 'b-mute'], sem_uf: ['UF não identificada', 'b-warn'],
+    };
+    const podeDifal = (d) => d.interestadual && (d.status === 'faltando' || d.status === 'divergente');
+
+    async function difalAbrir() {
+      if (!corrSpedPath) return;
+      overlay(true, 'Conferindo notas de uso e consumo / ativo e o DIFAL de RO…');
+      const res = await window.fiscocont.admin.difalAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito });
+      overlay(false);
+      if (res.error) { toast(res.error, true); return; }
+      DIF.an = res.res; DIF.origem = res.origem;
+      $('#corrSpedEmpty').hidden = true; $('#corrSpedFrame').hidden = true; $('#corrSpedResumo').hidden = true;
+      difalRender();
+    }
+
+    function difalRender() {
+      const an = DIF.an, emp = an.empresa || {}, rs = an.resumo || {}, box = $('#corrDifal');
+      const docs = an.docs || [];
+      box.hidden = false;
+      const naoRO = emp.uf && emp.uf !== 'RO';
+      const linhas = docs.map((d) => {
+        const st = STATUS[d.status] || [d.status, 'b-mute'];
+        const cfop = d.correcoes_cfop.length
+          ? `<label class="dif-ck"><input type="checkbox" data-cfop="${d.id}" ${d.sugerido_cfop ? 'checked' : ''}> ${d.correcoes_cfop.map((c) => `${c.de} → <b>${c.para}</b>`).join('<br>')}</label>`
+          : `<span class="dif-mute">${[...new Set(d.grupos.flatMap((g) => g.cfops))].join(', ')}</span>`;
+        const ok = podeDifal(d) && !naoRO;
+        const grupos = d.grupos.map((g, gi) => `
+          <div class="dif-g" data-doc="${d.id}" data-g="${gi}">
+            <span class="dif-tipo">${g.tipo === 'ativo' ? 'Ativo' : 'Uso/consumo'}</span>
+            <span>R$ ${fm(g.valor)}</span>
+            <select data-inter ${ok ? '' : 'disabled'} title="Alíquota interestadual (${esc(g.fonte_aliq)})">
+              ${[4, 7, 12].map((x) => `<option value="${x}" ${Number(g.aliq_inter) === x ? 'selected' : ''}>${x}%</option>`).join('')}
+            </select>
+            <input data-interna type="number" step="0.01" min="0" max="99" value="${g.aliq_interna}" ${ok ? '' : 'disabled'} title="Alíquota interna de RO">
+            <b class="dif-val" data-val>${d.interestadual ? 'R$ ' + fm(g.difal) : '—'}</b>
+          </div>`).join('');
+        return `
+          <tr data-id="${d.id}" class="${ok ? '' : 'dif-off'}">
+            <td>${ok ? `<input type="checkbox" data-difal="${d.id}" ${d.sugerido_difal ? 'checked' : ''} title="Lançar DIFAL (C195/C197)">` : ''}</td>
+            <td><b>${esc(d.num)}</b><small>${dt(d.data)}${d.serie ? ' · série ' + esc(d.serie) : ''}</small></td>
+            <td>${esc(d.fornecedor)}<small>${esc(d.cnpj)}</small></td>
+            <td><b>${esc(d.uf_origem || '?')}</b><small>${esc(d.fonte_uf || '')}</small></td>
+            <td>${cfop}</td>
+            <td>${grupos}</td>
+            <td class="n">${d.difal_lancado ? 'R$ ' + fm(d.difal_lancado) : '—'}${d.difal_pago_fora ? `<small>pago fora: R$ ${fm(d.difal_pago_fora)}</small>` : ''}</td>
+            <td><span class="dif-b ${st[1]}">${st[0]}</span>${(d.obs || []).map((o) => `<small class="dif-obs">${esc(o)}</small>`).join('')}</td>
+          </tr>`;
+      }).join('');
+      const e116 = (an.e116 || []).find((x) => x.cod === '000');
+      const e116Qq = (an.e116 || [])[0] || {};
+      box.innerHTML = `
+        <div class="dif-head">
+          <div>
+            <div class="dif-k">Uso e consumo / ativo · DIFAL de Rondônia</div>
+            <h3>${esc(emp.nome || '')}</h3>
+            <div class="dif-sub">CNPJ ${esc(emp.cnpj || '')} · período ${dt(emp.dt_ini)} a ${dt(emp.dt_fin)} ·
+              arquivo <b>${DIF.origem === 'corrigido' ? 'já corrigido nesta sessão' : 'original'}</b> ·
+              ${an.base_dupla ? 'base dupla (desde 01/04/2022)' : 'base única'} · alíquota interna ${fa(an.aliq_interna_padrao)}</div>
+          </div>
+          <button class="act inv-export" id="btnDifFechar">Fechar</button>
+        </div>
+        ${naoRO ? `<div class="dif-av err">Este SPED é de empresa de <b>${esc(emp.uf)}</b>. O lançamento automático do DIFAL só é feito para RO; a correção de CFOP continua disponível.</div>` : ''}
+        ${(an.avisos || []).length ? `<div class="dif-av"><b>Atenção</b><ul>${an.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+        <div class="dif-kpis">
+          <div><span>Notas analisadas</span><b>${rs.notas ?? 0}</b></div>
+          <div class="k-err"><span>CFOP a corrigir</span><b>${rs.cfop_errado ?? 0}</b><small>1.xxx com fornecedor de fora</small></div>
+          <div class="k-err"><span>Sem DIFAL</span><b>${rs.faltando ?? 0}</b><small>R$ ${fm(rs.difal_faltando)}</small></div>
+          <div class="k-warn"><span>DIFAL divergente</span><b>${rs.divergente ?? 0}</b></div>
+          <div class="k-ok"><span>DIFAL correto</span><b>${rs.ok ?? 0}</b></div>
+          <div><span>Pago fora (RO90000002)</span><b>${rs.pago_fora ?? 0}</b></div>
+        </div>
+        ${docs.length ? `
+        <div class="dif-tw"><table class="dif-tab">
+          <thead><tr><th><input type="checkbox" id="difTodos" title="Marcar/desmarcar o DIFAL de todas"></th><th>Nota</th><th>Fornecedor</th><th>UF</th><th>CFOP</th>
+            <th>Itens · alíq. interestadual · interna · DIFAL</th><th class="n">Lançado</th><th>Situação</th></tr></thead>
+          <tbody>${linhas}</tbody>
+        </table></div>` : '<div class="dif-av">Nenhuma nota de uso e consumo (CFOP x.556/x.407) ou ativo (x.551/x.406) neste SPED.</div>'}
+        <div class="dif-foot">
+          <div class="dif-prev" id="difPrev"></div>
+          <div class="dif-e116" id="difE116" hidden>
+            <div class="dif-k">Guia de ICMS (E116)</div>
+            <p>O SPED não tem obrigação 000 e, com o DIFAL, passa a haver ICMS a recolher. Informe a guia:</p>
+            <label>Vencimento <input id="difVenc" placeholder="dd/mm/aaaa" value="${e116Qq.venc ? dt(e116Qq.venc) : ''}"></label>
+            <label>Código de receita <input id="difCodRec" placeholder="ex.: 1210" value="${esc(e116Qq.cod_rec || '')}"></label>
+          </div>
+          <div class="dif-acts">
+            <button class="act inv-export" id="btnDifAplicar" style="background:#e23d4c;color:#fff;border-color:transparent">Aplicar no SPED (gera arquivo novo)</button>
+          </div>
+        </div>
+        <div id="difRes"></div>`;
+      DIF.temE116 = !!e116;
+
+      $('#btnDifFechar').addEventListener('click', () => { box.hidden = true; $('#corrSpedEmpty').hidden = false; });
+      box.querySelectorAll('select[data-inter], input[data-interna], input[data-difal], input[data-cfop]').forEach((el) =>
+        el.addEventListener('input', () => difalAtualiza()));
+      const todos = $('#difTodos');
+      if (todos) todos.addEventListener('change', () => { box.querySelectorAll('input[data-difal]').forEach((c) => { c.checked = todos.checked; }); difalAtualiza(); });
+      $('#btnDifAplicar').addEventListener('click', difalAplicar);
+      difalAtualiza();
+    }
+
+    function difalSelecao() {
+      const an = DIF.an, box = $('#corrDifal'), sel = [];
+      let delta = 0, nCfop = 0, nDif = 0;
+      for (const d of an.docs || []) {
+        const cCfop = box.querySelector(`input[data-cfop="${d.id}"]`);
+        const cDif = box.querySelector(`input[data-difal="${d.id}"]`);
+        const corrigir = !!(cCfop && cCfop.checked), incluir = !!(cDif && cDif.checked);
+        const grupos = [];
+        let tot = 0;
+        d.grupos.forEach((g, gi) => {
+          const row = box.querySelector(`.dif-g[data-doc="${d.id}"][data-g="${gi}"]`);
+          const inter = Number(row.querySelector('[data-inter]').value);
+          const interna = Number(String(row.querySelector('[data-interna]').value).replace(',', '.'));
+          const c = difCalc(g.valor, inter, interna, an.base_dupla);
+          row.querySelector('[data-val]').textContent = d.interestadual ? 'R$ ' + fm(c.difal) : '—';
+          tot += c.difal;
+          grupos.push({ tipo: g.tipo, aliq_inter: g.aliq_inter, aliq_inter_nova: inter, aliq_interna: interna });
+        });
+        if (incluir) { delta += tot - (d.difal_lancado || 0); nDif++; }
+        if (corrigir) nCfop++;
+        if (corrigir || incluir) sel.push({ id: d.id, corrigir_cfop: corrigir, incluir_difal: incluir, grupos });
+      }
+      return { sel, delta: r2(delta), nCfop, nDif };
+    }
+
+    // prévia do E110 pelas fórmulas do Guia Prático (campos 11, 13 e 14)
+    function difalAtualiza() {
+      const an = DIF.an, e = an.e110, { delta, nCfop, nDif } = difalSelecao();
+      const prev = $('#difPrev');
+      if (!e) { prev.innerHTML = '<div class="dif-av err">SPED sem registro E110 — o DIFAL não pode ser lançado.</div>'; return; }
+      const calc = (aj) => {
+        const expr = (e.deb + aj + e.tot_aj_deb + e.est_cred) - (e.cred + e.aj_cred + e.tot_aj_cred + e.est_deb + e.sld_ant);
+        const sa = Math.max(0, expr);
+        return { aj, sa, rec: Math.max(0, sa - e.ded), cred: Math.max(0, -(expr - e.ded)) };
+      };
+      const A = calc(e.aj_deb), D = calc(r2(e.aj_deb + delta));
+      const lin = (t, a, b) => `<tr><td>${t}</td><td class="n">R$ ${fm(a)}</td><td class="n ${r2(a) !== r2(b) ? 'mud' : ''}">R$ ${fm(b)}</td></tr>`;
+      prev.innerHTML = `
+        <div class="dif-k">Conferência da apuração (E110) com o que está marcado</div>
+        <p class="dif-sub">${nCfop} nota(s) com CFOP a corrigir · ${nDif} nota(s) com DIFAL a lançar · diferença no débito: <b>R$ ${fm(delta)}</b></p>
+        <table class="dif-mini"><thead><tr><th></th><th class="n">Antes</th><th class="n">Depois</th></tr></thead><tbody>
+          ${lin('Ajustes a débito das notas (campo 03)', A.aj, D.aj)}
+          ${lin('Saldo devedor (campo 11)', A.sa, D.sa)}
+          ${lin('ICMS a recolher (campo 13)', A.rec, D.rec)}
+          ${lin('Saldo credor a transportar (campo 14)', A.cred, D.cred)}
+        </tbody></table>
+        ${r2(A.cred) !== r2(D.cred) ? '<p class="dif-warn">O saldo credor muda: o SPED do mês seguinte terá de receber o novo saldo credor anterior.</p>' : ''}`;
+      DIF.precisaE116 = !DIF.temE116 && r2(D.rec) > 0 && r2(D.rec) !== r2(A.rec);
+      $('#difE116').hidden = !DIF.precisaE116;
+      const b = $('#btnDifAplicar');
+      b.disabled = !(nCfop || nDif);
+      b.dataset.conf = '';
+      b.textContent = 'Aplicar no SPED (gera arquivo novo)';
+    }
+
+    async function difalAplicar() {
+      const b = $('#btnDifAplicar');
+      const { sel, delta, nCfop, nDif } = difalSelecao();
+      if (!sel.length) return;
+      const selecao = { docs: sel };
+      if (DIF.precisaE116) {
+        const venc = ($('#difVenc').value || '').replace(/\D/g, ''), cod = ($('#difCodRec').value || '').trim();
+        if (venc.length !== 8 || !cod) { toast('Informe o vencimento (dd/mm/aaaa) e o código de receita da guia.', true); return; }
+        selecao.e116 = { venc, cod_rec: cod };
+      }
+      if (b.dataset.conf !== '1') {
+        b.dataset.conf = '1';
+        b.textContent = `Confirmar: ${nCfop} CFOP · ${nDif} DIFAL · R$ ${fm(delta)} no E110`;
+        return;
+      }
+      overlay(true, 'Lançando no SPED e recalculando E110, E116 e Bloco 9…');
+      const res = await window.fiscocont.admin.difalAplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, selecao });
+      overlay(false);
+      b.dataset.conf = ''; b.textContent = 'Aplicar no SPED (gera arquivo novo)';
+      if (res.error) { toast(res.error, true); return; }
+      corrFeito = true;
+      const r = res.resumo || {};
+      const ea = r.e110_antes, ed = r.e110_depois;
+      $('#difRes').innerHTML = `
+        <div class="dif-done">
+          <div class="dif-k">Lançado — arquivo novo gerado (o original não foi alterado)</div>
+          <div class="dif-kpis">
+            <div><span>CFOP corrigidos</span><b>${r.cfop_corrigidos ?? 0}</b><small>em ${r.notas_cfop ?? 0} nota(s) · C170 e C190</small></div>
+            <div><span>Notas com DIFAL</span><b>${r.difal_incluidos ?? 0}</b><small>${r.c195_inseridos ?? 0} C195 · ${r.c197_inseridos ?? 0} C197</small></div>
+            <div class="k-err"><span>DIFAL lançado</span><b>R$ ${fm(r.difal_total)}</b>${r.difal_removido ? `<small>substituiu R$ ${fm(r.difal_removido)} anterior</small>` : ''}</div>
+            ${ea && ed ? `<div><span>ICMS a recolher</span><b>R$ ${fm(ed.recolher)}</b><small>antes R$ ${fm(ea.recolher)}</small></div>` : ''}
+          </div>
+          ${r.e116 ? `<p class="dif-sub">${esc(r.e116)}</p>` : ''}
+          ${(r.obs_0460_criados || []).length ? `<p class="dif-sub">Observação 0460 criada: ${r.obs_0460_criados.map(esc).join(', ')}</p>` : ''}
+          ${(r.avisos || []).length ? `<div class="dif-av"><ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+          <div class="dif-acts">
+            <button class="act inv-export" id="btnDifVer">Ver todos os dados (corrigido)</button>
+            <button class="act inv-export" id="btnDifReconf">Conferir de novo</button>
+            <button class="act inv-export" id="btnDifBaixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button>
+          </div>
+        </div>`;
+      $('#btnDifBaixar').addEventListener('click', async () => {
+        const r3 = await window.fiscocont.fiscal.baixarSpedCorrigido();
+        if (r3.canceled) return;
+        if (r3.error) { toast(r3.error, true); return; }
+        toast('SPED corrigido salvo.');
+        window.fiscocont.openPath(r3.path);
+      });
+      $('#btnDifVer').addEventListener('click', async () => {
+        overlay(true, 'Lendo todos os dados do SPED corrigido…');
+        const r2_ = await window.fiscocont.fiscal.visualizarSpedCorrigido();
+        overlay(false);
+        if (r2_.error) { toast(r2_.error, true); return; }
+        const fr = $('#corrSpedFrame'); fr.srcdoc = r2_.html; fr.hidden = false;
+        fr.scrollIntoView({ behavior: 'smooth' });
+      });
+      $('#btnDifReconf').addEventListener('click', () => difalAbrir());
+      $('#difRes').scrollIntoView({ behavior: 'smooth' });
+      toast('DIFAL lançado. Confira e baixe o SPED corrigido.');
+    }
   }
 
   // ---- Substituir LMC de Combustíveis (Admin) ----

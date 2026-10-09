@@ -975,6 +975,7 @@
           </button>
           <span class="fiscal-spacer"></span>
           <button class="act inv-export" id="btnCorrSpedVerOriginal" disabled>Ver todos os dados (original)</button>
+          <button class="act inv-export" id="btnCorrDifal" disabled title="Confere CFOP 1.556/2.556 (e ativo) pela UF do fornecedor e o DIFAL de RO; inclui o que você confirmar">Uso e consumo · DIFAL RO</button>
           <button class="act inv-export" id="btnCorrSpedRodar" disabled style="background:#e23d4c;color:#fff;border-color:transparent">Corrigir SPED</button>
         </div>
         <div class="fiscal-empty" id="corrSpedEmpty">
@@ -983,6 +984,7 @@
           <p>Corrige automaticamente erros comuns de validação: C191 indevido (CST do C190 pai fora de 00/10/20/51/70/90), bloco E500/E510/E520 quando não há IPI, código de barras "SEM GTIN", CEST fora da tabela oficial (lista conhecida: 1705500, 0000000, 2007910 — cresce conforme repassado), e COD_NAT ausente no C170 (mapeado pelo CFOP). Recalcula o Bloco 9 (contagens) no final. <b>Isso gera um arquivo novo</b> — o original nunca é alterado.</p>
         </div>
         <div id="corrSpedResumo" hidden></div>
+        <div id="corrDifal" class="dif" hidden></div>
         <iframe id="corrSpedFrame" class="fiscal-frame" hidden></iframe>
       </div>
 

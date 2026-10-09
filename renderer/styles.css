@@ -711,3 +711,52 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .evo-opcoes .evo-op-chk{display:flex;align-items:center;gap:8px}
 #evoPainel{margin-top:14px}
 @media(max-width:900px){.evo-opcoes{grid-template-columns:1fr}}
+
+/* ---- Corretor do SPED: uso e consumo / DIFAL RO ---- */
+.dif{display:grid;gap:14px;margin-bottom:16px;font-size:13px;color:#141b2d}
+.dif-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;background:linear-gradient(120deg,#1f2a5a,#2f4090);color:#fff;border-radius:14px;padding:16px 20px}
+.dif-head h3{margin:4px 0 2px;font-size:18px}
+.dif-head .dif-k{color:#cdd6ff}.dif-head .dif-sub{color:#e3e8ff}
+.dif-k{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#2f4090}
+.dif-sub{font-size:12px;color:#5a6785;margin:4px 0}
+.dif-av{background:#fff6e5;border:1px solid #f2d39b;color:#6b4a00;border-radius:10px;padding:10px 14px;font-size:12.5px}
+.dif-av.err{background:#fdecee;border-color:#f3b7bf;color:#8a1a28}
+.dif-av ul{margin:4px 0 0 18px;padding:0}
+.dif-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.dif-kpis>div{background:#fff;border-radius:12px;padding:10px 12px;border-top:4px solid #c9cfdc;box-shadow:0 4px 14px rgba(20,27,45,.06)}
+.dif-kpis .k-err{border-top-color:#e34948}.dif-kpis .k-warn{border-top-color:#eda100}.dif-kpis .k-ok{border-top-color:#1baf7a}
+.dif-kpis span{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#5a6785}
+.dif-kpis b{display:block;font-size:19px;margin-top:2px;font-variant-numeric:tabular-nums}
+.dif-kpis small{display:block;font-size:11px;color:#5a6785}
+.dif-tw{overflow:auto;max-height:560px;border:1px solid #e8ebf3;border-radius:12px;background:#fff}
+.dif-tab{width:100%;border-collapse:collapse;font-size:12px}
+.dif-tab th{position:sticky;top:0;z-index:1;background:#f6f7fb;text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#5a6785;padding:7px 9px;border-bottom:1px solid #e8ebf3;white-space:nowrap}
+.dif-tab td{padding:7px 9px;border-bottom:1px solid #e8ebf3;vertical-align:top}
+.dif-tab td small{display:block;white-space:nowrap;color:#8a93a8;font-size:11px;margin-top:2px}
+.dif-tab .n,.dif-mini .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dif-tab tr.dif-off td{background:#fafbfd}
+.dif-ck{display:flex;gap:6px;align-items:flex-start;cursor:pointer;white-space:nowrap}
+.dif-mute{color:#8a93a8}
+.dif-g{display:grid;grid-template-columns:82px 92px 62px 70px auto;gap:6px;align-items:center;padding:2px 0;white-space:nowrap}
+.dif-g select,.dif-g input{border:1px solid #d8dcea;border-radius:6px;padding:2px 4px;font-size:12px;width:100%;background:#fff}
+.dif-g select:disabled,.dif-g input:disabled{background:#f2f3f7;color:#8a93a8}
+.dif-tipo{font-size:10.5px;font-weight:700;color:#2f4090}
+.dif-val{text-align:right;font-variant-numeric:tabular-nums}
+.dif-b{display:inline-block;font-size:10.5px;font-weight:700;border-radius:20px;padding:1px 8px;white-space:nowrap}
+.dif-b.b-err{background:#fdecee;color:#b3261e}.dif-b.b-warn{background:#fff3d6;color:#8a5a06}.dif-b.b-ok{background:#e3f6ee;color:#0b6b4f}
+.dif-b.b-info{background:#e3f1fd;color:#1c5fae}.dif-b.b-mute{background:#eef0f6;color:#5a6785}
+.dif-obs{color:#8a5a06!important;max-width:260px;white-space:normal!important}
+.dif-foot{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px;align-items:start;background:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 4px 14px rgba(20,27,45,.06)}
+.dif-mini{border-collapse:collapse;font-size:12.5px;width:100%;margin-top:6px}
+.dif-mini td,.dif-mini th{padding:5px 8px;border-bottom:1px solid #eef0f6}
+.dif-mini th{font-size:10.5px;text-transform:uppercase;color:#5a6785}
+.dif-mini td.mud{font-weight:800;color:#b3261e}
+.dif-warn{color:#8a5a06;font-size:12px;margin:6px 0 0}
+.dif-e116{display:grid;gap:6px}
+.dif-e116 p{margin:0;font-size:12px;color:#5a6785}
+.dif-e116 label{display:grid;gap:2px;font-size:11.5px;color:#5a6785}
+.dif-e116 input{border:1px solid #d8dcea;border-radius:6px;padding:5px 8px;font-size:13px}
+.dif-acts{display:flex;gap:10px;flex-wrap:wrap;grid-column:1/-1;justify-content:flex-end}
+.dif-acts button:disabled{opacity:.5;cursor:not-allowed}
+.dif-done{background:#f1fbf6;border:1px solid #bfe8d5;border-radius:14px;padding:14px 16px;display:grid;gap:10px}
+@media (max-width:1000px){.dif-foot{grid-template-columns:1fr}}
