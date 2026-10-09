@@ -374,11 +374,12 @@ def _analisar_creditos(docs, part, uf_emp, prod=None):
 
 
 # ------------------------------------------------------------------ aplicação
-CAMPOS_E110 = (('aj_deb', 3), ('est_cred', 5), ('cred', 6), ('sld_apurado', 11), ('recolher', 13), ('sld_transp', 14))
+CAMPOS_E110 = (('aj_deb', 3), ('est_cred', 5), ('cred', 6), ('aj_cred', 7), ('sld_apurado', 11), ('recolher', 13), ('sld_transp', 14))
 
 
 def _novo_e110(c, deltas):
-    """deltas = {campo: valor} somado aos campos 03 (ajustes a débito), 05 (estornos de crédito) ou 06 (créditos)."""
+    """deltas = {campo: valor} somado aos campos 03 (ajustes a débito), 05 (estornos de crédito), 06 (créditos) ou
+    07 (ajustes a crédito)."""
     v = [Decimal('0')] * 16
     for i in range(2, 16):
         v[i] = Decimal(str(_n(c[i])))
@@ -414,21 +415,113 @@ def _junta_c190(linhas, d, remover):
             vistos[k] = x['i']
 
 
-def aplicar_texto(texto, selecao):
-    """selecao = {'docs': [{'id', 'corrigir_cfop', 'incluir_difal', 'grupos': [{'tipo','aliq_inter','aliq_interna'}]}],
-                  'creditos': {'modo': 'zerar' | 'estorno', 'cod_aj': 'RO010011', 'docs': [id, ...]},
-                  'e116': {'cod_rec': '', 'venc': 'ddmmaaaa'}}  ->  (texto_novo, resumo)"""
-    from fiscal_core import _recalcula_bloco9_global, _recalcula_fechamentos_bloco
+def campos_c197(linhas, cab):
+    """Quantidade de campos do C197 a gravar: segue o C197 que o próprio arquivo já tem; sem nenhum, usa o leiaute."""
+    for ln in linhas:
+        if ln.startswith('|C197|'):
+            return len(ln.split('|')) - 2
+    return 9 if (cab.get('cod_ver') or '0') >= '020' else 8
+
+
+def linha_c197(cod_aj, descr, base, aliq, valor, outros, n_campos):
+    campos = ['', 'C197', cod_aj, descr, '', _f(base), _f(aliq), _f(valor), '' if outros is None else _f(outros)]
+    while len(campos) - 1 < n_campos:
+        campos.append('0')
+    return '|'.join(campos[:n_campos + 1]) + '|'
+
+
+def dividir(texto):
     quebra = '\r\n' if '\r\n' in texto else '\n'
     final_vazio = texto.endswith(quebra)
     linhas = texto.split(quebra)
     if final_vazio:
         linhas = linhas[:-1]
+    return linhas, quebra, final_vazio
+
+
+def aplica_apuracao(linhas, e110, deltas, selecao, cab, remover, resumo):
+    """Soma os deltas no E110, recalcula 11/13/14 e ajusta (ou cria) a obrigação 000 do E116.
+    Devolve (novas_e116, erro)."""
+    novas_e116 = []
+    if not deltas:
+        return novas_e116, None
+    if not e110:
+        return novas_e116, 'O SPED não tem o registro E110 (apuração do ICMS); não dá para lançar a correção.'
+    c = linhas[e110['i']].split('|')
+    antes = {k: _n(c[i]) for k, i in CAMPOS_E110}
+    novo, depois = _novo_e110(c, deltas)
+    linhas[e110['i']] = '|'.join(novo)
+    resumo['e110_antes'], resumo['e110_depois'] = antes, depois
+    d13 = Decimal(str(depois['recolher'])) - Decimal(str(antes['recolher']))
+    if d13 != 0:
+        idx_000 = [i for i, l in enumerate(linhas) if l.startswith('|E116|000|') and i not in remover]
+        if idx_000:
+            c = linhas[idx_000[0]].split('|')
+            nv = max(Decimal('0'), Decimal(str(_n(c[3]))) + d13)
+            c[3] = _f(nv)
+            linhas[idx_000[0]] = '|'.join(c)
+            resumo['e116'] = f'Obrigação 000 (ICMS a recolher) ajustada para R$ {_f(nv)}.'
+        elif depois['recolher'] > 0:
+            e = selecao.get('e116') or {}
+            venc = re.sub(r'\D', '', e.get('venc', ''))
+            cod_rec = (e.get('cod_rec') or '').strip()
+            if len(venc) != 8 or not cod_rec:
+                return [], ('Com a correção a empresa passa a ter ICMS a recolher e o SPED não tem guia (E116) de ICMS normal. '
+                            'Informe o vencimento e o código de receita da guia para continuar.')
+            mes_ref = (cab.get('dt_ini') or '')[2:]
+            novas_e116.append(f'|E116|000|{_f(depois["recolher"])}|{venc}|{cod_rec}||||ICMS A RECOLHER|{mes_ref}|')
+            resumo['e116'] = f'Guia (E116) de ICMS a recolher criada: R$ {_f(depois["recolher"])}, vencimento {venc[:2]}/{venc[2:4]}/{venc[4:]}.'
+    if depois['sld_transp'] != antes['sld_transp']:
+        resumo['avisos'].append(f'O saldo credor a transportar mudou de R$ {_f(antes["sld_transp"])} para R$ {_f(depois["sld_transp"])}: '
+                                'o SPED do mês seguinte precisa receber esse novo saldo credor anterior.')
+    return novas_e116, None
+
+
+def monta_arquivo(linhas, remover, insercoes, novos_0460, novas_e111, novas_e116, quebra, final_vazio):
+    """Remonta o arquivo (inserções depois das linhas indicadas) e reconta o Bloco 9 e os fechamentos."""
+    from fiscal_core import _recalcula_bloco9_global, _recalcula_fechamentos_bloco
+    pos_0460 = ultimo_bloco0 = None
+    pos_e116 = pos_e111 = None
+    for i, l in enumerate(linhas):
+        r = l.split('|')[1] if l.count('|') >= 2 else ''
+        if r in ('0400', '0450', '0460'):
+            pos_0460 = i
+        if r in ('0000', '0001', '0002', '0005', '0015', '0100', '0150', '0175', '0190', '0200', '0205', '0206', '0210',
+                 '0220', '0221', '0300', '0305', '0400', '0450', '0460'):
+            ultimo_bloco0 = i
+        if l[:6] in ('|E110|', '|E111|', '|E112|', '|E113|', '|E115|', '|E116|'):
+            pos_e116 = i
+        if l[:6] in ('|E110|', '|E111|', '|E112|', '|E113|'):
+            pos_e111 = i
+    if novos_0460 and pos_0460 is None:
+        pos_0460 = ultimo_bloco0
+    saida = []
+    for i, l in enumerate(linhas):
+        if i not in remover:
+            saida.append(l)
+        if i == pos_0460 and novos_0460:
+            saida.extend(novos_0460)
+        if i in insercoes:
+            saida.extend(insercoes[i])
+        if i == pos_e111 and novas_e111:
+            saida.extend(novas_e111)
+        if i == pos_e116 and novas_e116:
+            saida.extend(novas_e116)
+    saida = _recalcula_bloco9_global(saida)
+    saida = _recalcula_fechamentos_bloco(saida)
+    return quebra.join(saida) + (quebra if final_vazio else '')
+
+
+def aplicar_texto(texto, selecao):
+    """selecao = {'docs': [{'id', 'corrigir_cfop', 'incluir_difal', 'grupos': [{'tipo','aliq_inter','aliq_interna'}]}],
+                  'creditos': {'modo': 'zerar' | 'estorno', 'cod_aj': 'RO010011', 'docs': [id, ...]},
+                  'e116': {'cod_rec': '', 'venc': 'ddmmaaaa'}}  ->  (texto_novo, resumo)"""
+    linhas, quebra, final_vazio = dividir(texto)
     an = analisar_texto(texto)
     por_id = {d['id']: d for d in an['docs']}
     cab, part, obs460, docs, e110, _ = _estrutura(linhas)
     docs_por_i = {d['i']: d for d in docs}
-    v020 = (cab.get('cod_ver') or '0') >= '020'
+    n197 = campos_c197(linhas, cab)
     dupla = an['base_dupla']
     resumo = {'cfop_corrigidos': 0, 'notas_cfop': 0, 'difal_incluidos': 0, 'difal_total': 0.0, 'difal_removido': 0.0,
               'c197_inseridos': 0, 'c195_inseridos': 0, 'obs_0460_criados': [], 'e110_antes': None, 'e110_depois': None,
@@ -493,10 +586,7 @@ def aplicar_texto(texto, selecao):
                 bloco.append(f'|C195|{cod_obs}||')
                 resumo['c195_inseridos'] += 1
                 for g, base, dif, ai, an_ in gs:
-                    campos = ['', 'C197', g['cod_aj'], g['descr'], '', _f(base), _f(ai), _f(dif), _f(an_)]
-                    if v020:
-                        campos.append('0')
-                    bloco.append('|'.join(campos) + '|')
+                    bloco.append(linha_c197(g['cod_aj'], g['descr'], base, ai, dif, an_, n197))
                     resumo['c197_inseridos'] += 1
                     resumo['difal_total'] += float(dif)
             insercoes.setdefault(d['fim'], []).extend(bloco)
@@ -558,76 +648,15 @@ def aplicar_texto(texto, selecao):
 
     delta = float(_d(resumo['difal_total'] - resumo['difal_removido']))
     deltas = {k: float(v) for k, v in ((3, Decimal(str(delta))), (5, d05), (6, d06)) if abs(v) >= Decimal('0.005')}
-    # E110 / E116
-    novas_e116 = []
-    if e110 and deltas:
-        c = linhas[e110['i']].split('|')
-        antes = {k: _n(c[i]) for k, i in CAMPOS_E110}
-        novo, depois = _novo_e110(c, deltas)
-        linhas[e110['i']] = '|'.join(novo)
-        resumo['e110_antes'], resumo['e110_depois'] = antes, depois
-        d13 = Decimal(str(depois['recolher'])) - Decimal(str(antes['recolher']))
-        if d13 != 0:
-            idx_000 = [i for i, l in enumerate(linhas) if l.startswith('|E116|000|') and i not in remover]
-            if idx_000:
-                c = linhas[idx_000[0]].split('|')
-                nv = Decimal(str(_n(c[3]))) + d13
-                c[3] = _f(nv)
-                linhas[idx_000[0]] = '|'.join(c)
-                resumo['e116'] = f'Obrigação 000 (ICMS a recolher) ajustada para R$ {_f(nv)}.'
-            elif depois['recolher'] > 0:
-                e = selecao.get('e116') or {}
-                venc = re.sub(r'\D', '', e.get('venc', ''))
-                cod_rec = (e.get('cod_rec') or '').strip()
-                if len(venc) != 8 or not cod_rec:
-                    return texto, {'erro': 'Com a correção a empresa passa a ter ICMS a recolher e o SPED não tem guia (E116) de ICMS normal. '
-                                           'Informe o vencimento e o código de receita da guia para continuar.'}
-                mes_ref = (cab.get('dt_ini') or '')[2:]
-                novas_e116.append(f'|E116|000|{_f(depois["recolher"])}|{venc}|{cod_rec}||||ICMS A RECOLHER|{mes_ref}|')
-                resumo['e116'] = f'Guia (E116) de ICMS a recolher criada: R$ {_f(depois["recolher"])}, vencimento {venc[:2]}/{venc[2:4]}/{venc[4:]}.'
-        if depois['sld_transp'] != antes['sld_transp']:
-            resumo['avisos'].append(f'O saldo credor a transportar mudou de R$ {_f(antes["sld_transp"])} para R$ {_f(depois["sld_transp"])}: '
-                                    'o SPED do mês seguinte precisa receber esse novo saldo credor anterior.')
-    elif deltas:
-        return texto, {'erro': 'O SPED não tem o registro E110 (apuração do ICMS); não dá para lançar a correção.'}
-
-    # monta o arquivo novo
-    saida = []
-    obs_novos = [f'|0460|{k}|{obs460[k]}|' for k in resumo['obs_0460_criados']]
-    pos_0460 = None
-    ultimo_bloco0 = None
-    for i, l in enumerate(linhas):
-        r = l.split('|')[1] if l.count('|') >= 2 else ''
-        if r in ('0400', '0450', '0460'):
-            pos_0460 = i
-        if r.startswith('0') and r not in ('0990',):
-            ultimo_bloco0 = i if r in ('0000', '0001', '0002', '0005', '0015', '0100', '0150', '0175', '0190', '0200', '0205', '0206', '0210',
-                                          '0220', '0221', '0300', '0305', '0400', '0450', '0460') else ultimo_bloco0
-    if obs_novos and pos_0460 is None:
-        pos_0460 = ultimo_bloco0
-    pos_e116 = pos_e111 = None
-    for i, l in enumerate(linhas):
-        if l[:6] in ('|E110|', '|E111|', '|E112|', '|E113|', '|E115|', '|E116|'):
-            pos_e116 = i
-        if l[:6] in ('|E110|', '|E111|', '|E112|', '|E113|'):
-            pos_e111 = i
-    for i, l in enumerate(linhas):
-        if i not in remover:
-            saida.append(l)
-        if i == pos_0460 and obs_novos:
-            saida.extend(obs_novos)
-        if i in insercoes:
-            saida.extend(insercoes[i])
-        if i == pos_e111 and novas_e111:
-            saida.extend(novas_e111)
-        if i == pos_e116 and novas_e116:
-            saida.extend(novas_e116)
-    saida = _recalcula_bloco9_global(saida)
-    saida = _recalcula_fechamentos_bloco(saida)
+    novas_e116, erro = aplica_apuracao(linhas, e110, deltas, selecao, cab, remover, resumo)
+    if erro:
+        return texto, {'erro': erro}
+    novo_txt = monta_arquivo(linhas, remover, insercoes, [f'|0460|{k}|{obs460[k]}|' for k in resumo['obs_0460_criados']],
+                             novas_e111, novas_e116, quebra, final_vazio)
     resumo['difal_total'] = float(_d(resumo['difal_total']))
     resumo['difal_removido'] = float(_d(resumo['difal_removido']))
     resumo['delta_e110'] = delta
-    return quebra.join(saida) + (quebra if final_vazio else ''), resumo
+    return novo_txt, resumo
 
 
 # ------------------------------------------------------------------ CLI

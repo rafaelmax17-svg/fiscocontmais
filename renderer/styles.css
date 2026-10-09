@@ -773,3 +773,63 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .dif-cred tr.z .v-old{text-decoration:line-through;color:#8a93a8;margin-right:6px}
 .dif-cred tr.z .v-new{display:inline;color:#b3261e;font-weight:800}
 .dif-cred tr.es .v-est{display:block;font-size:11px;color:#1c5fae;font-weight:700}
+
+/* ---- Corretor do SPED: dashboards animados e maiores (DIFAL, crédito e Simples Nacional) ---- */
+.dif{font-size:14px}
+.dif-head h3{font-size:21px}
+.dif-head .dif-sub{font-size:13px}
+.dif-k{font-size:11.5px}
+.dif-kpis{grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.dif-kpis>div{padding:14px 16px;border-radius:14px;animation:difUp .55s cubic-bezier(.2,.8,.2,1) both}
+.dif-kpis>div:nth-child(2){animation-delay:.05s}.dif-kpis>div:nth-child(3){animation-delay:.1s}.dif-kpis>div:nth-child(4){animation-delay:.15s}
+.dif-kpis>div:nth-child(5){animation-delay:.2s}.dif-kpis>div:nth-child(6){animation-delay:.25s}
+.dif-kpis span{font-size:11.5px}
+.dif-kpis b{font-size:26px;letter-spacing:-.01em;margin-top:4px}
+.dif-kpis small{font-size:12px;margin-top:2px}
+.dif-tab{font-size:13px}
+.dif-tab th{font-size:11px;padding:9px 10px}
+.dif-tab td{padding:9px 10px}
+.dif-mini{font-size:13.5px}
+.dif-sec,.dif-foot,.dif-done,.dif-head{animation:difUp .5s ease both}
+@keyframes difUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes snGrow{from{width:0}}
+.sn-hbtn{display:flex;gap:8px}
+.sn-big{font-size:14px!important;padding:10px 18px!important}
+.sn-vazio{background:#fff;border-radius:16px;padding:40px 24px;text-align:center;box-shadow:0 4px 14px rgba(20,27,45,.06);display:grid;justify-items:center;gap:12px;color:#3a4566;animation:difUp .5s ease both}
+.sn-vazio svg{width:56px;height:56px;color:#2f4090}
+.sn-vazio p{max-width:560px;margin:0;font-size:14px;line-height:1.6}
+.sn-dash{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.sn-card{background:#fff;border-radius:16px;padding:16px 18px;box-shadow:0 4px 14px rgba(20,27,45,.06);display:grid;gap:12px;align-content:start;animation:difUp .55s ease both;animation-delay:.15s}
+.sn-bars{display:grid;gap:10px}
+.sn-bar{display:grid;grid-template-columns:170px minmax(0,1fr) 40px 110px;align-items:center;gap:10px;font-size:13px;animation:difUp .5s ease both;animation-delay:calc(var(--i) * 60ms + .2s)}
+.sn-bar b{text-align:right;font-size:16px;font-variant-numeric:tabular-nums}
+.sn-bar small{text-align:right;color:#5a6785;font-variant-numeric:tabular-nums}
+.sn-bl{color:#3a4566;font-size:13px}
+.sn-bt{display:block;height:16px;background:#eef0f6;border-radius:8px;overflow:hidden}
+.sn-bt i{display:block;height:100%;width:var(--w,0);border-radius:8px;transition:width .7s cubic-bezier(.2,.8,.2,1);animation:snGrow 1s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:.25s}
+.sn-cmp{display:grid;gap:12px}
+.sn-cg{display:grid;gap:4px;animation:difUp .5s ease both;animation-delay:calc(var(--i) * 80ms + .2s)}
+.sn-pair{display:grid;grid-template-columns:minmax(0,1fr) 120px;gap:10px;align-items:center}
+.sn-pair em{font-style:normal;font-size:13px;text-align:right;font-variant-numeric:tabular-nums;color:#5a6785}
+.sn-pair em.mud{color:#b3261e;font-weight:800}
+.sn-bt.a i{background:#c9cfdc}.sn-bt.d i{background:#1f2a5a}
+.sn-leg{margin-top:2px}
+.sn-chips .chip{cursor:pointer;font-size:13px}
+.sn-tw{max-height:620px}
+.sn-inp{width:78px;border:1px solid #d8dcea;border-radius:7px;padding:4px 6px;font-size:13px;text-align:right;background:#fff}
+.sn-inp.req{border-color:#eda100;background:#fff8e6}
+.sn-ac label{display:block;white-space:nowrap;font-size:12.5px;cursor:pointer;margin:1px 0}
+.sn-cod{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:#f6f7fb;border-radius:10px;padding:10px 12px;color:#141b2d;line-height:1.75;white-space:pre-wrap;word-break:break-all}
+.sn-cod .new{color:#0b6b4f;font-weight:700}.sn-cod i{color:#8a93a8;font-style:normal}
+.sn-done{animation:difUp .5s ease both}
+@media (max-width:1100px){.sn-dash{grid-template-columns:1fr}.sn-bar{grid-template-columns:140px minmax(0,1fr) 34px 96px}}
+@media (prefers-reduced-motion:reduce){.dif *{animation:none!important;transition:none!important}}
+.sn-chips{display:flex;gap:8px;margin:0}
+.sn-chips .chip{padding:6px 14px;border-radius:20px;background:#fff;border:1px solid #e8ebf3;color:#5a6785}
+.sn-chips .chip.on{background:#1f2a5a;color:#fff;border-color:transparent}
+.sn-leg{display:flex;gap:16px;font-size:12.5px;color:#5a6785}
+.sn-leg i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.sn-kpis{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.sn-kpis b{white-space:nowrap;font-size:24px}
+.sn-tab td small{white-space:normal}
+.sn-tab td:nth-child(7){min-width:150px}

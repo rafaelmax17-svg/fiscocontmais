@@ -119,6 +119,8 @@ contextBridge.exposeInMainWorld('fiscocont', {
     evoAssets: () => ipcRenderer.invoke('admin:evoAssets'),
     difalAnalisar: (params) => ipcRenderer.invoke('admin:difalAnalisar', params),
     difalAplicar: (params) => ipcRenderer.invoke('admin:difalAplicar', params),
+    simplesAnalisar: (params) => ipcRenderer.invoke('admin:simplesAnalisar', params),
+    simplesAplicar: (params) => ipcRenderer.invoke('admin:simplesAplicar', params),
     legalLista: () => ipcRenderer.invoke('admin:legalLista'),
     legalConsultar: (params) => ipcRenderer.invoke('admin:legalConsultar', params),
     legalSalvar: (params) => ipcRenderer.invoke('admin:legalSalvar', params),

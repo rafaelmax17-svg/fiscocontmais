@@ -1302,7 +1302,10 @@ function bindFiscal() {
       $('#btnCorrSpedVerOriginal').disabled = false;
       $('#btnCorrSpedRodar').disabled = false;
       $('#btnCorrDifal').disabled = false;
+      $('#btnCorrSimples').disabled = false;
       corrFeito = false;
+      SN.an = null; SN.xmls = null;
+      $('#corrSimples').hidden = true; $('#corrSimples').innerHTML = '';
       $('#corrSpedResumo').hidden = true;
       $('#corrDifal').hidden = true; $('#corrDifal').innerHTML = '';
       toast('SPED selecionado: ' + pick.path.split(/[\\/]/).pop());
@@ -1381,6 +1384,7 @@ function bindFiscal() {
 
     // ---- Uso e consumo / ativo: CFOP 1.xxx x 2.xxx e DIFAL de RO (conferência + confirmação) ----
     $('#btnCorrDifal').addEventListener('click', () => difalAbrir());
+    $('#btnCorrSimples').addEventListener('click', () => snAbrir());
 
     const DIF = { an: null, origem: null };
     const fm = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1410,7 +1414,9 @@ function bindFiscal() {
       if (res.error) { toast(res.error, true); return; }
       DIF.an = res.res; DIF.origem = res.origem;
       $('#corrSpedEmpty').hidden = true; $('#corrSpedFrame').hidden = true; $('#corrSpedResumo').hidden = true;
+      $('#corrSimples').hidden = true;
       difalRender();
+      animaNumeros($('#corrDifal'));
     }
 
     function difalRender() {
@@ -1462,12 +1468,12 @@ function bindFiscal() {
         ${naoRO ? `<div class="dif-av err">Este SPED é de empresa de <b>${esc(emp.uf)}</b>. O lançamento automático do DIFAL só é feito para RO; a correção de CFOP continua disponível.</div>` : ''}
         ${(an.avisos || []).length ? `<div class="dif-av"><b>Atenção</b><ul>${an.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
         <div class="dif-kpis">
-          <div><span>Notas analisadas</span><b>${rs.notas ?? 0}</b></div>
-          <div class="k-err"><span>CFOP a corrigir</span><b>${rs.cfop_errado ?? 0}</b><small>1.xxx com fornecedor de fora</small></div>
-          <div class="k-err"><span>Sem DIFAL</span><b>${rs.faltando ?? 0}</b><small>R$ ${fm(rs.difal_faltando)}</small></div>
-          <div class="k-warn"><span>DIFAL divergente</span><b>${rs.divergente ?? 0}</b></div>
-          <div class="k-ok"><span>DIFAL correto</span><b>${rs.ok ?? 0}</b></div>
-          <div><span>Pago fora (RO90000002)</span><b>${rs.pago_fora ?? 0}</b></div>
+          <div><span>Notas analisadas</span><b data-n="${rs.notas || 0}">0</b></div>
+          <div class="k-err"><span>CFOP a corrigir</span><b data-n="${rs.cfop_errado || 0}">0</b><small>1.xxx com fornecedor de fora</small></div>
+          <div class="k-err"><span>Sem DIFAL</span><b data-n="${rs.faltando || 0}">0</b><small>R$ ${fm(rs.difal_faltando)}</small></div>
+          <div class="k-warn"><span>DIFAL divergente</span><b data-n="${rs.divergente || 0}">0</b></div>
+          <div class="k-ok"><span>DIFAL correto</span><b data-n="${rs.ok || 0}">0</b></div>
+          <div><span>Pago fora (RO90000002)</span><b data-n="${rs.pago_fora || 0}">0</b></div>
         </div>
         ${docs.length ? `
         <div class="dif-tw"><table class="dif-tab">
@@ -1543,9 +1549,9 @@ function bindFiscal() {
             Crédito tomado na nota reduz indevidamente o ICMS a recolher.</div>
           ${cd.length ? `
           <div class="dif-kpis">
-            <div class="k-err"><span>Uso e consumo com crédito</span><b>${nUso}</b><small>R$ ${fm(cr.total_uso)}</small></div>
-            <div class="k-warn"><span>Ativo com crédito na nota</span><b>${nAt}</b><small>R$ ${fm(tAt)} · conferir o CIAP</small></div>
-            <div><span>Crédito tomado (total)</span><b>R$ ${fm(cr.total)}</b></div>
+            <div class="k-err"><span>Uso e consumo com crédito</span><b data-n="${nUso}">0</b><small>R$ ${fm(cr.total_uso)}</small></div>
+            <div class="k-warn"><span>Ativo com crédito na nota</span><b data-n="${nAt}">0</b><small>R$ ${fm(tAt)} · conferir o CIAP</small></div>
+            <div><span>Crédito tomado (total)</span><b data-n="${cr.total || 0}" data-fmt="brl">R$ 0,00</b></div>
           </div>
           <div class="dif-modo">
             <label class="on"><input type="radio" name="difCredModo" value="zerar" checked> <b>Zerar o crédito na nota</b>
@@ -1673,10 +1679,10 @@ function bindFiscal() {
         <div class="dif-done">
           <div class="dif-k">Lançado — arquivo novo gerado (o original não foi alterado)</div>
           <div class="dif-kpis">
-            <div><span>CFOP corrigidos</span><b>${r.cfop_corrigidos ?? 0}</b><small>em ${r.notas_cfop ?? 0} nota(s) · C170 e C190</small></div>
-            <div><span>Notas com DIFAL</span><b>${r.difal_incluidos ?? 0}</b><small>${r.c195_inseridos ?? 0} C195 · ${r.c197_inseridos ?? 0} C197</small></div>
-            <div class="k-err"><span>DIFAL lançado</span><b>R$ ${fm(r.difal_total)}</b>${r.difal_removido ? `<small>substituiu R$ ${fm(r.difal_removido)} anterior</small>` : ''}</div>
-            ${r.cred_notas ? `<div class="k-err"><span>Crédito ${r.cred_modo === 'zerar' ? 'retirado' : 'estornado'}</span><b>R$ ${fm(r.cred_total)}</b><small>${r.cred_notas} nota(s)${r.cred_modo === 'zerar' ? ` · ${r.cred_c170} C170 · ${r.cred_c190} C190` : ' · E111'}</small></div>` : ''}
+            <div><span>CFOP corrigidos</span><b data-n="${r.cfop_corrigidos || 0}">0</b><small>em ${r.notas_cfop ?? 0} nota(s) · C170 e C190</small></div>
+            <div><span>Notas com DIFAL</span><b data-n="${r.difal_incluidos || 0}">0</b><small>${r.c195_inseridos ?? 0} C195 · ${r.c197_inseridos ?? 0} C197</small></div>
+            <div class="k-err"><span>DIFAL lançado</span><b data-n="${r.difal_total || 0}" data-fmt="brl">R$ 0,00</b>${r.difal_removido ? `<small>substituiu R$ ${fm(r.difal_removido)} anterior</small>` : ''}</div>
+            ${r.cred_notas ? `<div class="k-err"><span>Crédito ${r.cred_modo === 'zerar' ? 'retirado' : 'estornado'}</span><b data-n="${r.cred_total || 0}" data-fmt="brl">R$ 0,00</b><small>${r.cred_notas} nota(s)${r.cred_modo === 'zerar' ? ` · ${r.cred_c170} C170 · ${r.cred_c190} C190` : ' · E111'}</small></div>` : ''}
             ${ea && ed ? `<div><span>ICMS a recolher</span><b>R$ ${fm(ed.recolher)}</b><small>antes R$ ${fm(ea.recolher)}</small></div>` : ''}
           </div>
           ${r.cred_e111 ? `<p class="dif-sub">${esc(r.cred_e111)}</p>` : ''}
@@ -1705,8 +1711,347 @@ function bindFiscal() {
         fr.scrollIntoView({ behavior: 'smooth' });
       });
       $('#btnDifReconf').addEventListener('click', () => difalAbrir());
+      animaNumeros($('#difRes'));
       $('#difRes').scrollIntoView({ behavior: 'smooth' });
       toast('DIFAL lançado. Confira e baixe o SPED corrigido.');
+    }
+
+    // ---- números que "contam" até o valor (dashboard animado) ----
+    function animaNumeros(root) {
+      if (!root) return;
+      root.querySelectorAll('[data-n]').forEach((el) => {
+        const alvo = Number(el.dataset.n) || 0, tipo = el.dataset.fmt || 'int';
+        const fmtv = (v) => tipo === 'brl' ? 'R$ ' + fm(v) : Math.round(v).toLocaleString('pt-BR');
+        const t0 = performance.now(), dur = 900;
+        const passo = (t) => {
+          const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+          el.textContent = fmtv(alvo * e);
+          if (k < 1) requestAnimationFrame(passo); else el.textContent = fmtv(alvo);
+        };
+        requestAnimationFrame(passo);
+      });
+    }
+
+    // =====================================================================
+    // Crédito de fornecedor do Simples Nacional — C195 + C197 RO00000001 (só Admin)
+    // SEFIN/RO, IN 017/2016 (Tabela 5.3 e manual da EFD, item 19); LC 123/2006, art. 23, §§ 1º a 5º
+    // =====================================================================
+    const SN = { an: null, xmls: null, origem: null, filtro: 'pend' };
+    const SN_ST = {
+      incluir: ['Crédito a incluir', 'b-err', '#2a78d6'],
+      lugar_errado: ['Crédito no lugar errado', 'b-err', '#eb6834'],
+      sem_direito: ['Sem direito a crédito', 'b-err', '#e87ba4'],
+      divergente: ['C197 divergente', 'b-warn', '#eda100'],
+      sem_aliq: ['Falta a alíquota', 'b-warn', '#4a3aa7'],
+      sem_xml: ['Sem XML', 'b-mute', '#8a93a8'],
+      ok: ['Correto', 'b-ok', '#1baf7a'],
+    };
+    const fp = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    const spf = (v) => (Number(v) || 0).toFixed(2).replace('.', ',');   // formato do arquivo SPED (sem milhar)
+    const num = (t) => Number(String(t ?? '').replace(/\./g, '').replace(',', '.')) || 0;
+
+    async function snAbrir() {
+      if (!corrSpedPath) return;
+      $('#corrSpedEmpty').hidden = true; $('#corrSpedFrame').hidden = true; $('#corrSpedResumo').hidden = true;
+      $('#corrDifal').hidden = true;
+      const box = $('#corrSimples');
+      box.hidden = false;
+      if (!SN.xmls) { snVazio(); return; }
+      await snAnalisar();
+    }
+
+    function snVazio() {
+      const box = $('#corrSimples');
+      box.innerHTML = `
+        <div class="dif-head"><div>
+          <div class="dif-k">Corretor do SPED · Admin · crédito de fornecedor do Simples Nacional</div>
+          <h3>Selecione os XMLs de entrada do período</h3>
+          <div class="dif-sub">O percentual e o valor do crédito vêm do XML de cada nota (pCredSN e vCredICMSSN).</div>
+        </div><button class="act inv-export" id="btnSnFechar">Fechar</button></div>
+        <div class="sn-vazio">
+          <svg viewBox="0 0 24 24"><path d="M4 4h10l6 6v10H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M14 4v6h6M8 14h8M8 17h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <p>Anexe um ou mais <b>.zip</b> com os XMLs das notas de entrada. O sistema cruza cada nota pela chave de acesso com o SPED.</p>
+          <button class="act inv-export sn-big" id="btnSnXmls">Selecionar XMLs (.zip)</button>
+        </div>`;
+      $('#btnSnFechar').addEventListener('click', snFechar);
+      $('#btnSnXmls').addEventListener('click', snEscolherXmls);
+    }
+    function snFechar() { $('#corrSimples').hidden = true; $('#corrSpedEmpty').hidden = false; }
+
+    async function snEscolherXmls() {
+      const pick = await window.fiscocont.fiscal.pickXmlsFolder();
+      if (pick.canceled || !pick.path) return;
+      SN.xmls = pick.path;
+      await snAnalisar();
+    }
+
+    async function snAnalisar() {
+      overlay(true, 'Lendo os XMLs e conferindo o crédito do Simples Nacional…');
+      const res = await window.fiscocont.admin.simplesAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: SN.xmls });
+      overlay(false);
+      if (res.error) { toast(res.error, true); if (!SN.an) snVazio(); return; }
+      SN.an = res.res; SN.origem = res.origem;
+      snRender();
+    }
+
+    function snCredito(d, aliq) {
+      if (d.credito > 0 && Math.abs(aliq - d.aliq) < 0.0001) return d.credito;
+      return r2(d.base * aliq / 100);
+    }
+    const snEditavel = (d) => ['incluir', 'lugar_errado', 'divergente', 'sem_aliq'].includes(d.status);
+
+    function snRender() {
+      const an = SN.an, emp = an.empresa || {}, rs = an.resumo || {}, box = $('#corrSimples');
+      const docs = an.docs || [];
+      const nArq = String(SN.xmls || '').split(/[;:](?![\\/])/).filter(Boolean).length;
+      const pend = docs.filter((d) => d.status !== 'ok');
+      const grupos = Object.keys(SN_ST).map((k) => {
+        const ds = docs.filter((d) => d.status === k);
+        const v = ds.reduce((t, d) => t + (k === 'lugar_errado' || k === 'sem_direito' ? d.c190_icms : k === 'divergente' ? Math.abs(d.credito - d.c197) : k === 'sem_xml' ? d.c197 : d.credito), 0);
+        return { k, n: ds.length, v: r2(v) };
+      }).filter((g) => g.n);
+      const maxN = Math.max(1, ...grupos.map((g) => g.n));
+      box.innerHTML = `
+        <div class="dif-head"><div>
+          <div class="dif-k">Corretor do SPED · Admin · crédito de fornecedor do Simples Nacional</div>
+          <h3>${esc(emp.nome || '')}</h3>
+          <div class="dif-sub">CNPJ ${esc(emp.cnpj || '')} · período ${dt(emp.dt_ini)} a ${dt(emp.dt_fin)} · arquivo <b>${SN.origem === 'corrigido' ? 'já corrigido nesta sessão' : 'original'}</b> ·
+            ${rs.xml_lidos ?? 0} XMLs lidos (${nArq} .zip)</div>
+        </div>
+        <div class="sn-hbtn"><button class="act inv-export" id="btnSnXmls">Trocar XMLs</button><button class="act inv-export" id="btnSnFechar">Fechar</button></div></div>
+        <div class="dif-lei"><b>Como RO manda escriturar:</b> a nota do fornecedor do Simples entra <b>sem ICMS</b> no C100/C170/C190. O crédito permitido vai num <b>C197 por nota</b>
+          com o código <b>RO00000001</b>: base = valor da operação, alíquota = percentual do Simples informado na nota, ICMS = crédito.
+          A soma desses C197 entra no <b>campo 07 do E110</b>. Fontes: SEFIN/RO, IN 017/2016 (Tabela 5.3 e manual da EFD, item 19); LC 123/2006, art. 23, §§ 1º a 5º.</div>
+        ${(an.avisos || []).length ? `<div class="dif-av"><ul>${an.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+        <div class="dif-kpis sn-kpis">
+          <div><span>Notas do Simples</span><b data-n="${rs.notas_simples || 0}">0</b><small>${rs.entradas ?? 0} entradas no SPED · ${rs.entradas_sem_xml ?? 0} sem XML</small></div>
+          <div class="k-err"><span>Crédito a incluir</span><b data-n="${rs.credito_incluir || 0}" data-fmt="brl">R$ 0,00</b><small>${rs.incluir ?? 0} nota(s) sem C197</small></div>
+          <div class="k-err"><span>Crédito no C190 (indevido)</span><b data-n="${rs.credito_c190 || 0}" data-fmt="brl">R$ 0,00</b><small>${(rs.lugar_errado || 0) + (rs.sem_direito || 0)} nota(s) · retirar</small></div>
+          <div class="k-warn"><span>C197 divergente</span><b data-n="${rs.divergente || 0}">0</b><small>${rs.divergencia < 0 ? 'lançado a mais' : 'lançado a menos'}: R$ ${fm(Math.abs(rs.divergencia || 0))}</small></div>
+          <div class="k-ok"><span>Corretas</span><b data-n="${rs.ok || 0}">0</b><small>crédito permitido R$ ${fm(rs.credito_permitido)}</small></div>
+          <div class="k-warn"><span>Pendentes de dado</span><b data-n="${(rs.sem_aliq || 0) + (rs.sem_xml || 0)}">0</b><small>${rs.sem_aliq ?? 0} sem alíquota · ${rs.sem_xml ?? 0} sem XML</small></div>
+        </div>
+        ${docs.length ? `
+        <div class="sn-dash">
+          <div class="sn-card">
+            <div class="dif-k">Situação das notas do Simples</div>
+            <div class="sn-bars">${grupos.map((g, i) => `
+              <div class="sn-bar" style="--i:${i}">
+                <span class="sn-bl">${SN_ST[g.k][0]}</span>
+                <span class="sn-bt"><i style="--w:${(g.n / maxN * 100).toFixed(1)}%;background:${SN_ST[g.k][2]}"></i></span>
+                <b>${g.n}</b><small>R$ ${fm(g.v)}</small>
+              </div>`).join('')}</div>
+          </div>
+          <div class="sn-card">
+            <div class="dif-k">Apuração (E110): antes × depois do que está marcado</div>
+            <div id="snChart" class="sn-cmp"></div>
+          </div>
+        </div>
+        <div class="chips sn-chips">
+          <span class="chip ${SN.filtro === 'pend' ? 'on' : ''}" data-f="pend">Com pendência (${pend.length})</span>
+          <span class="chip ${SN.filtro === 'todas' ? 'on' : ''}" data-f="todas">Todas (${docs.length})</span>
+        </div>
+        <div class="dif-tw sn-tw"><table class="dif-tab sn-tab">
+          <thead><tr><th>Nota</th><th>Fornecedor (Simples)</th><th>CSOSN</th><th class="n">Base (valor)</th><th class="n">Alíq. Simples</th><th class="n">Crédito permitido</th>
+            <th>No SPED hoje</th><th>O que será feito</th><th>Situação</th></tr></thead>
+          <tbody>${docs.map(snLinha).join('')}</tbody>
+        </table></div>` : `<div class="dif-av ok">Nenhuma nota de fornecedor do Simples Nacional encontrada entre as entradas com XML.</div>`}
+        <div class="dif-foot">
+          <div class="dif-prev" id="snPrev"></div>
+          <div class="dif-e116">
+            <div class="dif-k">Como fica no arquivo</div>
+            <div class="sn-cod" id="snCod"></div>
+            <div id="snE116" hidden>
+              <div class="dif-k" style="margin-top:8px">Guia de ICMS (E116)</div>
+              <p>O SPED não tem obrigação 000 e, com a correção, passa a haver ICMS a recolher. Informe a guia:</p>
+              <label>Vencimento <input id="snVenc" placeholder="dd/mm/aaaa"></label>
+              <label>Código de receita <input id="snCodRec" placeholder="ex.: 1210"></label>
+            </div>
+          </div>
+          <div class="dif-acts"><button class="act inv-export sn-big" id="btnSnAplicar" style="background:#e23d4c;color:#fff;border-color:transparent">Aplicar no SPED (gera arquivo novo)</button></div>
+        </div>
+        <div id="snRes"></div>`;
+      SN.temE116 = !!(an.e116 || []).find((x) => x.cod === '000');
+      $('#btnSnFechar').addEventListener('click', snFechar);
+      $('#btnSnXmls').addEventListener('click', snEscolherXmls);
+      box.querySelectorAll('.sn-chips .chip').forEach((c) => c.addEventListener('click', () => { SN.filtro = c.dataset.f; snFiltra(); box.querySelectorAll('.sn-chips .chip').forEach((x) => x.classList.toggle('on', x === c)); }));
+      box.querySelectorAll('input[data-sn]').forEach((el) => el.addEventListener('input', () => {
+        if (el.dataset.sn === 'aliq') {
+          const id = el.dataset.id, ck = box.querySelector(`input[data-sn="c197"][data-id="${id}"]`);
+          if (ck && ck.disabled && num(el.value) > 0) { ck.disabled = false; ck.checked = true; }
+        }
+        snAtualiza();
+      }));
+      $('#btnSnAplicar').addEventListener('click', snAplicar);
+      snFiltra();
+      snAtualiza();
+      animaNumeros(box);
+    }
+
+    function snLinha(d) {
+      const st = SN_ST[d.status] || [d.status, 'b-mute'];
+      const edit = snEditavel(d);
+      const hoje = [];
+      if (d.c190_icms > 0) hoje.push(`C190 com <b>R$ ${fm(d.c190_icms)}</b>`);
+      if (d.c197 > 0) hoje.push(`C197 RO00000001 com <b>R$ ${fm(d.c197)}</b>`);
+      const acoes = [];
+      if (d.c190_icms > 0 && d.status !== 'sem_xml') acoes.push(`<label><input type="checkbox" data-sn="zerar" data-id="${d.id}" ${d.sug_zerar ? 'checked' : ''}> Zerar ICMS do C170/C190</label>`);
+      if (d.status === 'sem_direito' && d.c197 > 0) acoes.push(`<label><input type="checkbox" data-sn="c197" data-id="${d.id}" checked> Retirar o C197</label>`);
+      else if (edit) acoes.push(`<label><input type="checkbox" data-sn="c197" data-id="${d.id}" ${d.sug_c197 ? 'checked' : ''} ${d.status === 'sem_aliq' ? 'disabled' : ''}> ${d.c197 > 0 ? 'Substituir o C197' : 'Incluir C195 + C197'}</label>`);
+      return `
+        <tr data-snrow="${d.id}" data-st="${d.status}" class="${d.status === 'ok' || d.status === 'sem_xml' ? 'dif-off' : ''}">
+          <td><b>${esc(d.num)}</b><small>${dt(d.data)}</small></td>
+          <td>${esc(d.fornecedor)}<small>${esc(d.cnpj)}${d.uf ? ' · ' + esc(d.uf) : ''}</small></td>
+          <td>${esc(d.csosn || '?')}</td>
+          <td class="n">${d.base ? 'R$ ' + fm(d.base) : '—'}</td>
+          <td class="n">${edit ? `<input class="sn-inp ${d.status === 'sem_aliq' ? 'req' : ''}" data-sn="aliq" data-id="${d.id}" value="${d.aliq ? fp(d.aliq) : ''}" placeholder="%">` : (d.aliq ? fp(d.aliq) : '—')}
+            <small>${d.status === 'sem_aliq' ? 'conforme Anexo do fornecedor' : d.aliq_fonte === 'xml' ? 'pCredSN do XML' : d.status === 'sem_direito' ? 'CSOSN sem crédito' : ''}</small></td>
+          <td class="n"><b data-snc="${d.id}">${d.credito ? 'R$ ' + fm(d.credito) : 'R$ 0,00'}</b></td>
+          <td>${hoje.join('<br>') || '<span class="dif-mute">sem crédito</span>'}</td>
+          <td class="sn-ac">${acoes.join('') || '—'}</td>
+          <td><span class="dif-b ${st[1]}">${st[0]}</span>${(d.obs || []).map((o) => `<small class="dif-obs">${esc(o)}</small>`).join('')}</td>
+        </tr>`;
+    }
+
+    function snFiltra() {
+      $('#corrSimples').querySelectorAll('tr[data-snrow]').forEach((tr) => { tr.hidden = SN.filtro === 'pend' && tr.dataset.st === 'ok'; });
+    }
+
+    function snSelecao() {
+      const box = $('#corrSimples'), out = [];
+      let d06 = 0, d07 = 0, nZ = 0, n197 = 0, prim = null;
+      for (const d of SN.an.docs || []) {
+        const z = box.querySelector(`input[data-sn="zerar"][data-id="${d.id}"]`);
+        const c = box.querySelector(`input[data-sn="c197"][data-id="${d.id}"]`);
+        const ai = box.querySelector(`input[data-sn="aliq"][data-id="${d.id}"]`);
+        const aliq = ai ? num(ai.value) : (d.status === 'sem_direito' ? 0 : d.aliq);
+        const cred = d.status === 'sem_direito' ? 0 : snCredito(d, aliq);
+        const cel = box.querySelector(`[data-snc="${d.id}"]`);
+        if (cel && ai) cel.textContent = 'R$ ' + fm(cred);
+        const zer = !!(z && z.checked), c197 = !!(c && c.checked && !c.disabled);
+        if (zer) { d06 -= d.c190_icms; nZ++; }
+        if (c197) { d07 += cred - d.c197; n197++; if (!prim && cred > 0) prim = { d, aliq, cred }; }
+        if (zer || c197) out.push({ id: d.id, zerar: zer, c197, aliq: ai ? aliq : null });
+      }
+      return { docs: out, d06: r2(d06), d07: r2(d07), nZ, n197, prim };
+    }
+
+    function snAtualiza() {
+      const an = SN.an, e = an.e110, sel = snSelecao();
+      const b = $('#btnSnAplicar');
+      b.disabled = !sel.docs.length; b.dataset.conf = ''; b.textContent = 'Aplicar no SPED (gera arquivo novo)';
+      const obs = an.obs_existente || 'CSN';
+      const cod = $('#snCod');
+      if (cod) {
+        cod.innerHTML = sel.prim ? `${an.obs_existente ? '' : `<span class="new">|0460|CSN|CRÉDITO SIMPLES NACIONAL|</span>  <i>← criado só uma vez</i>\n`}<span class="new">|C195|${esc(obs)}||</span>\n<span class="new">|C197|RO00000001|CONFORME NF Nº ${esc(sel.prim.d.num)}||${spf(sel.prim.d.base)}|${spf(sel.prim.aliq)}|${spf(sel.prim.cred)}||</span>\n<i>um C195 + C197 por nota, logo depois dos registros dela</i>`
+          : '<i>Marque uma nota com C197 para ver as linhas.</i>';
+      }
+      const prev = $('#snPrev');
+      if (!e) { prev.innerHTML = '<div class="dif-av err">SPED sem registro E110: não dá para lançar o crédito.</div>'; return; }
+      const calc = (cr, aj) => {
+        const expr = (e.deb + e.aj_deb + e.tot_aj_deb + e.est_cred) - (cr + aj + e.tot_aj_cred + e.est_deb + e.sld_ant);
+        const sa = Math.max(0, expr);
+        return { cr, aj, sa, rec: Math.max(0, sa - e.ded), sc: Math.max(0, -(expr - e.ded)) };
+      };
+      const A = calc(e.cred, e.aj_cred), D = calc(r2(e.cred + sel.d06), r2(e.aj_cred + sel.d07));
+      const lin = (t, a, d) => `<tr><td>${t}</td><td class="n">R$ ${fm(a)}</td><td class="n ${r2(a) !== r2(d) ? 'mud' : ''}">R$ ${fm(d)}</td></tr>`;
+      prev.innerHTML = `
+        <div class="dif-k">Conferência da apuração (E110)</div>
+        <p class="dif-sub">${sel.nZ} nota(s) com crédito retirado do C190 (R$ ${fm(-sel.d06)}) · ${sel.n197} nota(s) com C197 (diferença R$ ${fm(sel.d07)})</p>
+        <table class="dif-mini"><thead><tr><th></th><th class="n">Antes</th><th class="n">Depois</th></tr></thead><tbody>
+          ${lin('Créditos das notas (campo 06)', A.cr, D.cr)}
+          ${lin('Ajustes a crédito das notas (campo 07)', A.aj, D.aj)}
+          ${lin('Saldo devedor (campo 11)', A.sa, D.sa)}
+          ${lin('ICMS a recolher (campo 13)', A.rec, D.rec)}
+          ${lin('Saldo credor a transportar (campo 14)', A.sc, D.sc)}
+        </tbody></table>
+        ${r2(A.sc) !== r2(D.sc) ? '<p class="dif-warn">O saldo credor muda: o SPED do mês seguinte terá de receber o novo saldo credor anterior.</p>' : ''}`;
+      SN.precisaE116 = !SN.temE116 && r2(D.rec) > 0 && r2(D.rec) !== r2(A.rec);
+      $('#snE116').hidden = !SN.precisaE116;
+      const ch = $('#snChart');
+      if (ch) {
+        const itens = [['Créditos (06)', A.cr, D.cr], ['Ajustes a crédito (07)', A.aj, D.aj], ['ICMS a recolher (13)', A.rec, D.rec]];
+        const mx = Math.max(1, ...itens.flatMap((x) => [x[1], x[2]]));
+        if (!ch.dataset.pronto) {
+          ch.innerHTML = itens.map((x, i) => `
+            <div class="sn-cg" style="--i:${i}"><span class="sn-bl">${x[0]}</span>
+              <div class="sn-pair"><span class="sn-bt a"><i data-a="${i}"></i></span><em data-ta="${i}"></em></div>
+              <div class="sn-pair"><span class="sn-bt d"><i data-d="${i}"></i></span><em data-td="${i}"></em></div></div>`).join('') +
+            '<div class="leg sn-leg"><span><i style="background:#c9cfdc"></i>Antes</span><span><i style="background:#1f2a5a"></i>Depois</span></div>';
+          ch.dataset.pronto = '1';
+        }
+        itens.forEach((x, i) => {
+          ch.querySelector(`[data-a="${i}"]`).style.setProperty('--w', (x[1] / mx * 100).toFixed(2) + '%');
+          ch.querySelector(`[data-d="${i}"]`).style.setProperty('--w', (x[2] / mx * 100).toFixed(2) + '%');
+          ch.querySelector(`[data-ta="${i}"]`).textContent = 'R$ ' + fm(x[1]);
+          const td = ch.querySelector(`[data-td="${i}"]`);
+          td.textContent = 'R$ ' + fm(x[2]); td.classList.toggle('mud', r2(x[1]) !== r2(x[2]));
+        });
+      }
+    }
+
+    async function snAplicar() {
+      const b = $('#btnSnAplicar'), sel = snSelecao();
+      if (!sel.docs.length) return;
+      const selecao = { docs: sel.docs };
+      if (SN.precisaE116) {
+        const venc = ($('#snVenc').value || '').replace(/\D/g, ''), cod = ($('#snCodRec').value || '').trim();
+        if (venc.length !== 8 || !cod) { toast('Informe o vencimento (dd/mm/aaaa) e o código de receita da guia.', true); return; }
+        selecao.e116 = { venc, cod_rec: cod };
+      }
+      if (b.dataset.conf !== '1') {
+        const p = [];
+        if (sel.n197) p.push(`${sel.n197} C197 (R$ ${fm(sel.d07)})`);
+        if (sel.nZ) p.push(`retirar R$ ${fm(-sel.d06)} do C190`);
+        b.dataset.conf = '1';
+        b.textContent = `Confirmar: ${p.join(' · ')} (gera arquivo novo)`;
+        return;
+      }
+      overlay(true, 'Lançando o crédito do Simples e recalculando E110, E116 e Bloco 9…');
+      const res = await window.fiscocont.admin.simplesAplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: SN.xmls, selecao });
+      overlay(false);
+      b.dataset.conf = ''; b.textContent = 'Aplicar no SPED (gera arquivo novo)';
+      if (res.error) { toast(res.error, true); return; }
+      corrFeito = true;
+      const r = res.resumo || {}, ea = r.e110_antes, ed = r.e110_depois;
+      const out = $('#snRes');
+      out.innerHTML = `
+        <div class="dif-done sn-done">
+          <div class="dif-k">Lançado: arquivo novo gerado (o original não foi alterado)</div>
+          <div class="dif-kpis sn-kpis">
+            <div class="k-ok"><span>C197 RO00000001 incluídos</span><b data-n="${r.c197_inseridos || 0}">0</b><small>${r.c195_inseridos || 0} C195${r.c197_removidos ? ` · ${r.c197_removidos} C197 antigo(s) substituído(s)` : ''}</small></div>
+            <div class="k-ok"><span>Crédito lançado no C197</span><b data-n="${r.credito_c197 || 0}" data-fmt="brl">R$ 0,00</b><small>${r.credito_c197_antes ? `antes R$ ${fm(r.credito_c197_antes)}` : 'campo 07 do E110'}</small></div>
+            <div class="k-err"><span>Retirado do C190</span><b data-n="${r.credito_retirado_c190 || 0}" data-fmt="brl">R$ 0,00</b><small>${r.zeradas || 0} nota(s) · ${r.c170_zerados || 0} C170 · ${r.c190_zerados || 0} C190</small></div>
+            ${ea && ed ? `<div><span>ICMS a recolher</span><b data-n="${ed.recolher}" data-fmt="brl">R$ 0,00</b><small>antes R$ ${fm(ea.recolher)}</small></div>` : ''}
+          </div>
+          ${(r.obs_0460_criados || []).length ? `<p class="dif-sub">Observação 0460 criada: ${r.obs_0460_criados.map(esc).join(', ')} · CRÉDITO SIMPLES NACIONAL</p>` : ''}
+          ${r.e116 ? `<p class="dif-sub">${esc(r.e116)}</p>` : ''}
+          ${(r.avisos || []).length ? `<div class="dif-av"><ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+          <div class="dif-acts">
+            <button class="act inv-export" id="btnSnVer">Ver todos os dados (corrigido)</button>
+            <button class="act inv-export" id="btnSnReconf">Conferir de novo</button>
+            <button class="act inv-export sn-big" id="btnSnBaixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button>
+          </div>
+        </div>`;
+      animaNumeros(out);
+      $('#btnSnBaixar').addEventListener('click', async () => {
+        const r3 = await window.fiscocont.fiscal.baixarSpedCorrigido();
+        if (r3.canceled) return;
+        if (r3.error) { toast(r3.error, true); return; }
+        toast('SPED corrigido salvo.');
+        window.fiscocont.openPath(r3.path);
+      });
+      $('#btnSnVer').addEventListener('click', async () => {
+        overlay(true, 'Lendo todos os dados do SPED corrigido…');
+        const r2_ = await window.fiscocont.fiscal.visualizarSpedCorrigido();
+        overlay(false);
+        if (r2_.error) { toast(r2_.error, true); return; }
+        const fr = $('#corrSpedFrame'); fr.srcdoc = r2_.html; fr.hidden = false;
+        fr.scrollIntoView({ behavior: 'smooth' });
+      });
+      $('#btnSnReconf').addEventListener('click', () => snAnalisar());
+      out.scrollIntoView({ behavior: 'smooth' });
+      toast('Crédito do Simples lançado. Confira e baixe o SPED corrigido.');
     }
   }
 
