@@ -357,7 +357,9 @@ def analisar_texto(texto, xmls=None):
         balcao = None
         if d['mod'] == '65' and interestadual:
             balcao = {'classe': 'consumo', 'motivo': 'NFC-e', 'ind_pres': '1', 'cfop_xml': [], 'aliq_xml': [], 'itens': [], 'mod': '65'}
-        elif x and interestadual and x.get('id_dest') == '1' and x.get('emit_uf') and x.get('emit_uf') != uf_emp:
+        # venda de balcão: no XML, destinatário com endereço em RO, fornecedor de outro estado e operação interna (idDest = 1)
+        elif (x and interestadual and x.get('id_dest') == '1' and x.get('emit_uf') and x.get('emit_uf') != uf_emp
+              and (x.get('dest_uf') or '') == uf_emp):
             classe, motivo = _classe_balcao(x, alvo)
             cf_xml = sorted({i['cfop'] for i in x.get('itens') or [] if i.get('cfop')})
             balcao = {'classe': classe, 'motivo': motivo, 'ind_pres': x.get('ind_pres', ''), 'cfop_xml': cf_xml,

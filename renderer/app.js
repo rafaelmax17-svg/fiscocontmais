@@ -1618,7 +1618,7 @@ function bindFiscal() {
           <div class="dif-lei"><b>Regra da SEFIN/RO (Parecer 053/2019/GETRI/CRE):</b> compra feita no balcão em outro estado é <b>operação interna da origem</b>,
             com a alíquota interna de lá, e <b>não gera DIFAL para RO</b>. A NF-e entra no SPED <b>sem crédito</b>; a NFC-e não entra na EFD de entradas.
             <b>Exceção:</b> bem do ativo (o parecer cita motor, carroceria, eixo e jogo de pneus) segue interestadual e o DIFAL é devido.
-            O sistema reconhece pelo XML: destino da operação "interna", CFOP 5.xxx e fornecedor de fora de RO.</div>
+            O sistema reconhece pelo XML: <b>destinatário com endereço em RO</b>, <b>fornecedor de outro estado</b> e <b>operação interna</b> (destino da operação = 1, CFOP 5.xxx).</div>
           <div class="sn-dash">
             <div class="sn-card"><div class="dif-k">Situação das compras de balcão</div><div class="sn-bars">
               ${barra('Retirar DIFAL lançado', 'rem', '#e34948', 0)}${barra('Retirar crédito tomado', 'cred', '#eb6834', 1)}
