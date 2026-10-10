@@ -1617,7 +1617,7 @@ function bindFiscal() {
           <div class="dif-k">Compras no balcão em outro estado</div>
           <div class="dif-lei"><b>Regra da SEFIN/RO (Parecer 053/2019/GETRI/CRE):</b> compra feita no balcão em outro estado é <b>operação interna da origem</b>,
             com a alíquota interna de lá, e <b>não gera DIFAL para RO</b>. A NF-e entra no SPED <b>sem crédito</b>; a NFC-e não entra na EFD de entradas.
-            <b>Exceção:</b> bem do ativo (o parecer cita motor, carroceria, eixo e jogo de pneus) segue interestadual e o DIFAL é devido.
+            <b>Exceção:</b> bem do ativo (o parecer cita motor, carroceria, eixo, conjunto de pneus, câmara frigorífica e furgão) segue interestadual e o DIFAL é devido.
             O sistema reconhece pelo XML: <b>destinatário com endereço em RO</b>, <b>fornecedor de outro estado</b> e <b>operação interna</b> (destino da operação = 1, CFOP 5.xxx).</div>
           <div class="sn-dash">
             <div class="sn-card"><div class="dif-k">Situação das compras de balcão</div><div class="sn-bars">

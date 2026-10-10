@@ -191,7 +191,7 @@ def _estrutura_d(linhas):
 
 # Parecer 053/2019/GETRI/CRE/SEFIN-RO: compra no balcão em outro estado é operação interna da origem, sem DIFAL para RO —
 # exceto bem do ativo (o parecer cita motor, carroceria, eixo e jogo de pneus), que segue interestadual.
-ATIVO_PALAVRAS = ('MOTOR', 'CARROCERIA', 'EIXO')
+ATIVO_PALAVRAS = ('MOTOR', 'CARROCERIA', 'EIXO', 'CAMARA FRIGORIFICA', 'CAMARA FRIA', 'FURGAO')
 ATIVO_NCM = ('8407', '8408', '8707', '870850')
 
 
@@ -200,11 +200,12 @@ def _classe_balcao(x, alvo):
     if any(TIPOS[c['cfop'][1:]][0] == 'ativo' for c in alvo):
         return 'ativo', 'CFOP de ativo no SPED'
     pneus = 0.0
+    import unicodedata
     for it in x.get('itens') or []:
-        desc = (it.get('xprod') or '').upper()
+        desc = ''.join(ch for ch in unicodedata.normalize('NFD', (it.get('xprod') or '').upper()) if unicodedata.category(ch) != 'Mn')
         ncm = it.get('ncm') or ''
         if any(p in desc for p in ATIVO_PALAVRAS) or ncm.startswith(ATIVO_NCM):
-            return 'ativo', f'item "{it.get("xprod", "")[:40]}" (motor, carroceria ou eixo)'
+            return 'ativo', f'item "{it.get("xprod", "")[:40]}" (motor, carroceria, eixo, câmara frigorífica ou furgão)'
         if ncm.startswith('4011') or 'PNEU' in desc:
             pneus += it.get('qcom') or 0
     if pneus >= 4:
