@@ -1326,7 +1326,7 @@ function bindFiscal() {
     $('#btnCorrSpedRodar').addEventListener('click', async () => {
       if (!corrSpedPath) return;
       overlay(true, 'Corrigindo o SPED (C191, E500, GTIN, CEST, COD_NAT)…');
-      const res = await window.fiscocont.fiscal.corrigirSped(corrSpedPath, []);
+      const res = await window.fiscocont.fiscal.corrigirSped(corrSpedPath, [], corrFeito);
       overlay(false);
       if (res.error) { toast(res.error, true); return; }
       corrFeito = true;
@@ -1344,7 +1344,9 @@ function bindFiscal() {
             <div><b style="font-size:20px;color:#1f2a5a">${r.cest_limpos ?? 0}</b><br>CEST limpos</div>
             <div><b style="font-size:20px;color:#1f2a5a">${r.cod_nat_corrigidos ?? 0}</b><br>COD_NAT corrigidos</div>
             <div><b style="font-size:20px;color:#1f2a5a">${(r.registro_0400_criado || []).length}</b><br>Registros 0400 criados</div>
+            ${r.c197_campos_ajustados ? `<div><b style="font-size:20px;color:#1f2a5a">${r.c197_campos_ajustados}</b><br>C197/D197 com campo a mais corrigidos</div>` : ''}
           </div>
+          ${(r.avisos || []).length ? `<div class="dif-av" style="margin-top:14px"><b>Atenção antes de transmitir</b><ul>${r.avisos.map((x) => `<li>${String(x).replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</li>`).join('')}</ul></div>` : ''}
           <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
             <button class="act inv-export" id="btnCorrSpedVerCorrigido">Ver todos os dados (corrigido)</button>
             <button class="act inv-export" id="btnCorrSpedVerDashboard" style="background:#1f2a5a;color:#fff;border-color:transparent">Ver dashboard animado</button>

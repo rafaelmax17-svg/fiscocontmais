@@ -2721,6 +2721,79 @@ def parse_pgdas_extrato(pdf_path):
     return out
 
 
+def _ler_sped(path):
+    """Lê o SPED na codificação em que ele veio (UTF-8 ou Latin-1/ANSI, que é o padrão do PVA e do Domínio).
+    Antes o arquivo era lido como UTF-8 com substituição: os acentos de um SPED em Latin-1 viravam "�" no arquivo
+    corrigido (nomes no 0150, descrições no 0200, observações no 0460)."""
+    raw = open(path, 'rb').read()
+    try:
+        return raw.decode('utf-8'), 'utf-8'
+    except UnicodeDecodeError:
+        return raw.decode('latin-1'), 'latin-1'
+
+
+def _grava_sped(path, texto, enc):
+    tmp = path + '.parcial'
+    with open(tmp, 'w', encoding=enc, errors='replace', newline='') as fh:
+        fh.write(texto)
+    os.replace(tmp, path)
+
+
+_C197_CAMPOS = 8   # leiaute do C197/D197 (Guia Prático): REG, COD_AJ, DESCR_COMPL_AJ, COD_ITEM, VL_BC_ICMS, ALIQ_ICMS, VL_ICMS, VL_OUTROS
+
+
+def ajusta_campos_c197(texto):
+    """C197/D197 com campos a mais (vazios ou zero) no fim -> deixa só os 8 do leiaute. Devolve (texto, quantidade)."""
+    q = '\r\n' if '\r\n' in texto else '\n'
+    linhas = texto.split(q)
+    n = 0
+    for i, l in enumerate(linhas):
+        if l.startswith('|C197|') or l.startswith('|D197|'):
+            c = l.split('|')
+            campos = c[1:-1] if l.endswith('|') else c[1:]
+            if len(campos) > _C197_CAMPOS and all(x in ('', '0', '0,00') for x in campos[_C197_CAMPOS:]):
+                linhas[i] = '|' + '|'.join(campos[:_C197_CAMPOS]) + '|'
+                n += 1
+    return q.join(linhas), n
+
+
+def confere_e110_ajustes(texto):
+    """Confere os campos 03 (ajustes a débito) e 07 (ajustes a crédito) do E110 contra a soma dos ajustes dos documentos
+    (C197, C597, C857, C897, D197, D737), pela regra do Guia Prático: 3º caractere do código 3/4/5 vai no campo 03 e 0/1/2
+    no campo 07, com 4º caractere 0, 3, 4, 5, 6, 7 ou 8; documentos extemporâneos e cancelados ficam de fora.
+    Devolve a lista de avisos (vazia se fecha)."""
+    soma = {3: 0.0, 7: 0.0}
+    sit = ''
+    e110 = None
+    for l in texto.splitlines():
+        c = l.split('|')
+        if len(c) < 3:
+            continue
+        r = c[1]
+        if r in ('C100', 'D100'):
+            sit = c[6] if len(c) > 6 else ''
+        elif r in ('C500', 'C800', 'D700'):
+            sit = c[5] if len(c) > 5 else ''
+        elif r in ('C197', 'C597', 'C857', 'C897', 'D197', 'D737') and len(c) > 7:
+            cod = c[2]
+            if len(cod) >= 4 and cod[3] in '0345678' and sit not in ('01', '07', '10', '02', '03', '04', '05'):
+                v = _num(c[7])
+                if cod[2] in '345':
+                    soma[3] += v
+                elif cod[2] in '012':
+                    soma[7] += v
+        elif r == 'E110' and len(c) > 15:
+            e110 = c
+    avisos = []
+    if e110:
+        for campo, nome in ((3, 'campo 03 (ajustes a débito)'), (7, 'campo 07 (ajustes a crédito)')):
+            inf = _num(e110[campo])
+            if abs(inf - soma[campo]) > 0.01:
+                avisos.append(f'E110 {nome} = R$ {_brl(inf)}, mas a soma dos ajustes das notas (C197/D197 e similares) é R$ {_brl(soma[campo])} '
+                              f'(diferença de R$ {_brl(inf - soma[campo])}). O PVA cobra que esses valores sejam iguais: confira antes de transmitir.')
+    return avisos
+
+
 def _out(path, content):
     # Grava num temporário e renomeia: o Electron dá o processamento por concluído assim que o
     # arquivo de saída existe com conteúdo, e encerra o núcleo nessa hora. Com relatórios grandes,
@@ -2989,8 +3062,7 @@ def main(argv):
 
         def optv(name, default=None):
             return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
-        with open(argv[1], 'r', encoding='utf-8', errors='replace', newline='') as fh:
-            texto = fh.read()
+        texto, _enc = _ler_sped(argv[1])
         html = gerar_visualizacao_sped_html(texto, optv('--empresa', ''), optv('--periodo', ''))
         _out(optv('--html', 'visualizacao.html'), html)
         print('Visualização do SPED gerada')
@@ -3006,15 +3078,14 @@ def main(argv):
 
         def optc(name, default=None):
             return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
-        with open(argv[1], 'r', encoding='utf-8', errors='replace', newline='') as fh:
-            texto = fh.read()
+        texto, enc = _ler_sped(argv[1])
         cest_str = optc('--cest', '')
         cest_invalidos = [c.strip() for c in cest_str.split(',') if c.strip()]
         corrigido, resumo = corrigir_sped_fiscal(texto, cest_invalidos)
+        corrigido, resumo['c197_campos_ajustados'] = ajusta_campos_c197(corrigido)
+        resumo['avisos'] = confere_e110_ajustes(corrigido)
         saida = optc('--saida', 'sped_corrigido.txt')
-        with open(saida + '.parcial', 'w', encoding='utf-8', newline='') as fh:
-            fh.write(corrigido)
-        os.replace(saida + '.parcial', saida)
+        _grava_sped(saida, corrigido, enc)      # mesma codificação do arquivo de origem
         # o dashboard é gravado antes do resumo: quem espera pelo .json já encontra o HTML pronto
         if '--html' in args:
             import corretor_dash as _cd
@@ -3067,8 +3138,7 @@ def main(argv):
         return 0
 
     if modo == 'preparar-inclusao':
-        with open(sped_path, 'r', encoding='utf-8', errors='replace', newline='') as fh:
-            texto = fh.read()
+        texto, _enc = _ler_sped(sped_path)
         xml_arg = opt('--xmls')
         caminhos = [c for c in xml_arg.split(os.pathsep) if c] if xml_arg else []
         xmls = coletar_xmls(caminhos)
@@ -3095,8 +3165,7 @@ def main(argv):
         return 0
 
     if modo == 'incluir-notas':
-        with open(sped_path, 'r', encoding='utf-8', errors='replace', newline='') as fh:
-            texto = fh.read()
+        texto, enc_sped = _ler_sped(sped_path)
         entrada_path = opt('--entrada')
         if not entrada_path:
             print('uso: fiscal_core.py incluir-notas SPED.txt --entrada notas.json --saida SAIDA.txt [--json resumo.json]'); return 1
@@ -3115,8 +3184,7 @@ def main(argv):
             notas_para_incluir.append({'nota': nota, 'itens': itens})
         texto_final, resumo = adicionar_notas_ao_sped(texto, notas_para_incluir)
         saida = opt('--saida', 'sped_com_notas.txt')
-        with open(saida, 'w', encoding='utf-8', newline='') as fh:
-            fh.write(texto_final)
+        _grava_sped(saida, texto_final, enc_sped)
         if '--json' in args:
             _out(opt('--json', 'resumo_inclusao.json'), json.dumps(resumo, ensure_ascii=False))
         print('SPED com notas incluídas gerado:', saida)

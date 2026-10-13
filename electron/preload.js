@@ -55,7 +55,7 @@ contextBridge.exposeInMainWorld('fiscocont', {
   fiscal: {
     pickSped: () => ipcRenderer.invoke('fiscal:pickSped'),
     visualizarSped: (spedPath) => ipcRenderer.invoke('fiscal:visualizarSped', spedPath),
-    corrigirSped: (spedPath, cestInvalidos) => ipcRenderer.invoke('fiscal:corrigirSped', { spedPath, cestInvalidos }),
+    corrigirSped: (spedPath, cestInvalidos, usarCorrigido) => ipcRenderer.invoke('fiscal:corrigirSped', { spedPath, cestInvalidos, usarCorrigido }),
     corrigirSpedDashboard: (spedPath) => ipcRenderer.invoke('fiscal:corrigirSpedDashboard', spedPath),
     substituirLmc: (semLmcPath, comLmcPath) => ipcRenderer.invoke('fiscal:substituirLmc', { semLmcPath, comLmcPath }),
     pickPfx: () => ipcRenderer.invoke('fiscal:pickPfx'),

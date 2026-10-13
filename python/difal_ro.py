@@ -681,11 +681,9 @@ def _junta_c190(linhas, d, remover):
 
 
 def campos_c197(linhas, cab):
-    """Quantidade de campos do C197 a gravar: segue o C197 que o próprio arquivo já tem; sem nenhum, usa o leiaute."""
-    for ln in linhas:
-        if ln.startswith('|C197|'):
-            return len(ln.split('|')) - 2
-    return 9 if (cab.get('cod_ver') or '0') >= '020' else 8
+    """C197 e D197 têm 8 campos no leiaute (REG, COD_AJ, DESCR_COMPL_AJ, COD_ITEM, VL_BC_ICMS, ALIQ_ICMS, VL_ICMS, VL_OUTROS).
+    Um 9º campo é recusado pelo PVA ("o número de campos difere do leiaute")."""
+    return 8
 
 
 def linha_c197(cod_aj, descr, base, aliq, valor, outros, n_campos):
@@ -774,7 +772,9 @@ def monta_arquivo(linhas, remover, insercoes, novos_0460, novas_e111, novas_e116
             saida.extend(novas_e116)
     saida = _recalcula_bloco9_global(saida)
     saida = _recalcula_fechamentos_bloco(saida)
-    return quebra.join(saida) + (quebra if final_vazio else '')
+    from fiscal_core import ajusta_campos_c197
+    novo, _ = ajusta_campos_c197(quebra.join(saida) + (quebra if final_vazio else ''))
+    return novo
 
 
 def aplicar_texto(texto, selecao, xmls=None):
@@ -878,7 +878,7 @@ def aplicar_texto(texto, selecao, xmls=None):
 
     # DIFAL do frete (CT-e): D195 + D197 com o mesmo código da mercadoria
     fr_por_id = {f['id']: f for f in an.get('fretes') or []}
-    n197d = next((len(ln.split('|')) - 2 for ln in linhas if ln.startswith('|D197|')), n197)   # segue o D197 que o arquivo já tem
+    n197d = 8
     ctes_por_i = {t['i']: t for t in _estrutura_d(linhas)}
     for sel in selecao.get('fretes', []):
         f, t = fr_por_id.get(sel.get('id')), ctes_por_i.get(sel.get('id'))

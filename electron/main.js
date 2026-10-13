@@ -1778,14 +1778,16 @@ ipcMain.handle('fiscal:visualizarSped', async (_evt, spedPath) => {
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
-ipcMain.handle('fiscal:corrigirSped', async (_evt, { spedPath, cestInvalidos }) => {
+ipcMain.handle('fiscal:corrigirSped', async (_evt, { spedPath, cestInvalidos, usarCorrigido }) => {
   if (!spedPath) return { error: 'Selecione o SPED.' };
+  // encadeia com o que já foi aplicado nesta sessão (DIFAL, crédito, Simples): corrige em cima do arquivo já corrigido
+  const base = _difalBase(spedPath, usarCorrigido);
   const saidaTmp = path.join(os.tmpdir(), `fc_corrigido_${Date.now()}.txt`);
   const resumoTmp = path.join(os.tmpdir(), `fc_resumo_${Date.now()}.json`);
   try {
     const cestArg = (cestInvalidos || []).filter(Boolean).join(',');
     const htmlTmp = path.join(os.tmpdir(), `fc_corr_dash_${Date.now()}.html`);
-    const args = ['corrigir', spedPath, '--saida', saidaTmp, '--html', htmlTmp, '--json', resumoTmp];
+    const args = ['corrigir', base.arq, '--saida', saidaTmp, '--html', htmlTmp, '--json', resumoTmp];
     if (cestArg) args.push('--cest', cestArg);
     // o .json é o último arquivo gravado pelo núcleo: esperar por ele garante SPED e dashboard completos
     await runFiscal(args, resumoTmp);
@@ -1793,10 +1795,10 @@ ipcMain.handle('fiscal:corrigirSped', async (_evt, { spedPath, cestInvalidos }) 
     fs.unlink(resumoTmp, () => {});
     let html = '';
     try { html = fs.readFileSync(htmlTmp, 'utf-8'); fs.unlink(htmlTmp, () => {}); } catch (_) {}
-    if (lastSpedCorrigidoPath) fs.unlink(lastSpedCorrigidoPath, () => {});
+    if (lastSpedCorrigidoPath && lastSpedCorrigidoPath !== saidaTmp) fs.unlink(lastSpedCorrigidoPath, () => {});
     lastSpedCorrigidoPath = saidaTmp;
     lastCorretorDash = { spedPath, html };
-    return { ok: true, resumo, html };
+    return { ok: true, resumo, html, origem: base.origem };
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
