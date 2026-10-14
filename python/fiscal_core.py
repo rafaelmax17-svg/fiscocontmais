@@ -4039,6 +4039,17 @@ def parse_nfse_xml(path):
     }
 
 
+def _participantes_nfse(xml_texto):
+    """(prestador, tomador, intermediário) — CNPJ ou CPF de cada um, só dígitos."""
+    def doc(tag):
+        m = re.search(rf'<{tag}>(.*?)</{tag}>', xml_texto, re.S)
+        if not m:
+            return ''
+        d = re.search(r'<(?:CNPJ|CPF)>(\d+)</(?:CNPJ|CPF)>', m.group(1))
+        return d.group(1) if d else ''
+    return doc('prest') or doc('emit'), doc('toma'), doc('interm')
+
+
 def _destino_pdf(caminho_xml):
     """Espelha o caminho do XML dentro da pasta PDF:
     .../NFS-e/XML/Prestados/2026-08/<chave>.xml  ->  .../NFS-e/PDF/Prestados/2026-08/<chave>.pdf
@@ -4247,6 +4258,7 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     base_url = 'https://adn.producaorestrita.nfse.gov.br' if homologacao else 'https://adn.nfse.gov.br'
     salvos, ignorados_fora_periodo, paginas = 0, 0, 0
     canceladas_qtd = 0
+    outros_cnpj = 0
     nsu = int(nsu_inicial or 0)
     ultimo_nsu_visto = nsu
     erro = None
@@ -4372,8 +4384,18 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                 chave_xml_m = _re.search(r'Id="NFS(\d{50})"', xml_texto)
                 chave = (chave_xml_m.group(1) if chave_xml_m else '') or item.get('ChaveAcesso') or f'nsu_{nsu_item}'
                 competencia = data_doc.strftime('%Y-%m') if data_doc else 'sem-data'
-                prest_cnpj_m = _re.search(r'<prest><CNPJ>(\d+)</CNPJ>', xml_texto)
-                subpasta = 'Prestados' if (prest_cnpj_m and prest_cnpj_m.group(1) == cnpj_empresa) else 'Tomados'
+                # achado real (Rafael, 14/10 — Auto Posto Patrão): nota de OUTRO estabelecimento da mesma raiz
+                # (tomador = matriz/outra filial) caía em "Tomados" desta empresa. O Domínio recusa na importação
+                # ("Inscrição Federal do arquivo diferente da empresa ativa") e o painel não mostrava a nota.
+                # Agora só vai para Prestados/Tomados o que tem ESTE CNPJ como prestador, tomador ou intermediário.
+                prest_doc, toma_doc, interm_doc = _participantes_nfse(xml_texto)
+                if cnpj_empresa and prest_doc == cnpj_empresa:
+                    subpasta = os.path.join('XML', 'Prestados')
+                elif not cnpj_empresa or cnpj_empresa in (toma_doc, interm_doc):
+                    subpasta = os.path.join('XML', 'Tomados')
+                else:
+                    subpasta = os.path.join('Outros CNPJ', toma_doc or prest_doc or 'sem-cnpj')
+                    outros_cnpj += 1
                 notas_brutas.append((chave, xml_texto, subpasta, competencia))
 
             nsu = ultimo_nsu_visto
@@ -4392,10 +4414,21 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     # (o evento podia ter chegado antes OU depois da nota na sequência do
     # NSU) — grava com sufixo .CANCELADA no nome quando for o caso, pra
     # ficar visível no Explorer e a análise saber excluir dos totais.
+    # nota de outro CNPJ que já tinha sido gravada em XML\Tomados por versão anterior: tira de lá
+    for chave, _x, subpasta, competencia in notas_brutas:
+        if subpasta.startswith('Outros CNPJ'):
+            for velho in glob.glob(os.path.join(glob.escape(os.path.join(pasta_nfse, 'XML')), '*', '*', glob.escape(chave) + '*.xml')):
+                try:
+                    os.remove(velho)
+                    pdf_velho = _destino_pdf(velho)
+                    if os.path.exists(pdf_velho):
+                        os.remove(pdf_velho)
+                except OSError:
+                    pass
     pdfs_gerados, pdfs_erro = 0, 0
     pdfs_erros_det = []     # [{nnfse, chave, motivo}] — achado real (Rafael, 14/10): "1 com erro ao gerar" sem dizer qual nem por quê
     for chave, xml_texto, subpasta, competencia in notas_brutas:
-        pasta_xml = os.path.join(pasta_nfse, 'XML', subpasta, competencia)
+        pasta_xml = os.path.join(pasta_nfse, subpasta, competencia)
         os.makedirs(pasta_xml, exist_ok=True)
         normal = os.path.join(pasta_xml, f'{chave}.xml')
         cancelado = os.path.join(pasta_xml, f'{chave}.CANCELADA.xml')
@@ -4434,6 +4467,7 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     return {
         'erro': erro, 'salvos': salvos, 'ignorados_fora_periodo': ignorados_fora_periodo,
         'canceladas': canceladas_qtd, 'pdfs_gerados': pdfs_gerados, 'pdfs_erro': pdfs_erro, 'pdfs_erros': pdfs_erros_det,
+        'outros_cnpj': outros_cnpj,
         'paginas_lidas': paginas, 'ultimo_nsu': ultimo_nsu_visto,
         'pasta': pasta_nfse,
     }
@@ -4462,6 +4496,7 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
     canc = {os.path.basename(p)[:-len('.CANCELADA.xml')] for p in caminhos if p.upper().endswith('.CANCELADA.XML')}
     caminhos = [p for p in caminhos if p.upper().endswith('.CANCELADA.XML') or os.path.basename(p)[:-4] not in canc]
     notas = []
+    outras = []
     for p in caminhos:
         cancelada = p.upper().endswith('.CANCELADA.XML')
         try:
@@ -4491,6 +4526,11 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
         d['parceiro_nome'] = parc_nome
         d['parceiro_doc_tipo'] = parc_doc
         d['cancelada'] = cancelada
+        if papel == 'desconhecida':
+            # nota de outro CNPJ (ex.: da matriz, na pasta da filial): fica fora dos totais e das listas
+            d['outro_cnpj'] = d['tomador_cnpj'] or d['prestador_cnpj']
+            outras.append(d)
+            continue
         notas.append(d)
 
     validas = [n for n in notas if not n['cancelada']]
@@ -4531,6 +4571,8 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
         'inconsistencias_piscofins': inconsistencias_piscofins,
         'notas_pf_com_retencao': sorted([n for n in validas if n.get('pf_com_retencao')], key=lambda n: n['emissao'], reverse=True),
         'qtd_pf_com_retencao': sum(1 for n in validas if n.get('pf_com_retencao')),
+        'notas_outro_cnpj': sorted(outras, key=lambda n: n['emissao'], reverse=True),
+        'qtd_outro_cnpj': len(outras),
     }
 
 
@@ -4640,6 +4682,31 @@ def _bloco_pf_com_retencao(notas):
         f'<div style="font-size:12px;color:#9a3412">R$ {_brl(total_ret)} retidos · pessoa física, em regra, não faz retenção na fonte — '
         f'essas notas foram separadas da lista "Com retenção".</div></div></div>'
         f'{linhas}</div>'
+    )
+
+
+def _bloco_outro_cnpj(notas):
+    """Notas encontradas na pasta da empresa que são de OUTRO CNPJ (ex.: tomador = matriz numa pasta de
+    filial). Ficam fora dos totais — pedido do Rafael, 14/10 (o Domínio recusa: "Inscrição Federal do
+    arquivo diferente da empresa ativa")."""
+    if not notas:
+        return ''
+    linhas = ''.join(
+        f'<tr><td>{_fmt_emissao_nfse(n)}</td><td>NFS-e {_esc(n["nnfse"])}</td>'
+        f'<td>{_esc(n["prestador_nome"])[:30]}</td>'
+        f'<td>{_esc(n["tomador_nome"])[:30]}<br><span style="font-size:10px;color:var(--ink2)">{_esc(n.get("tomador_doc_tipo") or "CNPJ")}: {_esc(n["tomador_cnpj"] or "—")}</span></td>'
+        f'<td style="text-align:right">R$ {_brl(n["vserv"])}</td>'
+        f'<td class="col-pdf" style="text-align:center"><button type="button" class="btn-pdf" data-chave="{_esc(n["chave"])}">PDF</button></td></tr>'
+        for n in notas)
+    return (
+        f'<div class="card" style="background:#f3f4fb;border:1px solid #c9ceea">'
+        f'<h3><span class="dot" style="background:#6b7392"></span>{len(notas)} nota(s) de outro CNPJ nesta pasta — fora dos totais</h3>'
+        f'<div style="font-size:12px;color:var(--ink2);margin-bottom:8px">O prestador e o tomador destas notas não são o CNPJ desta empresa '
+        f'(ex.: nota da matriz baixada junto com a filial). Não importe estas notas nesta empresa no Domínio — elas pertencem ao CNPJ do tomador.</div>'
+        f'<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>'
+        f'<th style="text-align:left;padding:6px">Emissão</th><th style="text-align:left;padding:6px">Nota</th><th style="text-align:left;padding:6px">Prestador</th>'
+        f'<th style="text-align:left;padding:6px">Tomador (CNPJ da nota)</th><th style="text-align:right;padding:6px">Valor</th><th class="col-pdf"></th></tr></thead>'
+        f'<tbody>{linhas}</tbody></table></div>'
     )
 
 
@@ -4840,6 +4907,7 @@ body.standalone .col-pdf{{display:none}}
 {f'<div class="card" style="background:#fef3f2;border:1px solid #fecdca"><div style="font-size:12.5px;color:#7a1f1f">⚠ {dados["qtd_canceladas"]} nota(s) cancelada(s) foram baixadas mas ficaram de fora dos totais acima — arquivos salvos com .CANCELADA no nome, pra referência.</div></div>' if dados.get('qtd_canceladas') else ''}
 {_bloco_inconsistencias_piscofins(dados.get('inconsistencias_piscofins') or [])}
 {_bloco_pf_com_retencao(dados.get('notas_pf_com_retencao') or [])}
+{_bloco_outro_cnpj(dados.get('notas_outro_cnpj') or [])}
 {_bloco_prestados_tomados(dados)}
 <div class="grid2">
   <div class="card"><h3><span class="dot"></span>Com × sem retenção</h3>
