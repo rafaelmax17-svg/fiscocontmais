@@ -1022,7 +1022,7 @@ ipcMain.handle('fiscal:nfsePdfAbrir', async (_evt, { empresaId, chave }) => {
   const pastaEmpresa = path.join(pastaBase, empresa.razaoSocial);
   const jsonTmp = path.join(os.tmpdir(), `fc_nfse_pdf_${Date.now()}.json`);
   try {
-    await runFiscal(['nfse-pdf-chave', pastaEmpresa, chave, '--json', jsonTmp], jsonTmp);
+    await runFiscal(['nfse-pdf-chave', pastaEmpresa, chave, '--pasta-base', pastaBase, '--json', jsonTmp], jsonTmp);
     const res = JSON.parse(fs.readFileSync(jsonTmp, 'utf-8'));
     fs.unlink(jsonTmp, () => {});
     if (res.erro) return { error: res.erro };

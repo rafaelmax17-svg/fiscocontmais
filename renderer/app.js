@@ -1233,7 +1233,9 @@ function bindFiscal() {
     // direto num elemento de dentro de um srcdoc de outra origem)
     window.addEventListener('message', async (ev) => {
       if (!ev.data || ev.data.tipo !== 'fiscocont-nfse-pdf') return;
-      const empresaId = $('#dlSelectEmpresa').value;
+      // achado real (Rafael, 14/10): usava a empresa selecionada AGORA na lista — se ela foi trocada
+      // depois de montar o painel, procurava o XML na pasta da empresa errada. Vale a do painel.
+      const empresaId = (DL_PAINEL_PERIODO && DL_PAINEL_PERIODO.empresaId) || $('#dlSelectEmpresa').value;
       if (!empresaId) return;
       overlay(true, 'Abrindo o PDF (gera na hora se ainda não existir)…');
       const res = await window.fiscocont.fiscal.nfsePdfAbrir(empresaId, ev.data.chave);

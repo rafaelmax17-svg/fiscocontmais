@@ -2854,8 +2854,9 @@ def main(argv):
         if len(argv) < 3:
             print('uso: fiscal_core.py nfse-pdf-chave PASTA_EMPRESA CHAVE [--json saida.json]'); return 1
         args = argv[3:]
+        pb = args[args.index('--pasta-base') + 1] if '--pasta-base' in args and args.index('--pasta-base') + 1 < len(args) else None
         try:
-            res = {'pdf': garantir_pdf_nfse(argv[1], argv[2])}
+            res = {'pdf': garantir_pdf_nfse(argv[1], argv[2], pasta_base=pb)}
         except Exception as e:
             res = {'erro': str(e)}
         if '--json' in args and args.index('--json') + 1 < len(args):
@@ -4112,14 +4113,51 @@ def _gerar_pdf_nfse(caminho_xml):
     return destino
 
 
-def garantir_pdf_nfse(pasta_empresa, chave):
+def _xmls_com_chave(raiz, chave):
+    """Todos os XML de NFS-e dentro de `raiz` (recursivo) cuja chave é `chave` — primeiro pelo
+    nome do arquivo, depois pelo conteúdo (Id="NFS<chave>"), para achar também XML salvo com
+    outro nome (copiado à mão, baixado do portal) que o painel lê pelo conteúdo."""
+    if not raiz or not os.path.isdir(raiz):
+        return []
+    base = glob.escape(raiz)     # nome de empresa com [ ] quebrava o glob (vira "classe de caracteres")
+    achados = glob.glob(os.path.join(base, '**', f'{chave}*.xml'), recursive=True)
+    if achados:
+        return achados
+    alvo = f'Id="NFS{chave}"'
+    for p in glob.glob(os.path.join(base, '**', '*.xml'), recursive=True) + glob.glob(os.path.join(base, '**', '*.XML'), recursive=True):
+        try:
+            with open(p, encoding='utf-8', errors='ignore') as f:
+                if alvo in f.read(200000):
+                    achados.append(p)
+        except OSError:
+            continue
+    return sorted(set(achados))
+
+
+def garantir_pdf_nfse(pasta_empresa, chave, pasta_base=None):
     """Acha o XML da nota pela chave, gera o PDF se ainda não existir (ou se o XML for
-    mais novo) e devolve o caminho do PDF."""
+    mais novo) e devolve o caminho do PDF.
+    Achado real (Rafael, 14/10): "Não achei o XML dessa nota" com a nota aparecendo no painel.
+    O painel lê TODO .xml da pasta da empresa pelo conteúdo; a busca do PDF só olhava
+    NFS-e/XML pelo nome do arquivo. Agora procura na pasta da empresa inteira (nome e conteúdo)
+    e, se ainda não achar, nas pastas das outras empresas da mesma pasta base."""
     pasta_nfse = os.path.join(pasta_empresa, 'NFS-e')
-    migrar_estrutura_nfse(pasta_nfse)
-    achados = glob.glob(os.path.join(pasta_nfse, 'XML', '**', f'{chave}*.xml'), recursive=True)
+    try:
+        migrar_estrutura_nfse(pasta_nfse)
+    except OSError:
+        pass
+    achados = _xmls_com_chave(os.path.join(pasta_nfse, 'XML'), chave) or _xmls_com_chave(pasta_empresa, chave)
+    if not achados and pasta_base and os.path.isdir(pasta_base):
+        for sub in sorted(os.listdir(pasta_base)):
+            cand = os.path.join(pasta_base, sub)
+            if os.path.normcase(os.path.abspath(cand)) == os.path.normcase(os.path.abspath(pasta_empresa)):
+                continue
+            achados = _xmls_com_chave(os.path.join(cand, 'NFS-e', 'XML'), chave)
+            if achados:
+                break
     if not achados:
-        raise FileNotFoundError('Não achei o XML dessa nota na pasta — baixe o período de novo.')
+        raise FileNotFoundError(f'Não achei o XML da nota {chave[-15:]} em "{pasta_empresa}". '
+                                'Confira se a pasta de documentos é a mesma usada no download.')
     achados.sort(key=lambda x: (0 if x.upper().endswith('.CANCELADA.XML') else 1, x))
     xml = achados[0]
     pdf = _destino_pdf(xml)
