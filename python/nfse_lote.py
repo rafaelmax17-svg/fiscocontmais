@@ -51,6 +51,7 @@ def resumo_lote(d):
         'total': len(emp), 'concluidas': cont['concluida'], 'sem_notas': cont['sem_notas'], 'puladas': cont['pulada'], 'erros': cont['erro'],
         'nao_iniciadas': cont['nao_iniciada'], 'salvos': sum(e.get('salvos', 0) for e in emp),
         'inconsistencias': sum(e.get('inconsistencias', 0) for e in emp),
+        'pf_com_ret': sum(e.get('pf_com_ret', 0) for e in emp),
     }
 
 
@@ -128,6 +129,8 @@ def gerar_relatorio_lote_html(d):
             zero = ' class="zero"' if semnota else ''
             ret = '—' if semnota else f'{e.get("qtd_com_ret", 0)} com / {e.get("qtd_sem_ret", 0)} sem'
             inc = (f'<span class="st dif">{e["inconsistencias"]}</span>' if e.get('inconsistencias') else '—')
+            if e.get('pf_com_ret'):
+                inc += f' <span class="st" style="background:#fff1e8;color:#c2410c" title="Notas de tomador pessoa física com retenção">PF {e["pf_com_ret"]}</span>'
             pdfs = '—' if (semnota or not d.get('gerar_pdf')) else f'{e.get("pdfs_gerados", 0)}/{e.get("salvos", 0)}' + (f' <span class="bad">({e["pdfs_erro"]} erro)</span>' if e.get('pdfs_erro') else '')
             linhas += (f'<tr><td>{nome}</td><td style="text-align:center">{pill}</td><td{zero} style="text-align:right">{e.get("prestadas", 0)}</td><td{zero} style="text-align:right">{e.get("tomadas", 0)}</td>'
                        f'<td{zero} style="text-align:right">{e.get("canceladas", 0)}</td><td{zero} style="text-align:right">{_brl(e.get("valor_prestado"))}</td><td{zero} style="text-align:right">{_brl(e.get("valor_tomado"))}</td>'
@@ -151,6 +154,9 @@ def gerar_relatorio_lote_html(d):
     if r['inconsistencias']:
         inc_html = (f'<div class="aviso2"><b>{r["inconsistencias"]} nota(s) com inconsistência de retenção (ISS ou PIS/COFINS/CSLL)</b> no lote (a situação do documento contradiz o valor retido). '
                     f'O detalhe de cada nota está no painel individual da empresa (link "Abrir painel da empresa").</div>')
+    if r['pf_com_ret']:
+        inc_html += (f'<div class="aviso2" style="background:#fff7ed;border-color:#fdba74"><b>{r["pf_com_ret"]} nota(s) de tomador pessoa física (CPF) com retenção</b> no lote — '
+                     'pessoa física, em regra, não faz retenção na fonte. Estão separadas no painel individual de cada empresa (selo "PF" na coluna Inconsist.).</div>')
     pasta_rel = d.get('pasta_relatorios', '')
     rodape = ('<div class="card"><div style="font-size:11.5px;color:var(--ink2);line-height:1.7">'
               f'<b>Este relatório foi salvo automaticamente em:</b><br><span style="font-family:Consolas,monospace">{_esc(d.get("caminho"))}</span><br>'

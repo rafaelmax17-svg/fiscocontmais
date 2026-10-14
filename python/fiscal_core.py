@@ -3985,6 +3985,25 @@ def parse_nfse_xml(path):
             obs.append(('alerta', f'A nota está como "Não retido", mas o Valor Líquido (R$ {_brl(vliq)}) é R$ {_brl(dif)} menor que o '
                                   'valor do serviço menos descontos — sinal de retenção não marcada. Confira o PDF da nota.'))
 
+    # Tomador pessoa física (CPF): em regra PF não é responsável por reter nenhum desses tributos —
+    # IRRF (RIR/2018 art. 714) e PIS/COFINS/CSLL (Lei 10.833/2003 art. 30) são retidos por pessoa
+    # jurídica; INSS (Lei 8.212/91 art. 31) pela "empresa" contratante; ISS (LC 116/2003 art. 6º)
+    # só se a lei do município atribuir a responsabilidade ao tomador PF. Pedido Rafael, 14/10.
+    pf_tributos = []
+    if toma_cpf and not toma_cnpj and retido:
+        if iss_marcado_retido or v_iss_retido:
+            pf_tributos.append('ISS')
+        if pc_marcado_retido or v_pc_ret:
+            pf_tributos.append('PIS/COFINS/CSLL')
+        if v_ret_irrf:
+            pf_tributos.append('IRRF')
+        if v_ret_cp:
+            pf_tributos.append('INSS')
+        lista = ', '.join(pf_tributos) or 'retenção'
+        obs.append(('pf', f'Tomador pessoa física (CPF) com {lista} retido. Pessoa física, em regra, não faz retenção na fonte '
+                          '(IRRF e PIS/COFINS/CSLL só são retidos por pessoa jurídica; INSS pela empresa contratante; '
+                          'ISS só se a lei do município obrigar o tomador PF). Confira e, se for o caso, peça a substituição/cancelamento da nota.'))
+
     alertas = [txt for nivel, txt in obs if nivel == 'alerta']
     inconsistencia_piscofins = ' '.join(alertas) or None    # nome mantido por compatibilidade (agora cobre ISS também)
 
@@ -4000,6 +4019,8 @@ def parse_nfse_xml(path):
         'retencoes_detalhe': retencoes_detalhe, 'total_retido': total_retido,
         'inconsistencia_piscofins': inconsistencia_piscofins,
         'observacoes': [{'nivel': nv, 'texto': tx} for nv, tx in obs],
+        'pf_com_retencao': bool(pf_tributos) or any(nv == 'pf' for nv, _ in obs),
+        'pf_tributos': pf_tributos,
     }
 
 
@@ -4412,6 +4433,8 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
         'notas_sem_retencao': sorted(sem_ret, key=lambda n: n['emissao'], reverse=True),
         'top_parceiros': top_parceiros[:10],
         'inconsistencias_piscofins': inconsistencias_piscofins,
+        'notas_pf_com_retencao': sorted([n for n in validas if n.get('pf_com_retencao')], key=lambda n: n['emissao'], reverse=True),
+        'qtd_pf_com_retencao': sum(1 for n in validas if n.get('pf_com_retencao')),
     }
 
 
@@ -4496,6 +4519,34 @@ def _bloco_inconsistencias_piscofins(inconsistencias):
     )
 
 
+def _bloco_pf_com_retencao(notas):
+    """Quadro laranja (animado) com as notas de tomador pessoa física (CPF) que vieram com retenção —
+    pedido do Rafael, 14/10: identificar e separar, porque PF em regra não retém."""
+    if not notas:
+        return ''
+    total_ret = round(sum(n['total_retido'] for n in notas), 2)
+    linhas = ''.join(
+        f'<div class="pf-item" style="animation-delay:{0.08 * i:.2f}s">'
+        f'<div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:3px">'
+        f'<span style="font-weight:700">NFS-e {_esc(n["nnfse"])} · {_esc(n["tomador_nome"])[:34]} '
+        f'<span style="font-weight:400;color:var(--ink2)">CPF {_esc(n["tomador_cnpj"])}</span></span>'
+        f'<span style="color:var(--ink2);white-space:nowrap">{_fmt_emissao_nfse(n)} · R$ {_brl(n["vserv"])}</span></div>'
+        f'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">'
+        + ''.join(f'<span class="pf-trib">{_esc(r["tributo"])} R$ {_brl(r["valor"])}</span>' for r in n['retencoes_detalhe'])
+        + (f'<span class="pf-trib">{_esc(", ".join(n.get("pf_tributos") or []))} sem valor</span>' if not n['retencoes_detalhe'] else '')
+        + '</div></div>'
+        for i, n in enumerate(notas))
+    return (
+        f'<div class="card pf-box">'
+        f'<div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">'
+        f'<div class="pf-num"><b class="pfcnt" data-alvo="{len(notas)}">0</b><span>nota(s)</span></div>'
+        f'<div><div style="font-size:15px;font-weight:800;color:#7c2d12">Retenção em nota de Pessoa Física (CPF)</div>'
+        f'<div style="font-size:12px;color:#9a3412">R$ {_brl(total_ret)} retidos · pessoa física, em regra, não faz retenção na fonte — '
+        f'essas notas foram separadas da lista "Com retenção" para conferência.</div></div></div>'
+        f'{linhas}</div>'
+    )
+
+
 def gerar_painel_nfse_html(dados, empresa_nome=''):
     """Painel único do Download de NFS-e — dashboard (KPIs, donut de
     com/sem retenção, top parceiros) e a lista completa, separada por
@@ -4522,7 +4573,8 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
 
     def _doc(n):
         tipo = n.get('parceiro_doc_tipo', '') or ('CNPJ' if len(n.get('parceiro_cnpj', '') or '') == 14 else 'CPF')
-        return f'{tipo}: {_esc(n["parceiro_cnpj"] or "—")}' if n.get('parceiro_cnpj') else ''
+        selo = ' <span style="background:#fff1e8;color:#c2410c;border-radius:5px;padding:0 5px;font-weight:700">PF</span>' if tipo == 'CPF' else ''
+        return f'{tipo}: {_esc(n["parceiro_cnpj"] or "—")}{selo}' if n.get('parceiro_cnpj') else ''
 
     def _selo_status(n):
         if n.get('cancelada'):
@@ -4539,7 +4591,7 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
             return ''
         return ''.join(
             f'<div style="margin:6px 0 0 28px;padding:7px 10px;border-radius:8px;font-size:11.5px;'
-            + ('background:#fcebeb;color:#791f1f">⚠ ' if o['nivel'] == 'alerta' else 'background:#eef3fb;color:#1f2a5a">ℹ ')
+            + {'alerta': 'background:#fcebeb;color:#791f1f">⚠ ', 'pf': 'background:#fff1e8;color:#9a3412">👤 '}.get(o['nivel'], 'background:#eef3fb;color:#1f2a5a">ℹ ')
             + f'{_esc(o["texto"])}</div>' for o in obs)
 
     def _marca_obs(n):
@@ -4627,9 +4679,10 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
                 f'<tbody>{rows}</tbody>'
                 f'<tfoot>{_rodape_totais(validas, canceladas, 2, retido_str)}</tfoot></table>')
 
-    prestados_com = [n for n in dados['notas_com_retencao'] if n['papel'] == 'emitida']
+    pf_ret = [n for n in dados['notas_com_retencao'] if n.get('pf_com_retencao')]
+    prestados_com = [n for n in dados['notas_com_retencao'] if n['papel'] == 'emitida' and not n.get('pf_com_retencao')]
     prestados_sem = [n for n in dados['notas_sem_retencao'] if n['papel'] == 'emitida']
-    tomados_com = [n for n in dados['notas_com_retencao'] if n['papel'] == 'recebida']
+    tomados_com = [n for n in dados['notas_com_retencao'] if n['papel'] == 'recebida' and not n.get('pf_com_retencao')]
     tomados_sem = [n for n in dados['notas_sem_retencao'] if n['papel'] == 'recebida']
 
     return f'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
@@ -4673,6 +4726,13 @@ body.standalone .col-pdf{{display:none}}
   white-space:nowrap;opacity:0;transform:translate(-50%,-115%);transition:opacity .1s;top:0;left:0}}
 .dtip b{{display:block;font-size:12.5px;margin-bottom:2px;font-weight:800}}
 .dtip.show{{opacity:1}}
+.pf-box{{background:linear-gradient(180deg,#fff7ed,#ffedd5);border:1px solid #fdba74}}
+.pf-num{{flex:0 0 auto;width:84px;height:84px;border-radius:50%;background:#f97316;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(249,115,22,.35);animation:pfPulse 2.4s ease-in-out infinite}}
+.pf-num b{{font-size:28px;line-height:1}}.pf-num span{{font-size:10px;opacity:.9}}
+.pf-item{{background:#fff;border-radius:9px;padding:9px 11px;font-size:12px;margin-bottom:8px;opacity:0;animation:pfIn .45s ease forwards}}
+.pf-trib{{background:#ffedd5;color:#9a3412;border-radius:6px;padding:1px 8px;font-size:11px;font-weight:700}}
+@keyframes pfIn{{from{{opacity:0;transform:translateY(8px)}}to{{opacity:1;transform:none}}}}
+@keyframes pfPulse{{0%,100%{{transform:scale(1)}}50%{{transform:scale(1.05)}}}}
 </style></head><body>
 <div class="hdr"><b>FiscoCont+ · Download de Documentos Fiscais</b><div>Painel de NFS-e{f" · {_esc(empresa_nome)}" if empresa_nome else ""}</div></div>
 <div class="kpis">
@@ -4683,6 +4743,7 @@ body.standalone .col-pdf{{display:none}}
 </div>
 {f'<div class="card" style="background:#fef3f2;border:1px solid #fecdca"><div style="font-size:12.5px;color:#7a1f1f">⚠ {dados["qtd_canceladas"]} nota(s) cancelada(s) foram baixadas mas ficaram de fora dos totais acima — arquivos salvos com .CANCELADA no nome, pra referência.</div></div>' if dados.get('qtd_canceladas') else ''}
 {_bloco_inconsistencias_piscofins(dados.get('inconsistencias_piscofins') or [])}
+{_bloco_pf_com_retencao(dados.get('notas_pf_com_retencao') or [])}
 {_bloco_prestados_tomados(dados)}
 <div class="grid2">
   <div class="card"><h3><span class="dot"></span>Com × sem retenção</h3>
@@ -4695,12 +4756,20 @@ body.standalone .col-pdf{{display:none}}
 
 <h2 class="secao"><span class="dot"></span>Serviços Prestados <span style="font-size:12px;color:var(--ink2);font-weight:400">({dados['emitidas']} nota(s))</span></h2>
 <div class="card"><h3><span class="dot com"></span>Com retenção <span style="font-size:11px;color:var(--ink2);font-weight:400">(clique numa linha pra ver o detalhamento)</span></h3>{_tabela_com(prestados_com, 'prest')}</div>
+{f'<div class="card" style="border:1px solid #fdba74"><h3><span class="dot" style="background:#f97316"></span>Tomador Pessoa Física (CPF) com retenção <span style="font-size:11px;color:var(--ink2);font-weight:400">(separadas para conferência · clique numa linha pra ver o detalhamento)</span></h3>{_tabela_com(pf_ret, "pf")}</div>' if pf_ret else ''}
 <div class="card"><h3><span class="dot sem"></span>Sem retenção</h3>{_tabela_sem(prestados_sem)}</div>
 
 <h2 class="secao"><span class="dot"></span>Serviços Tomados <span style="font-size:12px;color:var(--ink2);font-weight:400">({dados['recebidas']} nota(s))</span></h2>
 <div class="card"><h3><span class="dot com"></span>Com retenção <span style="font-size:11px;color:var(--ink2);font-weight:400">(clique numa linha pra ver o detalhamento)</span></h3>{_tabela_com(tomados_com, 'toma')}</div>
 <div class="card"><h3><span class="dot sem"></span>Sem retenção</h3>{_tabela_sem(tomados_sem)}</div>
 
+<script>
+document.querySelectorAll('.pf-box .pfcnt').forEach(function(el){{
+  var alvo = +el.dataset.alvo, t0 = null;
+  function passo(ts){{ if(!t0) t0 = ts; var p = Math.min(1,(ts-t0)/900); el.textContent = Math.round(alvo*(1-Math.pow(1-p,3))); if(p<1) requestAnimationFrame(passo); }}
+  requestAnimationFrame(passo);
+}});
+</script>
 <div class="card"><div style="font-size:11.5px;color:var(--ink2)">"Com retenção" considera ISS retido pelo tomador ou intermediário (tpRetISSQN 2/3), PIS/COFINS/CSLL marcados como retidos (tpRetPisCofins 1, 3 a 9 — NT SE/CGNFS-e 007/2026) e IRRF/INSS retidos na fonte. "⚠ conferir" = a situação da nota contradiz os valores do XML.</div></div>
 <script>
 (function(){{

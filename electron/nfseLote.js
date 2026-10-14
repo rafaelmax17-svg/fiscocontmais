@@ -89,6 +89,7 @@ async function executarLote({ empresas, baixarEmpresa, analisarEmpresa, salvarPa
           r.qtd_com_ret = s.qtd_com_retencao || 0;
           r.qtd_sem_ret = s.qtd_sem_retencao || 0;
           r.inconsistencias = (s.inconsistencias_piscofins || []).length;
+          r.pf_com_ret = s.qtd_pf_com_retencao || 0;
           if ((s.total_notas || 0) + (s.qtd_canceladas || 0) === 0) {
             r.status = 'sem_notas';
           } else {
