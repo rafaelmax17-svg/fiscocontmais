@@ -131,7 +131,7 @@ def gerar_relatorio_lote_html(d):
             inc = (f'<span class="st dif">{e["inconsistencias"]}</span>' if e.get('inconsistencias') else '—')
             if e.get('pf_com_ret'):
                 inc += f' <span class="st" style="background:#fff1e8;color:#c2410c" title="Notas de tomador pessoa física com retenção">PF {e["pf_com_ret"]}</span>'
-            pdfs = '—' if (semnota or not d.get('gerar_pdf')) else f'{e.get("pdfs_gerados", 0)}/{e.get("salvos", 0)}' + (f' <span class="bad">({e["pdfs_erro"]} erro)</span>' if e.get('pdfs_erro') else '')
+            pdfs = '—' if (semnota or not d.get('gerar_pdf')) else f'{e.get("pdfs_gerados", 0)}/{e.get("salvos", 0)}' + (f' <span class="bad" title="{_esc(" | ".join(("NFS-e " + (x.get("nnfse") or "") + ": " + (x.get("motivo") or "")) for x in (e.get("pdfs_erros") or [])))}">({e["pdfs_erro"]} erro)</span>' if e.get('pdfs_erro') else '')
             linhas += (f'<tr><td>{nome}</td><td style="text-align:center">{pill}</td><td{zero} style="text-align:right">{e.get("prestadas", 0)}</td><td{zero} style="text-align:right">{e.get("tomadas", 0)}</td>'
                        f'<td{zero} style="text-align:right">{e.get("canceladas", 0)}</td><td{zero} style="text-align:right">{_brl(e.get("valor_prestado"))}</td><td{zero} style="text-align:right">{_brl(e.get("valor_tomado"))}</td>'
                        f'<td style="text-align:right">{pdfs}</td><td style="text-align:right">{ret}</td><td style="text-align:center">{inc}</td></tr>')

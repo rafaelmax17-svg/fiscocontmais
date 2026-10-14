@@ -75,6 +75,7 @@ async function executarLote({ empresas, baixarEmpresa, analisarEmpresa, salvarPa
         r.salvos = dl.salvos || 0;
         r.pdfs_gerados = dl.pdfs_gerados || 0;
         r.pdfs_erro = dl.pdfs_erro || 0;
+        r.pdfs_erros = dl.pdfs_erros || [];
         const a = await analisarEmpresa(emp);
         if (a.error) {
           r.status = 'erro';

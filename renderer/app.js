@@ -1216,7 +1216,8 @@ function bindFiscal() {
           <div><b style="font-size:18px">${r.ignorados_fora_periodo}</b><br>fora do período (ignoradas)</div>
           <div><b style="font-size:18px">${r.paginas_lidas}</b><br>páginas consultadas</div>
         </div>
-        ${gerarPdf ? `<div style="margin-top:10px;font-size:12px;color:var(--ink2)">PDFs (DANFSe) gerados: <b>${r.pdfs_gerados || 0}</b>${r.pdfs_erro ? ` · <span style="color:#c92a2a">${r.pdfs_erro} com erro ao gerar</span>` : ''}</div>` : ''}
+        ${gerarPdf ? `<div style="margin-top:10px;font-size:12px;color:var(--ink2)">PDFs (DANFSe) gerados: <b>${r.pdfs_gerados || 0}</b>${r.pdfs_erro ? ` · <span style="color:#c92a2a">${r.pdfs_erro} com erro ao gerar</span>` : ''}</div>
+          ${(r.pdfs_erros || []).length ? `<div style="margin-top:6px;font-size:12px;background:#fdf0f0;border-radius:8px;padding:8px 10px;color:#791f1f">${r.pdfs_erros.map((x) => `<div><b>NFS-e ${_esc(x.nnfse || '')}</b> <span style="color:#a05050;font-family:monospace;font-size:10.5px">…${_esc((x.chave || '').slice(-12))}</span> — ${_esc(x.motivo || '')}</div>`).join('')}<div style="margin-top:4px;color:#8a5a5a">O XML foi salvo normalmente. O botão <b>PDF</b> da nota, no painel, gera o PDF de novo.</div></div>` : ''}` : ''}
         <div style="margin-top:6px;font-size:12px;color:var(--ink2)">Salvo em: ${_esc(r.pasta)}</div>
         <button class="act inv-export" id="btnDlAbrirPasta" style="margin-top:10px">Abrir pasta</button>`;
       $('#btnDlAbrirPasta').addEventListener('click', () => window.fiscocont.openPath(r.pasta));

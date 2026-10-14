@@ -4112,12 +4112,35 @@ def _renomear_nsu_para_chave(pasta_nfse):
     return corrigidos
 
 
+def _motivo_erro_pdf(e):
+    """Explica em português o erro ao gerar o DANFSe."""
+    if isinstance(e, PermissionError):
+        return 'O PDF desta nota está aberto em outro programa (leitor de PDF) ou bloqueado pela sincronização do Drive. Feche o PDF e clique no botão PDF da nota para gerar de novo.'
+    if isinstance(e, OSError) and len(str(getattr(e, 'filename', '') or '')) > 240:
+        return 'O caminho da pasta ficou longo demais para o Windows. Use uma pasta base mais curta.'
+    import xml.etree.ElementTree as _ET
+    if isinstance(e, (_ET.ParseError, ValueError)):
+        return 'O XML da nota está incompleto ou ilegível.'
+    return f'{type(e).__name__}: {e}'
+
+
 def _gerar_pdf_nfse(caminho_xml):
-    """Gera o DANFSe (PDF) do XML na pasta PDF espelhada. Devolve o caminho do PDF."""
+    """Gera o DANFSe (PDF) do XML na pasta PDF espelhada. Devolve o caminho do PDF.
+    Grava num temporário e troca no fim: se der erro no meio, o PDF antigo continua inteiro."""
     import nfse_danfse
     destino = _destino_pdf(caminho_xml)
     cancelada = caminho_xml.upper().endswith('.CANCELADA.XML')
-    nfse_danfse.xml_para_pdf(caminho_xml, destino, cancelada=cancelada)
+    os.makedirs(os.path.dirname(destino), exist_ok=True)
+    tmp = destino + '.tmp'
+    try:
+        nfse_danfse.xml_para_pdf(caminho_xml, tmp, cancelada=cancelada)
+        os.replace(tmp, destino)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
     if cancelada:  # o PDF antigo, sem carimbo, deixa de valer
         antigo = _destino_pdf(re.sub(r'\.CANCELADA\.xml$', '.xml', caminho_xml, flags=re.I))
         try:
@@ -4177,7 +4200,12 @@ def garantir_pdf_nfse(pasta_empresa, chave, pasta_base=None):
     xml = achados[0]
     pdf = _destino_pdf(xml)
     if (not os.path.exists(pdf)) or os.path.getmtime(pdf) < os.path.getmtime(xml):
-        _gerar_pdf_nfse(xml)
+        try:
+            _gerar_pdf_nfse(xml)
+        except Exception as e:
+            if os.path.exists(pdf):
+                return pdf          # PDF antigo aberto/bloqueado: abre o que já existe em vez de falhar
+            raise RuntimeError(_motivo_erro_pdf(e))
     return pdf
 
 
@@ -4365,6 +4393,7 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     # NSU) — grava com sufixo .CANCELADA no nome quando for o caso, pra
     # ficar visível no Explorer e a análise saber excluir dos totais.
     pdfs_gerados, pdfs_erro = 0, 0
+    pdfs_erros_det = []     # [{nnfse, chave, motivo}] — achado real (Rafael, 14/10): "1 com erro ao gerar" sem dizer qual nem por quê
     for chave, xml_texto, subpasta, competencia in notas_brutas:
         pasta_xml = os.path.join(pasta_nfse, 'XML', subpasta, competencia)
         os.makedirs(pasta_xml, exist_ok=True)
@@ -4377,19 +4406,34 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                 os.remove(normal)  # a mesma nota não pode existir como autorizada E cancelada
         else:
             destino = normal
-        with open(destino, 'w', encoding='utf-8') as f:
-            f.write(xml_texto)
+        # só regrava o XML se mudou: regravar à toa deixava o XML "mais novo" que o PDF e forçava
+        # gerar o PDF de novo — e se esse PDF estivesse aberto no leitor, o Windows bloqueia a gravação
+        mudou = True
+        try:
+            with open(destino, encoding='utf-8') as f:
+                mudou = f.read() != xml_texto
+        except OSError:
+            pass
+        if mudou:
+            with open(destino, 'w', encoding='utf-8') as f:
+                f.write(xml_texto)
         salvos += 1
         if gerar_pdf:
+            pdf = _destino_pdf(destino)
+            if os.path.exists(pdf) and os.path.getmtime(pdf) >= os.path.getmtime(destino):
+                pdfs_gerados += 1          # já existe e está em dia
+                continue
             try:
                 _gerar_pdf_nfse(destino)
                 pdfs_gerados += 1
-            except Exception:
+            except Exception as e:
                 pdfs_erro += 1
+                nn = _re.search(r'<nNFSe>(\d+)</nNFSe>', xml_texto)
+                pdfs_erros_det.append({'nnfse': nn.group(1) if nn else '', 'chave': chave, 'motivo': _motivo_erro_pdf(e)})
 
     return {
         'erro': erro, 'salvos': salvos, 'ignorados_fora_periodo': ignorados_fora_periodo,
-        'canceladas': canceladas_qtd, 'pdfs_gerados': pdfs_gerados, 'pdfs_erro': pdfs_erro,
+        'canceladas': canceladas_qtd, 'pdfs_gerados': pdfs_gerados, 'pdfs_erro': pdfs_erro, 'pdfs_erros': pdfs_erros_det,
         'paginas_lidas': paginas, 'ultimo_nsu': ultimo_nsu_visto,
         'pasta': pasta_nfse,
     }
