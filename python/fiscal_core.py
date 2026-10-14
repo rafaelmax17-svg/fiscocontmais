@@ -3924,14 +3924,25 @@ def parse_nfse_xml(path):
     # PIS/COFINS/CSLL: desde a NT 007/2026 o retido vai somado em vRetCSLL. No leiaute antigo
     # (só códigos 1/2), PIS/COFINS retidos vinham em vPis/vCofins — aceita os dois.
     v_pc_ret = v_ret_pis_cofins_csll
-    if pc_marcado_retido and (v_pis or v_cofins):
+    pc_separado = None    # (pis, cofins, csll) quando PIS/COFINS retidos vêm nos campos de débito próprio
+    if (v_pis or v_cofins) and (pc_marcado_retido or v_ret_pis_cofins_csll):
+        # achado real (Rafael, 14/10 — NFS-e 83451, TOTVS): PIS R$ 46,15 e COFINS R$ 213,00 em
+        # vPis/vCofins, só a CSLL (R$ 71,00) em vRetCSLL, sem Total das Retenções — mas o Valor
+        # Líquido desconta os três (4,65%). O emitente seguiu o leiaute antigo. Quem confirma é
+        # o próprio valor: Total das Retenções ou Valor Líquido batendo com a soma dos três.
         outros = (vissqn if tp_ret_issqn in ('2', '3') else 0.0) + v_ret_irrf + v_ret_cp
-        bate_total = v_total_ret and abs(v_total_ret - (outros + v_ret_pis_cofins_csll + v_pis + v_cofins)) < 0.02
-        if not v_pc_ret or bate_total:
+        soma3 = outros + v_ret_pis_cofins_csll + v_pis + v_cofins
+        bate_total = bool(v_total_ret) and abs(v_total_ret - soma3) < 0.02
+        bate_liq = bool(vliq_m) and vserv > 0 and abs((vserv - v_desc - vliq) - soma3) < 0.02
+        if (pc_marcado_retido and not v_pc_ret) or bate_total or bate_liq:
             v_pc_ret = round(v_ret_pis_cofins_csll + v_pis + v_cofins, 2)
-            obs.append(('info', f'PIS/COFINS retidos informados no leiaute antigo (vPis/vCofins = R$ {_brl(v_pis + v_cofins)}'
-                                + (f' + CSLL R$ {_brl(v_ret_pis_cofins_csll)}' if v_ret_pis_cofins_csll else '')
-                                + '), antes da NT 007/2026 passar todo o retido para o campo vRetCSLL.'))
+            pc_separado = (v_pis, v_cofins, v_ret_pis_cofins_csll)
+            confirma = ('o Valor Líquido da nota desconta exatamente esses valores' if bate_liq
+                        else 'o Total das Retenções confere com esses valores' if bate_total else 'a nota está marcada como retida')
+            obs.append(('info', f'PIS (R$ {_brl(v_pis)}) e COFINS (R$ {_brl(v_cofins)}) retidos vieram nos campos de "débito de apuração própria" '
+                                + (f'e só a CSLL (R$ {_brl(v_ret_pis_cofins_csll)}) no campo de retidos ' if v_ret_pis_cofins_csll else '')
+                                + f'— forma antiga de preencher (antes da NT 007/2026). Considerados retidos porque {confirma}. '
+                                f'Total retido de PIS/COFINS/CSLL: R$ {_brl(v_pc_ret)}.'))
 
     # ISS retido: vale o valor do ISSQN; marcado como retido SEM valor não conta (pedido Rafael, 14/10)
     v_iss_retido = vissqn if iss_marcado_retido else 0.0
@@ -3939,7 +3950,11 @@ def parse_nfse_xml(path):
     retencoes_detalhe = []
     if v_iss_retido:
         retencoes_detalhe.append({'tributo': 'ISS', 'valor': v_iss_retido})
-    if v_pc_ret:
+    if pc_separado:
+        for nome, v in zip(('PIS', 'COFINS', 'CSLL'), pc_separado):
+            if v:
+                retencoes_detalhe.append({'tributo': nome, 'valor': round(v, 2)})
+    elif v_pc_ret:
         retencoes_detalhe.append({'tributo': 'PIS/COFINS/CSLL', 'valor': v_pc_ret})
     if v_ret_irrf:
         retencoes_detalhe.append({'tributo': 'IRRF', 'valor': v_ret_irrf})
@@ -3963,7 +3978,7 @@ def parse_nfse_xml(path):
         else:
             obs.append(('alerta', f'Atenção: a nota está marcada com {trib}, mas o XML não traz o valor desse tributo. '
                                   'Ele não foi somado no total retido desta nota.'))
-    if not pc_marcado_retido and v_ret_pis_cofins_csll:
+    if not pc_marcado_retido and v_ret_pis_cofins_csll and not pc_separado:
         obs.append(('alerta', f'Atenção: a situação da nota diz que NÃO houve retenção de PIS/COFINS/CSLL, mas tem R$ {_brl(v_ret_pis_cofins_csll)} '
                               'informado como retido (campo vRetCSLL). Foi considerado o valor informado.'))
 
