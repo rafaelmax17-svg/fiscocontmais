@@ -74,7 +74,7 @@ def gerar_relatorio_lote_html(d):
             f'<div class="kpi"><b><span class="cnt" data-alvo="{processadas}" style="font-size:inherit;color:inherit">0</span> de {r["total"]}</b><span>Empresas processadas</span></div>'
             f'<div class="kpi destaque"><b class="cnt" data-alvo="{r["salvos"]}">0</b><span>NFS-e baixadas</span></div>'
             f'<div class="kpi laranja"><b class="cnt" data-alvo="{nao_baixadas}" style="color:#e8632b">0</b><span>Empresas não baixadas / com erro</span></div>'
-            f'<div class="kpi" style="--acc:#f5a524;background:linear-gradient(180deg,#fff,#fbf3dc)"><b class="cnt" data-alvo="{r["inconsistencias"]}" style="color:#b8780a">0</b><span>Inconsistências de retenção</span></div></div>')
+            f'<div class="kpi" style="--acc:#f5a524;background:linear-gradient(180deg,#fff,#fbf3dc)"><b class="cnt" data-alvo="{r["inconsistencias"]}" style="color:#b8780a">0</b><span>Retenções divergentes</span></div></div>')
 
     # pizza: situação das empresas
     graf = [{'n': STATUS[k][0], 'c': STATUS[k][2], 'a': q} for k, q in
@@ -152,7 +152,7 @@ def gerar_relatorio_lote_html(d):
                    '<div class="txt" style="margin-top:10px">Resolva o motivo (certificado, senha ou conexão) e baixe só essa empresa pela tela normal, com o mesmo período. O relatório individual dela é salvo do mesmo jeito.</div></div>')
     inc_html = ''
     if r['inconsistencias']:
-        inc_html = (f'<div class="aviso2"><b>{r["inconsistencias"]} nota(s) com inconsistência de retenção (ISS ou PIS/COFINS/CSLL)</b> no lote (a situação do documento contradiz o valor retido). '
+        inc_html = (f'<div class="aviso2"><b>{r["inconsistencias"]} nota(s) com retenção divergente (ISS ou PIS/COFINS/CSLL)</b> no lote — atenção: a situação da nota não bate com o valor retido; nota marcada como retida sem valor foi considerada sem retenção. '
                     f'O detalhe de cada nota está no painel individual da empresa (link "Abrir painel da empresa").</div>')
     if r['pf_com_ret']:
         inc_html += (f'<div class="aviso2" style="background:#fff7ed;border-color:#fdba74"><b>{r["pf_com_ret"]} nota(s) de tomador pessoa física (CPF) com retenção</b> no lote — '

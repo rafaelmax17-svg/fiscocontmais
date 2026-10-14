@@ -3910,8 +3910,6 @@ def parse_nfse_xml(path):
     v_cofins = _numx(_campo(bloco_trib, 'vCofins'))
     v_total_ret = _numx(_campo(t, 'vTotalRet'))          # "Total das Retenções" que a própria Receita calculou
     v_desc = _numx(_campo(t, 'vDescIncond')) + _numx(_campo(t, 'vDescCond'))
-    v_bc_iss = _numx(_campo(t, 'vBC'))
-    p_aliq_iss = _numx(_campo(t, 'pAliqAplic')) or _numx(_campo(bloco_trib, 'pAliq'))
 
     # Situações conforme o leiaute nacional (Anexo I + NT SE/CGNFS-e 007/2026):
     #   tpRetISSQN: 1 = Não retido · 2 = Retido pelo tomador · 3 = Retido pelo intermediário
@@ -3934,17 +3932,8 @@ def parse_nfse_xml(path):
                                 + (f' + CSLL R$ {_brl(v_ret_pis_cofins_csll)}' if v_ret_pis_cofins_csll else '')
                                 + '), antes da NT 007/2026 passar todo o retido para o campo vRetCSLL.'))
 
-    # ISS retido: valor do ISSQN; sem ele, estima pela base × alíquota (comum em prestador do Simples)
+    # ISS retido: vale o valor do ISSQN; marcado como retido SEM valor não conta (pedido Rafael, 14/10)
     v_iss_retido = vissqn if iss_marcado_retido else 0.0
-    if iss_marcado_retido and not vissqn:
-        quem = 'pelo tomador' if tp_ret_issqn == '2' else 'pelo intermediário'
-        est = round(v_bc_iss * p_aliq_iss / 100, 2) if v_bc_iss and p_aliq_iss else 0.0
-        if est:
-            obs.append(('alerta', f'ISS marcado como retido {quem}, mas o XML não traz o valor do ISSQN. '
-                                  f'Pela base (R$ {_brl(v_bc_iss)}) × alíquota ({str(p_aliq_iss).replace(".", ",")}%) seriam R$ {_brl(est)} — confirme com o prestador antes de reter/recolher.'))
-        else:
-            obs.append(('alerta', f'ISS marcado como retido {quem}, mas o XML não traz valor nem alíquota do ISSQN '
-                                  '(o arquivo está como retido, sem a retenção). Peça ao prestador a correção da nota ou confirme o valor na guia.'))
 
     retencoes_detalhe = []
     if v_iss_retido:
@@ -3956,34 +3945,44 @@ def parse_nfse_xml(path):
     if v_ret_cp:
         retencoes_detalhe.append({'tributo': 'INSS (Contrib. Previdenciária)', 'valor': v_ret_cp})
     total_retido = round(sum(r['valor'] for r in retencoes_detalhe), 2)
-    # achado real (nota com só IRRF retido, ISS "não retido"): retenção federal também conta
-    retido = iss_marcado_retido or pc_marcado_retido or total_retido > 0
+    # Regra (pedido Rafael, 14/10): o que manda é o VALOR retido no XML. Marcada como retida
+    # sem nenhum valor → a nota é considerada SEM retenção, só com um aviso de atenção.
+    retido = total_retido > 0
 
-    # Situação × valor de PIS/COFINS/CSLL
+    sem_valor = []
+    if iss_marcado_retido and not vissqn:
+        sem_valor.append('ISS (retido ' + ('pelo tomador' if tp_ret_issqn == '2' else 'pelo intermediário') + ')')
     if pc_marcado_retido and not v_pc_ret:
-        obs.append(('alerta', 'A situação da nota diz que houve retenção de PIS/COFINS/CSLL, mas o valor retido está zerado '
-                              '(o arquivo está como retido, sem a retenção).'))
-    elif not pc_marcado_retido and v_ret_pis_cofins_csll:
-        obs.append(('alerta', f'A situação da nota diz que NÃO houve retenção de PIS/COFINS/CSLL, mas tem R$ {_brl(v_ret_pis_cofins_csll)} '
-                              'informado como retido (campo vRetCSLL).'))
+        sem_valor.append('PIS/COFINS/CSLL')
+    if sem_valor:
+        trib = ' e '.join(sem_valor)
+        if not retido:
+            obs.append(('alerta', f'Atenção: a nota está marcada com {trib}, mas o XML não traz valor de retenção. '
+                                  'Por isso foi considerada SEM retenção.'))
+        else:
+            obs.append(('alerta', f'Atenção: a nota está marcada com {trib}, mas o XML não traz o valor desse tributo. '
+                                  'Ele não foi somado no total retido desta nota.'))
+    if not pc_marcado_retido and v_ret_pis_cofins_csll:
+        obs.append(('alerta', f'Atenção: a situação da nota diz que NÃO houve retenção de PIS/COFINS/CSLL, mas tem R$ {_brl(v_ret_pis_cofins_csll)} '
+                              'informado como retido (campo vRetCSLL). Foi considerado o valor informado.'))
 
     # Retenção "escondida": a nota está como Não retido, mas o Total das Retenções ou o
     # Valor Líquido mostram que algo foi descontado do prestador.
     if not iss_marcado_retido and vissqn:
         sobra = round(v_total_ret - total_retido, 2)
         if sobra >= 0.01 and abs(sobra - vissqn) < 0.02:
-            obs.append(('alerta', f'ISS está como "Não retido", mas o Total das Retenções (R$ {_brl(v_total_ret)}) inclui exatamente o ISSQN '
-                                  f'(R$ {_brl(vissqn)}) — tudo indica ISS retido com a situação errada.'))
+            obs.append(('alerta', f'Atenção: o ISS está como "Não retido", mas o Total das Retenções (R$ {_brl(v_total_ret)}) inclui exatamente o ISSQN '
+                                  f'(R$ {_brl(vissqn)}) — indício de ISS retido com a situação errada.'))
     ja_apontado = any('Total das Retenções' in tx for _, tx in obs)
     if ja_apontado:
         pass
     elif not retido and v_total_ret >= 0.01:
-        obs.append(('alerta', f'A nota está como "Não retido", mas traz R$ {_brl(v_total_ret)} no Total das Retenções.'))
+        obs.append(('alerta', f'Atenção: a nota está como "Não retido", mas traz R$ {_brl(v_total_ret)} no Total das Retenções.'))
     elif not retido and vserv and vliq_m:
         dif = round(vserv - v_desc - vliq, 2)
         if dif >= 0.05:
-            obs.append(('alerta', f'A nota está como "Não retido", mas o Valor Líquido (R$ {_brl(vliq)}) é R$ {_brl(dif)} menor que o '
-                                  'valor do serviço menos descontos — sinal de retenção não marcada. Confira o PDF da nota.'))
+            obs.append(('alerta', f'Atenção: a nota está como "Não retido", mas o Valor Líquido (R$ {_brl(vliq)}) é R$ {_brl(dif)} menor que o '
+                                  'valor do serviço menos descontos — indício de retenção não marcada.'))
 
     # Tomador pessoa física (CPF): em regra PF não é responsável por reter nenhum desses tributos —
     # IRRF (RIR/2018 art. 714) e PIS/COFINS/CSLL (Lei 10.833/2003 art. 30) são retidos por pessoa
@@ -4000,9 +3999,9 @@ def parse_nfse_xml(path):
         if v_ret_cp:
             pf_tributos.append('INSS')
         lista = ', '.join(pf_tributos) or 'retenção'
-        obs.append(('pf', f'Tomador pessoa física (CPF) com {lista} retido. Pessoa física, em regra, não faz retenção na fonte '
+        obs.append(('pf', f'Atenção: tomador pessoa física (CPF) com {lista} retido. Pessoa física, em regra, não faz retenção na fonte '
                           '(IRRF e PIS/COFINS/CSLL só são retidos por pessoa jurídica; INSS pela empresa contratante; '
-                          'ISS só se a lei do município obrigar o tomador PF). Confira e, se for o caso, peça a substituição/cancelamento da nota.'))
+                          'ISS só se a lei do município obrigar o tomador PF).'))
 
     alertas = [txt for nivel, txt in obs if nivel == 'alerta']
     inconsistencia_piscofins = ' '.join(alertas) or None    # nome mantido por compatibilidade (agora cobre ISS também)
@@ -4513,7 +4512,7 @@ def _bloco_inconsistencias_piscofins(inconsistencias):
     return (
         f'<div class="card" style="background:#fcebeb;border:1px solid #f0a5a5;margin-bottom:14px">'
         f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
-        f'<span style="font-size:13px;font-weight:700;color:#501313">⚠ {len(inconsistencias)} nota{plural} com possível inconsistência de retenção (ISS, PIS/COFINS/CSLL)</span>'
+        f'<span style="font-size:13px;font-weight:700;color:#501313">⚠ {len(inconsistencias)} nota{plural} com retenção divergente — atenção</span>'
         f'<span style="margin-left:auto;font-size:11px;color:#791f1f">situação da nota × valores do XML</span></div>'
         f'{linhas}</div>'
     )
@@ -4542,7 +4541,7 @@ def _bloco_pf_com_retencao(notas):
         f'<div class="pf-num"><b class="pfcnt" data-alvo="{len(notas)}">0</b><span>nota(s)</span></div>'
         f'<div><div style="font-size:15px;font-weight:800;color:#7c2d12">Retenção em nota de Pessoa Física (CPF)</div>'
         f'<div style="font-size:12px;color:#9a3412">R$ {_brl(total_ret)} retidos · pessoa física, em regra, não faz retenção na fonte — '
-        f'essas notas foram separadas da lista "Com retenção" para conferência.</div></div></div>'
+        f'essas notas foram separadas da lista "Com retenção".</div></div></div>'
         f'{linhas}</div>'
     )
 
@@ -4599,7 +4598,7 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
         if not alertas:
             return ''
         return (f' <span title="{_esc(" ".join(alertas))}" style="display:inline-block;background:#fcebeb;color:#c92a2a;'
-                'border-radius:6px;padding:0 6px;font-size:10.5px;font-weight:700;cursor:help">⚠ conferir</span>')
+                'border-radius:6px;padding:0 6px;font-size:10.5px;font-weight:700;cursor:help">⚠ atenção</span>')
 
     def _linha_sem(n):
         opacidade = 'opacity:.6' if n.get('cancelada') else ''
@@ -4756,7 +4755,7 @@ body.standalone .col-pdf{{display:none}}
 
 <h2 class="secao"><span class="dot"></span>Serviços Prestados <span style="font-size:12px;color:var(--ink2);font-weight:400">({dados['emitidas']} nota(s))</span></h2>
 <div class="card"><h3><span class="dot com"></span>Com retenção <span style="font-size:11px;color:var(--ink2);font-weight:400">(clique numa linha pra ver o detalhamento)</span></h3>{_tabela_com(prestados_com, 'prest')}</div>
-{f'<div class="card" style="border:1px solid #fdba74"><h3><span class="dot" style="background:#f97316"></span>Tomador Pessoa Física (CPF) com retenção <span style="font-size:11px;color:var(--ink2);font-weight:400">(separadas para conferência · clique numa linha pra ver o detalhamento)</span></h3>{_tabela_com(pf_ret, "pf")}</div>' if pf_ret else ''}
+{f'<div class="card" style="border:1px solid #fdba74"><h3><span class="dot" style="background:#f97316"></span>Tomador Pessoa Física (CPF) com retenção <span style="font-size:11px;color:var(--ink2);font-weight:400">(separadas · clique numa linha pra ver o detalhamento)</span></h3>{_tabela_com(pf_ret, "pf")}</div>' if pf_ret else ''}
 <div class="card"><h3><span class="dot sem"></span>Sem retenção</h3>{_tabela_sem(prestados_sem)}</div>
 
 <h2 class="secao"><span class="dot"></span>Serviços Tomados <span style="font-size:12px;color:var(--ink2);font-weight:400">({dados['recebidas']} nota(s))</span></h2>
@@ -4770,7 +4769,7 @@ document.querySelectorAll('.pf-box .pfcnt').forEach(function(el){{
   requestAnimationFrame(passo);
 }});
 </script>
-<div class="card"><div style="font-size:11.5px;color:var(--ink2)">"Com retenção" considera ISS retido pelo tomador ou intermediário (tpRetISSQN 2/3), PIS/COFINS/CSLL marcados como retidos (tpRetPisCofins 1, 3 a 9 — NT SE/CGNFS-e 007/2026) e IRRF/INSS retidos na fonte. "⚠ conferir" = a situação da nota contradiz os valores do XML.</div></div>
+<div class="card"><div style="font-size:11.5px;color:var(--ink2)">"Com retenção" considera ISS retido pelo tomador ou intermediário (tpRetISSQN 2/3), PIS/COFINS/CSLL marcados como retidos (tpRetPisCofins 1, 3 a 9 — NT SE/CGNFS-e 007/2026) e IRRF/INSS retidos na fonte. "⚠ atenção" = a situação da nota não bate com os valores do XML. Nota marcada como retida sem nenhum valor de retenção é considerada sem retenção.</div></div>
 <script>
 (function(){{
   if (window.parent === window) document.body.classList.add('standalone');
