@@ -3003,7 +3003,7 @@ def main(argv):
             data_inicial=optb('--inicio'), data_final=optb('--fim'),
             pasta_base=optb('--pasta'), nome_empresa=optb('--empresa'), cnpj_empresa=optb('--cnpj', ''),
             nsu_inicial=int(optb('--nsu', '0')), homologacao=('--homologacao' in args),
-            gerar_pdf=('--sem-pdf' not in args),
+            gerar_pdf=('--sem-pdf' not in args), cnpj_consulta=optb('--cnpj-consulta'),
         )
         if '--json' in args:
             _out(optb('--json', 'resultado_nfse.json'), json.dumps(resultado, ensure_ascii=False))
@@ -3895,7 +3895,6 @@ def parse_nfse_xml(path):
 
     tp_ret_issqn = _campo(bloco_trib, 'tpRetISSQN')
     tp_ret_pis = _campo(bloco_trib, 'tpRetPisCofins')
-    retido = (tp_ret_issqn == '2') or (tp_ret_pis not in ('', '0'))
 
     vserv_m = re.search(r'<vServ>([\d.]+)</vServ>', t)
     vserv = _numx(vserv_m.group(1)) if vserv_m else 0.0
@@ -3907,31 +3906,87 @@ def parse_nfse_xml(path):
     v_ret_pis_cofins_csll = _numx(_campo(bloco_trib, 'vRetCSLL'))
     v_ret_irrf = _numx(_campo(bloco_trib, 'vRetIRRF'))
     v_ret_cp = _numx(_campo(bloco_trib, 'vRetCP'))
-    v_iss_retido = vissqn if tp_ret_issqn == '2' else 0.0
+    v_pis = _numx(_campo(bloco_trib, 'vPis'))
+    v_cofins = _numx(_campo(bloco_trib, 'vCofins'))
+    v_total_ret = _numx(_campo(t, 'vTotalRet'))          # "Total das Retenções" que a própria Receita calculou
+    v_desc = _numx(_campo(t, 'vDescIncond')) + _numx(_campo(t, 'vDescCond'))
+    v_bc_iss = _numx(_campo(t, 'vBC'))
+    p_aliq_iss = _numx(_campo(t, 'pAliqAplic')) or _numx(_campo(bloco_trib, 'pAliq'))
+
+    # Situações conforme o leiaute nacional (Anexo I + NT SE/CGNFS-e 007/2026):
+    #   tpRetISSQN: 1 = Não retido · 2 = Retido pelo tomador · 3 = Retido pelo intermediário
+    #   tpRetPisCofins: 0 = nenhum retido · 2 = PIS/COFINS não retidos · 1,3..9 = alguma retenção
+    # achado real (Rafael, 14/10): o código 2 ("NÃO retidos") era contado como retido — a nota
+    # ia para "Com retenção" sem nenhum valor ("Sem detalhamento por tributo").
+    iss_marcado_retido = tp_ret_issqn in ('2', '3')
+    pc_marcado_retido = tp_ret_pis in ('1', '3', '4', '5', '6', '7', '8', '9')
+    obs = []          # (nivel, texto) — 'alerta' entra no quadro de inconsistências; 'info' só explica
+
+    # PIS/COFINS/CSLL: desde a NT 007/2026 o retido vai somado em vRetCSLL. No leiaute antigo
+    # (só códigos 1/2), PIS/COFINS retidos vinham em vPis/vCofins — aceita os dois.
+    v_pc_ret = v_ret_pis_cofins_csll
+    if pc_marcado_retido and (v_pis or v_cofins):
+        outros = (vissqn if tp_ret_issqn in ('2', '3') else 0.0) + v_ret_irrf + v_ret_cp
+        bate_total = v_total_ret and abs(v_total_ret - (outros + v_ret_pis_cofins_csll + v_pis + v_cofins)) < 0.02
+        if not v_pc_ret or bate_total:
+            v_pc_ret = round(v_ret_pis_cofins_csll + v_pis + v_cofins, 2)
+            obs.append(('info', f'PIS/COFINS retidos informados no leiaute antigo (vPis/vCofins = R$ {_brl(v_pis + v_cofins)}'
+                                + (f' + CSLL R$ {_brl(v_ret_pis_cofins_csll)}' if v_ret_pis_cofins_csll else '')
+                                + '), antes da NT 007/2026 passar todo o retido para o campo vRetCSLL.'))
+
+    # ISS retido: valor do ISSQN; sem ele, estima pela base × alíquota (comum em prestador do Simples)
+    v_iss_retido = vissqn if iss_marcado_retido else 0.0
+    if iss_marcado_retido and not vissqn:
+        quem = 'pelo tomador' if tp_ret_issqn == '2' else 'pelo intermediário'
+        est = round(v_bc_iss * p_aliq_iss / 100, 2) if v_bc_iss and p_aliq_iss else 0.0
+        if est:
+            obs.append(('alerta', f'ISS marcado como retido {quem}, mas o XML não traz o valor do ISSQN. '
+                                  f'Pela base (R$ {_brl(v_bc_iss)}) × alíquota ({str(p_aliq_iss).replace(".", ",")}%) seriam R$ {_brl(est)} — confirme com o prestador antes de reter/recolher.'))
+        else:
+            obs.append(('alerta', f'ISS marcado como retido {quem}, mas o XML não traz valor nem alíquota do ISSQN '
+                                  '(o arquivo está como retido, sem a retenção). Peça ao prestador a correção da nota ou confirme o valor na guia.'))
+
     retencoes_detalhe = []
     if v_iss_retido:
         retencoes_detalhe.append({'tributo': 'ISS', 'valor': v_iss_retido})
-    if v_ret_pis_cofins_csll:
-        retencoes_detalhe.append({'tributo': 'PIS/COFINS/CSLL', 'valor': v_ret_pis_cofins_csll})
+    if v_pc_ret:
+        retencoes_detalhe.append({'tributo': 'PIS/COFINS/CSLL', 'valor': v_pc_ret})
     if v_ret_irrf:
         retencoes_detalhe.append({'tributo': 'IRRF', 'valor': v_ret_irrf})
     if v_ret_cp:
         retencoes_detalhe.append({'tributo': 'INSS (Contrib. Previdenciária)', 'valor': v_ret_cp})
     total_retido = round(sum(r['valor'] for r in retencoes_detalhe), 2)
     # achado real (nota com só IRRF retido, ISS "não retido"): retenção federal também conta
-    retido = retido or total_retido > 0
+    retido = iss_marcado_retido or pc_marcado_retido or total_retido > 0
 
-    # achado real (pedido Rafael, 29/09): só dá pra checar essa inconsistência
-    # em PIS/COFINS/CSLL — ISS não tem um 2º campo de valor pra contradizer, e
-    # IRRF/INSS não têm campo de situação separado do valor. Códigos 1/3/4/5
-    # de tpRetPisCofins dizem que ALGUMA retenção houve; 0/2/vazio dizem que não.
-    inconsistencia_piscofins = None
-    situacao_diz_retido = tp_ret_pis in ('1', '3', '4', '5')
-    situacao_diz_nao_retido = tp_ret_pis in ('', '0', '2')
-    if situacao_diz_retido and not v_ret_pis_cofins_csll:
-        inconsistencia_piscofins = 'A situação da nota diz que houve retenção de PIS/COFINS/CSLL, mas o valor retido está zerado.'
-    elif situacao_diz_nao_retido and v_ret_pis_cofins_csll:
-        inconsistencia_piscofins = f'A situação da nota diz que não houve retenção, mas tem R$ {_brl(v_ret_pis_cofins_csll)} lançado como retido de PIS/COFINS/CSLL.'
+    # Situação × valor de PIS/COFINS/CSLL
+    if pc_marcado_retido and not v_pc_ret:
+        obs.append(('alerta', 'A situação da nota diz que houve retenção de PIS/COFINS/CSLL, mas o valor retido está zerado '
+                              '(o arquivo está como retido, sem a retenção).'))
+    elif not pc_marcado_retido and v_ret_pis_cofins_csll:
+        obs.append(('alerta', f'A situação da nota diz que NÃO houve retenção de PIS/COFINS/CSLL, mas tem R$ {_brl(v_ret_pis_cofins_csll)} '
+                              'informado como retido (campo vRetCSLL).'))
+
+    # Retenção "escondida": a nota está como Não retido, mas o Total das Retenções ou o
+    # Valor Líquido mostram que algo foi descontado do prestador.
+    if not iss_marcado_retido and vissqn:
+        sobra = round(v_total_ret - total_retido, 2)
+        if sobra >= 0.01 and abs(sobra - vissqn) < 0.02:
+            obs.append(('alerta', f'ISS está como "Não retido", mas o Total das Retenções (R$ {_brl(v_total_ret)}) inclui exatamente o ISSQN '
+                                  f'(R$ {_brl(vissqn)}) — tudo indica ISS retido com a situação errada.'))
+    ja_apontado = any('Total das Retenções' in tx for _, tx in obs)
+    if ja_apontado:
+        pass
+    elif not retido and v_total_ret >= 0.01:
+        obs.append(('alerta', f'A nota está como "Não retido", mas traz R$ {_brl(v_total_ret)} no Total das Retenções.'))
+    elif not retido and vserv and vliq_m:
+        dif = round(vserv - v_desc - vliq, 2)
+        if dif >= 0.05:
+            obs.append(('alerta', f'A nota está como "Não retido", mas o Valor Líquido (R$ {_brl(vliq)}) é R$ {_brl(dif)} menor que o '
+                                  'valor do serviço menos descontos — sinal de retenção não marcada. Confira o PDF da nota.'))
+
+    alertas = [txt for nivel, txt in obs if nivel == 'alerta']
+    inconsistencia_piscofins = ' '.join(alertas) or None    # nome mantido por compatibilidade (agora cobre ISS também)
 
     return {
         'chave': chave, 'nnfse': nnfse, 'competencia': dcompet, 'emissao': demissao,
@@ -3944,6 +3999,7 @@ def parse_nfse_xml(path):
         'retido': retido, 'tp_ret_issqn': tp_ret_issqn, 'tp_ret_pis': tp_ret_pis,
         'retencoes_detalhe': retencoes_detalhe, 'total_retido': total_retido,
         'inconsistencia_piscofins': inconsistencia_piscofins,
+        'observacoes': [{'nivel': nv, 'texto': tx} for nv, tx in obs],
     }
 
 
@@ -4053,7 +4109,7 @@ def garantir_pdf_nfse(pasta_empresa, chave):
 
 
 def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome_empresa, cnpj_empresa,
-                     nsu_inicial=0, homologacao=False, progresso=None, gerar_pdf=True):
+                     nsu_inicial=0, homologacao=False, progresso=None, gerar_pdf=True, cnpj_consulta=None):
     """Baixa NFS-e (emitidas e recebidas) via ADN, filtrando pelo período
     pedido. Salva em pasta_base/nome_empresa/NFS-e/Prestados|Tomados/AAAA-MM/chave.xml"""
     import gzip
@@ -4132,7 +4188,12 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     try:
         while True:
             try:
-                resp = _get_com_retry(f'{base_url}/contribuintes/DFe/{nsu}', (cert_path_pem, key_path_pem))
+                # filial com o certificado da matriz: o ADN aceita o parâmetro opcional cnpjConsulta
+                # (mesma raiz de 8 dígitos do CNPJ do certificado) e devolve os documentos desse CNPJ
+                url = f'{base_url}/contribuintes/DFe/{nsu}'
+                if cnpj_consulta:
+                    url += f'?cnpjConsulta={cnpj_consulta}'
+                resp = _get_com_retry(url, (cert_path_pem, key_path_pem))
             except requests.exceptions.SSLError as e:
                 erro = ('Falha de conexão segura (TLS) com a Receita, mesmo tentando de novo várias vezes. '
                         'Costuma ser antivírus com "inspeção de HTTPS" ativada, VPN, ou instabilidade na rede — '
@@ -4413,8 +4474,8 @@ def _bloco_prestados_tomados(dados):
 def _bloco_inconsistencias_piscofins(inconsistencias):
     """Quadro de aviso, só aparece quando encontra pelo menos 1 caso — pedido
     do Rafael, 29/09: não vira mais uma coisa que a equipe aprende a
-    ignorar. Cobre só PIS/COFINS/CSLL (é o único tributo com campo de
-    situação E campo de valor separados no XML, pra dar pra contradizer)."""
+    ignorar. Cobre situação × valor de PIS/COFINS/CSLL e de ISS, e as notas
+    "Não retido" cujo Total das Retenções / Valor Líquido mostram desconto."""
     if not inconsistencias:
         return ''
     linhas = ''.join(
@@ -4429,7 +4490,8 @@ def _bloco_inconsistencias_piscofins(inconsistencias):
     return (
         f'<div class="card" style="background:#fcebeb;border:1px solid #f0a5a5;margin-bottom:14px">'
         f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
-        f'<span style="font-size:13px;font-weight:700;color:#501313">⚠ {len(inconsistencias)} nota{plural} com possível inconsistência de retenção (PIS/COFINS/CSLL)</span></div>'
+        f'<span style="font-size:13px;font-weight:700;color:#501313">⚠ {len(inconsistencias)} nota{plural} com possível inconsistência de retenção (ISS, PIS/COFINS/CSLL)</span>'
+        f'<span style="margin-left:auto;font-size:11px;color:#791f1f">situação da nota × valores do XML</span></div>'
         f'{linhas}</div>'
     )
 
@@ -4471,10 +4533,26 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
         return (f'<td class="col-pdf" style="text-align:center"><button type="button" class="btn-pdf" data-chave="{_esc(n["chave"])}" '
                 'title="Abrir o PDF (DANFSe) desta nota — gera na hora se ainda não existir">PDF</button></td>')
 
+    def _obs_html(n):
+        obs = n.get('observacoes') or []
+        if not obs:
+            return ''
+        return ''.join(
+            f'<div style="margin:6px 0 0 28px;padding:7px 10px;border-radius:8px;font-size:11.5px;'
+            + ('background:#fcebeb;color:#791f1f">⚠ ' if o['nivel'] == 'alerta' else 'background:#eef3fb;color:#1f2a5a">ℹ ')
+            + f'{_esc(o["texto"])}</div>' for o in obs)
+
+    def _marca_obs(n):
+        alertas = [o['texto'] for o in (n.get('observacoes') or []) if o['nivel'] == 'alerta']
+        if not alertas:
+            return ''
+        return (f' <span title="{_esc(" ".join(alertas))}" style="display:inline-block;background:#fcebeb;color:#c92a2a;'
+                'border-radius:6px;padding:0 6px;font-size:10.5px;font-weight:700;cursor:help">⚠ conferir</span>')
+
     def _linha_sem(n):
         opacidade = 'opacity:.6' if n.get('cancelada') else ''
         return (f'<tr style="{opacidade}"><td style="text-align:center">{_selo_status(n)}</td>'
-                f'<td>{_fmt_emissao_nfse(n)}</td><td>NFS-e {_esc(n["nnfse"])}</td>'
+                f'<td>{_fmt_emissao_nfse(n)}</td><td>NFS-e {_esc(n["nnfse"])}{_marca_obs(n)}</td>'
                 f'<td style="font-family:monospace;font-size:9.5px;word-break:break-all">{_esc(n["chave"])}</td>'
                 f'<td>{_esc(n["parceiro_nome"])[:30]}<br><span style="font-size:10px;color:var(--ink2)">{_doc(n)}</span></td>'
                 f'<td style="text-align:right;{"text-decoration:line-through" if n.get("cancelada") else ""}">R$ {_brl(n["vserv"])}</td>' + _btn_pdf(n) + '</tr>')
@@ -4491,11 +4569,12 @@ def gerar_painel_nfse_html(dados, empresa_nome=''):
             f'<tbody>{det_rows}'
             f'<tr style="font-weight:700;border-top:1px solid var(--line)"><td style="padding:6px 8px 6px 28px">Total retido</td>'
             f'<td style="text-align:right;padding:6px 8px">R$ {_brl(n["total_retido"])}</td></tr></tbody></table>'
-        ) if det_rows else '<div style="padding:6px 8px 6px 28px;color:var(--ink2);font-size:12px">Sem detalhamento por tributo disponível nessa nota.</div>'
+        ) if det_rows else '<div style="padding:6px 8px 6px 28px;color:#791f1f;font-size:12px">A nota está marcada como retida, mas o XML não traz o valor de nenhuma retenção.</div>'
+        detalhe_html += _obs_html(n)
         return (
             f'<tr class="lb-ret" data-alvo="{det_id}" style="cursor:pointer;{opacidade}">'
             f'<td style="text-align:center">{_selo_status(n)}</td>'
-            f'<td>{_fmt_emissao_nfse(n)}</td><td>NFS-e {_esc(n["nnfse"])}</td>'
+            f'<td>{_fmt_emissao_nfse(n)}</td><td>NFS-e {_esc(n["nnfse"])}{_marca_obs(n)}</td>'
             f'<td style="font-family:monospace;font-size:9.5px;word-break:break-all">{_esc(n["chave"])}</td>'
             f'<td>{_esc(n["parceiro_nome"])[:26]}<br><span style="font-size:10px;color:var(--ink2)">{_doc(n)}</span></td>'
             f'<td style="text-align:right;color:#e8632b;font-weight:700;{"text-decoration:line-through" if n.get("cancelada") else ""}">R$ {_brl(n["vserv"])}</td>'
@@ -4622,7 +4701,7 @@ body.standalone .col-pdf{{display:none}}
 <div class="card"><h3><span class="dot com"></span>Com retenção <span style="font-size:11px;color:var(--ink2);font-weight:400">(clique numa linha pra ver o detalhamento)</span></h3>{_tabela_com(tomados_com, 'toma')}</div>
 <div class="card"><h3><span class="dot sem"></span>Sem retenção</h3>{_tabela_sem(tomados_sem)}</div>
 
-<div class="card"><div style="font-size:11.5px;color:var(--ink2)">"Com retenção" considera ISS (tpRetISSQN) e PIS/COFINS/CSLL/IRRF/INSS retidos na fonte.</div></div>
+<div class="card"><div style="font-size:11.5px;color:var(--ink2)">"Com retenção" considera ISS retido pelo tomador ou intermediário (tpRetISSQN 2/3), PIS/COFINS/CSLL marcados como retidos (tpRetPisCofins 1, 3 a 9 — NT SE/CGNFS-e 007/2026) e IRRF/INSS retidos na fonte. "⚠ conferir" = a situação da nota contradiz os valores do XML.</div></div>
 <script>
 (function(){{
   if (window.parent === window) document.body.classList.add('standalone');

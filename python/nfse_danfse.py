@@ -127,10 +127,12 @@ _REG_AP_SN = {
 }
 _TRIB_ISSQN = {'1': 'Operação Tributável', '2': 'Imunidade', '3': 'Exportação de Serviço', '4': 'Não Incidência'}
 _RET_ISSQN = {'1': 'Não Retido', '2': 'Retido pelo Tomador', '3': 'Retido pelo Intermediário'}
-# NÃO validado contra PDF oficial (nenhum dos gabaritos tinha tpRetPisCofins)
+# Códigos da NT SE/CGNFS-e 007/2026 (tpRetPisCofins de 0 a 9)
 _RET_PISCOFINS = {'0': 'PIS/COFINS/CSLL Não Retidos', '1': 'PIS/COFINS Retidos', '2': 'PIS/COFINS Não Retidos',
                   '3': 'PIS/COFINS/CSLL Retidos', '4': 'PIS/COFINS Retidos, CSLL Não Retido',
-                  '5': 'PIS/COFINS Não Retidos, CSLL Retido'}
+                  '5': 'PIS Retido, COFINS/CSLL Não Retidos', '6': 'COFINS Retido, PIS/CSLL Não Retidos',
+                  '7': 'PIS Não Retido, COFINS/CSLL Retidos', '8': 'PIS/COFINS Não Retidos, CSLL Retido',
+                  '9': 'COFINS Não Retido, PIS/CSLL Retidos'}
 
 
 def _endereco(no_end, xlgr='xLgr', nro='nro', cpl='xCpl', bairro='xBairro'):

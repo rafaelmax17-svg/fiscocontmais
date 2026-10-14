@@ -757,6 +757,19 @@
             <div style="font-size:12px;color:var(--ink2)" id="dlCertPreviewDetalhe"></div>
           </div>
 
+          <div id="dlCertTipoBox" hidden style="margin-bottom:16px">
+            <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:6px">Esta empresa é</label>
+            <div style="display:flex;gap:8px;margin-bottom:10px">
+              <label class="dl-tipo"><input type="radio" name="dlCertTipo" value="matriz" checked> Matriz <small>(baixa as notas do CNPJ do certificado)</small></label>
+              <label class="dl-tipo"><input type="radio" name="dlCertTipo" value="filial"> Filial</label>
+            </div>
+            <div id="dlCertFilialBox" hidden>
+              <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:5px">CNPJ da filial</label>
+              <input type="text" id="dlCertCnpjFilial" placeholder="00.000.000/0002-00" maxlength="18" style="width:100%">
+              <div style="font-size:11px;color:var(--ink2);margin-top:5px">Usa o certificado da matriz para baixar só as notas da filial — precisa ter a mesma raiz (8 primeiros dígitos).</div>
+            </div>
+          </div>
+
           <div style="display:flex;justify-content:flex-end;gap:10px">
             <button class="act inv-export" id="btnDlCertCancelar">Cancelar</button>
             <button class="act inv-export" id="btnDlCertVerificar">Verificar</button>

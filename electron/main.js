@@ -707,8 +707,34 @@ ipcMain.handle('fiscal:certValidar', async (_evt, { pfxPath, senha }) => {
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
-ipcMain.handle('fiscal:certSalvar', async (_evt, { pfxPath, senha, info }) => {
+// Filial: o certificado (e-CNPJ) da matriz baixa as NFS-e da filial pelo parâmetro cnpjConsulta do ADN,
+// desde que a filial tenha a MESMA raiz (8 primeiros dígitos) do CNPJ do certificado.
+function _cnpjValido(c) {
+  if (!/^\d{14}$/.test(c) || /^(\d)\1+$/.test(c)) return false;
+  const dv = (base) => {
+    const pesos = base.length === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const r = base.split('').reduce((s, d, i) => s + Number(d) * pesos[i], 0) % 11;
+    return r < 2 ? 0 : 11 - r;
+  };
+  return dv(c.slice(0, 12)) === Number(c[12]) && dv(c.slice(0, 13)) === Number(c[13]);
+}
+function _dadosFilial(cnpjCert, razao, cnpjFilialBruto) {
+  const cnpjFilial = String(cnpjFilialBruto || '').replace(/\D/g, '');
+  if (!_cnpjValido(cnpjFilial)) return { error: 'CNPJ da filial inválido — confira os 14 dígitos.' };
+  if (cnpjFilial === cnpjCert) return { error: 'Esse é o próprio CNPJ do certificado — cadastre como Matriz.' };
+  if (cnpjFilial.slice(0, 8) !== String(cnpjCert).slice(0, 8)) {
+    return { error: `A filial precisa ter a mesma raiz do certificado (${String(cnpjCert).slice(0, 8)}…). Com outra raiz a Receita não libera as notas — use o certificado da própria empresa.` };
+  }
+  return { cnpj: cnpjFilial, razaoSocial: `${razao} - FILIAL ${cnpjFilial.slice(8, 12)}` };
+}
+
+ipcMain.handle('fiscal:certSalvar', async (_evt, { pfxPath, senha, info, tipo, cnpjFilial }) => {
   try {
+    let fil = null;
+    if (tipo === 'filial') {
+      fil = _dadosFilial(info.cnpj, info.razao_social, cnpjFilial);
+      if (fil.error) return { error: fil.error };
+    }
     // achado real (Rafael, 25/09/2026): certificado vencido não dá um erro
     // claro na hora de baixar — a Receita simplesmente rejeita a conexão
     // (aparece como falha de TLS, sem explicar o motivo real). Bloqueia
@@ -717,7 +743,8 @@ ipcMain.handle('fiscal:certSalvar', async (_evt, { pfxPath, senha, info }) => {
       return { error: `Esse certificado está VENCIDO desde ${info.validade.split('-').reverse().join('/')} — não vai funcionar pra baixar nada. Peça um certificado válido antes de cadastrar.` };
     }
     const indice = _lerIndiceCert();
-    const id = `${info.cnpj}_${Date.now()}`;
+    const cnpjAlvo = fil ? fil.cnpj : info.cnpj;
+    const id = `${cnpjAlvo}_${Date.now()}`;
     const pfxDestino = path.join(_certDir(), `${id}.pfx`);
     fs.copyFileSync(pfxPath, pfxDestino);
     if (safeStorage.isEncryptionAvailable()) {
@@ -726,9 +753,10 @@ ipcMain.handle('fiscal:certSalvar', async (_evt, { pfxPath, senha, info }) => {
     } else {
       return { error: 'A criptografia segura do sistema operacional não está disponível nesta máquina — não vou salvar a senha sem ela.' };
     }
-    indice.empresas = indice.empresas.filter((e) => e.cnpj !== info.cnpj); // recadastro substitui o antigo
+    indice.empresas = indice.empresas.filter((e) => e.cnpj !== cnpjAlvo); // recadastro substitui o antigo
     indice.empresas.push({
-      id, cnpj: info.cnpj, razaoSocial: info.razao_social, validade: info.validade,
+      id, cnpj: cnpjAlvo, razaoSocial: fil ? fil.razaoSocial : info.razao_social, validade: info.validade,
+      tipo: fil ? 'filial' : 'matriz', cnpjCert: info.cnpj,
       pfxArquivo: `${id}.pfx`, ultimoNsu: 0, ultimoDownload: null,
     });
     _salvarIndiceCert(indice);
@@ -740,8 +768,31 @@ ipcMain.handle('fiscal:certListar', () => {
   const indice = _lerIndiceCert();
   return indice.empresas.map((e) => ({
     id: e.id, cnpj: e.cnpj, razaoSocial: e.razaoSocial, validade: e.validade,
-    ultimoDownload: e.ultimoDownload,
+    ultimoDownload: e.ultimoDownload, tipo: e.tipo || 'matriz', cnpjCert: e.cnpjCert || e.cnpj,
   }));
+});
+
+// "+ Filial" numa empresa já cadastrada: reaproveita o certificado e a senha (já cifrada) da matriz.
+ipcMain.handle('fiscal:certAddFilial', (_evt, { id, cnpjFilial }) => {
+  try {
+    const indice = _lerIndiceCert();
+    const base = indice.empresas.find((e) => e.id === id);
+    if (!base) return { error: 'Empresa não encontrada.' };
+    const cnpjCert = base.cnpjCert || base.cnpj;
+    const razaoBase = (base.razaoSocial || '').replace(/ - FILIAL \d{4}$/, '');
+    const fil = _dadosFilial(cnpjCert, razaoBase, cnpjFilial);
+    if (fil.error) return fil;
+    const novoId = `${fil.cnpj}_${Date.now()}`;
+    fs.copyFileSync(path.join(_certDir(), base.pfxArquivo), path.join(_certDir(), `${novoId}.pfx`));
+    fs.copyFileSync(path.join(_certDir(), `${base.id}.senha`), path.join(_certDir(), `${novoId}.senha`));
+    indice.empresas = indice.empresas.filter((e) => e.cnpj !== fil.cnpj);
+    indice.empresas.push({
+      id: novoId, cnpj: fil.cnpj, razaoSocial: fil.razaoSocial, validade: base.validade,
+      tipo: 'filial', cnpjCert, pfxArquivo: `${novoId}.pfx`, ultimoNsu: 0, ultimoDownload: null,
+    });
+    _salvarIndiceCert(indice);
+    return { ok: true, razaoSocial: fil.razaoSocial };
+  } catch (e) { return { error: String(e.message || e) }; }
 });
 
 ipcMain.handle('fiscal:certRemover', (_evt, id) => {
@@ -867,6 +918,7 @@ async function _baixarNfseEmpresa(empresa, dataInicial, dataFinal, gerarPdf) {
       '--cnpj', empresa.cnpj, '--pasta', pastaBase, '--inicio', dataInicial, '--fim', dataFinal,
       '--nsu', '0', '--json', jsonTmp];
     if (gerarPdf === false) args.push('--sem-pdf');
+    if (empresa.tipo === 'filial') args.push('--cnpj-consulta', empresa.cnpj);
     await runFiscal(args, jsonTmp);
     const resultado = JSON.parse(fs.readFileSync(jsonTmp, 'utf-8'));
     fs.unlink(jsonTmp, () => {});

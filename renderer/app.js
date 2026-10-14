@@ -920,6 +920,39 @@ function bindFiscal() {
     dlAtualizarBotaoPainel();
   }
 
+  // window.prompt não existe no Electron — mini-modal próprio para o CNPJ da filial
+  function dlPedirCnpjFilial(emp) {
+    return new Promise((resolve) => {
+      const fundo = document.createElement('div');
+      fundo.style.cssText = 'position:fixed;inset:0;background:rgba(20,23,51,.45);display:flex;align-items:center;justify-content:center;z-index:600';
+      fundo.innerHTML = `<div style="background:var(--panel);border-radius:12px;padding:22px 24px;width:400px;max-width:90vw">
+        <div style="font-size:15px;font-weight:600;margin-bottom:4px">Cadastrar filial</div>
+        <div style="font-size:12px;color:var(--ink2);margin-bottom:14px">Usa o certificado de <b>${_esc(emp.razaoSocial || '')}</b> (${_esc(_fmtCnpjJs(emp.cnpj || ''))}). A filial precisa ter a mesma raiz: <b>${_esc(String(emp.cnpj || '').slice(0, 8))}</b>…</div>
+        <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:5px">CNPJ da filial</label>
+        <input type="text" maxlength="18" placeholder="00.000.000/0002-00" style="width:100%;margin-bottom:16px">
+        <div style="display:flex;justify-content:flex-end;gap:10px">
+          <button class="act inv-export" data-a="nao">Cancelar</button>
+          <button class="act inv-export" data-a="sim" style="background:#1f2a5a;color:#fff;border-color:transparent">Salvar filial</button>
+        </div></div>`;
+      document.body.appendChild(fundo);
+      const inp = fundo.querySelector('input');
+      inp.value = String(emp.cnpj || '').slice(0, 8);
+      inp.focus();
+      inp.addEventListener('input', () => {
+        const d = inp.value.replace(/\D/g, '').slice(0, 14);
+        inp.value = d.length === 14 ? _fmtCnpjJs(d) : d;
+      });
+      const fim = (v) => { fundo.remove(); resolve(v); };
+      fundo.querySelector('[data-a="nao"]').onclick = () => fim(null);
+      fundo.querySelector('[data-a="sim"]').onclick = () => {
+        const d = inp.value.replace(/\D/g, '');
+        if (d.length !== 14) { toast('Digite os 14 dígitos do CNPJ da filial.', true); return; }
+        fim(d);
+      };
+      inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') fundo.querySelector('[data-a="sim"]').click(); if (ev.key === 'Escape') fim(null); });
+    });
+  }
+
   async function dlCarregarEmpresas() {
     DL_EMPRESAS = await window.fiscocont.fiscal.certListar();
     $('#dlKpiEmpresas').textContent = DL_EMPRESAS.length;
@@ -956,13 +989,24 @@ function bindFiscal() {
       const validadeTexto = diasRestantes < 0 ? `${e.validade} · vencido` : (diasRestantes <= 30 ? `${e.validade} · vence em ${diasRestantes} dias` : e.validade);
       const ultimoTexto = e.ultimoDownload ? new Date(e.ultimoDownload).toLocaleString('pt-BR') : 'nunca';
       return `<tr style="border-top:1px solid var(--line)">
-        <td style="padding:9px 8px">${_esc(e.razaoSocial)}</td>
+        <td style="padding:9px 8px">${_esc(e.razaoSocial)} <span class="dl-badge ${e.tipo === 'filial' ? 'fil' : 'mat'}">${e.tipo === 'filial' ? 'Filial' : 'Matriz'}</span>${e.tipo === 'filial' ? `<div style="font-size:10.5px;color:var(--ink2)">certificado da matriz ${_esc(_fmtCnpjJs(e.cnpjCert))}</div>` : ''}</td>
         <td style="padding:9px 8px;color:var(--ink2)">${_esc(_fmtCnpjJs(e.cnpj))}</td>
         <td style="padding:9px 8px"><span style="${corBadge};font-size:11px;padding:2px 9px;border-radius:6px">${_esc(validadeTexto)}</span></td>
         <td style="padding:9px 8px;color:var(--ink2)">${_esc(ultimoTexto)}</td>
-        <td style="padding:9px 8px;text-align:right"><button class="act inv-export" data-remover="${_esc(e.id)}" style="padding:3px 10px;font-size:11px">Remover</button></td>
+        <td style="padding:9px 8px;text-align:right;white-space:nowrap">${e.tipo !== 'filial' ? `<button class="act inv-export" data-filial="${_esc(e.id)}" style="padding:3px 10px;font-size:11px" title="Cadastrar uma filial usando este mesmo certificado">+ Filial</button> ` : ''}<button class="act inv-export" data-remover="${_esc(e.id)}" style="padding:3px 10px;font-size:11px">Remover</button></td>
       </tr>`;
     }).join('');
+    corpo.querySelectorAll('button[data-filial]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const emp = DL_EMPRESAS.find((x) => x.id === btn.dataset.filial) || {};
+        const cnpj = await dlPedirCnpjFilial(emp);
+        if (!cnpj) return;
+        const res = await window.fiscocont.fiscal.certAddFilial(btn.dataset.filial, cnpj);
+        if (res.error) { toast(res.error, true); return; }
+        toast(`Filial cadastrada: ${res.razaoSocial}`);
+        dlCarregarEmpresas();
+      });
+    });
     corpo.querySelectorAll('button[data-remover]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Remover essa empresa? Vai precisar cadastrar o certificado de novo se quiser usar de novo.')) return;
@@ -995,8 +1039,20 @@ function bindFiscal() {
       $('#dlCertSenha').value = '';
       $('#dlCertErro').hidden = true;
       $('#dlCertPreview').hidden = true;
+      $('#dlCertTipoBox').hidden = true;
+      $('#dlCertFilialBox').hidden = true;
+      $('#dlCertCnpjFilial').value = '';
+      document.querySelector('input[name="dlCertTipo"][value="matriz"]').checked = true;
       $('#btnDlCertSalvar').hidden = true;
       $('#dlModalCert').hidden = false;
+    });
+    document.querySelectorAll('input[name="dlCertTipo"]').forEach((r) => r.addEventListener('change', () => {
+      $('#dlCertFilialBox').hidden = r.value !== 'filial' || !r.checked;
+      if (r.value === 'filial' && r.checked) $('#dlCertCnpjFilial').focus();
+    }));
+    $('#dlCertCnpjFilial').addEventListener('input', (ev) => {
+      const d = ev.target.value.replace(/\D/g, '').slice(0, 14);
+      ev.target.value = d.length === 14 ? _fmtCnpjJs(d) : d;
     });
     $('#btnDlCertCancelar').addEventListener('click', () => { $('#dlModalCert').hidden = true; });
 
@@ -1026,6 +1082,7 @@ function bindFiscal() {
       $('#dlCertPreviewNome').textContent = res.info.razao_social;
       $('#dlCertPreviewDetalhe').textContent = `CNPJ ${_fmtCnpjJs(res.info.cnpj)} · válido até ${res.info.validade}`;
       $('#dlCertPreview').hidden = false;
+      $('#dlCertTipoBox').hidden = false;
       $('#btnDlCertSalvar').hidden = false;
     });
 
@@ -1033,10 +1090,13 @@ function bindFiscal() {
       if (!dlCertInfo || !dlCertPfxPath) return;
       const senha = $('#dlCertSenha').value;
       overlay(true, 'Salvando…');
-      const res = await window.fiscocont.fiscal.certSalvar(dlCertPfxPath, senha, dlCertInfo);
+      const tipo = (document.querySelector('input[name="dlCertTipo"]:checked') || {}).value || 'matriz';
+      const cnpjFilial = $('#dlCertCnpjFilial').value.replace(/\D/g, '');
+      if (tipo === 'filial' && cnpjFilial.length !== 14) { overlay(false); toast('Digite o CNPJ completo da filial.', true); return; }
+      const res = await window.fiscocont.fiscal.certSalvar(dlCertPfxPath, senha, dlCertInfo, tipo, cnpjFilial);
       overlay(false);
       if (res.error) { toast(res.error, true); return; }
-      toast('Empresa cadastrada.');
+      toast(tipo === 'filial' ? 'Filial cadastrada — as notas vão para a pasta própria da filial.' : 'Empresa cadastrada.');
       $('#dlModalCert').hidden = true;
       dlCarregarEmpresas();
     });

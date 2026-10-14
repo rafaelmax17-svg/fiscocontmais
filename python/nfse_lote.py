@@ -149,7 +149,7 @@ def gerar_relatorio_lote_html(d):
                    '<div class="txt" style="margin-top:10px">Resolva o motivo (certificado, senha ou conexão) e baixe só essa empresa pela tela normal, com o mesmo período. O relatório individual dela é salvo do mesmo jeito.</div></div>')
     inc_html = ''
     if r['inconsistencias']:
-        inc_html = (f'<div class="aviso2"><b>{r["inconsistencias"]} nota(s) com inconsistência de retenção de PIS/COFINS/CSLL</b> no lote (a situação do documento contradiz o valor retido). '
+        inc_html = (f'<div class="aviso2"><b>{r["inconsistencias"]} nota(s) com inconsistência de retenção (ISS ou PIS/COFINS/CSLL)</b> no lote (a situação do documento contradiz o valor retido). '
                     f'O detalhe de cada nota está no painel individual da empresa (link "Abrir painel da empresa").</div>')
     pasta_rel = d.get('pasta_relatorios', '')
     rodape = ('<div class="card"><div style="font-size:11.5px;color:var(--ink2);line-height:1.7">'
