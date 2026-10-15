@@ -32,7 +32,8 @@ function sanitizar(nome) {
 // que a baixa já usa (pastaBase/AAAA-MM/razaoSocial), para ficar ao lado de XML e PDF.
 function salvarPainelIndividual(pastaBase, empresa, painelHtml, ini, fim) {
   const sub = periodoSubpasta(ini, fim);
-  const mes = String(ini || '').slice(0, 7) || 'sem-data';          // pasta do mês (data inicial do lote)
+  const d = String(ini || '');
+  const mes = d.length >= 7 ? `${d.slice(5, 7)}-${d.slice(0, 4)}` : 'sem-data';   // pasta do mês MM-AAAA (data inicial do lote)
   const dir = path.join(pastaBase, mes, empresa.razaoSocial, 'NFS-e', 'Relatórios', sub);
   fs.mkdirSync(dir, { recursive: true });
   const nome = `Painel-NFSe_${sanitizar(empresa.razaoSocial)}_${sub}.html`;

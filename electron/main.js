@@ -837,11 +837,11 @@ ipcMain.handle('fiscal:pastaBaseGet', () => {
   return null;
 });
 
-// Pastas por mês de emissão (1.7.10+): <base>/<AAAA-MM>/<empresa>; antiga: <base>/<empresa>
+// Pastas por mês de emissão (1.7.10+): <base>/<MM-AAAA>/<empresa>; antiga: <base>/<empresa>
 function _temPastaEmpresa(pastaBase, razao) {
   try {
     if (fs.existsSync(path.join(pastaBase, razao))) return true;
-    return fs.readdirSync(pastaBase).some((m) => /^\d{4}-\d{2}$/.test(m) && fs.existsSync(path.join(pastaBase, m, razao)));
+    return fs.readdirSync(pastaBase).some((m) => /^(\d{2}-\d{4}|\d{4}-\d{2})$/.test(m) && fs.existsSync(path.join(pastaBase, m, razao)));
   } catch (_) { return false; }
 }
 
@@ -995,7 +995,7 @@ ipcMain.handle('fiscal:nfseLoteIniciar', async (_evt, { dataInicial, dataFinal, 
     const sub = nfseLote.periodoSubpasta(dataInicial, dataFinal);
     const dados = {
       periodo: { ini: dataInicial, fim: dataFinal }, inicio: _dataHoraBR(inicio), fim_exec: _dataHoraBR(fim), gerar_pdf: gerarPdf !== false, cancelado,
-      caminho, pasta_relatorios: [pastaBase, String(dataInicial).slice(0, 7), '<Empresa>', 'NFS-e', 'Relatórios', sub].join(path.sep) + path.sep, empresas: resultados,
+      caminho, pasta_relatorios: [pastaBase, `${String(dataInicial).slice(5, 7)}-${String(dataInicial).slice(0, 4)}`, '<Empresa>', 'NFS-e', 'Relatórios', sub].join(path.sep) + path.sep, empresas: resultados,
     };
     const inJson = path.join(os.tmpdir(), `fc_lote_${Date.now()}.json`);
     const outHtml = path.join(os.tmpdir(), `fc_lote_${Date.now()}.html`);

@@ -4197,16 +4197,33 @@ def _xmls_com_chave(raiz, chave):
 
 
 # ---- Estrutura de pastas por MÊS DE EMISSÃO (pedido do Rafael, 15/10) ----
-#   <pasta base>\2026-09\<EMPRESA>\NFS-e\XML\Prestados|Tomados\<chave>.xml
-#   <pasta base>\2026-09\<EMPRESA>\NFS-e\PDF\Prestados|Tomados\<chave>.pdf
-#   <pasta base>\2026-09\<EMPRESA>\NFS-e\Outros CNPJ\<cnpj>\<chave>.xml
-#   <pasta base>\2026-09\<EMPRESA>\NFS-e\Relatórios\...
+#   <pasta base>\09-2026\<EMPRESA>\NFS-e\XML\Prestados|Tomados\<chave>.xml
+#   <pasta base>\09-2026\<EMPRESA>\NFS-e\PDF\Prestados|Tomados\<chave>.pdf
+#   <pasta base>\09-2026\<EMPRESA>\NFS-e\Outros CNPJ\<cnpj>\<chave>.xml
+#   <pasta base>\09-2026\<EMPRESA>\NFS-e\Relatórios\...
 # Estrutura antiga (até a 1.7.10): <pasta base>\<EMPRESA>\NFS-e\XML\Tomados\2026-09\<chave>.xml — migrada sozinha.
-_RE_MES = re.compile(r'^\d{4}-\d{2}$')
+_RE_MES = re.compile(r'^\d{4}-\d{2}$')          # AAAA-MM (subpastas da estrutura antiga)
+_RE_MES_BR = re.compile(r'^(\d{2})-(\d{4})$')    # MM-AAAA (pasta do mês na estrutura nova — pedido do Rafael, 15/10)
+
+
+def _mes_pasta(aaaa_mm):
+    """'2026-09' -> '09-2026' (nome da pasta do mês)."""
+    m = re.match(r'^(\d{4})-(\d{2})$', aaaa_mm or '')
+    return f'{m.group(2)}-{m.group(1)}' if m else (aaaa_mm or 'sem-data')
+
+
+def _mes_chave(nome):
+    """Nome de pasta de mês (MM-AAAA ou AAAA-MM) -> 'AAAA-MM' para comparar/ordenar; None se não for mês."""
+    if _RE_MES.match(nome or ''):
+        return nome
+    m = _RE_MES_BR.match(nome or '')
+    if m and 1 <= int(m.group(1)) <= 12:
+        return f'{m.group(2)}-{m.group(1)}'
+    return None
 
 
 def _eh_pasta_mes(nome):
-    return bool(_RE_MES.match(nome)) or nome == 'sem-data'
+    return _mes_chave(nome) is not None or nome == 'sem-data'
 
 
 def pastas_empresa_nfse(pasta_base, nome_empresa, data_inicial=None, data_final=None):
@@ -4217,10 +4234,11 @@ def pastas_empresa_nfse(pasta_base, nome_empresa, data_inicial=None, data_final=
         return out
     m_ini = (data_inicial or '')[:7]
     m_fim = (data_final or '')[:7]
-    for m in sorted(os.listdir(pasta_base)):
+    for m in sorted(os.listdir(pasta_base), key=lambda x: _mes_chave(x) or x):
         if not _eh_pasta_mes(m):
             continue
-        if m != 'sem-data' and ((m_ini and m < m_ini) or (m_fim and m > m_fim)):
+        k = _mes_chave(m)
+        if k and ((m_ini and k < m_ini) or (m_fim and k > m_fim)):
             continue
         p = os.path.join(pasta_base, m, nome_empresa)
         if os.path.isdir(p):
@@ -4251,14 +4269,14 @@ def migrar_para_mes(pasta_base, nome_empresa):
             mes, novas = None, []
             for parte in partes:
                 if mes is None and _eh_pasta_mes(parte):
-                    mes = parte
+                    mes = _mes_chave(parte) or parte
                     continue
                 if mes is None and re.match(r'^\d{4}-\d{2}-\d{2}', parte):   # Relatórios\2026-09-01_a_2026-09-30
                     mes = parte[:7]
                 novas.append(parte)
             if not mes:
                 continue
-            destino = os.path.join(pasta_base, mes, nome_empresa, *novas, nome)
+            destino = os.path.join(pasta_base, _mes_pasta(mes), nome_empresa, *novas, nome)
             try:
                 if os.path.exists(destino):
                     if os.path.getsize(destino) == os.path.getsize(origem):
@@ -4334,7 +4352,7 @@ def garantir_pdf_nfse(pasta_empresa, chave, pasta_base=None):
 def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome_empresa, cnpj_empresa,
                      nsu_inicial=0, homologacao=False, progresso=None, gerar_pdf=True, cnpj_consulta=None):
     """Baixa NFS-e (emitidas e recebidas) via ADN, filtrando pelo período
-    pedido. Salva em pasta_base/AAAA-MM (mês de emissão)/nome_empresa/NFS-e/XML/Prestados|Tomados/chave.xml"""
+    pedido. Salva em pasta_base/MM-AAAA (mês de emissão)/nome_empresa/NFS-e/XML/Prestados|Tomados/chave.xml"""
     import gzip
     import re as _re
     import time as _time
@@ -4366,7 +4384,7 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
         pass
 
     def pasta_nfse_mes(mes):
-        return os.path.join(pasta_base, mes, nome_empresa, 'NFS-e')
+        return os.path.join(pasta_base, _mes_pasta(mes), nome_empresa, 'NFS-e')
 
     cert_path_pem, key_path_pem, tmp_dir = _extrair_cert_chave_temp(cert_path, senha)
     base_url = 'https://adn.producaorestrita.nfse.gov.br' if homologacao else 'https://adn.nfse.gov.br'
