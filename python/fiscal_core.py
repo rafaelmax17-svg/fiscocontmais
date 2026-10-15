@@ -4207,7 +4207,7 @@ def _xmls_com_chave(raiz, chave):
 #   <pasta base>\09-2026\<EMPRESA>\NFS-e\PDF\Prestados|Tomados\<chave>.pdf
 #   <pasta base>\09-2026\<EMPRESA>\NFS-e\Outros CNPJ\<cnpj>\<chave>.xml
 #   <pasta base>\09-2026\<EMPRESA>\NFS-e\Relatórios\...
-# Estrutura antiga (até a 1.7.10): <pasta base>\<EMPRESA>\NFS-e\XML\Tomados\2026-09\<chave>.xml — migrada sozinha.
+# Estrutura antiga (até a 1.7.9): <pasta base>\<EMPRESA>\NFS-e\XML\Tomados\2026-09\<chave>.xml — migrada sozinha.
 _RE_MES = re.compile(r'^\d{4}-\d{2}$')          # AAAA-MM (subpastas da estrutura antiga)
 _RE_MES_BR = re.compile(r'^(\d{2})-(\d{4})$')    # MM-AAAA (pasta do mês na estrutura nova — pedido do Rafael, 15/10)
 

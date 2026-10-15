@@ -837,7 +837,7 @@ ipcMain.handle('fiscal:pastaBaseGet', () => {
   return null;
 });
 
-// Pastas por mês de emissão (1.7.10+): <base>/<MM-AAAA>/<empresa>; antiga: <base>/<empresa>
+// Pastas por mês de emissão (1.8.0+): <base>/<MM-AAAA>/<empresa>; antiga: <base>/<empresa>
 function _temPastaEmpresa(pastaBase, razao) {
   try {
     if (fs.existsSync(path.join(pastaBase, razao))) return true;

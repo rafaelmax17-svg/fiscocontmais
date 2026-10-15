@@ -25,14 +25,14 @@ jobs:
           ref: ${{ github.ref }}
           fetch-depth: 0
 
-      # Aceita a tag digitada com pequenos erros (1.7.10, V1.7.10, v.1.7.10, com espaco) e padroniza para v1.7.10.
+      # Aceita a tag digitada com pequenos erros (1.8.0, V1.8.0, v.1.8.0, com espaco) e padroniza para v1.8.0.
       - name: Padronizar a tag informada
         shell: bash
         run: |
           T="$(printf '%s' "$TAG" | tr -d '[:space:]')"
           T="${T#[vV]}"; T="${T#.}"
           if ! printf '%s' "$T" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Tag invalida: '$TAG'. Use o formato v1.7.10."
+            echo "::error::Tag invalida: '$TAG'. Use o formato v1.8.0."
             exit 1
           fi
           [ "v$T" != "$TAG" ] && echo "Tag '$TAG' padronizada para 'v$T'."
