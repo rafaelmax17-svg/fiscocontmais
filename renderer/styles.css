@@ -882,3 +882,42 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .mono-conf input{margin-top:2px;accent-color:#0ea472}
 @keyframes monoIn{to{opacity:1;transform:none}}
 @keyframes monoBar{to{width:var(--w)}}
+
+/* ⚡ Automatizar correção — SPED Fiscal em lote */
+.lote-hbtn{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.lote-sec{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#2f4090;margin-top:6px;display:flex;gap:8px;align-items:center}
+.lote-lista{display:grid;gap:8px}
+.lote-cli{display:grid;grid-template-columns:26px minmax(0,1fr) 230px 190px;gap:14px;align-items:center;background:#fff;border:1px solid #e8ebf3;border-radius:12px;padding:12px 14px;
+  box-shadow:0 2px 10px rgba(20,27,45,.04);opacity:0;transform:translateY(8px);animation:monoIn .45s ease forwards;animation-delay:calc(var(--i,0)*80ms)}
+.lote-cli.off{background:#fafbfd}.lote-cli.off .lote-cli-n b,.lote-cli.off .lote-cli-v{color:#8a93a8}
+.lote-usa input{width:17px;height:17px;accent-color:#e23d4c}
+.lote-cli-n b{font-size:14px}
+.lote-cli-n small{display:block;font-size:11.5px;color:#5a6785;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lote-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.lote-chip{font-size:10.5px;font-weight:700;border-radius:20px;padding:2px 8px;background:#eef1fb;color:#2f4090}
+.lote-chip.xml{background:#e3f6ee;color:#0b6b4f}.lote-chip.sem{background:#f2f3f7;color:#5a6785}
+.lote-cli-v{text-align:right;font-variant-numeric:tabular-nums;font-size:13px;white-space:nowrap}
+.lote-cli-v small{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#5a6785}
+.lote-cli-v i{font-style:normal;color:#8a93a8;margin:0 3px}.lote-cli-v b{font-size:15px}
+.lote-cli-a{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.lote-cli-a .act.inv-export{padding:5px 10px;font-size:12px}
+.lote-grupo{background:#fff;border:1px solid #e8ebf3;border-radius:14px;padding:12px 14px;display:grid;gap:8px}
+.lote-grupo-t{font-weight:800;font-size:13.5px;color:#141b2d}
+.lote-dec{border:1px solid #eef0f6;border-left:4px solid #eda100;border-radius:10px;padding:10px 12px;background:#fffdf7}
+.lote-dec-t{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.lote-dec-v{margin-left:auto;font-weight:800;font-variant-numeric:tabular-nums;color:#b3261e}
+.lote-dec-n{font-size:12px;color:#3a4566;margin-top:3px}
+.lote-dec-d{font-size:11.5px;color:#5a6785;margin-top:3px;line-height:1.45}
+.lote-ops{display:flex;gap:6px 16px;flex-wrap:wrap;margin-top:8px;font-size:12.5px;align-items:center}
+.lote-ops label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.lote-ops small{color:#0b7a55;font-weight:700}
+.lote-ops input[type=radio]{accent-color:#e23d4c}
+.lote-ops input:not([type=radio]){border:1px solid #d8dcea;border-radius:6px;padding:3px 6px;font-size:12px;width:120px}
+.lote-tag{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border-radius:6px;padding:2px 7px;background:#eef1fb;color:#2f4090}
+.lote-tag.t-difal,.lote-tag.t-frete{background:#fdecee;color:#b3261e}
+.lote-tag.t-balcao{background:#fff3d6;color:#8a5a06}
+.lote-tag.t-credito{background:#e9e6fd;color:#4f46e5}
+.lote-tag.t-simples_aliq,.lote-tag.t-simples_sem{background:#e3f6ee;color:#0b6b4f}
+.lote-tag.t-e116{background:#1f2a5a;color:#fff}
+@media (max-width:1100px){.lote-cli{grid-template-columns:26px 1fr}.lote-cli-v,.lote-cli-a{grid-column:2;text-align:left;align-items:flex-start}}
+.lote-tdb{display:flex;gap:6px;justify-content:flex-end}.lote-tdb .act.inv-export{padding:5px 10px;font-size:12px;white-space:nowrap}

@@ -1359,9 +1359,23 @@ function bindFiscal() {
     let corrSpedPath = null;
     const XMLS = { path: null };   // XMLs de entrada (.zip) do Corretor: usados no DIFAL e no crédito do Simples
     let corrFeito = false;   // true depois de "Corrigir SPED" ou de aplicar o DIFAL neste arquivo
+    // ⚡ Automatizar correção → "Abrir no modo manual" de um cliente: escolhe o SPED (e a pasta de XMLs) como se fosse à mão
+    window.__corrAbrirManual = (sped, xmls) => {
+      corrSpedPath = sped; FISCAL.corrSpedPath = sped;
+      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples'].forEach((id) => { $(id).disabled = false; });
+      corrFeito = false;
+      SN.an = null; XMLS.path = xmls || null;
+      $('#corrSimples').hidden = true; $('#corrSimples').innerHTML = '';
+      $('#corrSpedResumo').hidden = true;
+      $('#corrDifal').hidden = true; $('#corrDifal').innerHTML = '';
+      $('#corrLote').hidden = true;
+      $('#corrSpedFrame').hidden = true; $('#corrSpedEmpty').hidden = false;
+      toast('Modo manual: ' + sped.split(/[\\/]/).pop() + (xmls ? ' (XMLs de entrada já anexados)' : ''));
+    };
     bCorrPick.addEventListener('click', async () => {
       const pick = await window.fiscocont.fiscal.pickSped();
       if (pick.canceled || !pick.path) return;
+      $('#corrLote').hidden = true;
       corrSpedPath = pick.path;
       FISCAL.corrSpedPath = pick.path;
       $('#btnCorrSpedVerOriginal').disabled = false;
@@ -3313,6 +3327,226 @@ function bindCorrigirEfd() {
   });
 }
 
+// ---------- ⚡ Automatizar correção — SPED Fiscal de todos os clientes do mês (pedido do Rafael, 15/10) ----------
+function bindLoteSped() {
+  const btn = $('#btnCorrLote');
+  if (!btn) return;
+  const L = { pasta: null, pastaXmls: null, an: null, esc: {}, usar: {}, res: null };
+  const fm = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const dt = (s) => (s && s.length === 8 ? `${s.slice(0, 2)}/${s.slice(2, 4)}/${s.slice(4)}` : s || '');
+  const cnpjF = (c) => (String(c || '').length === 14 ? String(c).replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : c || '');
+  const curto = (p) => String(p || '').split(/[\\/]/).slice(-3).join('\\');
+  const conta = (root) => root.querySelectorAll('[data-n]').forEach((el) => {
+    const alvo = Number(el.dataset.n) || 0, brl = el.dataset.fmt === 'brl', t0 = performance.now();
+    const f = (v) => (brl ? 'R$ ' + fm(v) : Math.round(v).toLocaleString('pt-BR'));
+    const passo = (t) => { const k = Math.min(1, (t - t0) / 900); el.textContent = f(alvo * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(passo); };
+    requestAnimationFrame(passo);
+  });
+  const box = () => $('#corrLote');
+  const fechar = () => { box().hidden = true; $('#corrSpedEmpty').hidden = false; };
+  const tipoRot = { difal: 'DIFAL', frete: 'Frete (CT-e)', balcao: 'Balcão', credito: 'Crédito uso e consumo', simples_aliq: 'Simples · alíquota', simples_sem: 'Simples · sem direito', e116: 'Guia E116' };
+  const nAuto = (e) => ((e.correcoes || {}).total || 0) + ((e.auto || {}).cfop || []).length + ((e.auto || {}).simples || []).length;
+  const idx = (e) => L.an.empresas.indexOf(e);
+
+  async function analisar() {
+    overlay(true, 'Lendo os SPEDs do mês e procurando os XMLs de entrada…');
+    const r = await window.fiscocont.admin.loteAnalisar({ pasta: L.pasta, pastaXmls: L.pastaXmls });
+    overlay(false);
+    if (r.error) { toast(r.error, true); return; }
+    L.an = r.res; L.esc = {}; L.usar = {}; L.res = null;
+    L.an.empresas.forEach((e, i) => { L.usar[i] = !e.erro && !e.outro_periodo && !e.duplicado; L.esc[i] = {}; });
+    render();
+  }
+
+  function decisaoHtml(i, d) {
+    const atual = L.esc[i][d.id] ?? d.padrao;
+    const v = typeof atual === 'object' ? atual.v : atual;
+    const nome = `ld-${i}-${d.id}`;
+    return `<div class="lote-dec" data-e="${i}" data-id="${esc(d.id)}">
+      <div class="lote-dec-t"><span class="lote-tag t-${d.tipo}">${tipoRot[d.tipo] || d.tipo}</span><b>${esc(d.titulo)}</b>
+        ${d.valor ? `<span class="lote-dec-v">R$ ${fm(d.valor)}</span>` : ''}</div>
+      <div class="lote-dec-n">${esc(d.nota)}</div>
+      ${d.detalhe ? `<div class="lote-dec-d">${esc(d.detalhe)}</div>` : ''}
+      <div class="lote-ops">${d.opcoes.map((o) => `<label><input type="radio" name="${esc(nome)}" value="${o.v}" ${o.v === v ? 'checked' : ''}> ${esc(o.rot)}${o.v === d.padrao ? ' <small>(sugerido)</small>' : ''}</label>`).join('')}
+        ${d.entrada === 'aliq' ? `<input class="lote-aliq" placeholder="alíquota %" value="${esc(typeof atual === 'object' ? atual.aliq : '')}">` : ''}</div>
+    </div>`;
+  }
+  function e116Html(i, e) {
+    const at = L.esc[i].e116 || {}, ex = e.e116_existente || {};
+    return `<div class="lote-dec" data-e="${i}" data-id="e116">
+      <div class="lote-dec-t"><span class="lote-tag t-e116">Guia E116</span><b>Empresa passa a ter ICMS a recolher e o SPED não tem guia</b></div>
+      <div class="lote-dec-d">Informe o vencimento e o código de receita da guia de ICMS normal (E116, obrigação 000).</div>
+      <div class="lote-ops"><label>Vencimento <input class="lote-venc" placeholder="dd/mm/aaaa" value="${esc(at.venc ? dt(at.venc) : (ex.venc ? dt(ex.venc) : ''))}"></label>
+        <label>Código de receita <input class="lote-cod" placeholder="ex.: 1210" value="${esc(at.cod_rec || ex.cod_rec || '')}"></label></div>
+    </div>`;
+  }
+
+  function render() {
+    const an = L.an, emp = an.empresas, b = box();
+    const ativos = emp.filter((e, i) => L.usar[i]);
+    const nDec = ativos.reduce((t, e) => t + (e.decisoes || []).length + (e.precisa_e116 ? 1 : 0), 0);
+    const antes = ativos.reduce((t, e) => t + (e.icms_antes || 0), 0);
+    const depois = ativos.reduce((t, e) => t + (e.icms_depois ?? e.icms_antes ?? 0), 0);
+    const fora = emp.filter((e) => e.outro_periodo), dups = emp.filter((e) => e.duplicado), errs = emp.filter((e) => e.erro && !e.precisa_e116);
+    b.innerHTML = `
+      <div class="dif-head"><div>
+        <div class="dif-k">Correção do SPED Fiscal · Admin · ⚡ Automatizar correção</div>
+        <h3>Correção automática — ${esc(an.mes || 'mês não identificado')}</h3>
+        <div class="dif-sub">SPEDs em <b>${esc(curto(an.pasta))}</b> · XMLs de entrada procurados em <b>${esc(curto(an.pasta_xmls))}\\&lt;CLIENTE&gt;\\NF-e\\Entradas</b></div>
+      </div><div class="lote-hbtn"><button class="act inv-export" id="btnLoteXmls">Trocar pasta dos XMLs</button><button class="act inv-export" id="btnLoteFechar">Fechar</button></div></div>
+      <div class="dif-lei">Mesmo motor do modo manual (<b>Corrigir SPED</b> → <b>Uso e consumo · DIFAL e crédito</b> → <b>Crédito Simples Nacional</b>).
+        O que é certo já vai aplicado: erros de validação, CFOP 1.xxx × 2.xxx pela UF do fornecedor e crédito do Simples informado no XML.
+        O resto fica em <b>Decisões pendentes</b>, com a sugestão já marcada. Notas faltantes não entram aqui. Os originais nunca são alterados.</div>
+      <div class="dif-kpis">
+        <div><span>SPEDs encontrados</span><b data-n="${emp.length}">0</b><small>${ativos.length} no lote</small></div>
+        <div><span>Com XML de entrada</span><b data-n="${emp.filter((e) => e.xmls).length}">0</b><small>${emp.filter((e) => !e.xmls).length} só pelo SPED</small></div>
+        <div class="k-ok"><span>Correções automáticas</span><b data-n="${ativos.reduce((t, e) => t + nAuto(e), 0)}">0</b><small>sem precisar decidir</small></div>
+        <div class="k-warn"><span>Decisões pendentes</span><b data-n="${nDec}">0</b><small>já com a sugestão marcada</small></div>
+        <div class="k-err"><span>ICMS a recolher (com as sugestões)</span><b data-n="${depois}" data-fmt="brl">R$ 0,00</b><small>antes R$ ${fm(antes)}</small></div>
+      </div>
+      ${fora.length ? `<div class="dif-av err"><b>SPED de outro período nesta pasta (fora do lote):</b><ul>${fora.map((e) => `<li>${esc(e.arquivo)} — ${esc(e.empresa.nome)}: período ${esc(e.mes_sped)}, pasta ${esc(an.mes)}</li>`).join('')}</ul></div>` : ''}
+      ${dups.length ? `<div class="dif-av"><b>Mesmo CNPJ e período em mais de um arquivo (fora do lote):</b><ul>${dups.map((e) => `<li>${esc(e.arquivo)} repete ${esc(e.duplicado)} — ${esc(e.empresa.nome)}</li>`).join('')}</ul></div>` : ''}
+      ${errs.length ? `<div class="dif-av err"><b>Não deu para corrigir:</b><ul>${errs.map((e) => `<li>${esc(e.arquivo)}: ${esc(e.erro)}</li>`).join('')}</ul></div>` : ''}
+      ${(an.clientes_sem_sped || []).length ? `<div class="dif-av"><b>Clientes com XML de entrada mas sem SPED nesta pasta:</b> ${an.clientes_sem_sped.map(esc).join(', ')}</div>` : ''}
+      <div class="lote-sec">Clientes</div>
+      <div class="lote-lista">${emp.map((e, i) => {
+        const nd = (e.decisoes || []).length + (e.precisa_e116 ? 1 : 0);
+        const chips = [];
+        if ((e.correcoes || {}).total) chips.push(`${e.correcoes.total} de validação`);
+        if ((e.auto || {}).cfop?.length) chips.push(`${e.auto.cfop.length} CFOP`);
+        if ((e.auto || {}).simples?.length) chips.push(`${e.auto.simples.length} Simples`);
+        const dep = e.icms_depois ?? e.icms_antes;
+        const st = e.outro_periodo ? ['b-err', 'outro período'] : e.duplicado ? ['b-warn', 'duplicado'] : (e.erro && !e.precisa_e116) ? ['b-err', 'erro']
+          : nd ? ['b-warn', `${nd} decisão(ões)`] : (nAuto(e) || e.alterado) ? ['b-ok', 'pronto'] : ['b-ok', 'nada a corrigir'];
+        return `<div class="lote-cli ${L.usar[i] ? '' : 'off'}" style="--i:${i}">
+          <label class="lote-usa" title="Incluir no lote"><input type="checkbox" class="lote-ck" data-e="${i}" ${L.usar[i] ? 'checked' : ''} ${e.erro && !e.precisa_e116 ? 'disabled' : ''}></label>
+          <div class="lote-cli-n"><b>${esc(e.empresa?.nome || e.arquivo)}</b>
+            <small>${esc(cnpjF(e.empresa?.cnpj))} · ${dt(e.empresa?.dt_ini)} a ${dt(e.empresa?.dt_fin)} · ${esc(e.arquivo)}</small>
+            <div class="lote-chips"><span class="lote-chip ${e.xmls ? 'xml' : 'sem'}" title="${esc(e.xmls || '')}">${e.xmls ? `XML: ${e.xml_lidos} lido(s)` : 'sem XML — só pelo SPED'}</span>
+              ${chips.map((c) => `<span class="lote-chip">${c}</span>`).join('')}</div></div>
+          <div class="lote-cli-v"><small>ICMS a recolher</small>R$ ${fm(e.icms_antes)} <i>→</i> <b>R$ ${fm(dep)}</b></div>
+          <div class="lote-cli-a"><span class="dif-b ${st[0]}">${st[1]}</span><button class="act inv-export lote-man" data-e="${i}">Abrir no modo manual</button></div>
+        </div>`;
+      }).join('')}</div>
+      <div class="lote-sec">Decisões pendentes ${nDec ? `<span class="dif-b b-warn">${nDec}</span>` : ''}</div>
+      ${nDec ? emp.map((e, i) => (!L.usar[i] || !((e.decisoes || []).length || e.precisa_e116)) ? '' : `
+        <div class="lote-grupo"><div class="lote-grupo-t">${esc(e.empresa.nome)}</div>
+          ${(e.decisoes || []).map((d) => decisaoHtml(i, d)).join('')}${e.precisa_e116 ? e116Html(i, e) : ''}</div>`).join('')
+        : '<div class="dif-av ok">Nenhuma decisão pendente — é só aplicar.</div>'}
+      <div class="dif-acts"><button class="act inv-export" id="btnLoteAplicar" style="background:#e23d4c;color:#fff;border-color:transparent" ${ativos.length ? '' : 'disabled'}>⚡ Aplicar e gerar ${ativos.length} SPED(s) corrigido(s)</button></div>`;
+    b.hidden = false;
+    $('#corrSpedEmpty').hidden = true; $('#corrSpedFrame').hidden = true; $('#corrSpedResumo').hidden = true;
+    $('#corrDifal').hidden = true; $('#corrSimples').hidden = true;
+    conta(b);
+    $('#btnLoteFechar').addEventListener('click', fechar);
+    $('#btnLoteXmls').addEventListener('click', async () => {
+      const p = await window.fiscocont.admin.lotePickPasta({ titulo: 'Pasta do mês (MM-AAAA) onde estão as pastas dos clientes com NF-e\\Entradas' });
+      if (p.canceled || !p.path) return;
+      L.pastaXmls = p.path; analisar();
+    });
+    b.querySelectorAll('.lote-ck').forEach((c) => c.addEventListener('change', () => { lerEscolhas(); L.usar[c.dataset.e] = c.checked; render(); }));
+    b.querySelectorAll('.lote-man').forEach((x) => x.addEventListener('click', () => {
+      const e = emp[x.dataset.e];
+      if (window.__corrAbrirManual) window.__corrAbrirManual(e.sped, e.xmls);
+    }));
+    $('#btnLoteAplicar').addEventListener('click', aplicar);
+  }
+
+  function lerEscolhas() {
+    box().querySelectorAll('.lote-dec').forEach((el) => {
+      const i = el.dataset.e, id = el.dataset.id;
+      if (id === 'e116') {
+        L.esc[i].e116 = { venc: (el.querySelector('.lote-venc').value || '').replace(/\D/g, ''), cod_rec: (el.querySelector('.lote-cod').value || '').trim() };
+        return;
+      }
+      const r = el.querySelector('input[type=radio]:checked');
+      if (!r) return;
+      const a = el.querySelector('.lote-aliq');
+      L.esc[i][id] = a ? { v: r.value, aliq: (a.value || '').replace(',', '.').trim() } : r.value;
+    });
+  }
+
+  async function aplicar() {
+    lerEscolhas();
+    const emp = L.an.empresas, arquivos = [];
+    for (let i = 0; i < emp.length; i++) {
+      if (!L.usar[i]) continue;
+      const e = emp[i], d = { ...L.esc[i] };
+      for (const x of e.decisoes || []) {
+        const v = d[x.id];
+        if (x.entrada === 'aliq' && v && v.v === 'aliq' && !(Number(v.aliq) > 0)) { toast(`${e.empresa.nome}: informe a alíquota do Simples da ${x.nota}.`, true); return; }
+      }
+      if (e.precisa_e116) {
+        const g = d.e116 || {};
+        if (g.venc?.length !== 8 || !g.cod_rec) { toast(`${e.empresa.nome}: informe o vencimento (dd/mm/aaaa) e o código de receita da guia E116.`, true); return; }
+      } else delete d.e116;
+      arquivos.push({ sped: e.sped, xmls: e.xmls, decisoes: d });
+    }
+    overlay(true, `Corrigindo ${arquivos.length} SPED(s)…`);
+    const r = await window.fiscocont.admin.loteAplicar({ plano: { mes: L.an.mes, arquivos } });
+    overlay(false);
+    if (r.error) { toast(r.error, true); return; }
+    L.res = r.res;
+    renderRes();
+  }
+
+  function renderRes() {
+    const res = L.res, emp = res.empresas || [], b = box();
+    const ok = emp.filter((e) => e.corrigido), err = emp.filter((e) => !e.corrigido);
+    const antes = ok.reduce((t, e) => t + (e.icms_antes || 0), 0), depois = ok.reduce((t, e) => t + (e.icms_depois || 0), 0);
+    const difal = ok.reduce((t, e) => t + ((e.difal || {}).incluido || 0) - ((e.difal || {}).removido || 0), 0);
+    const sn = ok.reduce((t, e) => t + ((e.simples || {}).credito || 0), 0);
+    b.innerHTML = `
+      <div class="dif-head"><div>
+        <div class="dif-k">⚡ Automatizar correção · resultado</div>
+        <h3>Correção automática — ${esc(res.mes || '')}</h3>
+        <div class="dif-sub">${ok.length} SPED(s) corrigido(s)${err.length ? ` · ${err.length} com erro` : ''}. Valide cada arquivo no PVA antes de transmitir.</div>
+      </div><div class="lote-hbtn"><button class="act inv-export" id="btnLoteVoltar">Voltar às decisões</button><button class="act inv-export" id="btnLoteFechar2">Fechar</button></div></div>
+      <div class="dif-kpis">
+        <div class="k-ok"><span>SPEDs corrigidos</span><b data-n="${ok.length}">0</b><small>arquivos novos</small></div>
+        <div><span>ICMS a recolher antes</span><b data-n="${antes}" data-fmt="brl">R$ 0,00</b><small>soma do E110 (campo 13)</small></div>
+        <div class="k-err"><span>ICMS a recolher depois</span><b data-n="${depois}" data-fmt="brl">R$ 0,00</b><small>${depois >= antes ? '+' : '−'} R$ ${fm(Math.abs(depois - antes))}</small></div>
+        <div class="k-warn"><span>DIFAL lançado (líquido)</span><b data-n="${difal}" data-fmt="brl">R$ 0,00</b><small>C197/D197</small></div>
+        <div class="k-ok"><span>Crédito do Simples</span><b data-n="${sn}" data-fmt="brl">R$ 0,00</b><small>C197 RO00000001</small></div>
+      </div>
+      <div class="dif-tw"><table class="dif-tab"><thead><tr><th>Cliente</th><th>Situação</th><th class="n">ICMS antes</th><th class="n">ICMS depois</th><th class="n">DIFAL</th><th class="n">Simples</th><th>Atenção</th><th></th></tr></thead>
+        <tbody>${emp.map((e, k) => `<tr>
+          <td><b>${esc(e.empresa?.nome || e.arquivo)}</b><small>${esc(e.arquivo)}</small></td>
+          <td>${e.corrigido ? '<span class="dif-b b-ok">corrigido</span>' : `<span class="dif-b b-err">erro</span><small style="white-space:normal">${esc(e.erro || '')}</small>`}</td>
+          <td class="n">R$ ${fm(e.icms_antes)}</td><td class="n"><b>R$ ${fm(e.icms_depois ?? e.icms_antes)}</b></td>
+          <td class="n">R$ ${fm(((e.difal || {}).incluido || 0) - ((e.difal || {}).removido || 0))}</td><td class="n">R$ ${fm((e.simples || {}).credito)}</td>
+          <td style="max-width:320px;white-space:normal;font-size:11.5px">${(e.avisos || []).map(esc).join('<br>')}</td>
+          <td><div class="lote-tdb">${e.corrigido ? `<button class="act inv-export lote-baixa" data-k="${k}">Baixar</button>` : ''}
+            <button class="act inv-export lote-man2" data-k="${k}">Modo manual</button></div></td></tr>`).join('')}</tbody></table></div>
+      <div class="dif-acts">${res.zip ? '<button class="act inv-export" id="btnLoteZip" style="background:#0ea472;color:#fff;border-color:transparent">Baixar todos (.zip)</button>' : ''}</div>`;
+    b.hidden = false;
+    conta(b);
+    $('#btnLoteFechar2').addEventListener('click', fechar);
+    $('#btnLoteVoltar').addEventListener('click', render);
+    const salvar = async (arquivo) => {
+      const r = await window.fiscocont.admin.loteSalvar({ arquivo });
+      if (r.canceled) return;
+      if (r.error) { toast(r.error, true); return; }
+      toast('Salvo em ' + r.path);
+    };
+    if (res.zip) $('#btnLoteZip').addEventListener('click', () => salvar(res.zip));
+    b.querySelectorAll('.lote-baixa').forEach((x) => x.addEventListener('click', () => salvar(emp[x.dataset.k].corrigido)));
+    b.querySelectorAll('.lote-man2').forEach((x) => x.addEventListener('click', () => {
+      const e = emp[x.dataset.k];
+      if (window.__corrAbrirManual) window.__corrAbrirManual(e.sped, e.xmls);
+    }));
+    toast(`${ok.length} SPED(s) corrigido(s).`);
+  }
+
+  btn.addEventListener('click', async () => {
+    const p = await window.fiscocont.admin.lotePickPasta({});
+    if (p.canceled || !p.path) return;
+    L.pasta = p.path; L.pastaXmls = null;
+    analisar();
+  });
+}
+
 function bindBaixaLote() {
   const btn = $('#btnNflBaixar');
   if (!btn) return;
@@ -3757,6 +3991,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   bindNewsToast();
   bindEfdContrib();
   bindCorrigirEfd();
+  bindLoteSped();
   bindBaixaLote();
   $('#btnImport').addEventListener('click', doImport);
   $('#btnImport2').addEventListener('click', doImport);

@@ -988,6 +988,7 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
             SPED Fiscal (.txt)
           </button>
+          <button class="act inv-export btn-auto" id="btnCorrLote" title="Corrige os SPEDs de todos os clientes do mês de uma vez — você só decide as exceções">⚡ Automatizar correção</button>
           <span class="fiscal-spacer"></span>
           <button class="act inv-export" id="btnCorrSpedVerOriginal" disabled>Ver todos os dados (original)</button>
           <button class="act inv-export" id="btnCorrDifal" disabled title="Confere CFOP 1.556/2.556 (e ativo) pela UF do fornecedor, o DIFAL de RO e o crédito de ICMS tomado indevidamente; aplica só o que você confirmar">Uso e consumo · DIFAL e crédito</button>
@@ -999,6 +1000,7 @@
           <h2>Correção do SPED Fiscal — acesso restrito ao Admin</h2>
           <p>Corrige automaticamente erros comuns de validação: C191 indevido (CST do C190 pai fora de 00/10/20/51/70/90), bloco E500/E510/E520 quando não há IPI, código de barras "SEM GTIN", CEST fora da tabela oficial (lista conhecida: 1705500, 0000000, 2007910 — cresce conforme repassado), e COD_NAT ausente no C170 (mapeado pelo CFOP). Recalcula o Bloco 9 (contagens) no final. <b>Isso gera um arquivo novo</b> — o original nunca é alterado.</p>
         </div>
+        <div id="corrLote" class="dif lote" hidden></div>
         <div id="corrSpedResumo" hidden></div>
         <div id="corrDifal" class="dif" hidden></div>
         <div id="corrSimples" class="dif" hidden></div>

@@ -2893,6 +2893,9 @@ def main(argv):
     if modo == 'difal-ro':
         import difal_ro as _dr
         return _dr.main_cli(argv[1:])
+    if modo == 'lote-sped':
+        import lote_sped as _ls
+        return _ls.main_cli(argv[1:])
     if modo == 'monofasico':
         import monofasico as _mf
         return _mf.main_cli(argv)

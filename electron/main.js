@@ -2186,6 +2186,63 @@ ipcMain.handle('admin:monoAplicar', async (_evt, { efdPath, grupos }) => {
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+// ⚡ Automatizar correção — SPED Fiscal de todos os clientes do mês (lote_sped.py; só Admin)
+let loteSaidaDir = null;
+ipcMain.handle('admin:lotePickPasta', async (_evt, { titulo } = {}) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  let inicial;
+  try { inicial = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase; } catch (_) {}
+  if (!inicial && fs.existsSync(PASTA_PADRAO_NFSE)) inicial = PASTA_PADRAO_NFSE;
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: titulo || 'Escolha a pasta do mês (MM-AAAA) com os SPED Fiscais dos clientes', defaultPath: inicial,
+    properties: ['openDirectory'],
+  });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  return { path: r.filePaths[0] };
+});
+ipcMain.handle('admin:loteAnalisar', async (_evt, { pasta, pastaXmls }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!pasta || !fs.existsSync(pasta)) return { error: 'Escolha a pasta do mês.' };
+  const jsonOut = path.join(os.tmpdir(), `fc_lote_an_${Date.now()}.json`);
+  try {
+    await runFiscal(['lote-sped', 'analisar', '--pasta', pasta, ...(pastaXmls ? ['--pasta-xmls', pastaXmls] : []), '--json', jsonOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    return { ok: true, res };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('admin:loteAplicar', async (_evt, { plano }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  const stamp = Date.now();
+  const planoJson = path.join(os.tmpdir(), `fc_lote_plano_${stamp}.json`);
+  const jsonOut = path.join(os.tmpdir(), `fc_lote_res_${stamp}.json`);
+  const saida = path.join(os.tmpdir(), `fc_lote_${stamp}`);
+  try {
+    fs.writeFileSync(planoJson, JSON.stringify(plano || {}), 'utf-8');
+    await runFiscal(['lote-sped', 'aplicar', '--plano', planoJson, '--saida', saida, '--json', jsonOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    fs.unlink(jsonOut, () => {}); fs.unlink(planoJson, () => {});
+    if (res.erro) return { error: res.erro };
+    if (loteSaidaDir && loteSaidaDir !== saida) fs.rm(loteSaidaDir, { recursive: true, force: true }, () => {});
+    loteSaidaDir = saida;
+    return { ok: true, res };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('admin:loteSalvar', async (_evt, { arquivo }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!arquivo || !fs.existsSync(arquivo) || !loteSaidaDir || !path.resolve(arquivo).startsWith(path.resolve(loteSaidaDir))) {
+    return { error: 'Arquivo não encontrado. Rode a correção automática de novo.' };
+  }
+  const zip = /\.zip$/i.test(arquivo);
+  const save = await dialog.showSaveDialog(mainWindow, {
+    title: zip ? 'Salvar todos os SPEDs corrigidos (.zip)' : 'Salvar SPED Fiscal corrigido', defaultPath: path.basename(arquivo),
+    filters: [zip ? { name: 'ZIP', extensions: ['zip'] } : { name: 'Texto', extensions: ['txt'] }],
+  });
+  if (save.canceled || !save.filePath) return { canceled: true };
+  try { fs.copyFileSync(arquivo, save.filePath); return { ok: true, path: save.filePath }; } catch (e) { return { error: String(e.message || e) }; }
+});
+
 ipcMain.handle('fiscal:efdCorrigirSalvar', async (_evt, corrigidoPath, nomeOriginal) => {
   if (!corrigidoPath || !fs.existsSync(corrigidoPath)) return { error: 'Arquivo corrigido não encontrado. Rode a correção de novo.' };
   const base = String(nomeOriginal || 'sped.txt').replace(/\.txt$/i, '');
