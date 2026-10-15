@@ -3158,6 +3158,8 @@ function bindCorrigirEfd() {
     $('#corrEfdPvaNome').textContent = '';
     $('#corrEfdNome').textContent = nome(pick.path);
     $('#btnCorrEfdRodar').disabled = false;
+    $('#btnCorrEfdMono').disabled = false;
+    $('#corrEfdMono').hidden = true;
     $('#btnCorrEfdBaixar').disabled = true;
     $('#btnCorrEfdHtml').disabled = true;
   });
@@ -3190,6 +3192,116 @@ function bindCorrigirEfd() {
     if (r.canceled) return;
     if (r.error) { toast(r.error, true); return; }
     toast('SPED corrigido salvo.');
+  });
+  // ---------- ⚡ Corrigir monofásico (pedido do Rafael, 15/10) ----------
+  const MONO = { an: null, sel: new Set() };
+  const fm = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const dt = (s) => (s && s.length === 8 ? `${s.slice(0, 2)}/${s.slice(2, 4)}/${s.slice(4)}` : s || '');
+  const conta = (root) => root.querySelectorAll('[data-n]').forEach((el) => {
+    const alvo = Number(el.dataset.n) || 0, brl = el.dataset.fmt === 'brl', t0 = performance.now();
+    const f = (v) => (brl ? 'R$ ' + fm(v) : Math.round(v).toLocaleString('pt-BR'));
+    const passo = (t) => { const k = Math.min(1, (t - t0) / 900); el.textContent = f(alvo * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(passo); };
+    requestAnimationFrame(passo);
+  });
+  function monoPrev() {
+    const an = MONO.an, gs = (an.grupos || []).filter((g) => MONO.sel.has(g.grupo));
+    const vp = gs.reduce((t, g) => t + g.pis, 0), vc = gs.reduce((t, g) => t + g.cofins, 0);
+    const a = an.apuracao_antes || {}, ap = (a.PIS || {}).total || 0, ac = (a.COFINS || {}).total || 0;
+    const linha = (rot, antes, depois, forte) => `<tr><td>${rot}</td><td class="n">R$ ${fm(antes)}</td><td class="n"><b style="color:${forte ? '#0b7a55' : 'inherit'}">R$ ${fm(depois)}</b></td></tr>`;
+    $('#monoPrev').innerHTML = `<table class="dif-mini"><thead><tr><th></th><th class="n">Antes</th><th class="n">Depois</th></tr></thead><tbody>
+      ${linha('PIS a recolher (M200)', ap, Math.max(0, ap - vp), true)}
+      ${linha('COFINS a recolher (M600)', ac, Math.max(0, ac - vc), true)}
+      <tr><td><b>Economia no mês</b></td><td></td><td class="n"><b style="color:#0b7a55;font-size:17px">R$ ${fm(vp + vc)}</b></td></tr></tbody></table>`;
+    $('#btnMonoAplicar').disabled = !gs.length || !$('#monoRevenda').checked;
+  }
+  function monoRender() {
+    const an = MONO.an, emp = an.empresa || {}, k = an.kpi || {}, box = $('#corrEfdMono');
+    const grupos = an.grupos || [];
+    const maxV = Math.max(1, ...grupos.map((g) => g.pis + g.cofins));
+    box.innerHTML = `
+      <div class="dif-head"><div>
+        <div class="dif-k">Correção da EFD-Contribuições · Admin · PIS/COFINS monofásico na revenda</div>
+        <h3>${esc(emp.nome || '')}</h3>
+        <div class="dif-sub">CNPJ ${esc(emp.cnpj || '')} · período ${dt(emp.ini)} a ${dt(emp.fim)} · arquivo <b>${est.corrigido ? 'já corrigido nesta sessão' : 'original'}</b></div>
+      </div><div><button class="act inv-export" id="btnMonoFechar">Fechar</button></div></div>
+      <div class="dif-lei"><b>Regra:</b> nos produtos de incidência monofásica o PIS/COFINS é cobrado de uma vez na indústria, refinaria ou importador.
+        Na <b>revenda</b> a alíquota é zero — CST <b>04</b>. Item com NCM monofásico vendido com CST <b>01</b> paga PIS/COFINS de novo.
+        Fontes: Lei 9.718/1998, arts. 4º e 5º (combustíveis e álcool); Lei 10.147/2000, arts. 1º e 2º (farmacêuticos e perfumaria); Lei 10.485/2002 (pneus); Tabela 4.3.10 da EFD-Contribuições.</div>
+      <div class="dif-kpis">
+        <div><span>Itens de venda</span><b data-n="${k.itens_venda || 0}">0</b><small>no arquivo do mês</small></div>
+        <div><span>Com produto monofásico</span><b data-n="${k.itens_mono || 0}">0</b><small>pelo NCM ou CFOP de combustível</small></div>
+        <div class="k-err"><span>Tributados indevidamente</span><b data-n="${k.indevidos || 0}">0</b><small>CST 01 na revenda</small></div>
+        <div class="k-warn"><span>PIS + COFINS a mais</span><b data-n="${(k.pis || 0) + (k.cofins || 0)}" data-fmt="brl">R$ 0,00</b><small>PIS R$ ${fm(k.pis)} · COFINS R$ ${fm(k.cofins)}</small></div>
+        <div class="k-ok"><span>Já corretos</span><b data-n="${k.corretos || 0}">0</b><small>sem tributo (CST 04/06)</small></div>
+      </div>
+      ${(an.pendencias || []).map((p) => `<div class="dif-av"><b>${esc(p.titulo)}</b><br>${esc(p.detalhe)}</div>`).join('')}
+      ${grupos.length ? `
+      <div class="mono-grid">
+        <div class="mono-card">
+          <div class="dif-k">Itens tributados que são monofásicos — marque o que corrigir</div>
+          ${grupos.map((g, i) => `
+            <label class="mono-g" style="--i:${i}">
+              <input type="checkbox" class="mono-ck" data-g="${esc(g.grupo)}" ${MONO.sel.has(g.grupo) ? 'checked' : ''}>
+              <div class="mono-gt"><b>${esc(g.grupo)}</b><small>${g.itens} item(ns) · receita R$ ${fm(g.receita)} · natureza ${esc(g.nat_rec)} — ${esc(g.nat_desc)} · ${esc(g.lei)}</small>
+                <span class="mono-bar"><i style="--w:${((g.pis + g.cofins) / maxV * 100).toFixed(1)}%"></i></span></div>
+              <div class="mono-gv">R$ ${fm(g.pis + g.cofins)}<small>PIS ${fm(g.pis)} · COFINS ${fm(g.cofins)}</small></div>
+            </label>
+            <details class="mono-ex"><summary>ver exemplos</summary><table class="dif-tab"><thead><tr><th>Nota</th><th>Produto</th><th>NCM</th><th>CFOP</th><th>CST</th><th class="n">Receita</th><th class="n">PIS+COFINS</th></tr></thead>
+              <tbody>${(g.exemplos || []).map((e) => `<tr><td>${esc(e.nota)}</td><td>${esc(e.produto)}</td><td>${esc(e.ncm)}</td><td>${esc(e.cfop)}</td><td><span class="dif-b b-err">${esc(e.cst)} → 04</span></td><td class="n">R$ ${fm(e.receita)}</td><td class="n">R$ ${fm(e.valor)}</td></tr>`).join('')}</tbody></table></details>`).join('')}
+          ${(an.fora || []).length ? `<div class="dif-av" style="margin-top:12px"><b>Fora da correção automática (conferir à mão)</b><ul>${an.fora.map((f) => `<li>${esc(f.grupo)} — ${f.itens} item(ns), R$ ${fm(f.valor)}: ${esc(f.motivo)}</li>`).join('')}</ul></div>` : ''}
+        </div>
+        <div class="mono-card">
+          <div class="dif-k">Apuração antes × depois do que está marcado</div>
+          <div id="monoPrev"></div>
+          <div class="dif-sub" style="margin-top:10px"><b>O que o arquivo novo muda:</b> CST 01 → 04 nos itens (C170, C175 de combustível, C181/C185), zera base, alíquota e valor,
+            ajusta o VL_PIS/VL_COFINS do C100, refaz M210/M610, M200/M600 e M205/M605, informa a receita a alíquota zero no M400/M410 e M800/M810 e recalcula os contadores. O original nunca é alterado.</div>
+          <label class="mono-conf"><input type="checkbox" id="monoRevenda"><span>Confirmo que a empresa <b>revende</b> esses produtos (não é fabricante nem importadora).</span></label>
+          <div class="dif-acts"><button class="act inv-export" id="btnMonoAplicar" disabled style="background:#0ea472;color:#fff;border-color:transparent">⚡ Aplicar e gerar EFD corrigida</button></div>
+          <div class="dif-av ok" style="margin-top:12px"><b>Meses anteriores:</b> o mesmo erro em meses já transmitidos vira crédito a recuperar (retificação + PER/DCOMP, até 5 anos). O <b>Radar de Oportunidades</b> calcula esse valor.</div>
+        </div>
+      </div>` : `<div class="dif-av ok">Nenhum item de revenda com produto monofásico tributado neste arquivo. ${k.itens_mono ? `${k.itens_mono} item(ns) monofásico(s) já estão sem tributo.` : ''}</div>`}`;
+    box.hidden = false;
+    conta(box);
+    box.querySelectorAll('.mono-ck').forEach((c) => c.addEventListener('change', () => { c.checked ? MONO.sel.add(c.dataset.g) : MONO.sel.delete(c.dataset.g); monoPrev(); }));
+    $('#btnMonoFechar').addEventListener('click', () => { box.hidden = true; });
+    if (grupos.length) {
+      $('#monoRevenda').addEventListener('change', monoPrev);
+      monoPrev();
+      $('#btnMonoAplicar').addEventListener('click', async () => {
+        overlay(true, 'Corrigindo o monofásico na EFD-Contribuições…');
+        const r = await window.fiscocont.admin.monoAplicar({ efdPath: est.corrigido || est.sped, grupos: [...MONO.sel] });
+        overlay(false);
+        if (r.error) { toast(r.error, true); return; }
+        est.corrigido = r.corrigidoPath;
+        $('#btnCorrEfdBaixar').disabled = false;
+        const x = r.res || {};
+        box.innerHTML = `<div class="dif-head"><div><div class="dif-k">Monofásico corrigido</div><h3>${esc(emp.nome || '')}</h3></div>
+          <div><button class="act inv-export" id="btnMonoFechar2">Fechar</button></div></div>
+          <div class="dif-kpis">
+            <div class="k-ok"><span>Itens corrigidos</span><b data-n="${x.itens_corrigidos || 0}">0</b><small>CST 01 → 04</small></div>
+            <div class="k-ok"><span>Economia no mês</span><b data-n="${(x.pis || 0) + (x.cofins || 0)}" data-fmt="brl">R$ 0,00</b><small>PIS R$ ${fm(x.pis)} · COFINS R$ ${fm(x.cofins)}</small></div>
+            <div><span>PIS a recolher agora</span><b data-n="${((x.apuracao_depois || {}).PIS || {}).total || 0}" data-fmt="brl">R$ 0,00</b><small>M200</small></div>
+            <div><span>COFINS a recolher agora</span><b data-n="${((x.apuracao_depois || {}).COFINS || {}).total || 0}" data-fmt="brl">R$ 0,00</b><small>M600</small></div>
+          </div>
+          ${(x.pendencias || []).map((p) => `<div class="dif-av"><b>${esc(p.titulo)}</b><br>${esc(p.detalhe)}</div>`).join('')}
+          <div class="dif-av ok">Arquivo novo pronto. Use <b>Baixar SPED corrigido</b> para salvar e valide no PVA. Se rodar o <b>Corrigir</b> depois, ele parte do arquivo original — rode o Corrigir antes do monofásico.</div>`;
+        conta(box);
+        $('#btnMonoFechar2').addEventListener('click', () => { box.hidden = true; });
+        toast('Monofásico corrigido — baixe o SPED corrigido.');
+      });
+    }
+  }
+  $('#btnCorrEfdMono').addEventListener('click', async () => {
+    if (!est.sped) return;
+    overlay(true, 'Procurando produtos monofásicos tributados…');
+    const r = await window.fiscocont.admin.monoAnalisar({ efdPath: est.corrigido || est.sped });
+    overlay(false);
+    if (r.error) { toast(r.error, true); return; }
+    MONO.an = r.res;
+    MONO.sel = new Set((r.res.grupos || []).map((g) => g.grupo));
+    monoRender();
+    $('#corrEfdMono').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   $('#btnCorrEfdHtml').addEventListener('click', async () => {
     if (!est.html) return;

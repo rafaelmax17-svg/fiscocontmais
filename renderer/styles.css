@@ -856,3 +856,29 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .dl-badge{display:inline-block;font-size:10px;font-weight:700;border-radius:6px;padding:1px 7px;margin-left:4px;vertical-align:1px}
 .dl-badge.mat{background:#eef0ff;color:#1f2a5a}
 .dl-badge.fil{background:#fff1e8;color:#c2410c}
+
+/* ⚡ Corrigir monofásico (EFD-Contribuições) e botões ⚡ pequenos */
+.act.inv-export.btn-auto{padding:6px 10px;font-size:12px;background:linear-gradient(90deg,#fff7e0,#fff);color:#8a5a06;border-color:#eda100}
+.act.inv-export.btn-auto:hover:not(:disabled){background:#ffefc2}
+.act.inv-export.btn-auto:disabled{background:var(--panel);color:var(--ink2);border-color:var(--line)}
+.mono-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:14px;align-items:start}
+@media (max-width:1100px){.mono-grid{grid-template-columns:1fr}}
+.mono-card{background:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 4px 14px rgba(20,27,45,.06);border:1px solid #eef0f6}
+.mono-card>.dif-k{margin-bottom:8px}
+.mono-g{display:grid;grid-template-columns:22px 1fr auto;gap:12px;align-items:center;padding:12px 10px;margin-top:8px;border:1px solid #e8ebf3;border-radius:12px;cursor:pointer;
+  opacity:0;transform:translateY(8px);animation:monoIn .45s ease forwards;animation-delay:calc(var(--i,0)*90ms);transition:background .2s,border-color .2s}
+.mono-g:hover{background:#f8f9fd;border-color:#cfd5e6}
+.mono-g:has(.mono-ck:checked){border-color:#0ea472;background:#f3fcf8}
+.mono-ck{width:17px;height:17px;accent-color:#0ea472}
+.mono-gt b{font-size:14px}
+.mono-gt small,.mono-gv small{display:block;font-size:11.5px;color:#5a6785;margin-top:2px;font-weight:400}
+.mono-gv{text-align:right;font-size:16px;font-weight:800;color:#b3261e;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mono-bar{display:block;height:6px;background:#eef0f6;border-radius:6px;margin-top:8px;overflow:hidden}
+.mono-bar i{display:block;height:100%;width:0;border-radius:6px;background:linear-gradient(90deg,#eda100,#e34948);animation:monoBar .9s .25s cubic-bezier(.2,.8,.2,1) forwards}
+.mono-ex{margin:4px 0 0 34px;font-size:12px}
+.mono-ex summary{cursor:pointer;color:#2f4090;font-weight:600;padding:2px 0}
+.mono-ex .dif-tab{margin-top:6px}
+.mono-conf{display:flex;gap:8px;align-items:flex-start;margin:14px 0 10px;padding:10px 12px;background:#fff6e5;border:1px solid #f2d39b;border-radius:10px;font-size:12.5px;cursor:pointer}
+.mono-conf input{margin-top:2px;accent-color:#0ea472}
+@keyframes monoIn{to{opacity:1;transform:none}}
+@keyframes monoBar{to{width:var(--w)}}

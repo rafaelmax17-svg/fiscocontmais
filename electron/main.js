@@ -2157,6 +2157,35 @@ ipcMain.handle('fiscal:efdCorrigir', async (_evt, spedPath, pvaPath) => {
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+// ⚡ Corrigir monofásico (Admin · Correção da EFD-Contribuições) — trabalha em cima do arquivo já
+// corrigido na sessão, se houver (efdPath vem do renderer: corrigido ou original).
+ipcMain.handle('admin:monoAnalisar', async (_evt, { efdPath }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!efdPath || !fs.existsSync(efdPath)) return { error: 'Selecione o arquivo da EFD-Contribuições.' };
+  const jsonOut = path.join(os.tmpdir(), `fc_mono_${Date.now()}.json`);
+  try {
+    await runFiscal(['monofasico', 'analisar', efdPath, '--json', jsonOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    return { ok: true, res };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('admin:monoAplicar', async (_evt, { efdPath, grupos }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!efdPath || !fs.existsSync(efdPath)) return { error: 'Selecione o arquivo da EFD-Contribuições.' };
+  const stamp = Date.now();
+  const jsonOut = path.join(os.tmpdir(), `fc_mono_res_${stamp}.json`);
+  const saida = path.join(os.tmpdir(), `fc_mono_efd_${stamp}.txt`);
+  try {
+    await runFiscal(['monofasico', 'aplicar', efdPath, '--grupos', JSON.stringify(grupos || []), '--saida', saida, '--json', jsonOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    return { ok: true, res, corrigidoPath: saida };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
 ipcMain.handle('fiscal:efdCorrigirSalvar', async (_evt, corrigidoPath, nomeOriginal) => {
   if (!corrigidoPath || !fs.existsSync(corrigidoPath)) return { error: 'Arquivo corrigido não encontrado. Rode a correção de novo.' };
   const base = String(nomeOriginal || 'sped.txt').replace(/\.txt$/i, '');

@@ -816,7 +816,9 @@
           <button class="act inv-export" id="btnCorrEfdRodar" disabled style="background:#e23d4c;color:#fff;border-color:transparent">Corrigir</button>
           <button class="act inv-export" id="btnCorrEfdBaixar" disabled style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button>
           <button class="act inv-export" id="btnCorrEfdHtml" disabled>Exportar relatório (HTML)</button>
+          <button class="act inv-export btn-auto" id="btnCorrEfdMono" disabled title="Itens de revenda com NCM monofásico (combustíveis, farmacêuticos, perfumaria, pneus) vendidos com CST 01: passa para CST 04 e refaz a apuração">⚡ Corrigir monofásico</button>
         </div>
+        <div id="corrEfdMono" class="dif mono" hidden></div>
         <div id="corrEfdVazio" class="fiscal-empty">Escolha o SPED da EFD-Contribuições e, se tiver, o relatório "Pendências de Validação" do PVA. O sistema corrige o que é mecânico, registra cada ação e mostra tudo, separado por tipo de erro.</div>
         <iframe id="corrEfdFrame" hidden style="width:100%;height:900px;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
       </div>
