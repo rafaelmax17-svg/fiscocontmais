@@ -4029,6 +4029,9 @@ def parse_nfse_xml(path):
         'tomador_cnpj': toma_cnpj or toma_cpf, 'tomador_doc_tipo': 'CNPJ' if toma_cnpj else ('CPF' if toma_cpf else ''),
         'tomador_nome': toma_nome or ('(pessoa física sem nome informado)' if toma_cpf else '(destinatário não identificado)'),
         'descricao': _campo(t, 'xDescServ') or _campo(t, 'xTribNac'),
+        # tipo de serviço = item da lista da LC 116 (código de tributação nacional) — a NFS-e Nacional não traz CNAE
+        'ctribnac': re.sub(r'\D', '', _campo(t, 'cTribNac')),
+        'xtribnac': _campo(t, 'xTribNac'),
         'vserv': vserv, 'vliq': vliq, 'vissqn': vissqn,
         'retido': retido, 'tp_ret_issqn': tp_ret_issqn, 'tp_ret_pis': tp_ret_pis,
         'retencoes_detalhe': retencoes_detalhe, 'total_retido': total_retido,
@@ -4710,6 +4713,62 @@ def _bloco_outro_cnpj(notas):
     )
 
 
+def _fmt_ctribnac(c):
+    return f'{c[:2]}.{c[2:4]}.{c[4:6]}' if len(c) == 6 else (c or 'sem código')
+
+
+def _bloco_tipos_servico(dados):
+    """Segregação das NFS-e por tipo de serviço (item da LC 116 / código de tributação nacional).
+    Pedido do Rafael, 15/10: SÓ no relatório exportado — no app fica escondido (classe so-export,
+    que só aparece quando o HTML é aberto fora do sistema, body.standalone)."""
+    validas = [n for n in (dados.get('notas_com_retencao') or []) + (dados.get('notas_sem_retencao') or []) if not n.get('cancelada')]
+    if not validas:
+        return ''
+
+    def tabela(notas, prefixo, cor):
+        if not notas:
+            return '<div class="emptyok" style="color:var(--ink2)">Nenhuma nota no período.</div>'
+        grupos = {}
+        for n in notas:
+            g = grupos.setdefault(n.get('ctribnac') or '', {'desc': '', 'notas': []})
+            g['desc'] = g['desc'] or n.get('xtribnac') or ''
+            g['notas'].append(n)
+        tot = sum(n['vserv'] for n in notas) or 1
+        ordem = sorted(grupos.items(), key=lambda kv: -sum(n['vserv'] for n in kv[1]['notas']))
+        html_ = ''
+        for i, (cod, g) in enumerate(ordem):
+            v = sum(n['vserv'] for n in g['notas'])
+            iss = sum(n.get('vissqn') or 0 for n in g['notas'])
+            ret = sum(n.get('total_retido') or 0 for n in g['notas'])
+            linhas = ''.join(
+                f'<tr><td>{_fmt_emissao_nfse(n)}</td><td>NFS-e {_esc(n["nnfse"])}</td><td>{_esc(n["parceiro_nome"])[:40]}</td>'
+                f'<td style="text-align:right">R$ {_brl(n["vserv"])}</td><td style="text-align:right">R$ {_brl(n.get("total_retido") or 0)}</td></tr>'
+                for n in sorted(g['notas'], key=lambda n: n['emissao']))
+            html_ += (
+                f'<details class="ts-g"><summary>'
+                f'<span class="ts-cod" style="background:{cor}">{_esc(_fmt_ctribnac(cod))}</span>'
+                f'<span class="ts-desc">{_esc(g["desc"] or "Sem descrição no XML")}</span>'
+                f'<span class="ts-num">{len(g["notas"])} nota(s)</span>'
+                f'<span class="ts-num"><b>R$ {_brl(v)}</b> · {v / tot * 100:.1f}%</span>'
+                f'<span class="ts-num">ISS R$ {_brl(iss)}</span>'
+                f'<span class="ts-num">Retido R$ {_brl(ret)}</span></summary>'
+                f'<div class="ts-bar"><i style="width:{max(2, v / tot * 100):.1f}%;background:{cor}"></i></div>'
+                f'<table class="ts-t"><thead><tr><th>Emissão</th><th>Nota</th><th>Parceiro</th><th style="text-align:right">Valor</th><th style="text-align:right">Retido</th></tr></thead>'
+                f'<tbody>{linhas}</tbody></table></details>')
+        return html_
+
+    prest = [n for n in validas if n['papel'] == 'emitida']
+    toma = [n for n in validas if n['papel'] == 'recebida']
+    return (
+        '<div class="so-export">'
+        '<h2 class="secao"><span class="dot"></span>Serviços por tipo (item da LC 116)</h2>'
+        '<div class="card"><div style="font-size:12px;color:var(--ink2);margin-bottom:10px">Notas autorizadas do período agrupadas pelo '
+        '<b>código de tributação nacional</b> (item da lista de serviços da LC 116/2003) informado em cada NFS-e. Clique num tipo para ver as notas.</div>'
+        f'<h3><span class="dot" style="background:#1f2a5a"></span>Prestados ({len(prest)} nota(s))</h3>{tabela(prest, "p", "#1f2a5a")}'
+        f'<h3 style="margin-top:18px"><span class="dot com"></span>Tomados ({len(toma)} nota(s))</h3>{tabela(toma, "t", "#e8632b")}'
+        '</div></div>')
+
+
 def gerar_painel_nfse_html(dados, empresa_nome=''):
     """Painel único do Download de NFS-e — dashboard (KPIs, donut de
     com/sem retenção, top parceiros) e a lista completa, separada por
@@ -4884,6 +4943,15 @@ td,th{{border-bottom:1px solid var(--line)}}
 .btn-pdf{{border:1px solid #c9ceea;background:#fff;color:#1f2a5a;border-radius:7px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer}}
 .btn-pdf:hover{{background:#eef0ff}}
 body.standalone .col-pdf{{display:none}}
+.so-export{{display:none}} body.standalone .so-export{{display:block}}
+.ts-g{{border:1px solid var(--line);border-radius:10px;margin-bottom:8px;padding:0 12px;background:#fff}}
+.ts-g summary{{display:flex;align-items:center;gap:12px;padding:10px 0;cursor:pointer;list-style:none;font-size:12.5px}}
+.ts-g summary::-webkit-details-marker{{display:none}}
+.ts-cod{{color:#fff;font-weight:800;font-size:11px;border-radius:6px;padding:2px 8px;font-family:monospace;flex:0 0 auto}}
+.ts-desc{{flex:1;min-width:0}} .ts-num{{white-space:nowrap;color:var(--ink2);font-size:12px}} .ts-num b{{color:var(--ink)}}
+.ts-bar{{height:5px;background:#eef0f6;border-radius:3px;margin:-4px 0 8px}} .ts-bar i{{display:block;height:100%;border-radius:3px}}
+.ts-t{{width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:10px}} .ts-t th{{text-align:left;color:var(--ink2);font-size:9.5px;text-transform:uppercase;padding:5px}} .ts-t td{{padding:5px}}
+@media print{{ .ts-g{{break-inside:avoid}} }}
 .dtip{{position:fixed;pointer-events:none;z-index:9999;background:var(--navy,#1f2a5a);color:#fff;
   font-size:11.5px;font-weight:600;padding:8px 11px;border-radius:9px;box-shadow:0 8px 22px rgba(0,0,0,.28);
   white-space:nowrap;opacity:0;transform:translate(-50%,-115%);transition:opacity .1s;top:0;left:0}}
@@ -4927,6 +4995,7 @@ body.standalone .col-pdf{{display:none}}
 <div class="card"><h3><span class="dot com"></span>Com retenção <span style="font-size:11px;color:var(--ink2);font-weight:400">(clique numa linha pra ver o detalhamento)</span></h3>{_tabela_com(tomados_com, 'toma')}</div>
 <div class="card"><h3><span class="dot sem"></span>Sem retenção</h3>{_tabela_sem(tomados_sem)}</div>
 
+{_bloco_tipos_servico(dados)}
 <script>
 document.querySelectorAll('.pf-box .pfcnt').forEach(function(el){{
   var alvo = +el.dataset.alvo, t0 = null;
