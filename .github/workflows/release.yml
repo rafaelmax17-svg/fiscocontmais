@@ -20,10 +20,23 @@ jobs:
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.ref }}
           fetch-depth: 0
+
+      # Aceita a tag digitada com pequenos erros (1.7.10, V1.7.10, v.1.7.10, com espaco) e padroniza para v1.7.10.
+      - name: Padronizar a tag informada
+        shell: bash
+        run: |
+          T="$(printf '%s' "$TAG" | tr -d '[:space:]')"
+          T="${T#[vV]}"; T="${T#.}"
+          if ! printf '%s' "$T" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Tag invalida: '$TAG'. Use o formato v1.7.10."
+            exit 1
+          fi
+          [ "v$T" != "$TAG" ] && echo "Tag '$TAG' padronizada para 'v$T'."
+          echo "TAG=v$T" >> "$GITHUB_ENV"
 
       # Rodando a mao: se a tag ainda nao existe, cria a partir do commit escolhido (main); se existe, usa a tag.
       - name: Preparar a tag da versao
@@ -42,11 +55,21 @@ jobs:
             git push origin "refs/tags/$TAG"
           fi
 
-      - uses: actions/setup-node@v4
+      - name: Conferir a versao do package.json
+        shell: bash
+        run: |
+          V_PKG=$(node -p "require('./package.json').version")
+          if [ "v$V_PKG" != "$TAG" ]; then
+            echo "::error::A tag $TAG nao bate com a versao do package.json ($V_PKG). Rode de novo informando v$V_PKG."
+            exit 1
+          fi
+          echo "Versao $V_PKG confere com a tag $TAG."
+
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
