@@ -29,15 +29,16 @@ function sanitizar(nome) {
 }
 
 // Salva o painel individual na pasta do cliente. A pasta da empresa segue a MESMA regra
-// que a baixa já usa (pastaBase/razaoSocial), para ficar ao lado de XML e PDF.
+// que a baixa já usa (pastaBase/AAAA-MM/razaoSocial), para ficar ao lado de XML e PDF.
 function salvarPainelIndividual(pastaBase, empresa, painelHtml, ini, fim) {
   const sub = periodoSubpasta(ini, fim);
-  const dir = path.join(pastaBase, empresa.razaoSocial, 'NFS-e', 'Relatórios', sub);
+  const mes = String(ini || '').slice(0, 7) || 'sem-data';          // pasta do mês (data inicial do lote)
+  const dir = path.join(pastaBase, mes, empresa.razaoSocial, 'NFS-e', 'Relatórios', sub);
   fs.mkdirSync(dir, { recursive: true });
   const nome = `Painel-NFSe_${sanitizar(empresa.razaoSocial)}_${sub}.html`;
   const abs = path.join(dir, nome);
   fs.writeFileSync(abs, painelHtml, 'utf-8');
-  return { rel: [empresa.razaoSocial, 'NFS-e', 'Relatórios', sub, nome].join('/'), abs, dir };
+  return { rel: [mes, empresa.razaoSocial, 'NFS-e', 'Relatórios', sub, nome].join('/'), abs, dir };
 }
 
 function resultadoVazio(emp) {

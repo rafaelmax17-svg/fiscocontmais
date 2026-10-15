@@ -837,13 +837,21 @@ ipcMain.handle('fiscal:pastaBaseGet', () => {
   return null;
 });
 
+// Pastas por mês de emissão (1.7.10+): <base>/<AAAA-MM>/<empresa>; antiga: <base>/<empresa>
+function _temPastaEmpresa(pastaBase, razao) {
+  try {
+    if (fs.existsSync(path.join(pastaBase, razao))) return true;
+    return fs.readdirSync(pastaBase).some((m) => /^\d{4}-\d{2}$/.test(m) && fs.existsSync(path.join(pastaBase, m, razao)));
+  } catch (_) { return false; }
+}
+
 async function _analisarNfseEmpresa(empresa, dataInicial, dataFinal, opcoes = {}) {
   if (!dataInicial || !dataFinal) return { error: 'Informe a Data inicial e a Data final para ver o painel.' };
   let pastaBase;
   try { pastaBase = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase; } catch (_) {}
   if (!pastaBase) return { error: 'Escolha a pasta onde os documentos são salvos primeiro.' };
   const pastaEmpresa = path.join(pastaBase, empresa.razaoSocial);
-  if (!fs.existsSync(pastaEmpresa)) {
+  if (!_temPastaEmpresa(pastaBase, empresa.razaoSocial)) {
     // no lote, empresa sem nenhuma nota baixada não é erro: simplesmente não teve notas no período
     if (opcoes.vazioSePastaAusente) return { ok: true, resumo: { total_notas: 0, qtd_canceladas: 0 }, painelHtml: '' };
     return { error: 'Ainda não tem nenhuma nota baixada dessa empresa nessa pasta.' };
@@ -856,7 +864,7 @@ async function _analisarNfseEmpresa(empresa, dataInicial, dataFinal, opcoes = {}
     // meses ao longo do tempo — o painel tem que respeitar o período
     // escolhido na tela, não misturar tudo que já foi baixado algum dia.
     const args = ['analisar-nfse', pastaEmpresa, '--cnpj', empresa.cnpj, '--empresa', empresa.razaoSocial,
-      '--painel-html', painelTmp, '--json', jsonTmp];
+      '--pasta-base', pastaBase, '--painel-html', painelTmp, '--json', jsonTmp];
     if (dataInicial) args.push('--inicio', dataInicial);
     if (dataFinal) args.push('--fim', dataFinal);
     await runFiscal(args, jsonTmp);
@@ -987,7 +995,7 @@ ipcMain.handle('fiscal:nfseLoteIniciar', async (_evt, { dataInicial, dataFinal, 
     const sub = nfseLote.periodoSubpasta(dataInicial, dataFinal);
     const dados = {
       periodo: { ini: dataInicial, fim: dataFinal }, inicio: _dataHoraBR(inicio), fim_exec: _dataHoraBR(fim), gerar_pdf: gerarPdf !== false, cancelado,
-      caminho, pasta_relatorios: [pastaBase, '<Empresa>', 'NFS-e', 'Relatórios', sub].join(path.sep) + path.sep, empresas: resultados,
+      caminho, pasta_relatorios: [pastaBase, String(dataInicial).slice(0, 7), '<Empresa>', 'NFS-e', 'Relatórios', sub].join(path.sep) + path.sep, empresas: resultados,
     };
     const inJson = path.join(os.tmpdir(), `fc_lote_${Date.now()}.json`);
     const outHtml = path.join(os.tmpdir(), `fc_lote_${Date.now()}.html`);

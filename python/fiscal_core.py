@@ -3021,7 +3021,17 @@ def main(argv):
         def opta(name, default=None):
             return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
         pasta = argv[1]
-        caminhos = glob.glob(os.path.join(pasta, '**', '*.xml'), recursive=True)
+        if opta('--pasta-base'):
+            base, nome = opta('--pasta-base'), opta('--empresa', os.path.basename(os.path.normpath(pasta)))
+            try:
+                migrar_para_mes(base, nome)
+            except OSError:
+                pass
+            caminhos = []
+            for r in pastas_empresa_nfse(base, nome, opta('--inicio'), opta('--fim')):
+                caminhos += glob.glob(os.path.join(glob.escape(r), '**', '*.xml'), recursive=True)
+        else:
+            caminhos = glob.glob(os.path.join(glob.escape(pasta), '**', '*.xml'), recursive=True)
         dados = analisar_nfse(caminhos, opta('--cnpj', ''), data_inicial=opta('--inicio'), data_final=opta('--fim'))
         empresa_nome = opta('--empresa', '')
         if '--json' in args:
@@ -4186,6 +4196,87 @@ def _xmls_com_chave(raiz, chave):
     return sorted(set(achados))
 
 
+# ---- Estrutura de pastas por MÊS DE EMISSÃO (pedido do Rafael, 15/10) ----
+#   <pasta base>\2026-09\<EMPRESA>\NFS-e\XML\Prestados|Tomados\<chave>.xml
+#   <pasta base>\2026-09\<EMPRESA>\NFS-e\PDF\Prestados|Tomados\<chave>.pdf
+#   <pasta base>\2026-09\<EMPRESA>\NFS-e\Outros CNPJ\<cnpj>\<chave>.xml
+#   <pasta base>\2026-09\<EMPRESA>\NFS-e\Relatórios\...
+# Estrutura antiga (até a 1.7.10): <pasta base>\<EMPRESA>\NFS-e\XML\Tomados\2026-09\<chave>.xml — migrada sozinha.
+_RE_MES = re.compile(r'^\d{4}-\d{2}$')
+
+
+def _eh_pasta_mes(nome):
+    return bool(_RE_MES.match(nome)) or nome == 'sem-data'
+
+
+def pastas_empresa_nfse(pasta_base, nome_empresa, data_inicial=None, data_final=None):
+    """Pastas da empresa em cada mês (<base>/<AAAA-MM>/<empresa>), só os meses do período quando informado,
+    mais a pasta antiga <base>/<empresa> se ainda existir."""
+    out = []
+    if not pasta_base or not os.path.isdir(pasta_base):
+        return out
+    m_ini = (data_inicial or '')[:7]
+    m_fim = (data_final or '')[:7]
+    for m in sorted(os.listdir(pasta_base)):
+        if not _eh_pasta_mes(m):
+            continue
+        if m != 'sem-data' and ((m_ini and m < m_ini) or (m_fim and m > m_fim)):
+            continue
+        p = os.path.join(pasta_base, m, nome_empresa)
+        if os.path.isdir(p):
+            out.append(p)
+    antiga = os.path.join(pasta_base, nome_empresa)
+    if os.path.isdir(antiga):
+        out.append(antiga)
+    return out
+
+
+def migrar_para_mes(pasta_base, nome_empresa):
+    """Move tudo da estrutura antiga (<base>/<empresa>/NFS-e/.../AAAA-MM/arquivo) para a nova
+    (<base>/AAAA-MM/<empresa>/NFS-e/.../arquivo). Não apaga nada: se o arquivo já existe no destino
+    e é igual, só remove a cópia antiga; se é diferente, deixa os dois. Devolve quantos moveu."""
+    antiga = os.path.join(pasta_base, nome_empresa)
+    raiz = os.path.join(antiga, 'NFS-e')
+    if not os.path.isdir(raiz):
+        return 0
+    try:
+        migrar_estrutura_nfse(raiz)
+    except OSError:
+        pass
+    movidos = 0
+    for atual, _dirs, arquivos in os.walk(raiz):
+        for nome in arquivos:
+            origem = os.path.join(atual, nome)
+            partes = os.path.relpath(origem, antiga).split(os.sep)[:-1]   # ['NFS-e','XML','Tomados','2026-09']
+            mes, novas = None, []
+            for parte in partes:
+                if mes is None and _eh_pasta_mes(parte):
+                    mes = parte
+                    continue
+                if mes is None and re.match(r'^\d{4}-\d{2}-\d{2}', parte):   # Relatórios\2026-09-01_a_2026-09-30
+                    mes = parte[:7]
+                novas.append(parte)
+            if not mes:
+                continue
+            destino = os.path.join(pasta_base, mes, nome_empresa, *novas, nome)
+            try:
+                if os.path.exists(destino):
+                    if os.path.getsize(destino) == os.path.getsize(origem):
+                        os.remove(origem)
+                    continue
+                os.makedirs(os.path.dirname(destino), exist_ok=True)
+                shutil.move(origem, destino)
+                movidos += 1
+            except OSError:
+                continue
+    for atual, _dirs, _arqs in os.walk(antiga, topdown=False):     # limpa as pastas antigas que ficaram vazias
+        try:
+            os.rmdir(atual)
+        except OSError:
+            pass
+    return movidos
+
+
 def garantir_pdf_nfse(pasta_empresa, chave, pasta_base=None):
     """Acha o XML da nota pela chave, gera o PDF se ainda não existir (ou se o XML for
     mais novo) e devolve o caminho do PDF.
@@ -4193,17 +4284,34 @@ def garantir_pdf_nfse(pasta_empresa, chave, pasta_base=None):
     O painel lê TODO .xml da pasta da empresa pelo conteúdo; a busca do PDF só olhava
     NFS-e/XML pelo nome do arquivo. Agora procura na pasta da empresa inteira (nome e conteúdo)
     e, se ainda não achar, nas pastas das outras empresas da mesma pasta base."""
-    pasta_nfse = os.path.join(pasta_empresa, 'NFS-e')
-    try:
-        migrar_estrutura_nfse(pasta_nfse)
-    except OSError:
-        pass
-    achados = _xmls_com_chave(os.path.join(pasta_nfse, 'XML'), chave) or _xmls_com_chave(pasta_empresa, chave)
+    nome_empresa = os.path.basename(os.path.normpath(pasta_empresa))
+    if pasta_base:
+        try:
+            migrar_para_mes(pasta_base, nome_empresa)
+        except OSError:
+            pass
+        raizes = pastas_empresa_nfse(pasta_base, nome_empresa)
+    else:
+        raizes = [pasta_empresa]
+    achados = []
+    for r in raizes:                       # primeiro pelo nome em NFS-e\XML de cada mês
+        achados = _xmls_com_chave(os.path.join(r, 'NFS-e', 'XML'), chave)
+        if achados:
+            break
+    if not achados:
+        for r in raizes:                   # depois a pasta da empresa inteira (nome e conteúdo)
+            achados = _xmls_com_chave(r, chave)
+            if achados:
+                break
     if not achados and pasta_base and os.path.isdir(pasta_base):
+        outras = []
         for sub in sorted(os.listdir(pasta_base)):
             cand = os.path.join(pasta_base, sub)
-            if os.path.normcase(os.path.abspath(cand)) == os.path.normcase(os.path.abspath(pasta_empresa)):
-                continue
+            if _eh_pasta_mes(sub) and os.path.isdir(cand):
+                outras += [os.path.join(cand, e) for e in sorted(os.listdir(cand)) if e != nome_empresa]
+            elif sub != nome_empresa:
+                outras.append(cand)
+        for cand in outras:
             achados = _xmls_com_chave(os.path.join(cand, 'NFS-e', 'XML'), chave)
             if achados:
                 break
@@ -4226,7 +4334,7 @@ def garantir_pdf_nfse(pasta_empresa, chave, pasta_base=None):
 def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome_empresa, cnpj_empresa,
                      nsu_inicial=0, homologacao=False, progresso=None, gerar_pdf=True, cnpj_consulta=None):
     """Baixa NFS-e (emitidas e recebidas) via ADN, filtrando pelo período
-    pedido. Salva em pasta_base/nome_empresa/NFS-e/Prestados|Tomados/AAAA-MM/chave.xml"""
+    pedido. Salva em pasta_base/AAAA-MM (mês de emissão)/nome_empresa/NFS-e/XML/Prestados|Tomados/chave.xml"""
     import gzip
     import re as _re
     import time as _time
@@ -4252,11 +4360,14 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                     _time.sleep(2 * tentativa)
         raise ultimo_erro
 
-    pasta_nfse = os.path.join(pasta_base, nome_empresa, 'NFS-e')
     try:
-        migrar_estrutura_nfse(pasta_nfse)
+        migrar_para_mes(pasta_base, nome_empresa)       # estrutura antiga -> pasta por mês de emissão
     except OSError:
         pass
+
+    def pasta_nfse_mes(mes):
+        return os.path.join(pasta_base, mes, nome_empresa, 'NFS-e')
+
     cert_path_pem, key_path_pem, tmp_dir = _extrair_cert_chave_temp(cert_path, senha)
     base_url = 'https://adn.producaorestrita.nfse.gov.br' if homologacao else 'https://adn.nfse.gov.br'
     salvos, ignorados_fora_periodo, paginas = 0, 0, 0
@@ -4420,7 +4531,7 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     # nota de outro CNPJ que já tinha sido gravada em XML\Tomados por versão anterior: tira de lá
     for chave, _x, subpasta, competencia in notas_brutas:
         if subpasta.startswith('Outros CNPJ'):
-            for velho in glob.glob(os.path.join(glob.escape(os.path.join(pasta_nfse, 'XML')), '*', '*', glob.escape(chave) + '*.xml')):
+            for velho in glob.glob(os.path.join(glob.escape(os.path.join(pasta_nfse_mes(competencia), 'XML')), '*', glob.escape(chave) + '*.xml')):
                 try:
                     os.remove(velho)
                     pdf_velho = _destino_pdf(velho)
@@ -4431,7 +4542,7 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     pdfs_gerados, pdfs_erro = 0, 0
     pdfs_erros_det = []     # [{nnfse, chave, motivo}] — achado real (Rafael, 14/10): "1 com erro ao gerar" sem dizer qual nem por quê
     for chave, xml_texto, subpasta, competencia in notas_brutas:
-        pasta_xml = os.path.join(pasta_nfse, subpasta, competencia)
+        pasta_xml = os.path.join(pasta_nfse_mes(competencia), subpasta)
         os.makedirs(pasta_xml, exist_ok=True)
         normal = os.path.join(pasta_xml, f'{chave}.xml')
         cancelado = os.path.join(pasta_xml, f'{chave}.CANCELADA.xml')
@@ -4472,7 +4583,9 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
         'canceladas': canceladas_qtd, 'pdfs_gerados': pdfs_gerados, 'pdfs_erro': pdfs_erro, 'pdfs_erros': pdfs_erros_det,
         'outros_cnpj': outros_cnpj,
         'paginas_lidas': paginas, 'ultimo_nsu': ultimo_nsu_visto,
-        'pasta': pasta_nfse,
+        'pasta': (pasta_nfse_mes(max((c for _a, _b, _s, c in notas_brutas), key=lambda c: (c != 'sem-data', c)))
+                  if notas_brutas else pasta_base),
+        'pastas': sorted({pasta_nfse_mes(c) for _a, _b, _s, c in notas_brutas}),
     }
 
 
