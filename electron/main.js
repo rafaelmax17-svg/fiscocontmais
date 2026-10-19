@@ -1940,6 +1940,43 @@ ipcMain.handle('admin:simplesAplicar', async (_evt, { spedPath, usarCorrigido, x
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+// ICMS creditado no SPED × ICMS destacado no XML da entrada (icms_xml.py) — só Admin
+ipcMain.handle('admin:icmsXmlAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!spedPath) return { error: 'Selecione o SPED.' };
+  if (!xmls) return { error: 'Selecione os XMLs de entrada (pasta ou .zip).' };
+  const base = _difalBase(spedPath, usarCorrigido);
+  const jsonOut = path.join(os.tmpdir(), `fc_icmsxml_${Date.now()}.json`);
+  try {
+    await runFiscal(['icms-xml', '--sped', base.arq, '--xmls', xmls, '--json', jsonOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    return { ok: true, res, origem: base.origem };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('admin:icmsXmlAplicar', async (_evt, { spedPath, usarCorrigido, xmls, selecao }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!spedPath) return { error: 'Selecione o SPED.' };
+  const base = _difalBase(spedPath, usarCorrigido);
+  const stamp = Date.now();
+  const selJson = path.join(os.tmpdir(), `fc_icmsxml_sel_${stamp}.json`);
+  const jsonOut = path.join(os.tmpdir(), `fc_icmsxml_res_${stamp}.json`);
+  const saida = path.join(os.tmpdir(), `fc_icmsxml_sped_${stamp}.txt`);
+  try {
+    fs.writeFileSync(selJson, JSON.stringify(selecao || {}), 'utf-8');
+    await runFiscal(['icms-xml', '--sped', base.arq, '--xmls', xmls || '', '--json', jsonOut, '--aplicar', selJson, '--saida', saida], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    fs.unlink(jsonOut, () => {}); fs.unlink(selJson, () => {});
+    if (res.erro) return { error: res.erro };
+    if (!fs.existsSync(saida)) return { error: 'O arquivo corrigido não foi gerado.' };
+    if (lastSpedCorrigidoPath && lastSpedCorrigidoPath !== base.arq) fs.unlink(lastSpedCorrigidoPath, () => {});
+    else if (lastSpedCorrigidoPath === base.arq && base.origem === 'corrigido') fs.unlink(base.arq, () => {});
+    lastSpedCorrigidoPath = saida;
+    return { ok: true, resumo: res, origem: base.origem };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
 let lastCorretorDash = null;   // dashboard da última correção (mostrado de imediato, sem rodar de novo)
 ipcMain.handle('fiscal:corrigirSpedDashboard', async (_evt, spedPath) => {
   if (!spedPath) return { error: 'Selecione o SPED.' };

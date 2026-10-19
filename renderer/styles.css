@@ -921,3 +921,5 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .lote-tag.t-e116{background:#1f2a5a;color:#fff}
 @media (max-width:1100px){.lote-cli{grid-template-columns:26px 1fr}.lote-cli-v,.lote-cli-a{grid-column:2;text-align:left;align-items:flex-start}}
 .lote-tdb{display:flex;gap:6px;justify-content:flex-end}.lote-tdb .act.inv-export{padding:5px 10px;font-size:12px;white-space:nowrap}
+
+.ix-det td{background:#fbfbfe;padding-top:0}
