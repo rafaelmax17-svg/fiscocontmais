@@ -10,8 +10,10 @@ Confere cada NF-e de entrada (C100 de terceiros, modelo 55) que tem XML: item a 
 é isenta/não tributada), refaz o C190 da nota e os totais do C100, diminui o campo 06 do E110, ajusta o E116 e reconta
 o Bloco 9. Gera arquivo NOVO; o original nunca é alterado.
 
-Fica de fora (outros módulos cuidam): fornecedor do Simples Nacional (crédito do Simples, C197), CFOP de uso e consumo e
-ativo (x.556, x.407, x.551, x.406 — quadro de crédito do DIFAL) e crédito presumido/ajustes lançados em C197.
+Fornecedor do Simples Nacional entra também: a nota não destaca ICMS, então o crédito no C190 sai daqui (o crédito
+permitido, quando houver, é lançado no C197 pelo módulo do Simples). Fica de fora: CFOP de uso e consumo e ativo
+(x.556, x.407, x.551, x.406 — quadro de crédito do DIFAL) e crédito presumido/ajustes lançados em C197.
+Entradas com crédito e sem XML são listadas à parte, para buscar o XML.
 """
 import os
 import re
@@ -102,17 +104,20 @@ def analisar_texto(texto, xmls):
     cab, part, _, docs, e110, _ = dr._estrutura(linhas)
     out = []
     conferidas = sem_xml = 0
+    sem_xml_cred = []
     for d in docs:
         if d['oper'] != '0' or d['emit'] != '1' or d['mod'] != '55' or d['sit'] in CANC:
             continue
         x = xmls.get(re.sub(r'\D', '', d['chave'] or ''))
+        p = part.get(d['part'], {})
         if not x or x.get('tipo') not in (None, 'nfe') or 'erro' in x:
             sem_xml += 1
+            cred = float(_q(sum(c['vl_icms'] for c in d['c190'] if not _fora(c['cfop']))))
+            if cred > TOL:
+                sem_xml_cred.append({'num': d['num'], 'serie': d['serie'], 'data': d['dt'], 'chave': d['chave'],
+                                     'fornecedor': p.get('nome', d['part']), 'cnpj': p.get('cnpj', ''), 'icms_sped': cred})
             continue
-        if x.get('simples'):
-            continue                      # crédito do Simples: módulo próprio (C197 RO00000001)
         conferidas += 1
-        p = part.get(d['part'], {})
         uf, _ = dr._uf_emitente(d, part)
         c190_cred = [c for c in d['c190'] if not _fora(c['cfop'])]
         icms_sped = float(_q(sum(c['vl_icms'] for c in c190_cred)))
@@ -189,6 +194,10 @@ def analisar_texto(texto, xmls):
             obs.append('A nota destaca mais ICMS do que o SPED creditou. Pode estar certo (ex.: mercadoria sem direito a crédito) — só informativo.')
         if status == 'st_sem_retencao':
             obs.append(f'ICMS destacado e não creditado: R$ {dr._f(menor_xml)} (itens com CST 060 no SPED, sem ST na nota).')
+        if x.get('simples') and status in ('sem_destaque', 'maior', 'maior_sem_item'):
+            obs.append('Fornecedor do Simples Nacional: a nota não tem ICMS destacado. '
+                       + (f'O crédito permitido (R$ {dr._f(x.get("credito", 0))}, pCredSN) vai no C197 RO00000001 — depois de corrigir aqui, '
+                          'lance pelo botão "Crédito Simples Nacional".' if x.get('credito', 0) > TOL else 'A nota não dá direito a crédito (LC 123/2006, art. 23).'))
         if x.get('vicms_deson', 0) > 0 and status == 'sem_destaque':
             obs.append(f'A nota tem ICMS desonerado (R$ {dr._f(x["vicms_deson"])}): o imposto foi dispensado na origem, não destacado.')
         if casamento == 'nota':
@@ -201,6 +210,7 @@ def analisar_texto(texto, xmls):
             'fornecedor': p.get('nome') or x.get('emit_nome', ''), 'cnpj': p.get('cnpj', '') or x.get('emit_cnpj', ''), 'uf': uf,
             'icms_sped': icms_sped, 'icms_xml': icms_xml, 'bc_sped': bc_sped, 'bc_xml': float(_q(x.get('vbc_icms', 0.0))),
             'diferenca': dif, 'reducao': reducao, 'status': status, 'casamento': casamento,
+            'simples': bool(x.get('simples')), 'credito_sn': float(_q(x.get('credito', 0.0))) if x.get('simples') else 0.0,
             'csts_xml': sorted({i['cst_xml'] for i in itens if i['cst_xml']}),
             'aliqs_sped': sorted({c['aliq'] for c in c190_cred if c['vl_icms'] > 0}),
             'itens': [i for i in itens if i['status'] not in ('ok', 'ajuste')][:60], 'itens_ok': sum(1 for i in itens if i['status'] == 'ok'),
@@ -217,10 +227,13 @@ def analisar_texto(texto, xmls):
         'empresa': {'nome': cab.get('nome', ''), 'cnpj': cab.get('cnpj', ''), 'uf': cab.get('uf', ''), 'dt_ini': cab.get('dt_ini', ''),
                     'dt_fin': cab.get('dt_fin', '')},
         'docs': out, 'e110': apur,
+        'sem_xml_credito': sorted(sem_xml_cred, key=lambda z: -z['icms_sped']),
         'e116': [{'cod': c[2], 'valor': dr._n(c[3]), 'venc': c[4], 'cod_rec': c[5]}
                  for c in (ln.split('|') for ln in linhas if ln.startswith('|E116|')) if len(c) > 5],
         'resumo': {
             'notas_conferidas': conferidas, 'notas_sem_xml': sem_xml,
+            'sem_xml_com_credito': len(sem_xml_cred), 'sem_xml_credito_valor': float(_q(sum(z['icms_sped'] for z in sem_xml_cred))),
+            'simples_com_credito': sum(1 for x in out if x.get('simples') and x['status'] in ('sem_destaque', 'maior', 'maior_sem_item')),
             'sem_destaque': sum(1 for x in out if x['status'] == 'sem_destaque'),
             'maior': sum(1 for x in out if x['status'] == 'maior'),
             'maior_sem_item': sum(1 for x in out if x['status'] == 'maior_sem_item'),

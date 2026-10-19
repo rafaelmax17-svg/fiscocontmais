@@ -2094,7 +2094,7 @@ function bindFiscal() {
         <td class="n"><b>R$ ${fm(i.icms_sped)}</b> → R$ ${fm(i.icms_xml)}</td></tr>`).join('');
       return `<tr class="${d.sugerido ? '' : 'dif-off'}">
         <td><label class="dif-ck"><input type="checkbox" class="ix-ck" data-id="${d.id}" ${IX.sel.has(d.id) ? 'checked' : ''} ${d.sugerido ? '' : 'disabled'}> <b>${esc(d.num)}</b></label><small>${dt(d.data)}</small></td>
-        <td>${esc(d.fornecedor)}<small>${esc(d.cnpj)} · ${esc(d.uf || '')}</small></td>
+        <td>${esc(d.fornecedor)}${d.simples ? ' <span class="dif-b b-warn">Simples</span>' : ''}<small>${esc(d.cnpj)} · ${esc(d.uf || '')}</small></td>
         <td>${(d.csts_xml || []).map(esc).join(', ') || '—'}<small>alíq. no SPED: ${(d.aliqs_sped || []).map(fa).join(', ') || '—'}</small></td>
         <td class="n">R$ ${fm(d.icms_xml)}</td><td class="n"><b>R$ ${fm(d.icms_sped)}</b></td>
         <td class="n"><b style="color:${d.reducao > 0 ? '#b3261e' : 'inherit'}">${d.reducao > 0 ? '− R$ ' + fm(d.reducao) : '—'}</b></td>
@@ -2113,8 +2113,8 @@ function bindFiscal() {
         </div>
         <div class="sn-hbtn"><button class="act inv-export" id="btnIxXmls">Trocar XMLs</button><button class="act inv-export" id="btnIxFechar">Fechar</button></div></div>
         <div class="dif-kpis">
-          <div><span>Notas conferidas</span><b data-n="${rs.notas_conferidas || 0}">0</b><small>${rs.notas_sem_xml ?? 0} entrada(s) sem XML</small></div>
-          <div class="k-err"><span>Crédito acima da nota</span><b data-n="${(rs.sem_destaque || 0) + (rs.maior || 0) + (rs.maior_sem_item || 0)}">0</b><small>${rs.sem_destaque || 0} sem destaque · ${rs.maior || 0} acima do destacado</small></div>
+          <div><span>Notas conferidas</span><b data-n="${rs.notas_conferidas || 0}">0</b><small>${rs.notas_sem_xml ?? 0} entrada(s) sem XML${rs.sem_xml_com_credito ? ` · ${rs.sem_xml_com_credito} com crédito` : ''}</small></div>
+          <div class="k-err"><span>Crédito acima da nota</span><b data-n="${(rs.sem_destaque || 0) + (rs.maior || 0) + (rs.maior_sem_item || 0)}">0</b><small>${rs.sem_destaque || 0} sem destaque (${rs.simples_com_credito || 0} do Simples) · ${rs.maior || 0} acima</small></div>
           <div class="k-err"><span>Crédito a retirar</span><b data-n="${rs.credito_corrigivel || 0}" data-fmt="brl">R$ 0,00</b><small>diferença total R$ ${fm(rs.credito_indevido)}</small></div>
           <div class="k-warn"><span>Escriturado como ST, nota sem ST</span><b data-n="${rs.st_sem_retencao || 0}">0</b><small>ICMS da nota não creditado: R$ ${fm(rs.st_sem_retencao_valor)}</small></div>
           <div><span>Crédito menor que a nota</span><b data-n="${rs.menor || 0}">0</b><small>só informativo · R$ ${fm(rs.credito_nao_tomado)}</small></div>
@@ -2134,12 +2134,16 @@ function bindFiscal() {
               <label>Código de receita <input id="ixCodRec" placeholder="ex.: 1210" value="${esc(e116.cod_rec || '')}"></label></div>
             <div class="dif-sub" style="margin-top:10px"><b>O que o arquivo novo muda:</b> nos itens marcados, base, alíquota e ICMS do C170 vão para o que o XML destaca (nota isenta: zera e leva o CST do XML),
               o C190 da nota é refeito por CST/CFOP/alíquota, o C100 recebe os novos totais, o campo 06 do E110 diminui, o E116 é ajustado e o Bloco 9 recontado.
-              Uso e consumo/ativo, Simples Nacional e ajustes em C197 não são mexidos. O original nunca é alterado.</div>
+              Nota de fornecedor do Simples sai sem crédito no C190 (o crédito permitido vai depois pelo botão Crédito Simples Nacional). Uso e consumo/ativo e ajustes em C197 não são mexidos. O original nunca é alterado.</div>
             <div class="dif-sub">Base legal: o crédito é o imposto cobrado e destacado na nota da operação anterior (LC 87/96, arts. 19, 20 e 23).</div>
             <div class="dif-acts"><button class="act inv-export" id="btnIxAplicar" style="background:#e23d4c;color:#fff;border-color:transparent">Aplicar no SPED (gera arquivo novo)</button></div>
           </div>
         </div>
-        <div id="ixRes"></div>` : `<div class="dif-av ok">O ICMS creditado no SPED bate com o destacado nos XMLs em todas as ${rs.notas_conferidas || 0} nota(s) conferidas.</div>`}`;
+        <div id="ixRes"></div>` : `<div class="dif-av ok">O ICMS creditado no SPED bate com o destacado nos XMLs em todas as ${rs.notas_conferidas || 0} nota(s) conferidas.</div>`}
+        ${(an.sem_xml_credito || []).length ? `<div class="mono-card"><details class="mono-ex" style="margin:0" ${docs.length ? '' : 'open'}><summary>Entradas com crédito de ICMS e <b>sem XML</b> para conferir — ${an.sem_xml_credito.length} nota(s), R$ ${fm(rs.sem_xml_credito_valor)}</summary>
+          <div class="dif-sub" style="margin:6px 0">Anexe os XMLs dessas notas (Trocar XMLs) para o sistema conferir o destaque.</div>
+          <div class="dif-tw" style="max-height:360px"><table class="dif-tab"><thead><tr><th>Nota</th><th>Fornecedor</th><th>Chave de acesso</th><th class="n">ICMS creditado no SPED</th></tr></thead>
+          <tbody>${an.sem_xml_credito.map((z) => `<tr><td><b>${esc(z.num)}</b><small>${dt(z.data)}</small></td><td>${esc(z.fornecedor)}<small>${esc(z.cnpj)}</small></td><td style="font-family:monospace;font-size:11.5px">${esc(z.chave)}</td><td class="n">R$ ${fm(z.icms_sped)}</td></tr>`).join('')}</tbody></table></div></details></div>` : ''}`;
       animaNumeros(box);
       $('#btnIxFechar').addEventListener('click', ixFechar);
       $('#btnIxXmls').addEventListener('click', ixEscolherXmls);
