@@ -2031,6 +2031,7 @@ function bindFiscal() {
       sem_destaque: ['Crédito sem destaque na nota', 'b-err', '#e34948'],
       maior: ['Crédito maior que o destacado', 'b-err', '#f08c3a'],
       maior_sem_item: ['Diferença fora dos itens', 'b-warn', '#eda100'],
+      st_sem_retencao: ['Escriturado como ST, nota sem ST', 'b-warn', '#4f46e5'],
       menor: ['Crédito menor que o destacado', 'b-mute', '#7c8bd6'],
     };
     function ixFechar() { $('#corrIcmsXml').hidden = true; $('#corrSpedEmpty').hidden = false; }
@@ -2088,7 +2089,7 @@ function bindFiscal() {
     function ixLinha(d) {
       const st = IX_ST[d.status] || ['', 'b-mute', '#999'];
       const itens = (d.itens || []).map((i) => `<tr><td>${esc(i.num)}</td><td>${esc(i.descr)}<small>XML: ${esc(i.xprod)} · NCM ${esc(i.ncm)}</small></td><td>${esc(i.cfop)}</td>
-        <td><span class="dif-b ${i.status === 'menor' ? 'b-mute' : 'b-err'}">${esc(i.cst_sped)}</span> → ${esc(i.cst_xml)}</td>
+        <td><span class="dif-b ${i.status === 'menor' ? 'b-mute' : i.status === 'st_sem_retencao' ? 'b-warn' : 'b-err'}">${esc(i.cst_sped)}</span> → ${esc(i.cst_xml)}</td>
         <td class="n">${fa(i.aliq_sped)} → ${fa(i.aliq_xml)}</td><td class="n">R$ ${fm(i.bc_sped)} → R$ ${fm(i.bc_xml)}</td>
         <td class="n"><b>R$ ${fm(i.icms_sped)}</b> → R$ ${fm(i.icms_xml)}</td></tr>`).join('');
       return `<tr class="${d.sugerido ? '' : 'dif-off'}">
@@ -2113,12 +2114,15 @@ function bindFiscal() {
         <div class="sn-hbtn"><button class="act inv-export" id="btnIxXmls">Trocar XMLs</button><button class="act inv-export" id="btnIxFechar">Fechar</button></div></div>
         <div class="dif-kpis">
           <div><span>Notas conferidas</span><b data-n="${rs.notas_conferidas || 0}">0</b><small>${rs.notas_sem_xml ?? 0} entrada(s) sem XML</small></div>
-          <div class="k-err"><span>Crédito sem destaque</span><b data-n="${rs.sem_destaque || 0}">0</b><small>nota isenta/não tributada com crédito</small></div>
-          <div class="k-err"><span>Crédito maior que a nota</span><b data-n="${rs.maior || 0}">0</b><small>alíquota ou base acima do XML</small></div>
+          <div class="k-err"><span>Crédito acima da nota</span><b data-n="${(rs.sem_destaque || 0) + (rs.maior || 0) + (rs.maior_sem_item || 0)}">0</b><small>${rs.sem_destaque || 0} sem destaque · ${rs.maior || 0} acima do destacado</small></div>
           <div class="k-err"><span>Crédito a retirar</span><b data-n="${rs.credito_corrigivel || 0}" data-fmt="brl">R$ 0,00</b><small>diferença total R$ ${fm(rs.credito_indevido)}</small></div>
+          <div class="k-warn"><span>Escriturado como ST, nota sem ST</span><b data-n="${rs.st_sem_retencao || 0}">0</b><small>ICMS da nota não creditado: R$ ${fm(rs.st_sem_retencao_valor)}</small></div>
           <div><span>Crédito menor que a nota</span><b data-n="${rs.menor || 0}">0</b><small>só informativo · R$ ${fm(rs.credito_nao_tomado)}</small></div>
         </div>
         ${docs.length ? `
+        ${rs.st_sem_retencao ? `<div class="dif-av"><b>Escriturado como ST, nota sem ST (${rs.st_sem_retencao} nota(s), R$ ${fm(rs.st_sem_retencao_valor)}):</b>
+          itens lançados com CST 060 no SPED vieram na nota tributados normalmente, sem ICMS-ST retido. Se o produto é de substituição tributária em RO,
+          falta recolher o ICMS-ST na entrada (antecipação); se não é, o ICMS destacado na nota não foi creditado. Essas notas não são corrigidas automaticamente.</div>` : ''}
         <div class="mono-card"><div class="dif-k">Notas com diferença — marque o que corrigir</div>
           <div class="dif-tw" style="margin-top:8px;max-height:620px"><table class="dif-tab"><thead><tr><th>Nota</th><th>Fornecedor</th><th>CST no XML</th><th class="n">ICMS na nota</th><th class="n">Creditado no SPED</th><th class="n">Corrigir</th><th>Situação</th></tr></thead>
           <tbody>${docs.map(ixLinha).join('')}</tbody></table></div></div>

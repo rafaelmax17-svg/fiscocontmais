@@ -39,28 +39,46 @@ def _fora(cfop):
     return (cfop or '')[1:] in dr.TIPOS
 
 
+def _valores(it):
+    """Formas em que o valor do item do XML aparece no C170 (VL_ITEM − VL_DESC): o Domínio às vezes soma o ICMS-ST,
+    o IPI ou o frete ao valor do item."""
+    base = it['vprod'] - it['vdesc']
+    return {round(v, 2) for v in (base, base + it['vicmsst'], base + it['vipi'], base + it['vipi'] + it['vicmsst'],
+                                  it['valor_oper'], it['valor_oper'] + it['vicmsst'])}
+
+
+def _bate(v, it, larga):
+    tol = max(1.00, abs(v) * 0.01) if larga else 0.02
+    return any(abs(v - w) <= tol for w in _valores(it))
+
+
 def _casar(d, x):
-    """Liga cada C170 ao item do XML: pelo número do item com o mesmo valor; senão, pelo valor (único).
+    """Liga cada C170 ao item do XML: pelo número do item com valor compatível (até R$ 1,00 ou 1% de diferença, para
+    arredondamentos do sistema); senão, pelo valor exato, quando só um item do XML tem aquele valor.
     Devolve {i_c170: item_xml} e a lista de C170 que não casaram."""
     itens = x.get('itens') or []
     por_n = {str(int(it['n'])) if (it.get('n') or '').isdigit() else it.get('n'): it for it in itens}
     usados, par, sobra = set(), {}, []
     for c in d['c170']:
         it = por_n.get(c['num'])
-        if it is not None and abs((it['vprod'] - it['vdesc']) - c['vl']) <= 0.02 and id(it) not in usados:
+        if it is not None and id(it) not in usados and _bate(c['vl'], it, True):
             par[c['i']] = it
             usados.add(id(it))
         else:
             sobra.append(c)
     resto = []
     for c in sobra:
-        cand = [it for it in itens if id(it) not in usados and abs((it['vprod'] - it['vdesc']) - c['vl']) <= 0.02]
+        cand = [it for it in itens if id(it) not in usados and _bate(c['vl'], it, False)]
         if len(cand) == 1:
             par[c['i']] = cand[0]
             usados.add(id(cand[0]))
         else:
             resto.append(c)
     return par, resto
+
+
+def _tem_st(it):
+    return it.get('vicmsst', 0) > TOL or (it.get('cst') or '') in ('10', '30', '70')
 
 
 def _novo_item(c, it):
@@ -118,7 +136,12 @@ def analisar_texto(texto, xmls):
                 elif novo:
                     st = 'ajuste'           # sem crédito, mas com base/CST de tributado numa nota sem destaque
                 elif it['vicms'] > TOL and c['icms'] < it['vicms'] - TOL:
-                    st = 'menor'
+                    if _tem_st(it) and c['icms'] <= TOL:
+                        st = 'ok'           # nota com ST retido: o ICMS próprio do fornecedor não é crédito do substituído
+                    elif c['cst'][-2:] == '60' and not _tem_st(it):
+                        st = 'st_sem_retencao'
+                    else:
+                        st = 'menor'
                 else:
                     st = 'ok'
                 itens.append({'num': c['num'], 'descr': c['descr'], 'xprod': it['xprod'], 'ncm': it['ncm'], 'cfop': c['cfop'],
@@ -137,8 +160,12 @@ def analisar_texto(texto, xmls):
         icms_xml = float(_q(sum(it['vicms'] for it in x.get('itens') or [] if id(it) not in excl)))
         dif = float(_q(icms_sped - icms_xml))
         cred_mud = [m for m in mudancas if m['old']['icms'] > m['novo']['icms'] + TOL]
+        st_itens = {i['status'] for i in itens}
+        menor_xml = float(_q(sum(i['icms_xml'] - i['icms_sped'] for i in itens if i['status'] in ('menor', 'st_sem_retencao'))))
         if casamento == 'item' and not cred_mud:
-            if icms_sped < icms_xml - TOL:
+            if 'st_sem_retencao' in st_itens:
+                status = 'st_sem_retencao'
+            elif 'menor' in st_itens:
                 status = 'menor'
             elif dif > TOL:
                 status = 'maior_sem_item'      # diferença fora dos itens (ex.: C190 com valor a mais)
@@ -149,7 +176,7 @@ def analisar_texto(texto, xmls):
         else:                                   # pelo total da nota
             if dif > TOL:
                 status = 'sem_destaque' if icms_xml <= TOL else 'maior_sem_item'
-            elif icms_sped < icms_xml - TOL:
+            elif icms_sped < icms_xml - TOL and not all(_tem_st(it) for it in x.get('itens') or [] if it['vicms'] > TOL):
                 status = 'menor'
             else:
                 status = 'ok'
@@ -160,6 +187,8 @@ def analisar_texto(texto, xmls):
             obs.append('O SPED credita mais que a nota, mas a diferença não está em itens que casaram com o XML: corrija à mão.')
         if status == 'menor':
             obs.append('A nota destaca mais ICMS do que o SPED creditou. Pode estar certo (ex.: mercadoria sem direito a crédito) — só informativo.')
+        if status == 'st_sem_retencao':
+            obs.append(f'ICMS destacado e não creditado: R$ {dr._f(menor_xml)} (itens com CST 060 no SPED, sem ST na nota).')
         if x.get('vicms_deson', 0) > 0 and status == 'sem_destaque':
             obs.append(f'A nota tem ICMS desonerado (R$ {dr._f(x["vicms_deson"])}): o imposto foi dispensado na origem, não destacado.')
         if casamento == 'nota':
@@ -167,6 +196,7 @@ def analisar_texto(texto, xmls):
         else:
             reducao = float(_q(sum(m['old']['icms'] - m['novo']['icms'] for m in mudancas)))
         out.append({
+            'menor_xml': menor_xml if casamento == 'item' else float(_q(max(0.0, icms_xml - icms_sped))),
             'id': d['i'], 'num': d['num'], 'serie': d['serie'], 'data': d['dt'], 'chave': d['chave'],
             'fornecedor': p.get('nome') or x.get('emit_nome', ''), 'cnpj': p.get('cnpj', '') or x.get('emit_cnpj', ''), 'uf': uf,
             'icms_sped': icms_sped, 'icms_xml': icms_xml, 'bc_sped': bc_sped, 'bc_xml': float(_q(x.get('vbc_icms', 0.0))),
@@ -177,6 +207,7 @@ def analisar_texto(texto, xmls):
             'itens_ajuste': sum(1 for i in itens if i['status'] == 'ajuste'),
             'obs': obs, 'sugerido': corrigivel,
         })
+    out.sort(key=lambda x: (not x['sugerido'], x['status'] == 'menor', -(x['reducao'] or x['menor_xml'] or 0)))
     apur = None
     if e110:
         c = e110['c']
@@ -194,9 +225,11 @@ def analisar_texto(texto, xmls):
             'maior': sum(1 for x in out if x['status'] == 'maior'),
             'maior_sem_item': sum(1 for x in out if x['status'] == 'maior_sem_item'),
             'menor': sum(1 for x in out if x['status'] == 'menor'),
+            'st_sem_retencao': sum(1 for x in out if x['status'] == 'st_sem_retencao'),
+            'st_sem_retencao_valor': soma(('st_sem_retencao',), 'menor_xml'),
             'credito_indevido': soma(('sem_destaque', 'maior', 'maior_sem_item'), 'diferenca'),
             'credito_corrigivel': float(_q(sum(x['reducao'] for x in out if x['sugerido']))),
-            'credito_nao_tomado': float(_q(-sum(x['diferenca'] for x in out if x['status'] == 'menor'))),
+            'credito_nao_tomado': soma(('menor',), 'menor_xml'),
         },
     }
 
