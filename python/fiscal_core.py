@@ -2893,6 +2893,9 @@ def main(argv):
     if modo == 'difal-ro':
         import difal_ro as _dr
         return _dr.main_cli(argv[1:])
+    if modo == 'substituir-lmc':
+        import lmc as _lmc
+        return _lmc.main_cli(argv)
     if modo == 'icms-xml':
         import icms_xml as _ix
         return _ix.main_cli(argv[1:])
