@@ -3451,7 +3451,7 @@ function bindCorrigirEfd() {
             ajusta o VL_PIS/VL_COFINS do C100, refaz M210/M610, M200/M600 e M205/M605, informa a receita a alíquota zero no M400/M410 e M800/M810 e recalcula os contadores. O original nunca é alterado.</div>
           <label class="mono-conf"><input type="checkbox" id="monoRevenda"><span>Confirmo que a empresa <b>revende</b> esses produtos (não é fabricante nem importadora).</span></label>
           <div class="dif-acts"><button class="act inv-export" id="btnMonoAplicar" disabled style="background:#0ea472;color:#fff;border-color:transparent">⚡ Aplicar e gerar EFD corrigida</button></div>
-          <div class="dif-av ok" style="margin-top:12px"><b>Meses anteriores:</b> o mesmo erro em meses já transmitidos vira crédito a recuperar (retificação + PER/DCOMP, até 5 anos). O <b>Radar de Oportunidades</b> calcula esse valor.</div>
+          <div class="dif-av ok" style="margin-top:12px"><b>Meses anteriores:</b> o mesmo erro em meses já transmitidos vira crédito a recuperar (retificação + PER/DCOMP, até 5 anos). A <b>Recuperação Tributária</b> calcula esse valor.</div>
         </div>
       </div>` : `<div class="dif-av ok">Nenhum item de revenda com produto monofásico tributado neste arquivo. ${k.itens_mono ? `${k.itens_mono} item(ns) monofásico(s) já estão sem tributo.` : ''}</div>`}`;
     box.hidden = false;

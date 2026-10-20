@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Radar de Oportunidades Fiscais (uso interno — módulo restrito ao Admin).
+"""Recuperação Tributária — antigo "Radar de Oportunidades Fiscais" (uso interno — módulo restrito ao Admin).
 
 Lê arquivos de EFD-Contribuições (e, opcionalmente, de EFD ICMS/IPI) de UM cliente e procura
 valores que podem ser recuperados ou economizados. Cada achado traz o fundamento legal, como foi
@@ -729,7 +729,7 @@ def analisar(efdc, fiscal=None, xmls=None):
         else:
             cobertura.append('Nenhum item de venda com CST 01/02 e ICMS destacado foi encontrado para o Tema 69.')
         if not itens_saida:
-            aviso.append('Nenhum item de venda foi encontrado (registros C170 ou C180). Se o cliente declara as vendas de outra forma, o Radar ainda não cobre esse caso.')
+            aviso.append('Nenhum item de venda foi encontrado (registros C170 ou C180). Se o cliente declara as vendas de outra forma, a Recuperação Tributária ainda não cobre esse caso.')
         if cobt['mod65_saida']:
             cobertura.append(f'{cobt["mod65_saida"]} das notas de saída são NFC-e (modelo 65). Na EFD-Contribuições a NFC-e vem só resumida por CFOP e CST (C175), sem NCM nem ICMS. Por isso o produto não pode ser identificado e as vendas dessas notas só são analisadas pelo CFOP de combustível.')
         if xml_info is not None:
@@ -753,7 +753,7 @@ def analisar(efdc, fiscal=None, xmls=None):
         if cobt['c400']:
             cobertura.append(f'{cobt["c400"]} linhas de cupom/ECF (C400/C490) não foram analisadas por falta de NCM no registro.')
         if cobt['st_cst01_linhas']:
-            aviso.append(f'Indício (não entra no total): em NFC-e, {_pl(cobt["st_cst01_linhas"], "linha", "linhas")} com CFOP de mercadoria com ICMS-ST e CST 01 pagaram {_brl(cobt["st_cst01_valor"])} de PIS/COFINS sobre {_brl(cobt["st_cst01_base"])} de vendas. Produtos com ST (bebidas, higiene, medicamentos, pneus) costumam ser monofásicos, mas o NCM não está na EFD. ' + ('Os XMLs enviados já foram descontados deste valor; para as demais notas, envie os XMLs das NFC-e do período.' if xml_info is not None else 'Para confirmar, é preciso analisar os XMLs das NFC-e do período (botão 3 do Radar).'))
+            aviso.append(f'Indício (não entra no total): em NFC-e, {_pl(cobt["st_cst01_linhas"], "linha", "linhas")} com CFOP de mercadoria com ICMS-ST e CST 01 pagaram {_brl(cobt["st_cst01_valor"])} de PIS/COFINS sobre {_brl(cobt["st_cst01_base"])} de vendas. Produtos com ST (bebidas, higiene, medicamentos, pneus) costumam ser monofásicos, mas o NCM não está na EFD. ' + ('Os XMLs enviados já foram descontados deste valor; para as demais notas, envie os XMLs das NFC-e do período.' if xml_info is not None else 'Para confirmar, é preciso analisar os XMLs das NFC-e do período (botão 3 da Recuperação Tributária).'))
     legal_usado = {t: LEGAL[t] for t in {o['tipo'] for o in oportunidades}}
     return {
         'cliente': cliente, 'periodos': sorted(set(periodos)), 'arquivos_efdc': len(efdc), 'arquivos_fiscal': len(fiscal),
