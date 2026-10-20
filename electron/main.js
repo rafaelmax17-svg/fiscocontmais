@@ -198,6 +198,8 @@ function createMainWindow() {
 
 app.whenReady().then(() => {
   createSplash(() => createMainWindow());
+  // 2.1: a credencial de administrador do Firebase não fica mais em nenhuma máquina
+  cloud.removerCredencialAntiga(app.getPath('userData'));
 
   updater.initAutoUpdate(() => mainWindow);
   setTimeout(() => updater.checkNow(), 15000); // não compete com a abertura do app
@@ -384,20 +386,55 @@ ipcMain.on('news:rendererPronto', () => {
 // ---------------------------------------------------------------------------
 // IPC: escolher o PDF (sem overlay durante a seleção)
 // ---------------------------------------------------------------------------
-// ---- Login por senha (controla acesso Fiscal / Contábil / Admin) ----
-// As senhas ficam só aqui no processo principal, fora do alcance do renderer.
-const AUTH_SENHAS = {
-  'Liddera@1': 'fiscal',
-  'Liddera@2': 'contabil',
-  'Liddera@7092': 'admin',
-};
-let sessionRole = null; // papel da sessão atual (usado para travar os módulos exclusivos do Admin)
-ipcMain.handle('auth:login', (_evt, senha) => {
-  const role = AUTH_SENHAS[String(senha || '')];
-  if (!role) return { ok: false };
-  sessionRole = role;
-  return { ok: true, role };
+// ---- Login individual (e-mail e senha · Firebase Authentication) ----
+// Cada pessoa tem o próprio usuário; o perfil (Fiscal / Contábil / Admin) vem do cadastro na nuvem e só o Admin
+// cadastra, bloqueia ou muda perfil (electron/auth.js + firestore.rules). Nenhuma senha fica no código.
+// A sessão trava depois de um tempo sem uso (15 min Admin, 60 min demais) e pede a senha de novo.
+const auth = require('./auth');
+let sessionRole = null;   // perfil da sessão atual (trava os módulos exclusivos do Admin)
+let sessionLocked = false;
+const TEMPO_TRAVA_MIN = { admin: 15, fiscal: 60, contabil: 60 };
+function _sessaoPublica() {
+  const s = auth.sessao();
+  return s ? { email: s.email, nome: s.nome, perfil: s.perfil, offline: !!s.offline, travaMin: TEMPO_TRAVA_MIN[s.perfil] || 60 } : null;
+}
+ipcMain.handle('auth:login', async (_evt, { email, senha } = {}) => {
+  const r = await auth.login(app.getPath('userData'), email, senha, (info) => {
+    if (info.motivo === 'bloqueado') sessionRole = null;
+    else if (info.motivo === 'perfil') sessionRole = info.perfil;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('auth:mudou', info);
+  });
+  if (!r.ok) return { ok: false, erro: r.erro };
+  sessionRole = r.perfil;
+  sessionLocked = false;
+  license.marcarUsuario(r.email);
+  return { ok: true, role: r.perfil, aviso: r.aviso || '', sessao: _sessaoPublica() };
 });
+ipcMain.handle('auth:logout', () => { auth.logout(); sessionRole = null; sessionLocked = false; return { ok: true }; });
+ipcMain.handle('auth:sessao', () => _sessaoPublica());
+ipcMain.handle('auth:travar', () => { if (sessionRole) sessionLocked = true; return { ok: true }; });
+ipcMain.handle('auth:destravar', async (_evt, senha) => {
+  if (!sessionRole) return { ok: false, erro: 'Sessão encerrada. Entre de novo.' };
+  const ok = await auth.confereSenha(app.getPath('userData'), senha);
+  if (!ok) return { ok: false, erro: 'Senha incorreta.' };
+  sessionLocked = false;
+  return { ok: true };
+});
+ipcMain.handle('auth:redefinirSenha', async (_evt, email) => auth.redefinirSenha(email));
+ipcMain.handle('auth:primeiroAcesso', async (_evt, { email, senha } = {}) => auth.criarAdminInicial(email, senha));
+
+// Cadastro de usuários (só Admin)
+const _adm = async (fn) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String(e.message || e) }; }
+};
+ipcMain.handle('admin:usuariosListar', () => _adm(() => auth.listarUsuarios()));
+ipcMain.handle('admin:usuarioCadastrar', (_evt, dados) => _adm(() => auth.cadastrarUsuario(dados || {})));
+ipcMain.handle('admin:usuarioAlterar', (_evt, { uid, ...mud } = {}) => _adm(() => auth.alterarUsuario(uid, mud)));
+ipcMain.handle('admin:usuarioRedefinir', (_evt, email) => _adm(async () => {
+  const r = await auth.redefinirSenha(email); if (!r.ok) throw new Error(r.erro); return {};
+}));
+ipcMain.handle('admin:conviteCancelar', (_evt, email) => _adm(() => auth.cancelarConvite(email)));
 
 ipcMain.handle('balancete:pick', async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
@@ -1072,10 +1109,12 @@ ipcMain.handle('changelog:marcarVisto', (_evt, versao) => {
   return { ok: true };
 });
 ipcMain.handle('license:listAll', async () => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
   try { return { ok: true, itens: await cloud.listLicenses(app.getPath('userData')) }; }
   catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('license:setStatus', async (_evt, { codigo, status }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
   try { return await cloud.setLicenseStatus(app.getPath('userData'), codigo, status); }
   catch (e) { return { error: String(e.message || e) }; }
 });
@@ -1599,7 +1638,11 @@ ipcMain.handle('fiscal:pickSped', async () => {
 // Módulos exclusivos do Admin: Radar de Oportunidades e Levantamento para a Legalização.
 // Tudo aqui exige papel "admin" também no processo principal (não só no menu).
 // ---------------------------------------------------------------------------
-function _soAdmin() { return sessionRole === 'admin' ? null : { error: 'Acesso restrito ao Admin.' }; }
+function _soAdmin() {
+  if (sessionRole !== 'admin') return { error: 'Acesso restrito ao Admin.' };
+  if (sessionLocked) return { error: 'Sessão travada por inatividade: digite a senha para continuar.' };
+  return null;
+}
 function _jsonUser(nome, padrao) {
   try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), nome), 'utf-8')); } catch (_) { return padrao; }
 }

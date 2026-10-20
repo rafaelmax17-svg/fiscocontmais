@@ -553,6 +553,7 @@ function switchView(name) {
   if (name === 'fiscal-downloads') { $('#view-fiscal-downloads').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-efd-contrib') { $('#view-fiscal-efd-contrib').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-lic') { $('#view-admin-lic').hidden = false; $('#empty').hidden = true; loadLicensePanel(); return; }
+  if (name === 'admin-usuarios') { $('#view-admin-usuarios').hidden = false; $('#empty').hidden = true; loadUsuarios(); return; }
   if (name === 'admin-corrigir-sped') { $('#view-admin-corrigir-sped').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-corrigir-efd') { $('#view-admin-corrigir-efd').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-lmc') { $('#view-admin-lmc').hidden = false; $('#empty').hidden = true; return; }
@@ -3132,36 +3133,159 @@ function applyRole(role) {
   }
 }
 
+// ------------------------------------------------------------- login individual (e-mail e senha)
+const SESSAO = { info: null, ultimoUso: Date.now(), travada: false, timer: null };
+function _loginMsg(txt, ok) {
+  const err = $('#loginErr'), okEl = $('#loginOk');
+  err.hidden = true; okEl.hidden = true;
+  if (!txt) return;
+  const el = ok ? okEl : err;
+  el.textContent = txt; el.hidden = false;
+  if (!ok) { const card = document.querySelector('.login-card'); card.classList.remove('login-shake'); void card.offsetWidth; card.classList.add('login-shake'); }
+}
+function _mostraLogin() {
+  ROLE = null; SESSAO.info = null; SESSAO.travada = false;
+  $('#lockCard').hidden = true;
+  document.querySelector('.login-card').hidden = false;
+  $('#loginGate').style.display = 'flex';
+  $('#loginPass').value = '';
+  const ut = $('#userTag'); if (ut) ut.textContent = '';
+  setTimeout(() => ($('#loginEmail').value ? $('#loginPass') : $('#loginEmail')).focus(), 50);
+}
+function _entrou(res) {
+  SESSAO.info = res.sessao || null;
+  SESSAO.ultimoUso = Date.now(); SESSAO.travada = false;
+  try { localStorage.setItem('fc_ultimo_email', (res.sessao || {}).email || ''); } catch (_) {}
+  _loginMsg('');
+  $('#loginGate').style.display = 'none';
+  const ut = $('#userTag');
+  if (ut && SESSAO.info) ut.textContent = `${SESSAO.info.nome} · ${({ admin: 'Admin', fiscal: 'Fiscal', contabil: 'Contábil' })[SESSAO.info.perfil] || ''}${SESSAO.info.offline ? ' · sem internet' : ''}`;
+  applyRole(res.role);
+  if (res.aviso) toast(res.aviso);
+  verificarNovidades();
+}
+// trava por inatividade: 15 min (Admin) / 60 min (demais) sem mexer no sistema
+function _travar() {
+  if (!ROLE || SESSAO.travada) return;
+  SESSAO.travada = true;
+  window.fiscocont.auth.travar();
+  document.querySelector('.login-card').hidden = true;
+  $('#licenseCard').hidden = true;
+  $('#lockCard').hidden = false;
+  $('#lockErr').hidden = true;
+  $('#lockSub').textContent = `${(SESSAO.info || {}).nome || ''}, o sistema ficou ${(SESSAO.info || {}).travaMin || 60} minutos sem uso. Digite a sua senha para continuar de onde parou.`;
+  $('#loginGate').style.display = 'flex';
+  setTimeout(() => $('#lockPass').focus(), 50);
+}
+function _vigiaInatividade() {
+  const uso = () => { if (!SESSAO.travada) SESSAO.ultimoUso = Date.now(); };
+  ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => window.addEventListener(ev, uso, { passive: true }));
+  setInterval(() => {
+    if (!ROLE || SESSAO.travada || !SESSAO.info) return;
+    if (Date.now() - SESSAO.ultimoUso > (SESSAO.info.travaMin || 60) * 60000) _travar();
+  }, 20000);
+}
 function bindLogin() {
-  const gate = $('#loginGate');
   const form = $('#loginForm');
-  const pass = $('#loginPass');
-  const err = $('#loginErr');
-  const card = document.querySelector('.login-card');
   if (!form) return;
+  const email = $('#loginEmail'), pass = $('#loginPass'), btn = $('#loginBtn');
+  try { email.value = localStorage.getItem('fc_ultimo_email') || ''; } catch (_) {}
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const res = await window.fiscocont.login(pass.value);
+    btn.disabled = true; btn.textContent = 'Entrando…';
+    const res = await window.fiscocont.login(email.value, pass.value);
+    btn.disabled = false; btn.textContent = 'Entrar';
     pass.value = '';
-    if (res && res.ok) {
-      err.hidden = true;
-      gate.style.display = 'none';
-      applyRole(res.role);
-      verificarNovidades();
-    } else {
-      err.hidden = false;
-      card.classList.remove('login-shake'); void card.offsetWidth; card.classList.add('login-shake');
-      pass.focus();
-    }
+    if (res && res.ok) _entrou(res);
+    else { _loginMsg((res && res.erro) || 'Não foi possível entrar.'); pass.focus(); }
   });
-  const logoutLink = $('#logoutLink');
-  if (logoutLink) logoutLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    ROLE = null;
-    err.hidden = true;
-    gate.style.display = 'flex';
+  $('#loginEsqueci').addEventListener('click', async () => {
+    if (!email.value.trim()) { _loginMsg('Digite o seu e-mail acima e clique de novo em "Esqueci a senha".'); email.focus(); return; }
+    const r = await window.fiscocont.auth.redefinirSenha(email.value);
+    _loginMsg(r.ok ? `Se o e-mail estiver cadastrado, chega em instantes o link para criar uma senha nova (${email.value.trim()}).` : r.erro, r.ok);
+  });
+  $('#loginPrimeiro').addEventListener('click', async () => {
+    if (!email.value.trim() || !pass.value) { _loginMsg('Primeiro acesso do Admin: digite o seu e-mail e a senha que quer usar (mínimo 6 caracteres) e clique de novo.'); return; }
+    const r = await window.fiscocont.auth.primeiroAcesso(email.value, pass.value);
     pass.value = '';
-    pass.focus();
+    _loginMsg(r.ok ? r.msg : r.erro, r.ok);
+  });
+  $('#lockForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const r = await window.fiscocont.auth.destravar($('#lockPass').value);
+    $('#lockPass').value = '';
+    if (r.ok) {
+      SESSAO.travada = false; SESSAO.ultimoUso = Date.now();
+      $('#lockCard').hidden = true; document.querySelector('.login-card').hidden = false;
+      $('#loginGate').style.display = 'none';
+    } else { $('#lockErr').textContent = r.erro || 'Senha incorreta.'; $('#lockErr').hidden = false; $('#lockPass').focus(); }
+  });
+  $('#lockSair').addEventListener('click', async () => { await window.fiscocont.auth.logout(); _mostraLogin(); });
+  const logoutLink = $('#logoutLink');
+  if (logoutLink) logoutLink.addEventListener('click', async (e) => {
+    e.preventDefault();
+    await window.fiscocont.auth.logout();
+    _mostraLogin();
+  });
+  window.fiscocont.auth.onMudou((d) => {
+    if (d.motivo === 'bloqueado') { _mostraLogin(); _loginMsg('Seu usuário foi bloqueado pelo Admin.'); }
+    else if (d.motivo === 'perfil') { if (SESSAO.info) SESSAO.info.perfil = d.perfil; applyRole(d.perfil); toast('O Admin mudou o seu perfil.'); }
+  });
+  _vigiaInatividade();
+}
+
+// ------------------------------------------------------------- painel admin: usuários
+const PERFIL_NOME = { admin: 'Admin', fiscal: 'Fiscal', contabil: 'Contábil' };
+async function loadUsuarios() {
+  const box = $('#usrBox');
+  box.innerHTML = '<div class="lic-empty">Carregando…</div>';
+  const r = await window.fiscocont.usuarios.listar();
+  if (r.error) { box.innerHTML = `<div class="lic-warn">Não consegui carregar: ${_esc(r.error)}</div>`; return; }
+  const sel = (u) => `<select class="usr-perfil" data-uid="${_esc(u.uid)}" ${u.voce ? 'disabled' : ''}>${Object.entries(PERFIL_NOME).map(([k, v]) => `<option value="${k}" ${u.perfil === k ? 'selected' : ''}>${v}</option>`).join('')}</select>`;
+  const linhas = (r.usuarios || []).map((u) => `<tr class="${u.ativo ? '' : 'usr-off'}">
+      <td><b>${_esc(u.nome)}</b>${u.voce ? ' <span class="lic-badge ativo">você</span>' : ''}<small>${_esc(u.email)}</small></td>
+      <td>${sel(u)}</td>
+      <td><span class="lic-badge ${u.ativo ? 'ativo' : 'bloqueado'}">${u.ativo ? 'ativo' : 'bloqueado'}</span></td>
+      <td class="lic-actions">
+        ${u.voce ? '' : (u.ativo ? `<button class="off" data-acao="bloquear" data-uid="${_esc(u.uid)}">Bloquear</button>` : `<button class="on" data-acao="ativar" data-uid="${_esc(u.uid)}">Ativar</button>`)}
+        <button data-acao="senha" data-email="${_esc(u.email)}">Redefinir senha</button>
+      </td></tr>`).join('');
+  const conv = (r.convites || []).map((c) => `<tr>
+      <td><b>${_esc(c.nome)}</b><small>${_esc(c.email)}</small></td><td>${PERFIL_NOME[c.perfil] || c.perfil}</td>
+      <td><span class="lic-badge pendente">convite enviado</span></td>
+      <td class="lic-actions"><button data-acao="senha" data-email="${_esc(c.email)}">Reenviar e-mail</button><button class="off" data-acao="cancelar" data-email="${_esc(c.email)}">Cancelar convite</button></td></tr>`).join('');
+  box.innerHTML = `<table class="lic-table usr-table"><thead><tr><th>Usuário</th><th>Perfil</th><th>Situação</th><th>Ação</th></tr></thead>
+    <tbody>${linhas}${conv}</tbody></table>`;
+  box.querySelectorAll('.usr-perfil').forEach((s) => s.addEventListener('change', async () => {
+    const x = await window.fiscocont.usuarios.alterar(s.dataset.uid, { perfil: s.value });
+    if (x.error) { toast(x.error, true); loadUsuarios(); return; }
+    toast('Perfil alterado. Vale na hora, mesmo para quem já está usando o sistema.');
+  }));
+  box.querySelectorAll('button[data-acao]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    const a = b.dataset.acao;
+    let x;
+    if (a === 'bloquear' || a === 'ativar') x = await window.fiscocont.usuarios.alterar(b.dataset.uid, { ativo: a === 'ativar' });
+    else if (a === 'senha') x = await window.fiscocont.usuarios.redefinir(b.dataset.email);
+    else if (a === 'cancelar') x = await window.fiscocont.usuarios.cancelarConvite(b.dataset.email);
+    b.disabled = false;
+    if (x.error) { toast(x.error, true); return; }
+    toast(a === 'bloquear' ? 'Usuário bloqueado: ele sai do sistema na hora.' : a === 'ativar' ? 'Usuário ativado.' : a === 'senha' ? 'E-mail para definir a senha enviado.' : 'Convite cancelado.');
+    loadUsuarios();
+  }));
+}
+function bindUsuarios() {
+  const b = $('#btnUsrCadastrar');
+  if (!b) return;
+  $('#btnUsrRefresh').addEventListener('click', loadUsuarios);
+  b.addEventListener('click', async () => {
+    b.disabled = true;
+    const r = await window.fiscocont.usuarios.cadastrar({ nome: $('#usrNome').value, email: $('#usrEmail').value, perfil: $('#usrPerfil').value });
+    b.disabled = false;
+    if (r.error) { toast(r.error, true); return; }
+    toast(r.msg || 'Usuário cadastrado.');
+    $('#usrNome').value = ''; $('#usrEmail').value = '';
+    loadUsuarios();
   });
 }
 
@@ -3271,7 +3395,7 @@ async function loadLicensePanel() {
   if (warnBox) warnBox.innerHTML = '';
   const res = await window.fiscocont.license.listAll();
   if (res.error) {
-    if (warnBox) warnBox.innerHTML = `<div class="lic-warn">Não consegui carregar: ${_esc(res.error)}. Configure a nuvem (☁, no rodapé) nesta máquina para gerenciar licenças por aqui — ou use o Firebase Console.</div>`;
+    if (warnBox) warnBox.innerHTML = `<div class="lic-warn">Não consegui carregar: ${_esc(res.error)}</div>`;
     box.innerHTML = '';
     return;
   }
@@ -3288,6 +3412,7 @@ async function loadLicensePanel() {
       <td class="code">${_esc(it.codigo)}</td>
       <td>${_esc(it.hostname || '—')}<br><span style="color:var(--ink2);font-size:11px">${_esc(it.plataforma || '')}</span></td>
       <td><span class="lic-badge ${_esc(it.status)}">${_esc(it.status)}</span></td>
+      <td>${it.versao ? 'v' + _esc(it.versao) : '—'}<br><span style="color:var(--ink2);font-size:11px">${_esc(it.usuario || '')}</span></td>
       <td>${fmtDt(it.primeiroAcesso)}</td>
       <td>${fmtDt(it.ultimoAcesso)}</td>
       <td class="lic-actions">
@@ -3296,7 +3421,7 @@ async function loadLicensePanel() {
       </td>
     </tr>`;
   }
-  box.innerHTML = `<table class="lic-table"><thead><tr><th>Código</th><th>Computador</th><th>Status</th><th>1º acesso</th><th>Último acesso</th><th>Ação</th></tr></thead><tbody>${rows}</tbody></table>`;
+  box.innerHTML = `<table class="lic-table"><thead><tr><th>Código</th><th>Computador</th><th>Status</th><th>Versão / usuário</th><th>1º acesso</th><th>Último acesso</th><th>Ação</th></tr></thead><tbody>${rows}</tbody></table>`;
   box.querySelectorAll('button[data-code]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       btn.disabled = true;
@@ -4309,13 +4434,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   setInterval(checkLicenseGate, 15 * 60 * 1000); // rede de segurança, caso o listener em tempo real caia sem avisar
   const licRefresh = $('#btnLicRefresh');
   if (licRefresh) licRefresh.addEventListener('click', loadLicensePanel);
-  const adminCred = $('#btnAdminCred');
-  if (adminCred) adminCred.addEventListener('click', async () => {
-    const r = await window.fiscocont.cloud.setup();
-    if (r && r.canceled) return;
-    if (r && r.ok) { toast('Credencial administrativa configurada (' + (r.projectId || '') + '). Os botões Ativar/Bloquear já funcionam nesta máquina.'); loadLicensePanel(); }
-    else if (r && r.error) { toast(r.error, true); }
-  });
 
   if (window.fiscocont.updater) {
     window.fiscocont.updater.onAvailable((d) => toast('Baixando atualização v' + d.versao + '…'));
@@ -4330,6 +4448,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (ubClose) ubClose.addEventListener('click', () => { $('#updateBanner').hidden = true; });
 
   bindLogin();
+  bindUsuarios();
   bindWindow();
   bindNav();
   bindDropzone();

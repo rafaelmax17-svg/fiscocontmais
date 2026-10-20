@@ -2,7 +2,23 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('fiscocont', {
-  login: (senha) => ipcRenderer.invoke('auth:login', senha),
+  login: (email, senha) => ipcRenderer.invoke('auth:login', { email, senha }),
+  auth: {
+    logout: () => ipcRenderer.invoke('auth:logout'),
+    sessao: () => ipcRenderer.invoke('auth:sessao'),
+    travar: () => ipcRenderer.invoke('auth:travar'),
+    destravar: (senha) => ipcRenderer.invoke('auth:destravar', senha),
+    redefinirSenha: (email) => ipcRenderer.invoke('auth:redefinirSenha', email),
+    primeiroAcesso: (email, senha) => ipcRenderer.invoke('auth:primeiroAcesso', { email, senha }),
+    onMudou: (cb) => ipcRenderer.on('auth:mudou', (_e, d) => cb(d)),
+  },
+  usuarios: {
+    listar: () => ipcRenderer.invoke('admin:usuariosListar'),
+    cadastrar: (dados) => ipcRenderer.invoke('admin:usuarioCadastrar', dados),
+    alterar: (uid, mud) => ipcRenderer.invoke('admin:usuarioAlterar', { uid, ...mud }),
+    redefinir: (email) => ipcRenderer.invoke('admin:usuarioRedefinir', email),
+    cancelarConvite: (email) => ipcRenderer.invoke('admin:conviteCancelar', email),
+  },
   pickPdf: () => ipcRenderer.invoke('balancete:pick'),
   pickMultiplePdf: () => ipcRenderer.invoke('balancete:pickMultiple'),
   processPdf: (p) => ipcRenderer.invoke('balancete:process', p),

@@ -22,12 +22,29 @@
       </g>
     </svg>
     <div class="login-title">FiscoCont<b>+</b></div>
-    <div class="login-sub">Digite a senha de acesso</div>
+    <div class="login-sub" id="loginSub">Entre com o seu e-mail e senha</div>
     <form id="loginForm">
-      <input type="password" id="loginPass" class="login-input" placeholder="Senha" autocomplete="off" autofocus>
-      <button type="submit" class="login-btn">Entrar</button>
+      <input type="email" id="loginEmail" class="login-input" placeholder="E-mail" autocomplete="username" autofocus>
+      <input type="password" id="loginPass" class="login-input" placeholder="Senha" autocomplete="current-password" style="margin-top:10px">
+      <button type="submit" class="login-btn" id="loginBtn">Entrar</button>
     </form>
+    <div class="login-links"><a id="loginEsqueci">Esqueci a senha</a><a id="loginPrimeiro">Primeiro acesso do Admin</a></div>
     <div class="login-err" id="loginErr" hidden>Senha incorreta.</div>
+    <div class="login-ok" id="loginOk" hidden></div>
+  </div>
+  <div class="login-card" id="lockCard" hidden>
+    <svg class="login-logo lock" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <rect x="4" y="11" width="16" height="10" rx="2" fill="none" stroke="#fff" stroke-width="1.6"/>
+      <path d="M7 11V7a5 5 0 0110 0v4" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+    </svg>
+    <div class="login-title">Sessão travada</div>
+    <div class="login-sub" id="lockSub">Ficou um tempo sem uso. Digite a sua senha para continuar de onde parou.</div>
+    <form id="lockForm">
+      <input type="password" id="lockPass" class="login-input" placeholder="Senha" autocomplete="current-password">
+      <button type="submit" class="login-btn">Continuar</button>
+    </form>
+    <div class="login-links"><a id="lockSair">Entrar com outro usuário</a></div>
+    <div class="login-err" id="lockErr" hidden>Senha incorreta.</div>
   </div>
   <div class="login-card license-card" id="licenseCard" hidden>
     <svg class="login-logo lock" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -249,6 +266,10 @@
       </button>
 
       <div class="nav-group" data-group="admin-only">Administração</div>
+      <button class="nav-item" data-group="admin-only" data-view="admin-usuarios">
+        <svg viewBox="0 0 24 24" class="ic"><circle cx="9" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M2.5 20a6.5 6.5 0 0113 0M16 4.5a3.5 3.5 0 010 7M18 14.5a6.5 6.5 0 013.5 5.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>Usuários</span>
+      </button>
       <button class="nav-item" data-group="admin-only" data-view="admin-lic">
         <svg viewBox="0 0 24 24" class="ic"><rect x="4" y="11" width="16" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 11V7a5 5 0 0110 0v4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
         <span>Licenças de acesso</span>
@@ -292,7 +313,7 @@
         <button class="theme-dot" data-theme="vinho" style="width:14px;height:14px;border-radius:4px;background:#e8632b;border:1.5px solid transparent;cursor:pointer;padding:0"></button>
         <button class="theme-dot" data-theme="rosa" style="width:14px;height:14px;border-radius:4px;background:#db2777;border:1.5px solid transparent;cursor:pointer;padding:0"></button>
       </div>
-      Liddera | Inteligência em Negócios · <a id="logoutLink">sair</a><br><a id="cloudLink" class="cloud-link">☁ nuvem: verificando…</a><br><span id="cloudLast" class="cloud-last"></span><br><a id="newsToggleLink" class="cloud-link"></a></div>
+      <span id="userTag" class="user-tag"></span>Liddera | Inteligência em Negócios · <a id="logoutLink">sair</a><br><a id="cloudLink" class="cloud-link">☁ nuvem: verificando…</a><br><span id="cloudLast" class="cloud-last"></span><br><a id="newsToggleLink" class="cloud-link"></a></div>
   </aside>
 
   <!-- ===================== CONTEÚDO ===================== -->
@@ -970,11 +991,32 @@
       </div>
 
       <!-- Administração: Licenças de acesso -->
+      <div class="view" id="view-admin-usuarios" hidden>
+        <div class="fiscal-bar">
+          <span style="font-weight:700;color:var(--ink)">Usuários do sistema</span>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnUsrRefresh">Atualizar</button>
+        </div>
+        <div class="usr-wrap">
+          <div class="usr-card">
+            <div class="dif-k">Cadastrar usuário</div>
+            <div class="usr-form">
+              <label>Nome<input id="usrNome" placeholder="Ex.: Kamila Souza"></label>
+              <label>E-mail<input id="usrEmail" type="email" placeholder="nome@lidderacont.com.br"></label>
+              <label>Perfil<select id="usrPerfil"><option value="fiscal">Fiscal</option><option value="contabil">Contábil</option><option value="admin">Admin</option></select></label>
+              <button class="act inv-export" id="btnUsrCadastrar" style="background:var(--accent);color:#fff;border-color:transparent">Cadastrar e enviar convite</button>
+            </div>
+            <div class="dif-sub" style="margin-top:8px">A pessoa recebe um e-mail para definir a própria senha. No primeiro login ela já entra com o perfil escolhido.
+              Quem é bloqueado sai do sistema na hora, em qualquer computador.</div>
+          </div>
+          <div id="usrBox"><div class="lic-empty">Carregando…</div></div>
+        </div>
+      </div>
+
       <div class="view" id="view-admin-lic" hidden>
         <div class="fiscal-bar">
           <span style="font-weight:700;color:var(--ink)">Licenças de acesso (bloqueio remoto por máquina)</span>
           <span class="fiscal-spacer"></span>
-          <button class="act inv-export" id="btnAdminCred">Configurar credencial administrativa</button>
           <button class="act inv-export" id="btnLicRefresh">Atualizar</button>
         </div>
         <div id="licWarnBox"></div>

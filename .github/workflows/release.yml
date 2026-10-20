@@ -135,3 +135,25 @@ jobs:
             gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes-file "$NOTES" \
               "dist/fiscocont-plus-setup-$V.exe" "dist/fiscocont-plus-setup-$V.exe.blockmap" dist/latest.yml
           fi
+
+      # Desde a 2.1 o app busca as atualizações no repositório PÚBLICO só de instaladores (fiscocontmais-releases),
+      # para o código poder ficar privado. Precisa do segredo RELEASES_TOKEN (token com permissão de escrita nesse
+      # repositório). Sem o segredo, avisa e segue (a release continua criada aqui, como antes).
+      - name: Publicar o instalador no repositório de instaladores (fiscocontmais-releases)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::Segredo RELEASES_TOKEN não configurado: o instalador NÃO foi para fiscocontmais-releases."
+            exit 0
+          fi
+          V="${TAG#v}"
+          NOTES="release-notes/$TAG.md"
+          R=rafaelmax17-svg/fiscocontmais-releases
+          if gh release view "$TAG" -R "$R" >/dev/null 2>&1; then
+            gh release upload "$TAG" -R "$R" "dist/fiscocont-plus-setup-$V.exe" "dist/fiscocont-plus-setup-$V.exe.blockmap" dist/latest.yml --clobber
+          else
+            gh release create "$TAG" -R "$R" --draft --title "$TAG" --notes-file "$NOTES" \
+              "dist/fiscocont-plus-setup-$V.exe" "dist/fiscocont-plus-setup-$V.exe.blockmap" dist/latest.yml
+          fi

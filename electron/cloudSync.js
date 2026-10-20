@@ -17,52 +17,14 @@
 
 const path = require('path');
 const fs = require('fs');
-let admin = null;
-let db = null;
-
 function saFile(userDataDir) {
   return path.join(userDataDir, 'cloud-service-account.json');
 }
-
-function isConfigured(userDataDir) {
-  return fs.existsSync(saFile(userDataDir));
+function isConfigured() { return isCloudReady(); }
+function setup() {
+  throw new Error('Não é mais preciso configurar a nuvem: desde a versão 2.1 ela usa o login de cada usuário.');
 }
-
-function _init(userDataDir) {
-  if (db) return true;
-  const p = saFile(userDataDir);
-  if (!fs.existsSync(p)) return false;
-  if (!admin) {
-    try { admin = require('firebase-admin'); }
-    catch (e) {
-      throw new Error("Dependência 'firebase-admin' não instalada. Feche o app e rode o instalar.bat (ou run-dev.bat) de novo para instalá-la.");
-    }
-  }
-  const sa = JSON.parse(fs.readFileSync(p, 'utf-8'));
-  const appName = 'fiscocont-sync';
-  const existing = admin.apps.find((a) => a && a.name === appName);
-  const fbApp = existing || admin.initializeApp({ credential: admin.credential.cert(sa) }, appName);
-  db = admin.firestore(fbApp);
-  return true;
-}
-
-// Copia o arquivo de credencial para a pasta do app (valida antes). Só
-// necessário pra habilitar o painel Admin de licenças nesta máquina — a
-// sincronização normal de balancete não depende mais disso.
-function setup(userDataDir, pickedPath) {
-  const sa = JSON.parse(fs.readFileSync(pickedPath, 'utf-8'));
-  if (!sa.project_id || !sa.private_key || !sa.client_email) {
-    throw new Error('Este arquivo não parece uma credencial de conta de serviço do Firebase (faltam project_id/private_key/client_email).');
-  }
-  fs.copyFileSync(pickedPath, saFile(userDataDir));
-  db = null; // força reinicialização com a nova credencial
-  return { projectId: sa.project_id };
-}
-
-function projectId(userDataDir) {
-  try { return JSON.parse(fs.readFileSync(saFile(userDataDir), 'utf-8')).project_id || ''; }
-  catch (_) { return ''; }
-}
+function projectId() { return projectIdPublic(); }
 
 // --------------------------------------------------------------------- conexão sem privilégio (sincronização de balancete)
 let _webCfg = null;
@@ -86,19 +48,14 @@ function projectIdPublic() {
 
 let _clientDb = null;
 let _clientFsMod = null;
+// Desde a 2.1 os dados da nuvem só abrem para usuário logado e ativo (Regras do Firestore): usa a sessão do
+// login individual (electron/auth.js), e não mais o login anônimo.
 async function _initClient() {
-  if (_clientDb) return true;
-  const c = _loadWebConfig();
-  if (!c) return false;
-  const { initializeApp, getApps } = require('firebase/app');
-  const { getAuth, signInAnonymously } = require('firebase/auth');
-  const { getFirestore } = require('firebase/firestore');
-  const appName = 'fiscocont-sync-client';
-  let app = getApps().find((a) => a.name === appName);
-  if (!app) app = initializeApp(c, appName);
-  await signInAnonymously(getAuth(app));
-  _clientFsMod = require('firebase/firestore');
-  _clientDb = getFirestore(app);
+  if (!_loadWebConfig()) return false;
+  const auth = require('./auth');
+  if (!auth.logado()) throw new Error('Entre com o seu usuário (e com internet) para usar a nuvem.');
+  _clientDb = auth.db();
+  _clientFsMod = auth.fsMod();
   return true;
 }
 
@@ -231,43 +188,16 @@ async function deleteHistoricoItem(cnpj, id) {
   return { ok: true };
 }
 
-module.exports = { isConfigured, setup, syncBalancete, saFile, projectId, isCloudReady, projectIdPublic, listLicenses, setLicenseStatus, listEmpresas, listHistorico, getHistoricoItem, deleteHistoricoItem, getChaveIA };
+module.exports = { removerCredencialAntiga, isConfigured, setup, syncBalancete, saFile, projectId, isCloudReady, projectIdPublic, listLicenses, setLicenseStatus, listEmpresas, listHistorico, getHistoricoItem, deleteHistoricoItem, getChaveIA };
 
 // --------------------------------------------------------------------- painel de licenças (admin)
-// Usa a MESMA credencial privilegiada da nuvem (Admin SDK) — por isso só
-// funciona nas máquinas onde a nuvem já foi configurada (☁). É a única forma
-// autorizada de mudar o status de uma licença; o app "comum" (electron/license.js)
-// só consegue LER e criar a si mesmo como "pendente".
-async function listLicenses(userDataDir) {
-  if (!_init(userDataDir)) throw new Error('Nuvem não configurada nesta máquina.');
-  // Busca TUDO sem orderBy do Firestore de propósito — orderBy em campo tipo
-  // timestamp pode excluir silenciosamente (ou até dar erro de índice) doc
-  // que tenha esse campo ausente/de tipo diferente. Ordena em memória depois,
-  // que não tem esse risco.
-  const snap = await db.collection('licencas').get();
-  const conv = (v) => (v && typeof v.toDate === 'function') ? v.toDate().toISOString() : null;
-  const itens = snap.docs.map((d) => {
-    const data = d.data();
-    return {
-      codigo: d.id,
-      status: data.status || 'pendente',
-      hostname: data.hostname || '',
-      plataforma: data.plataforma || '',
-      primeiroAcesso: conv(data.primeiroAcesso),
-      ultimoAcesso: conv(data.ultimoAcesso),
-    };
-  });
-  itens.sort((a, b) => new Date(b.ultimoAcesso || 0) - new Date(a.ultimoAcesso || 0));
-  return itens;
-}
+// Desde a 2.1 o painel usa o login do Admin (Regras do Firestore), sem a credencial de administrador (conta de
+// serviço) — ela não fica mais em nenhuma máquina. Ver removerCredencialAntiga().
+async function listLicenses() { return require('./auth').listarLicencas(); }
+async function setLicenseStatus(_userDataDir, codigo, status) { return require('./auth').statusLicenca(codigo, status); }
 
-async function setLicenseStatus(userDataDir, codigo, status) {
-  if (!_init(userDataDir)) throw new Error('Nuvem não configurada nesta máquina.');
-  if (!['ativo', 'bloqueado', 'pendente'].includes(status)) throw new Error('Status inválido.');
-  await db.collection('licencas').doc(codigo).set({
-    status,
-    atualizadoPor: 'painel-admin',
-    atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
-  }, { merge: true });
-  return { ok: true };
+// A credencial de administrador antiga dava poder total sobre o banco: apaga a cópia desta máquina.
+function removerCredencialAntiga(userDataDir) {
+  try { if (fs.existsSync(saFile(userDataDir))) { fs.unlinkSync(saFile(userDataDir)); return true; } } catch (_) {}
+  return false;
 }

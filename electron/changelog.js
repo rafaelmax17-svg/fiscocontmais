@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 
 const OWNER = 'rafaelmax17-svg';
-const REPO = 'fiscocontmais';
+const REPO = 'fiscocontmais-releases';   // só os instaladores (público); o código fica no repositório privado
 
 function _arquivoVisto(userDataDir) {
   return path.join(userDataDir, 'changelog-visto.json');

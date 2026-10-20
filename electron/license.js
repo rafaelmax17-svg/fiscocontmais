@@ -98,6 +98,18 @@ function _writeCache(userDataDir, data) {
   try { fs.writeFileSync(_cachePath(userDataDir), JSON.stringify(data)); } catch (_) {}
 }
 const OFFLINE_GRACE_DIAS = 7;
+function _versao() { try { return require('electron').app.getVersion(); } catch (_) { return ''; } }
+
+// Marca na licença quem está usando esta máquina (aparece no painel de Licenças).
+async function marcarUsuario(email) {
+  try {
+    const codigo = await getMachineCode();
+    const db = await _db();
+    if (!db) return;
+    const { doc, setDoc, serverTimestamp } = fsMod;
+    await setDoc(doc(db, 'licencas', codigo), { usuario: email || '', ultimoAcesso: serverTimestamp(), versao: _versao() }, { merge: true });
+  } catch (_) {}
+}
 
 // Consulta o status desta máquina. Se ela nunca apareceu antes, cria o
 // registro como "pendente" (as Regras do Firestore só deixam criar com esse
@@ -121,10 +133,11 @@ async function checkLicense(userDataDir) {
         plataforma: `${process.platform} ${os.release()}`,
         primeiroAcesso: serverTimestamp(),
         ultimoAcesso: serverTimestamp(),
+        versao: _versao(),
       });
       status = 'pendente';
     } else {
-      try { await setDoc(ref, { ultimoAcesso: serverTimestamp() }, { merge: true }); } catch (_) {}
+      try { await setDoc(ref, { ultimoAcesso: serverTimestamp(), versao: _versao() }, { merge: true }); } catch (_) {}
       const d = snap.data();
       status = d.status || 'pendente';
       hostname = d.hostname || hostname;
@@ -184,4 +197,4 @@ async function startLicenseListener(onChange, onStatus) {
   }
 }
 
-module.exports = { isConfigured, getMachineCode, checkLicense, startLicenseListener };
+module.exports = { isConfigured, getMachineCode, checkLicense, startLicenseListener, marcarUsuario };
