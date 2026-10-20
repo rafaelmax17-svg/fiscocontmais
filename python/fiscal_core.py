@@ -3544,6 +3544,94 @@ def _recalcula_bloco9_global(linhas):
     return linhas_sem_bloco9 + linhas_9900 + ['|9990|0|'] + [linha_9999]
 
 
+_C100_C190 = ((21, 6, 'VL_BC_ICMS'), (22, 7, 'VL_ICMS'), (23, 8, 'VL_BC_ICMS_ST'), (24, 9, 'VL_ICMS_ST'), (25, 11, 'VL_IPI'))
+
+
+def _acerta_c100_e110(linhas, resumo):
+    """Erros do PVA corrigidos aqui (Guia Prático da EFD ICMS/IPI):
+    • C100: VL_BC_ICMS, VL_ICMS, VL_BC_ICMS_ST, VL_ICMS_ST e VL_IPI devem ser iguais à soma dos C190 da nota. O C190
+      é o resumo dos itens (C170) e é o que o PVA usa como referência; o Domínio às vezes grava no C100 outro total.
+    • E110, campo 06 (VL_TOT_CREDITOS): soma do VL_ICMS dos C190, C590, D190, D590 e D730 com CFOP iniciado por 1
+      (exceto 1605), 2 ou 3, e CFOP 5605. Quando muda, o E110 é recalculado (saldo, ICMS a recolher, saldo credor) e a
+      guia 000 do E116 é ajustada. Altera linhas no lugar (não insere nem remove)."""
+    from decimal import Decimal
+    import difal_ro as dr
+    resumo.setdefault('c100_totais_corrigidos', 0)
+    resumo.setdefault('c100_totais_detalhe', [])
+    resumo.setdefault('avisos_c100_e110', [])
+    cur, somas, nota = None, None, None
+
+    def fecha():
+        if cur is None or somas is None:
+            return
+        c = linhas[cur].split('|')
+        if len(c) <= 25 or c[6] in ('02', '03', '04', '05'):
+            return
+        mudou = []
+        for i_c100, i_c190, nome in _C100_C190:
+            alvo = somas[i_c190]
+            if abs(Decimal(str(dr._n(c[i_c100]))) - alvo) >= Decimal('0.005'):
+                mudou.append(f'{nome} {c[i_c100] or "0,00"} → {dr._f(alvo)}')
+                c[i_c100] = dr._f(alvo)
+        if mudou:
+            linhas[cur] = '|'.join(c)
+            resumo['c100_totais_corrigidos'] += 1
+            if len(resumo['c100_totais_detalhe']) < 40:
+                resumo['c100_totais_detalhe'].append(f'NF {c[8]} ({"entrada" if c[2] == "0" else "saída"}): ' + '; '.join(mudou))
+    for i, l in enumerate(linhas):
+        c = l.split('|')
+        if len(c) < 3:
+            continue
+        r = c[1]
+        if r == 'C100':
+            fecha()
+            cur, somas = i, None
+        elif cur is not None and r in dr.FILHOS_C100:
+            if r == 'C190' and len(c) > 11:
+                somas = somas or {j: Decimal('0') for j in (6, 7, 8, 9, 11)}
+                for j in (6, 7, 8, 9, 11):
+                    somas[j] += Decimal(str(dr._n(c[j])))
+        else:
+            fecha()
+            cur, somas = None, None
+    fecha()
+
+    # E110, campo 06
+    soma, i110, cab = Decimal('0'), None, {}
+    for i, l in enumerate(linhas):
+        c = l.split('|')
+        if len(c) < 3:
+            continue
+        r = c[1]
+        if r == '0000' and len(c) > 9:
+            cab = {'dt_ini': c[4], 'uf': c[9]}
+        elif r in ('C190', 'C590', 'D190', 'D590', 'D730') and len(c) > 7:
+            cf = c[3]
+            if (cf[:1] in '123' and cf != '1605') or cf == '5605':
+                soma += Decimal(str(dr._n(c[7])))
+        elif r == 'E110' and len(c) > 15:
+            i110 = i
+    if i110 is None:
+        return
+    c = linhas[i110].split('|')
+    atual = Decimal(str(dr._n(c[6])))
+    delta = soma - atual
+    if abs(delta) < Decimal('0.005'):
+        return
+    r2 = {'avisos': []}
+    novas, erro = dr.aplica_apuracao(linhas, {'i': i110, 'c': c}, {6: float(delta)}, {}, cab, set(), r2)
+    if erro or novas:
+        linhas[i110] = '|'.join(c)          # aplica_apuracao já mexeu: desfaz e avisa
+        resumo['avisos_c100_e110'].append(f'O campo 06 do E110 (R$ {dr._f(atual)}) não fecha com a soma dos créditos das notas (R$ {dr._f(soma)}), '
+                                          'mas a correção faria a empresa passar a ter ICMS a recolher sem guia (E116): corrija à mão.')
+        return
+    resumo['e110_creditos'] = {'antes': float(atual), 'depois': float(soma), 'diferenca': float(delta),
+                               'recolher_antes': r2['e110_antes']['recolher'], 'recolher_depois': r2['e110_depois']['recolher'],
+                               'credor_antes': r2['e110_antes']['sld_transp'], 'credor_depois': r2['e110_depois']['sld_transp'],
+                               'e116': r2.get('e116', '')}
+    resumo['avisos_c100_e110'].extend(r2.get('avisos') or [])
+
+
 def corrigir_sped_fiscal(texto, cest_invalidos=None):
     """Corrige erros de validação comuns do SPED Fiscal (EFD ICMS/IPI) — MÓDULO
     RESTRITO AO ADMIN, altera o arquivo que será reenviado ao governo:
@@ -3672,6 +3760,9 @@ def corrigir_sped_fiscal(texto, cest_invalidos=None):
                 linhas.insert(pos_insercao, f'|0400|{cod}|{desc}|')
                 pos_insercao += 1
                 resumo['registro_0400_criado'].append(cod)
+
+    # 6) e 7) totais do C100 iguais à soma do C190 e campo 06 do E110 igual à soma oficial dos créditos
+    _acerta_c100_e110(linhas, resumo)
 
     # recalcula bloco 9 (9900 por tipo + 9999 total de linhas do arquivo) —
     # ver `_recalcula_bloco9_global` (extraída daqui, reaproveitada também na

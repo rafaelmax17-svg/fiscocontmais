@@ -999,7 +999,7 @@
         <div class="fiscal-empty" id="corrSpedEmpty">
           <svg viewBox="0 0 24 24"><path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M10.3 4.2L2.9 17a1.8 1.8 0 001.55 2.7h15.1A1.8 1.8 0 0021.1 17L13.7 4.2a1.8 1.8 0 00-3.4 0z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
           <h2>Correção do SPED Fiscal — acesso restrito ao Admin</h2>
-          <p>Corrige automaticamente erros comuns de validação: C191 indevido (CST do C190 pai fora de 00/10/20/51/70/90), bloco E500/E510/E520 quando não há IPI, código de barras "SEM GTIN", CEST fora da tabela oficial (lista conhecida: 1705500, 0000000, 2007910 — cresce conforme repassado), e COD_NAT ausente no C170 (mapeado pelo CFOP). Recalcula o Bloco 9 (contagens) no final. <b>Isso gera um arquivo novo</b> — o original nunca é alterado.</p>
+          <p>Corrige automaticamente erros comuns de validação: C191 indevido (CST do C190 pai fora de 00/10/20/51/70/90), bloco E500/E510/E520 quando não há IPI, código de barras "SEM GTIN", CEST fora da tabela oficial (lista conhecida: 1705500, 0000000, 2007910 — cresce conforme repassado), COD_NAT ausente no C170 (mapeado pelo CFOP), totais do C100 diferentes da soma do C190 e o campo 06 do E110 (créditos) diferente da soma das notas — com o E110 e o E116 recalculados. Recalcula o Bloco 9 (contagens) no final. <b>Isso gera um arquivo novo</b> — o original nunca é alterado.</p>
         </div>
         <div id="corrLote" class="dif lote" hidden></div>
         <div id="corrSpedResumo" hidden></div>

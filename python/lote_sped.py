@@ -357,7 +357,7 @@ def processar(sped, xml_dir, escolhas=None, mes=None):
     e116_exist = [{'venc': c[4], 'cod_rec': c[5]} for c in (ln.split('|') for ln in texto.splitlines() if ln.startswith('|E116|')) if len(c) > 5]
     antes = _e110(texto) or {}
     depois = _e110(final) if final is not None else None
-    avisos = list(an.get('avisos') or [])
+    avisos = list(an.get('avisos') or []) + list(rc.get('avisos_c100_e110') or [])
     if final is not None:
         avisos += fc.confere_e110_ajustes(final)
     if sn:
@@ -366,7 +366,8 @@ def processar(sped, xml_dir, escolhas=None, mes=None):
         avisos += [a for a in r.get('avisos') or [] if a not in avisos]
     mes_sped = f"{cab.get('dt_ini', '')[2:4]}-{cab.get('dt_ini', '')[4:8]}" if len(cab.get('dt_ini', '')) == 8 else ''
     n_corr = sum(rc.get(k) or 0 for k in ('c191_removidos', 'e500_linhas_removidas', 'gtin_limpos', 'cest_limpos', 'cod_nat_corrigidos',
-                                           'c197_campos_ajustados')) + len(rc.get('registro_0400_criado') or [])
+                                           'c197_campos_ajustados', 'c100_totais_corrigidos')) + len(rc.get('registro_0400_criado') or []) \
+        + (1 if rc.get('e110_creditos') else 0)
     res = {
         'sped': sped, 'arquivo': os.path.basename(sped), 'xmls': xml_dir, 'xml_lidos': lidos, 'xml_erros': erros,
         'empresa': {'nome': cab.get('nome', ''), 'cnpj': cab.get('cnpj', ''), 'uf': cab.get('uf', ''), 'dt_ini': cab.get('dt_ini', ''),

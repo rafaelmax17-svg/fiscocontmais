@@ -1425,7 +1425,12 @@ function bindFiscal() {
             <div><b style="font-size:20px;color:#1f2a5a">${r.cod_nat_corrigidos ?? 0}</b><br>COD_NAT corrigidos</div>
             <div><b style="font-size:20px;color:#1f2a5a">${(r.registro_0400_criado || []).length}</b><br>Registros 0400 criados</div>
             ${r.c197_campos_ajustados ? `<div><b style="font-size:20px;color:#1f2a5a">${r.c197_campos_ajustados}</b><br>C197/D197 com campo a mais corrigidos</div>` : ''}
+            ${r.c100_totais_corrigidos ? `<div><b style="font-size:20px;color:#1f2a5a">${r.c100_totais_corrigidos}</b><br>C100 com total diferente do C190 corrigidos</div>` : ''}
           </div>
+          ${(r.c100_totais_detalhe || []).length ? `<details style="margin-top:10px;font-size:12.5px"><summary style="cursor:pointer;color:#2f4090;font-weight:600">ver as notas (C100 = soma do C190)</summary><ul style="margin:6px 0 0 18px">${r.c100_totais_detalhe.map((x) => `<li>${String(x).replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</li>`).join('')}</ul></details>` : ''}
+          ${r.e110_creditos ? `<div class="dif-av" style="margin-top:12px"><b>E110, campo 06 (créditos) recalculado pela soma das notas:</b> R$ ${(r.e110_creditos.antes).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} → R$ ${(r.e110_creditos.depois).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            · ICMS a recolher R$ ${(r.e110_creditos.recolher_antes).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} → <b>R$ ${(r.e110_creditos.recolher_depois).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b>${r.e110_creditos.e116 ? ' · ' + r.e110_creditos.e116 : ''}</div>` : ''}
+          ${(r.avisos_c100_e110 || []).length ? `<div class="dif-av err" style="margin-top:12px"><ul>${r.avisos_c100_e110.map((x) => `<li>${String(x).replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</li>`).join('')}</ul></div>` : ''}
           ${(r.avisos || []).length ? `<div class="dif-av" style="margin-top:14px"><b>Atenção antes de transmitir</b><ul>${r.avisos.map((x) => `<li>${String(x).replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</li>`).join('')}</ul></div>` : ''}
           <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
             <button class="act inv-export" id="btnCorrSpedVerCorrigido">Ver todos os dados (corrigido)</button>
