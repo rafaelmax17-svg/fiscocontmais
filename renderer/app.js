@@ -1548,6 +1548,7 @@ function bindFiscal() {
             </select>
             <input data-interna type="number" step="0.01" min="0" max="99" value="${g.aliq_interna}" ${ok ? '' : 'disabled'} title="Alíquota interna de RO">
             <b class="dif-val" data-val>${d.interestadual ? 'R$ ' + fm(g.difal) : '—'}</b>
+            ${d.interestadual && d.base_dupla === false ? '<span class="dif-b b-warn" title="Empresa do Simples Nacional: base única (Lei 688/96, art. 18, § 9º)">base única</span>' : ''}
             ${d.interestadual ? `<small class="dif-gsrc ${d.fonte === 'xml' ? 'xml' : ''}">${d.fonte === 'xml' ? `XML · ${g.itens || 0} item(ns) · origem ${esc((g.origens || []).join(', '))}` : 'alíquota deduzida pelo SPED'}</small>` : ''}
           </div>`).join('');
         return `
@@ -1555,7 +1556,7 @@ function bindFiscal() {
             <td>${ok ? `<input type="checkbox" data-difal="${d.id}" ${ef.sugDifal ? 'checked' : ''} title="Lançar DIFAL (C195/C197)">`
               : (ef.status === 'balcao' && d.difal_lancado > 0 ? `<input type="checkbox" data-rem="${d.id}" ${ef.sugRem ? 'checked' : ''} title="Retirar o DIFAL lançado (compra de balcão)">` : '')}</td>
             <td><b>${esc(d.num)}</b><small>${dt(d.data)}${d.serie ? ' · série ' + esc(d.serie) : ''}</small></td>
-            <td>${esc(d.fornecedor)}<small>${esc(d.cnpj)}</small></td>
+            <td>${esc(d.fornecedor)}${d.fornecedor_simples ? ` <span class="dif-b b-warn" title="Fornecedor do Simples Nacional (CRT ${esc(d.fornecedor_crt || '1')}): DIFAL com a alíquota interestadual cheia (LC 123/2006, art. 13, § 5º)">Simples</span>` : ''}<small>${esc(d.cnpj)}</small></td>
             <td><b>${esc(d.uf_origem || '?')}</b><small>${esc(d.fonte_uf || '')}</small></td>
             <td>${cfop}</td>
             <td>${grupos}</td>
@@ -1572,7 +1573,8 @@ function bindFiscal() {
             <h3>${esc(emp.nome || '')}</h3>
             <div class="dif-sub">CNPJ ${esc(emp.cnpj || '')} · período ${dt(emp.dt_ini)} a ${dt(emp.dt_fin)} ·
               arquivo <b>${DIF.origem === 'corrigido' ? 'já corrigido nesta sessão' : 'original'}</b> ·
-              ${an.base_dupla ? 'base dupla (desde 01/04/2022)' : 'base única'} · alíquota interna ${fa(an.aliq_interna_padrao)}</div>
+              ${(an.regime_empresa || {}).regime === 'simples' ? '<b>empresa do Simples Nacional</b> · base única (desde 11/06/2025)'
+                : an.base_dupla ? 'base dupla (desde 01/04/2022)' : 'base única'} · alíquota interna ${fa(an.aliq_interna_padrao)}</div>
           </div>
           <div class="sn-hbtn"><button class="act inv-export" id="btnDifXmls">${XMLS.path ? 'Trocar XMLs' : 'Anexar XMLs de entrada'}</button><button class="act inv-export" id="btnDifFechar">Fechar</button></div>
         </div>
@@ -1877,7 +1879,7 @@ function bindFiscal() {
           const row = box.querySelector(`.dif-g[data-doc="${d.id}"][data-g="${gi}"]`);
           const inter = Number(row.querySelector('[data-inter]').value);
           const interna = Number(String(row.querySelector('[data-interna]').value).replace(',', '.'));
-          const c = difCalc(g.valor, inter, interna, an.base_dupla);
+          const c = difCalc(g.valor, inter, interna, d.base_dupla ?? an.base_dupla);
           row.querySelector('[data-val]').textContent = d.interestadual && efe(d).status !== 'balcao' ? 'R$ ' + fm(c.difal) : '—';
           tot += c.difal;
           grupos.push({ tipo: g.tipo, aliq_inter: g.aliq_inter, aliq_inter_nova: inter, aliq_interna: interna });

@@ -1862,6 +1862,88 @@ ipcMain.handle('fiscal:corrigirSped', async (_evt, { spedPath, cestInvalidos, us
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+// ---------------------------------------------------------------- Regime da empresa (Simples Nacional) pelo CNPJ do SPED
+// O SPED não informa se a empresa é do Simples. O DIFAL de RO muda com isso (Lei 688/96, art. 18, § 9º — base única
+// desde 11/06/2025), então o CNPJ do 0000 é consultado na Receita (BrasilAPI / minhareceita) e o resultado fica guardado
+// em legalizacao.json (o mesmo cache da Legalização) por 30 dias.
+async function _consultaCnpjApi(dig) {
+  const fontes = [`https://brasilapi.com.br/api/cnpj/v1/${dig}`, `https://minhareceita.org/${dig}`];
+  const hdrs = { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 FiscoContPlus' };
+  for (const url of fontes) {
+    for (let tent = 0; tent < 2; tent++) {
+      try {
+        const op = { headers: hdrs, signal: AbortSignal.timeout(8000) };
+        const resp = await (net && net.fetch ? net.fetch(url, op) : fetch(url, op));
+        if (resp.status === 404) return null;
+        if (resp.ok) return await resp.json();
+        if (resp.status !== 429 && resp.status < 500) break;
+      } catch (_) { /* tenta de novo / próxima fonte */ }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+  return null;
+}
+function _cab0000(arq) {
+  try {
+    const fd = fs.openSync(arq, 'r'); const buf = Buffer.alloc(600);
+    const n = fs.readSync(fd, buf, 0, 600, 0); fs.closeSync(fd);
+    const c = buf.slice(0, n).toString('latin1').split(/\r?\n/)[0].split('|');
+    if (c[1] !== '0000') return null;
+    return { cnpj: String(c[7] || '').replace(/\D/g, ''), dtIni: c[4] || '', dtFin: c[5] || '' };
+  } catch (_) { return null; }
+}
+function _isoDeSped(d) { return /^\d{8}$/.test(d || '') ? `${d.slice(4)}-${d.slice(2, 4)}-${d.slice(0, 2)}` : ''; }
+function _brDeIso(d) { return /^\d{4}-\d{2}-\d{2}/.test(d || '') ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : ''; }
+async function _regimeDoCnpj(cnpj, dtIni, dtFin) {
+  if (!cnpj || cnpj.length !== 14) return null;
+  const base = _jsonUser('legalizacao.json', { clientes: {} });
+  const cache = base.clientes[cnpj];
+  let api = cache && cache.api;
+  const velho = !cache || !cache.consultadoEm || (Date.now() - Date.parse(cache.consultadoEm)) > 30 * 86400000;
+  if (!api || velho) {
+    const novo = await _consultaCnpjApi(cnpj);
+    if (novo) {
+      api = novo;
+      base.clientes[cnpj] = { ...(cache || {}), api, itens: (cache && cache.itens) || {}, consultadoEm: new Date().toISOString() };
+      try { _salvarJsonUser('legalizacao.json', base); } catch (_) {}
+    }
+  }
+  if (!api) return null;
+  const ini = _isoDeSped(dtIni), fim = _isoDeSped(dtFin);
+  const op = String(api.data_opcao_pelo_simples || '').slice(0, 10);
+  const ex = String(api.data_exclusao_do_simples || '').slice(0, 10);
+  let simples;
+  if (op) simples = (!fim || op <= fim) && (!ex || !ini || ex > ini);
+  else simples = api.opcao_pelo_simples === true;
+  let info = 'Receita Federal';
+  if (simples) info = (op ? `optante desde ${_brDeIso(op)}` : 'optante') + (ex ? `, excluída em ${_brDeIso(ex)}` : '') + ' — Receita Federal';
+  else if (ex) info = `excluída do Simples em ${_brDeIso(ex)} — Receita Federal`;
+  return { regime: simples ? 'simples' : 'normal', info };
+}
+async function _regimesJson(arquivos) {
+  const out = {};
+  for (const arq of arquivos) {
+    const cab = _cab0000(arq);
+    if (!cab || out[cab.cnpj]) continue;
+    const r = await _regimeDoCnpj(cab.cnpj, cab.dtIni, cab.dtFin);
+    if (r) out[cab.cnpj] = r;
+  }
+  const p = path.join(os.tmpdir(), `fc_regimes_${Date.now()}.json`);
+  fs.writeFileSync(p, JSON.stringify(out), 'utf-8');
+  return p;
+}
+function _spedsDaPasta(pasta, prof = 0, out = []) {
+  if (prof > 4 || out.length > 400) return out;
+  let ents = [];
+  try { ents = fs.readdirSync(pasta, { withFileTypes: true }); } catch (_) { return out; }
+  for (const e of ents) {
+    const p = path.join(pasta, e.name);
+    if (e.isDirectory()) _spedsDaPasta(p, prof + 1, out);
+    else if (/\.txt$/i.test(e.name) && _cab0000(p)) out.push(p);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- Uso e consumo / ativo: CFOP e DIFAL de RO (Admin)
 // Trabalha sobre o SPED escolhido no Corretor ou, se a correção geral já foi rodada, sobre o arquivo já corrigido.
 function _difalBase(spedPath, usarCorrigido) {
@@ -1874,9 +1956,10 @@ ipcMain.handle('admin:difalAnalisar', async (_evt, { spedPath, usarCorrigido, xm
   const base = _difalBase(spedPath, usarCorrigido);
   const jsonOut = path.join(os.tmpdir(), `fc_difal_${Date.now()}.json`);
   try {
-    await runFiscal(['difal-ro', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--json', jsonOut], jsonOut);
+    const regimes = await _regimesJson([base.arq]);
+    await runFiscal(['difal-ro', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--regimes', regimes, '--json', jsonOut], jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
-    fs.unlink(jsonOut, () => {});
+    fs.unlink(jsonOut, () => {}); fs.unlink(regimes, () => {});
     if (res.erro) return { error: res.erro };
     return { ok: true, res, origem: base.origem };
   } catch (e) { return { error: String(e.message || e) }; }
@@ -1891,9 +1974,10 @@ ipcMain.handle('admin:difalAplicar', async (_evt, { spedPath, usarCorrigido, sel
   const saida = path.join(os.tmpdir(), `fc_difal_sped_${stamp}.txt`);
   try {
     fs.writeFileSync(selJson, JSON.stringify(selecao || {}), 'utf-8');
-    await runFiscal(['difal-ro', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--json', jsonOut, '--aplicar', selJson, '--saida', saida], jsonOut);
+    const regimes = await _regimesJson([base.arq]);
+    await runFiscal(['difal-ro', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--regimes', regimes, '--json', jsonOut, '--aplicar', selJson, '--saida', saida], jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
-    fs.unlink(jsonOut, () => {}); fs.unlink(selJson, () => {});
+    fs.unlink(jsonOut, () => {}); fs.unlink(selJson, () => {}); fs.unlink(regimes, () => {});
     if (res.erro) return { error: res.erro };
     if (!fs.existsSync(saida)) return { error: 'O arquivo corrigido não foi gerado.' };
     if (lastSpedCorrigidoPath && lastSpedCorrigidoPath !== base.arq) fs.unlink(lastSpedCorrigidoPath, () => {});
@@ -2242,9 +2326,10 @@ ipcMain.handle('admin:loteAnalisar', async (_evt, { pasta, pastaXmls }) => {
   if (!pasta || !fs.existsSync(pasta)) return { error: 'Escolha a pasta do mês.' };
   const jsonOut = path.join(os.tmpdir(), `fc_lote_an_${Date.now()}.json`);
   try {
-    await runFiscal(['lote-sped', 'analisar', '--pasta', pasta, ...(pastaXmls ? ['--pasta-xmls', pastaXmls] : []), '--json', jsonOut], jsonOut);
+    const regimes = await _regimesJson(_spedsDaPasta(pasta));
+    await runFiscal(['lote-sped', 'analisar', '--pasta', pasta, ...(pastaXmls ? ['--pasta-xmls', pastaXmls] : []), '--regimes', regimes, '--json', jsonOut], jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
-    fs.unlink(jsonOut, () => {});
+    fs.unlink(jsonOut, () => {}); fs.unlink(regimes, () => {});
     if (res.erro) return { error: res.erro };
     return { ok: true, res };
   } catch (e) { return { error: String(e.message || e) }; }
@@ -2257,9 +2342,10 @@ ipcMain.handle('admin:loteAplicar', async (_evt, { plano }) => {
   const saida = path.join(os.tmpdir(), `fc_lote_${stamp}`);
   try {
     fs.writeFileSync(planoJson, JSON.stringify(plano || {}), 'utf-8');
-    await runFiscal(['lote-sped', 'aplicar', '--plano', planoJson, '--saida', saida, '--json', jsonOut], jsonOut);
+    const regimes = await _regimesJson(((plano && plano.arquivos) || []).map((a) => a.sped).filter(Boolean));
+    await runFiscal(['lote-sped', 'aplicar', '--plano', planoJson, '--saida', saida, '--regimes', regimes, '--json', jsonOut], jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
-    fs.unlink(jsonOut, () => {}); fs.unlink(planoJson, () => {});
+    fs.unlink(jsonOut, () => {}); fs.unlink(planoJson, () => {}); fs.unlink(regimes, () => {});
     if (res.erro) return { error: res.erro };
     if (loteSaidaDir && loteSaidaDir !== saida) fs.rm(loteSaidaDir, { recursive: true, force: true }, () => {});
     loteSaidaDir = saida;

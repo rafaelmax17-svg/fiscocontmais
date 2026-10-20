@@ -23,6 +23,12 @@ Fontes oficiais (lidas em 09/10/2026)
     ALIQ_ICMS = interestadual, VL_ICMS = DIFAL, VL_OUTROS = alíquota interna; soma no campo 03 (VL_AJ_DEBITOS) do E110;
     RO90000002 = DIFAL recolhido fora da conta gráfica (só informativo).
   • Guia Prático da EFD ICMS/IPI v3.2.4: E110 campos 03, 11, 13, 14; C195; C197; 0460; E116.
+  • Empresa do Simples Nacional: Lei 688/96, art. 18, XI e § 9º (Lei 6.050/2025, em vigor desde 11/06/2025) — base única:
+    DIFAL = valor da operação × (alíquota interna − interestadual), sem o imposto por dentro, mesmo quando o remetente
+    também é do Simples. Antes de 11/06/2025: base dupla (art. 3º da Lei 6.050/2025). O regime da empresa vem da consulta
+    do CNPJ na Receita (datas de opção e exclusão do Simples), feita pelo aplicativo e passada em --regime / --regimes.
+  • Fornecedor do Simples (CRT 1 ou 4 no XML): o DIFAL usa a alíquota interestadual cheia, mesmo sem ICMS destacado
+    (LC 123/2006, art. 13, § 5º). Não muda a base: a base única depende de a EMPRESA ser do Simples.
 """
 import os
 import re
@@ -89,6 +95,62 @@ def aliq_interna_padrao(dt_ini):
 
 def base_dupla(dt_ini):
     return len(dt_ini or '') != 8 or dt_ini[4:] + dt_ini[2:4] >= '202204'
+
+
+INICIO_BASE_UNICA_SN = '20250611'      # Lei 6.050/2025 (DOE 11/06/2025)
+REGIMES = {}                           # CNPJ (14 dígitos) -> {'regime': 'simples'|'normal', 'info': '...'}; preenchido pelo CLI
+
+
+def _aaaammdd(dt):
+    dt = re.sub(r'\D', '', dt or '')
+    return dt[4:] + dt[2:4] + dt[:2] if len(dt) == 8 else ''
+
+
+def regime_da_empresa(cab, regime=None):
+    """Regime da empresa no período: o passado direto (regime) ou o da tabela REGIMES pelo CNPJ do 0000."""
+    if isinstance(regime, dict):
+        return regime
+    if regime in ('simples', 'normal'):
+        return {'regime': regime, 'info': ''}
+    return REGIMES.get(re.sub(r'\D', '', cab.get('cnpj') or '')) or {'regime': '', 'info': ''}
+
+
+def base_do_documento(dt_ini, dt_doc, simples):
+    """(dupla, motivo) para um documento. Empresa do Simples a partir de 11/06/2025: base única (Lei 688/96, art. 18, § 9º)."""
+    if simples:
+        d = _aaaammdd(dt_doc) or _aaaammdd(dt_ini)
+        if d and d >= INICIO_BASE_UNICA_SN:
+            return False, 'simples'
+        return base_dupla(dt_ini), 'simples_antes'
+    return base_dupla(dt_ini), ''
+
+
+def obs_base(motivo, fornecedor_sn=False):
+    if motivo == 'simples':
+        t = ('Base única: a empresa é do Simples Nacional, então o DIFAL = valor × (alíquota interna − interestadual), '
+             'sem o imposto por dentro (Lei 688/96, art. 18, XI e § 9º, incluídos pela Lei 6.050/2025).')
+        if fornecedor_sn:
+            t += ' O fornecedor também é do Simples: a regra é a mesma.'
+        return t
+    if motivo == 'simples_antes':
+        return ('Empresa do Simples Nacional, mas a entrada é anterior a 11/06/2025: vale a base dupla da regra de transição '
+                '(Lei 6.050/2025, art. 3º).')
+    return ''
+
+
+def obs_fornecedor(x):
+    """Aviso sobre o regime do fornecedor (CRT do XML)."""
+    if not x:
+        return ''
+    crt = (x.get('crt') or '').strip()
+    if crt == '2':
+        return ('Fornecedor do Simples com excesso de sublimite (CRT 2): recolhe ICMS como regime normal e destaca o imposto; '
+                'o DIFAL segue a regra normal.')
+    if x.get('simples'):
+        return ('Fornecedor do Simples Nacional' + (' (MEI)' if crt == '4' else '') + ': a nota não destaca ICMS, mas o DIFAL '
+                'usa a alíquota interestadual cheia (LC 123/2006, art. 13, § 5º). Isso não muda a base: a base única só vale '
+                'quando a empresa compradora é do Simples.')
+    return ''
 
 
 def calcular_difal(valor, aliq_inter, aliq_interna, dupla=True):
@@ -298,14 +360,23 @@ def _grupos_xml(d, x, alvo, uf_or, interna):
     return grupos, obs, st, usados
 
 
-def analisar_texto(texto, xmls=None):
+def analisar_texto(texto, xmls=None, regime=None):
     xmls = xmls or {}
     linhas = texto.splitlines()
     cab, part, obs460, docs, e110, e111_difal = _estrutura(linhas)
     uf_emp = (cab.get('uf') or '').strip()
     dupla = base_dupla(cab.get('dt_ini'))
     interna = aliq_interna_padrao(cab.get('dt_ini'))
+    reg = regime_da_empresa(cab, regime)
+    simples_emp = reg.get('regime') == 'simples'
     avisos = []
+    if simples_emp:
+        avisos.append('Empresa do Simples Nacional' + (f' ({reg["info"]})' if reg.get('info') else '') + ': nas entradas a partir de '
+                      '11/06/2025 o DIFAL é calculado com base única — valor × (alíquota interna − interestadual), sem o imposto por '
+                      'dentro (Lei 688/96, art. 18, XI e § 9º, Lei 6.050/2025). Cada nota mostra a base usada.')
+    elif not reg.get('regime'):
+        avisos.append('Não foi possível confirmar na Receita se a empresa é do Simples Nacional: o DIFAL foi calculado como regime '
+                      'normal (base dupla). Se a empresa for do Simples, consulte o CNPJ com internet e analise de novo.')
     if uf_emp != 'RO':
         avisos.append(f'Este SPED é de {uf_emp or "UF não informada"}: o cálculo e os códigos de lançamento são os de Rondônia. '
                       'Para outra UF a correção do CFOP vale, mas o DIFAL não deve ser incluído por aqui.')
@@ -330,6 +401,7 @@ def analisar_texto(texto, xmls=None):
             novo = ('2' if interestadual else '1') + cf[1:] if uf_or and uf_or != 'EX' else cf
             if novo != cf:
                 correcoes.append({'de': cf, 'para': novo})
+        dupla_d, motivo_base = base_do_documento(cab.get('dt_ini'), d['dt'], simples_emp)
         # grupos por (tipo, alíquota interestadual)
         grupos = {}
         tem_st = False
@@ -346,7 +418,7 @@ def analisar_texto(texto, xmls=None):
         def _lista(gs):
             out = []
             for g in gs.values():
-                base, dif = calcular_difal(g['valor'], g['aliq_inter'], g['aliq_interna'], dupla)
+                base, dif = calcular_difal(g['valor'], g['aliq_inter'], g['aliq_interna'], dupla_d)
                 out.append({**g, 'cfops': sorted(g['cfops']), 'origens': sorted(g.get('origens', [])), 'valor': float(_d(g['valor'])),
                             'base': float(base), 'difal': float(dif)})
             return out
@@ -410,6 +482,13 @@ def analisar_texto(texto, xmls=None):
         if d['sit'] in EXTEMP:
             obs_doc.append('Documento extemporâneo: o DIFAL vai no débito especial, não no campo 03 do E110. Não incluir por aqui.')
         obs_doc.extend(obs_xml)
+        if interestadual and status not in ('cancelada', 'balcao'):
+            ob = obs_base(motivo_base, bool(x and x.get('simples')))
+            if ob:
+                obs_doc.insert(0, ob)
+            of = obs_fornecedor(x)
+            if of:
+                obs_doc.append(of)
         if tem_st and interestadual and fonte != 'xml':
             obs_doc.append('Há item com substituição tributária: se o ICMS-ST para RO foi retido na nota, o diferencial normalmente já está nele. Confira antes de incluir.')
         if cst_sem_trib and interestadual:
@@ -443,11 +522,13 @@ def analisar_texto(texto, xmls=None):
             'difal_calculado': calc, 'difal_lancado': existente, 'difal_pago_fora': fora, 'status': status,
             'obs': obs_doc, 'sugerido_cfop': sugerido_cfop, 'sugerido_difal': sugerido_difal,
             'fonte': fonte, 'tem_xml': bool(x), 'comparacao': comp, 'balcao': balcao,
+            'base_dupla': dupla_d, 'base_motivo': motivo_base,
+            'fornecedor_simples': bool(x and x.get('simples')), 'fornecedor_crt': (x or {}).get('crt', ''),
             'sugerido_remover': bool(balcao and balcao['classe'] == 'consumo' and existente > 0),
             'itens_xml': [{'xprod': i['xprod'], 'ncm': i['ncm'], 'orig': i['orig'], 'cst': i['cst'] or i['csosn'], 'picms': i['picms'],
                            'valor': i['valor_oper'], 'st': i['vicmsst']} for i in (x or {}).get('itens', [])][:30] if fonte == 'xml' else [],
         })
-    fretes, ctes_sem_xml = _analisar_fretes(linhas, docs, part, cab, xmls, interna, dupla, {x['id']: x for x in saida})
+    fretes, ctes_sem_xml = _analisar_fretes(linhas, docs, part, cab, xmls, interna, dupla, {x['id']: x for x in saida}, simples_emp)
     prod = {c[2]: c[3] for c in (ln.split('|') for ln in linhas if ln.startswith('|0200|')) if len(c) > 3}
     creditos = _analisar_creditos(docs, part, uf_emp, prod)
     est_ex = _e111_estornos(linhas)
@@ -486,7 +567,9 @@ def analisar_texto(texto, xmls=None):
     return {
         'empresa': {'nome': cab.get('nome', ''), 'cnpj': cab.get('cnpj', ''), 'uf': uf_emp, 'dt_ini': cab.get('dt_ini', ''), 'dt_fin': cab.get('dt_fin', ''),
                     'cod_ver': cab.get('cod_ver', '')},
-        'base_dupla': dupla, 'aliq_interna_padrao': interna, 'docs': saida, 'avisos': avisos, 'e110': apur, 'e116': e116,
+        'base_dupla': dupla, 'aliq_interna_padrao': interna, 'docs': saida,
+        'regime_empresa': {'regime': reg.get('regime') or '', 'info': reg.get('info') or '',
+                           'base_unica_desde': '11/06/2025' if simples_emp else ''}, 'avisos': avisos, 'e110': apur, 'e116': e116,
         'e111_difal': e111_difal, 'creditos': creditos, 'fretes': fretes,
         'nfce_entradas': [{'id': d['i'], 'num': d['num'], 'data': d['dt'], 'fornecedor': part.get(d['part'], {}).get('nome', d['part'])}
                           for d in docs if d['oper'] == '0' and d['mod'] == '65' and d['sit'] not in CANC],
@@ -513,7 +596,7 @@ def analisar_texto(texto, xmls=None):
     }
 
 
-def _analisar_fretes(linhas, docs, part, cab, xmls, interna, dupla, docs_analisados):
+def _analisar_fretes(linhas, docs, part, cab, xmls, interna, dupla, docs_analisados, simples_emp=False):
     """DIFAL do frete (CT-e) de mercadoria de uso e consumo ou ativo — LC 87/96, art. 12, XIII: serviço de transporte
     iniciado em outro estado e não vinculado a operação seguinte tributada. Mesmo código da mercadoria (RO40000002 /
     RO40000001), lançado no D197 do CT-e. Precisa do XML do CT-e (tomador e NF-e transportadas)."""
@@ -548,6 +631,9 @@ def _analisar_fretes(linhas, docs, part, cab, xmls, interna, dupla, docs_analisa
                     partes[TIPOS[c['cfop'][1:]][0]] += c['vl_opr']
         p = part.get(t['part'], {})
         obs = []
+        dupla_t, motivo_t = base_do_documento(cab.get('dt_ini'), t['dt'], simples_emp)
+        if obs_base(motivo_t):
+            obs.append(obs_base(motivo_t))
         if not ligadas:
             if not x.get('nfes'):
                 continue
@@ -566,7 +652,7 @@ def _analisar_fretes(linhas, docs, part, cab, xmls, interna, dupla, docs_analisa
                     continue
                 cod_aj, descr = (TIPOS['556'][1], TIPOS['556'][2]) if tipo == 'uso' else (TIPOS['551'][1], TIPOS['551'][2])
                 valor = float(_d(x['vtprest'] * partes[tipo] / tot)) if tot else 0.0
-                base, dif = calcular_difal(valor, ai, interna, dupla)
+                base, dif = calcular_difal(valor, ai, interna, dupla_t)
                 grupos.append({'tipo': tipo, 'cod_aj': cod_aj, 'descr': descr, 'aliq_inter': ai, 'fonte_aliq': fonte,
                                'aliq_interna': interna, 'valor': valor, 'base': float(base), 'difal': float(dif),
                                'proporcao': round(partes[tipo] / tot * 100, 2) if tot else 0.0})
@@ -587,6 +673,7 @@ def _analisar_fretes(linhas, docs, part, cab, xmls, interna, dupla, docs_analisa
             'nfes': len(x.get('nfes') or []), 'nfes_sped': len(ligadas), 'nfes_balcao': balcao,
             'notas': [d['num'] for d in ligadas][:8],
             'grupos': grupos, 'difal_calculado': calc, 'difal_lancado': lanc, 'status': status, 'obs': obs,
+            'base_dupla': dupla_t, 'base_motivo': motivo_t,
             'sugerido': status in ('faltando', 'divergente') and uf_emp == 'RO' and calc > 0 and not any('isenta' in o for o in obs),
         })
     return out, sem_xml
@@ -777,12 +864,12 @@ def monta_arquivo(linhas, remover, insercoes, novos_0460, novas_e111, novas_e116
     return novo
 
 
-def aplicar_texto(texto, selecao, xmls=None):
+def aplicar_texto(texto, selecao, xmls=None, regime=None):
     """selecao = {'docs': [{'id', 'corrigir_cfop', 'incluir_difal', 'grupos': [{'tipo','aliq_inter','aliq_interna'}]}],
                   'creditos': {'modo': 'zerar' | 'estorno', 'cod_aj': 'RO010011', 'docs': [id, ...]},
                   'e116': {'cod_rec': '', 'venc': 'ddmmaaaa'}}  ->  (texto_novo, resumo)"""
     linhas, quebra, final_vazio = dividir(texto)
-    an = analisar_texto(texto, xmls)
+    an = analisar_texto(texto, xmls, regime)
     por_id = {d['id']: d for d in an['docs']}
     cab, part, obs460, docs, e110, _ = _estrutura(linhas)
     docs_por_i = {d['i']: d for d in docs}
@@ -851,7 +938,7 @@ def aplicar_texto(texto, selecao, xmls=None):
                 e = ed.get((g['tipo'], float(g['aliq_inter'])), {})
                 ai = float(e.get('aliq_inter_nova', g['aliq_inter']))
                 an_ = float(e.get('aliq_interna', g['aliq_interna']))
-                base, dif = calcular_difal(g['valor'], ai, an_, dupla)
+                base, dif = calcular_difal(g['valor'], ai, an_, a.get('base_dupla', dupla))
                 if dif <= 0:
                     continue
                 novos.append((g, base, dif, ai, an_))
@@ -890,7 +977,7 @@ def aplicar_texto(texto, selecao, xmls=None):
             e = ed.get((g['tipo'], float(g['aliq_inter'])), {})
             ai = float(e.get('aliq_inter_nova', g['aliq_inter']))
             an_ = float(e.get('aliq_interna', g['aliq_interna']))
-            base, dif = calcular_difal(g['valor'], ai, an_, dupla)
+            base, dif = calcular_difal(g['valor'], ai, an_, f.get('base_dupla', dupla))
             if dif > 0:
                 novos.append((g, base, dif, ai, an_))
         if not novos:
@@ -978,6 +1065,17 @@ def aplicar_texto(texto, selecao, xmls=None):
 
 
 # ------------------------------------------------------------------ CLI
+def carrega_regimes(caminho):
+    """--regimes arquivo.json: {cnpj: {'regime': 'simples'|'normal', 'info': '...'}} (consulta feita pelo aplicativo)."""
+    if caminho and os.path.exists(caminho):
+        try:
+            with open(caminho, 'r', encoding='utf-8') as fh:
+                for k, v in (json.load(fh) or {}).items():
+                    REGIMES[re.sub(r'\D', '', k)] = v
+        except (OSError, ValueError):
+            pass
+
+
 def main_cli(argv):
     def opt(n):
         return argv[argv.index(n) + 1] if n in argv and argv.index(n) + 1 < len(argv) else None
@@ -985,6 +1083,10 @@ def main_cli(argv):
     if not sped or not js:
         print('uso: difal-ro --sped ARQ.txt --json saida.json [--xmls "a.zip;b.zip"] [--aplicar selecao.json --saida novo.txt]'); return 1
     texto, enc = _ler(sped)
+    carrega_regimes(opt('--regimes'))
+    regime = opt('--regime')
+    if regime and opt('--regime-info'):
+        regime = {'regime': regime, 'info': opt('--regime-info')}
     try:
         xmls, lidos = {}, 0
         if opt('--xmls'):
@@ -993,14 +1095,14 @@ def main_cli(argv):
         if opt('--aplicar'):
             with open(opt('--aplicar'), 'r', encoding='utf-8') as fh:
                 sel = json.load(fh)
-            novo, res = aplicar_texto(texto, sel, xmls)
+            novo, res = aplicar_texto(texto, sel, xmls, regime)
             if not res.get('erro'):
                 tmp = opt('--saida') + '.parcial'
                 with open(tmp, 'w', encoding=enc, newline='') as fh:
                     fh.write(novo)
                 os.replace(tmp, opt('--saida'))
         else:
-            res = analisar_texto(texto, xmls)
+            res = analisar_texto(texto, xmls, regime)
             res['resumo']['xml_lidos'] = lidos
     except Exception as e:  # pragma: no cover
         res = {'erro': f'Falha ao processar o SPED: {e}'}

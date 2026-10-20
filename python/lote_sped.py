@@ -469,6 +469,7 @@ def main_cli(argv):
     if modo not in ('analisar', 'aplicar') or not js:
         print(__doc__)
         return 1
+    dr.carrega_regimes(opt('--regimes'))          # regime (Simples × normal) de cada CNPJ, consultado pelo aplicativo
     try:
         if modo == 'analisar':
             pasta = opt('--pasta')

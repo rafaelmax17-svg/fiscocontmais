@@ -124,8 +124,12 @@ def ler_xml(texto):
     tot = inf.find('total/ICMSTot')
     ide = inf.find('ide')
     dest = inf.find('dest')
+    # Regime do emitente pelo CRT: 1 = Simples, 4 = MEI, 2 = Simples com excesso de sublimite (tributa e destaca como
+    # regime normal), 3 = regime normal. Sem CRT (XML antigo/incompleto), vale o CSOSN dos itens.
+    crt = _t(emit, 'CRT')
+    simples = crt in ('1', '4') if crt in ('1', '2', '3', '4') else bool(csosns)
     return {
-        'chave': chave, 'tipo': 'nfe', 'simples': bool(csosns), 'csosn': sorted(csosns),
+        'chave': chave, 'tipo': 'nfe', 'simples': simples, 'csosn': sorted(csosns),
         'mod': _t(ide, 'mod'), 'id_dest': _t(ide, 'idDest'), 'ind_pres': _t(ide, 'indPres'),
         'dest_uf': _t(dest, 'enderDest/UF'), 'dest_cnpj': _t(dest, 'CNPJ'),
         'crt': _t(emit, 'CRT'), 'emit_nome': _t(emit, 'xNome'), 'emit_uf': _t(emit, 'enderEmit/UF'),
