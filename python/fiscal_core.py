@@ -2890,6 +2890,9 @@ def main(argv):
     if modo == 'simples-ro':
         import simples_ro as _sr
         return _sr.main_cli(argv[1:])
+    if modo == 'valor-xml':
+        import valor_xml as _vx
+        return _vx.main_cli(argv[1:])
     if modo == 'difal-ro':
         import difal_ro as _dr
         return _dr.main_cli(argv[1:])

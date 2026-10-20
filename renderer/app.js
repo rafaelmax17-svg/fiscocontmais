@@ -1368,7 +1368,7 @@ function bindFiscal() {
       $('#corrSimples').hidden = true; $('#corrSimples').innerHTML = '';
       $('#corrSpedResumo').hidden = true;
       $('#corrDifal').hidden = true; $('#corrDifal').innerHTML = '';
-      $('#corrLote').hidden = true; $('#corrIcmsXml').hidden = true; $('#btnCorrIcmsXml').disabled = false;
+      $('#corrLote').hidden = true; $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true; $('#btnCorrIcmsXml').disabled = false; $('#btnCorrValXml').disabled = false;
       $('#corrSpedFrame').hidden = true; $('#corrSpedEmpty').hidden = false;
       toast('Modo manual: ' + sped.split(/[\\/]/).pop() + (xmls ? ' (XMLs de entrada já anexados)' : ''));
     };
@@ -1387,8 +1387,8 @@ function bindFiscal() {
       $('#corrSimples').hidden = true; $('#corrSimples').innerHTML = '';
       $('#corrSpedResumo').hidden = true;
       $('#corrDifal').hidden = true; $('#corrDifal').innerHTML = '';
-      $('#corrIcmsXml').hidden = true; $('#corrIcmsXml').innerHTML = ''; IX.an = null;
-      $('#btnCorrIcmsXml').disabled = false;
+      $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true; $('#corrIcmsXml').innerHTML = ''; IX.an = null;
+      $('#btnCorrIcmsXml').disabled = false; $('#btnCorrValXml').disabled = false;
       toast('SPED selecionado: ' + pick.path.split(/[\\/]/).pop());
     });
 
@@ -1515,7 +1515,7 @@ function bindFiscal() {
 
     async function difalAbrir() {
       if (!corrSpedPath) return;
-      $('#corrIcmsXml').hidden = true;
+      $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true;
       overlay(true, 'Conferindo notas de uso e consumo / ativo e o DIFAL de RO…');
       const res = await window.fiscocont.admin.difalAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path });
       overlay(false);
@@ -2041,10 +2041,10 @@ function bindFiscal() {
       st_sem_retencao: ['Escriturado como ST, nota sem ST', 'b-warn', '#4f46e5'],
       menor: ['Crédito menor que o destacado', 'b-mute', '#7c8bd6'],
     };
-    function ixFechar() { $('#corrIcmsXml').hidden = true; $('#corrSpedEmpty').hidden = false; }
+    function ixFechar() { $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true; $('#corrSpedEmpty').hidden = false; }
     async function ixAbrir() {
       if (!corrSpedPath) return;
-      ['#corrSpedEmpty', '#corrSpedFrame', '#corrSpedResumo', '#corrDifal', '#corrSimples', '#corrLote'].forEach((s) => { const el = $(s); if (el) el.hidden = true; });
+      ['#corrSpedEmpty', '#corrSpedFrame', '#corrSpedResumo', '#corrDifal', '#corrSimples', '#corrLote', '#corrValXml'].forEach((s) => { const el = $(s); if (el) el.hidden = true; });
       const box = $('#corrIcmsXml');
       box.hidden = false;
       if (!XMLS.path) { ixVazio(); return; }
@@ -2202,6 +2202,175 @@ function bindFiscal() {
     }
     $('#btnCorrIcmsXml').addEventListener('click', () => ixAbrir());
 
+    // ---- Valor do documento e base do ICMS × XML (entradas com crédito) ----
+    const VX = { an: null, origem: null, sel: new Set() };
+    function vxFechar() { $('#corrValXml').hidden = true; $('#corrSpedEmpty').hidden = false; }
+    async function vxAbrir() {
+      if (!corrSpedPath) return;
+      ['#corrSpedEmpty', '#corrSpedFrame', '#corrSpedResumo', '#corrDifal', '#corrSimples', '#corrLote', '#corrIcmsXml'].forEach((s) => { const el = $(s); if (el) el.hidden = true; });
+      $('#corrValXml').hidden = false;
+      if (!XMLS.path) { vxVazio(); return; }
+      await vxAnalisar();
+    }
+    function vxVazio() {
+      const box = $('#corrValXml');
+      box.innerHTML = `
+        <div class="dif-head"><div>
+          <div class="dif-k">Corretor do SPED · Admin · Valor e base × XML</div>
+          <h3>Selecione os XMLs de entrada do período</h3>
+          <div class="dif-sub">Cada nota de entrada é cruzada pela chave de acesso com o XML: valor do documento, base de cálculo e ICMS.</div>
+        </div><button class="act inv-export" id="btnVxFechar">Fechar</button></div>
+        <div class="sn-vazio"><p>Anexe a pasta ou os <b>.zip</b> com os XMLs das notas de entrada.</p>
+          <button class="act inv-export sn-big" id="btnVxXmls">Selecionar XMLs</button></div>`;
+      $('#btnVxFechar').addEventListener('click', vxFechar);
+      $('#btnVxXmls').addEventListener('click', vxEscolherXmls);
+    }
+    async function vxEscolherXmls() {
+      const pick = await window.fiscocont.fiscal.pickXmlsFolder();
+      if (pick.canceled || !pick.path) return;
+      XMLS.path = pick.path;
+      await vxAnalisar();
+    }
+    async function vxAnalisar() {
+      overlay(true, 'Conferindo valor do documento, base e ICMS do SPED com os XMLs…');
+      const res = await window.fiscocont.admin.valorXmlAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path });
+      overlay(false);
+      if (res.error) { toast(res.error, true); if (!VX.an) vxVazio(); return; }
+      VX.an = res.res; VX.origem = res.origem;
+      VX.sel = new Set((VX.an.docs || []).filter((d) => d.sugerido).map((d) => d.id));
+      vxRender();
+    }
+    function vxPrev() {
+      const an = VX.an, e = an.e110 || {};
+      const docs = (an.docs || []).filter((d) => VX.sel.has(d.id));
+      const red = docs.reduce((t, d) => t + (d.base === 'maior' ? d.reducao : 0), 0);
+      const nDoc = docs.filter((d) => d.doc_dif).length, nBase = docs.filter((d) => d.base === 'maior').length;
+      const cred = e.cred || 0, rec = e.recolher || 0, sld = e.sld_transp || 0;
+      const credD = Math.max(0, cred - red);
+      const recD = sld > 0 ? Math.max(0, red - sld) + rec : rec + red;
+      const sldD = Math.max(0, sld - red);
+      $('#vxPrev').innerHTML = `<table class="dif-mini"><thead><tr><th></th><th class="n">Antes</th><th class="n">Depois</th></tr></thead><tbody>
+        <tr><td>Créditos (E110, campo 06)</td><td class="n">R$ ${fm(cred)}</td><td class="n ${red ? 'mud' : ''}">R$ ${fm(credD)}</td></tr>
+        <tr><td>Saldo credor a transportar</td><td class="n">R$ ${fm(sld)}</td><td class="n">R$ ${fm(sldD)}</td></tr>
+        <tr><td><b>ICMS a recolher</b></td><td class="n">R$ ${fm(rec)}</td><td class="n"><b>R$ ${fm(recD)}</b></td></tr></tbody></table>
+        <div class="dif-sub" style="margin-top:6px">Marcado: <b>${nDoc}</b> nota(s) com valor do documento corrigido (não muda a apuração) · <b>${nBase}</b> com base/ICMS corrigidos${red ? ` · crédito retirado <b>R$ ${fm(red)}</b>` : ''}</div>`;
+      $('#btnVxAplicar').disabled = !VX.sel.size;
+      $('#vxE116').hidden = !(red > 0 && recD > 0 && !(an.e116 || []).some((g) => g.cod === '000'));
+    }
+    const VX_BASE = { maior: ['Base maior que o XML', 'b-err'], maior_sem_item: ['Base acima, fora dos itens', 'b-warn'], menor: ['Base menor que o XML', 'b-mute'] };
+    function vxLinha(d) {
+      const b = VX_BASE[d.base];
+      const tags = [d.doc_dif ? '<span class="dif-b b-warn">Valor do documento diferente</span>' : '', b ? `<span class="dif-b ${b[1]}">${b[0]}</span>` : ''].filter(Boolean).join(' ');
+      const vv = (a, x, dif) => dif ? `<span class="v-old">R$ ${fm(a)}</span><span class="v-new">R$ ${fm(x)}</span>` : `R$ ${fm(a)}<small>igual</small>`;
+      const acao = [d.doc_dif ? 'Corrige o C100 pelo XML e refaz o VL_OPR do C190' : '', d.base === 'maior' ? 'Corrige base e ICMS pelo XML e refaz o E110' : '',
+        d.base === 'menor' ? 'Só informa: crédito que pode ser recuperado' : '', d.base === 'maior_sem_item' ? 'Corrigir à mão' : ''].filter(Boolean).join(' · ');
+      const itens = (d.itens || []).map((i) => `<tr><td>${esc(i.num)}</td><td>${esc(i.descr)}<small>XML: ${esc(i.xprod)}</small></td><td>${esc(i.cfop)}</td>
+        <td>${esc(i.cst_sped)} → ${esc(i.cst_xml)}</td><td class="n">R$ ${fm(i.bc_sped)} → R$ ${fm(i.bc_xml)}</td><td class="n">${fa(i.aliq_sped)} → ${fa(i.aliq_xml)}</td>
+        <td class="n">R$ ${fm(i.icms_sped)} → R$ ${fm(i.icms_xml)}</td></tr>`).join('');
+      return `<tr class="${d.sugerido ? '' : 'dif-off'}">
+        <td><label class="dif-ck"><input type="checkbox" class="vx-ck" data-id="${d.id}" ${VX.sel.has(d.id) ? 'checked' : ''} ${d.sugerido ? '' : 'disabled'}> <b>${esc(d.num)}</b></label><small>${dt(d.data)}</small></td>
+        <td>${esc(d.fornecedor)}${d.simples ? ' <span class="dif-b b-warn">Simples</span>' : ''}<small>${esc(d.cnpj)} · ${esc(d.uf || '')}</small></td>
+        <td class="n">${vv(d.vl_doc_sped, d.vl_doc_xml, d.doc_dif)}</td>
+        <td class="n">${vv(d.bc_sped, d.bc_xml, Math.abs(d.bc_sped - d.bc_xml) > 0.01)}</td>
+        <td class="n">${vv(d.icms_sped, d.icms_xml, Math.abs(d.icms_sped - d.icms_xml) > 0.01)}</td>
+        <td style="white-space:normal;max-width:300px">${tags}${(d.obs || []).map((o) => `<small style="white-space:normal">${esc(o)}</small>`).join('')}</td>
+        <td style="white-space:normal;max-width:220px">${acao}</td></tr>
+        ${itens ? `<tr class="ix-det"><td colspan="7"><details class="mono-ex" style="margin:0"><summary>ver os ${d.itens.length} item(ns) com diferença de base/ICMS</summary>
+          <table class="dif-tab" style="margin-top:6px"><thead><tr><th>Item</th><th>Produto</th><th>CFOP</th><th>CST SPED → XML</th><th class="n">Base</th><th class="n">Alíquota</th><th class="n">ICMS</th></tr></thead><tbody>${itens}</tbody></table></details></td></tr>` : ''}`;
+    }
+    function vxRender() {
+      const an = VX.an, emp = an.empresa || {}, rs = an.resumo || {}, box = $('#corrValXml'), docs = an.docs || [], fo = an.fora || {};
+      const e116 = (an.e116 || []).find((g) => g.cod === '000') || (an.e116 || [])[0] || {};
+      const chips = [fo.uso_ativo && fo.uso_ativo.length ? `Uso e consumo / ativo (crédito pelo CIAP) · ${fo.uso_ativo.length}` : '',
+        fo.canceladas ? `Canceladas / denegadas · ${fo.canceladas}` : '', (fo.sem_xml || []).length ? `Sem XML · ${fo.sem_xml.length}` : ''].filter(Boolean);
+      box.innerHTML = `
+        <div class="dif-head"><div>
+          <div class="dif-k">Corretor do SPED · Admin · Valor do documento e base × XML · entradas com crédito</div>
+          <h3>${esc(emp.nome || '')}</h3>
+          <div class="dif-sub">CNPJ ${esc(emp.cnpj || '')} · período ${dt(emp.dt_ini)} a ${dt(emp.dt_fin)} · arquivo <b>${VX.origem === 'corrigido' ? 'já corrigido nesta sessão' : 'original'}</b> · ${rs.xml_lidos ?? 0} XMLs lidos</div>
+        </div>
+        <div class="sn-hbtn"><button class="act inv-export" id="btnVxXmls">Trocar XMLs</button><button class="act inv-export" id="btnVxFechar">Fechar</button></div></div>
+        <div class="dif-kpis">
+          <div class="k-ok"><span>Notas que batem</span><b data-n="${rs.batem || 0}">0</b><small>de ${rs.notas_conferidas || 0} conferida(s)</small></div>
+          <div class="k-err"><span>Base maior que o XML</span><b data-n="${rs.base_maior || 0}">0</b><small>crédito a mais: R$ ${fm(rs.credito_a_retirar)}${rs.base_maior_sem_item ? ` · ${rs.base_maior_sem_item} fora dos itens` : ''}</small></div>
+          <div class="k-warn"><span>Valor do documento diferente</span><b data-n="${rs.doc_dif || 0}">0</b><small>diferença total R$ ${fm(rs.doc_dif_total)}</small></div>
+          <div><span>Base menor que o XML</span><b data-n="${rs.base_menor || 0}">0</b><small>só informativo · R$ ${fm(rs.credito_nao_tomado)}</small></div>
+          <div><span>Fora da conferência</span><b data-n="${(rs.fora_uso_ativo || 0) + (rs.fora_canceladas || 0) + (rs.sem_xml || 0)}">0</b><small>uso/consumo, ativo, canceladas, sem XML</small></div>
+        </div>
+        ${docs.length ? `
+        <div class="mono-card"><div class="dif-k">Notas com diferença — marque o que corrigir</div>
+          <div class="dif-tw" style="margin-top:8px;max-height:620px"><table class="dif-tab"><thead><tr><th>Nota</th><th>Fornecedor</th><th class="n">Valor do documento<br>SPED → XML</th><th class="n">Base ICMS<br>SPED → XML</th><th class="n">ICMS<br>SPED → XML</th><th>Resultado</th><th>O que o sistema faz</th></tr></thead>
+          <tbody>${docs.map(vxLinha).join('')}</tbody></table></div></div>
+        <div class="mono-grid">
+          <div class="mono-card"><div class="dif-k">Apuração (E110) antes × depois</div><div id="vxPrev"></div></div>
+          <div class="mono-card">
+            <div class="dif-e116" id="vxE116" hidden style="margin-top:10px"><div class="dif-sub"><b>A empresa passa a ter ICMS a recolher e o SPED não tem guia (E116):</b></div>
+              <label>Vencimento <input id="vxVenc" placeholder="dd/mm/aaaa" value="${e116.venc ? dt(e116.venc) : ''}"></label>
+              <label>Código de receita <input id="vxCodRec" placeholder="ex.: 1210" value="${esc(e116.cod_rec || '')}"></label></div>
+            <div class="dif-sub" style="margin-top:10px"><b>O que o arquivo novo muda:</b> valor do documento diferente — o C100 recebe os totais do XML (valor do documento, desconto, mercadorias, frete, seguro e outras despesas)
+              e o VL_OPR do C190 é refeito para somar o valor da nota; base e ICMS não mudam. Base maior que o XML — base, alíquota e ICMS do item (C170) vão para o que o XML destaca, o C190 e o C100 são refeitos e o campo 06 do E110 diminui.
+              Base menor fica como está. Uso e consumo e ativo não são mexidos. O original nunca é alterado.</div>
+            <div class="dif-sub">Base legal: o C100 repete os totais da nota e o crédito é o imposto destacado na nota da operação anterior (Guia Prático da EFD ICMS/IPI, registros C100 e C190; LC 87/96, arts. 19, 20 e 23).</div>
+            <div class="dif-acts"><button class="act inv-export" id="btnVxAplicar" style="background:#e23d4c;color:#fff;border-color:transparent">Aplicar no SPED (gera arquivo novo)</button></div>
+          </div>
+        </div>
+        <div id="vxRes"></div>` : `<div class="dif-av ok">Valor do documento, base e ICMS do SPED batem com os XMLs em todas as ${rs.notas_conferidas || 0} nota(s) conferidas.</div>`}
+        ${chips.length ? `<div class="mono-card"><div class="dif-k">Fora da conferência (não entram, porque não dão crédito ou têm regra própria)</div>
+          <div class="dif-sub" style="margin-top:6px">${chips.map((c) => `<span class="pill p-x" style="margin:0 6px 6px 0;display:inline-block">${esc(c)}</span>`).join('')}</div>
+          ${(fo.sem_xml || []).length ? `<details class="mono-ex" style="margin:6px 0 0"><summary>Entradas sem XML — ${fo.sem_xml.length} nota(s)</summary>
+          <div class="dif-tw" style="max-height:320px"><table class="dif-tab"><thead><tr><th>Nota</th><th>Fornecedor</th><th>Chave de acesso</th><th class="n">Valor no SPED</th></tr></thead>
+          <tbody>${fo.sem_xml.map((z) => `<tr><td><b>${esc(z.num)}</b><small>${dt(z.data)}</small></td><td>${esc(z.fornecedor)}<small>${esc(z.cnpj)}</small></td><td style="font-family:monospace;font-size:11.5px">${esc(z.chave)}</td><td class="n">R$ ${fm(z.vl_doc)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}</div>` : ''}`;
+      animaNumeros(box);
+      $('#btnVxFechar').addEventListener('click', vxFechar);
+      $('#btnVxXmls').addEventListener('click', vxEscolherXmls);
+      if (!docs.length) return;
+      box.querySelectorAll('.vx-ck').forEach((c) => c.addEventListener('change', () => { const id = Number(c.dataset.id); c.checked ? VX.sel.add(id) : VX.sel.delete(id); vxPrev(); }));
+      vxPrev();
+      $('#btnVxAplicar').addEventListener('click', vxAplicar);
+    }
+    async function vxAplicar() {
+      const selecao = { docs: [...VX.sel] };
+      if (!$('#vxE116').hidden) {
+        const venc = ($('#vxVenc').value || '').replace(/\D/g, ''), cod = ($('#vxCodRec').value || '').trim();
+        if (venc.length !== 8 || !cod) { toast('Informe o vencimento (dd/mm/aaaa) e o código de receita da guia.', true); return; }
+        selecao.e116 = { venc, cod_rec: cod };
+      }
+      overlay(true, 'Corrigindo valor do documento e base pelo XML…');
+      const res = await window.fiscocont.admin.valorXmlAplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path, selecao });
+      overlay(false);
+      if (res.error) { toast(res.error, true); return; }
+      corrFeito = true;
+      const r = res.resumo || {}, ea = r.e110_antes, ed = r.e110_depois, out = $('#vxRes');
+      out.innerHTML = `
+        <div class="dif-done sn-done">
+          <div class="dif-k">Corrigido: arquivo novo gerado (o original não foi alterado)</div>
+          <div class="dif-kpis">
+            <div class="k-ok"><span>Notas corrigidas</span><b data-n="${r.notas || 0}">0</b><small>${r.notas_doc || 0} no valor do documento · ${r.notas_base || 0} na base (${r.c170 || 0} item(ns))</small></div>
+            <div class="k-err"><span>Crédito retirado</span><b data-n="${r.credito_retirado || 0}" data-fmt="brl">R$ 0,00</b><small>campo 06 do E110</small></div>
+            ${ea && ed ? `<div><span>ICMS a recolher</span><b data-n="${ed.recolher}" data-fmt="brl">R$ 0,00</b><small>antes R$ ${fm(ea.recolher)}</small></div>` : ''}
+          </div>
+          ${(r.detalhe || []).length ? `<div class="dif-sub"><ul>${r.detalhe.slice(0, 40).map((x) => `<li><b>NF ${esc(x.num)}</b> · ${esc(x.fornecedor)}: ${esc((x.feito || []).join('; '))}</li>`).join('')}</ul></div>` : ''}
+          ${r.e116 ? `<p class="dif-sub">${esc(r.e116)}</p>` : ''}
+          ${(r.avisos || []).length ? `<div class="dif-av"><ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+          <div class="dif-acts">
+            <button class="act inv-export" id="btnVxReconf">Conferir de novo</button>
+            <button class="act inv-export sn-big" id="btnVxBaixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button>
+          </div>
+        </div>`;
+      animaNumeros(out);
+      $('#btnVxBaixar').addEventListener('click', async () => {
+        const r3 = await window.fiscocont.fiscal.baixarSpedCorrigido();
+        if (r3.canceled) return;
+        if (r3.error) { toast(r3.error, true); return; }
+        toast('SPED corrigido salvo.');
+        window.fiscocont.openPath(r3.path);
+      });
+      $('#btnVxReconf').addEventListener('click', vxAnalisar);
+      out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      toast('Valor do documento e base ajustados ao XML — baixe o SPED corrigido.');
+    }
+    $('#btnCorrValXml').addEventListener('click', () => vxAbrir());
+
     const SN = { an: null, origem: null, filtro: 'pend' };
     const SN_ST = {
       incluir: ['Crédito a incluir', 'b-err', '#2a78d6'],
@@ -2220,7 +2389,7 @@ function bindFiscal() {
       if (!corrSpedPath) return;
       $('#corrSpedEmpty').hidden = true; $('#corrSpedFrame').hidden = true; $('#corrSpedResumo').hidden = true;
       $('#corrDifal').hidden = true;
-      $('#corrIcmsXml').hidden = true;
+      $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true;
       const box = $('#corrSimples');
       box.hidden = false;
       if (!XMLS.path) { snVazio(); return; }
@@ -3527,7 +3696,7 @@ function bindLoteSped() {
   const box = () => $('#corrLote');
   const fechar = () => { box().hidden = true; $('#corrSpedEmpty').hidden = false; };
   const tipoRot = { difal: 'DIFAL', frete: 'Frete (CT-e)', balcao: 'Balcão', credito: 'Crédito uso e consumo', simples_aliq: 'Simples · alíquota', simples_sem: 'Simples · sem direito', e116: 'Guia E116' };
-  const nAuto = (e) => ((e.correcoes || {}).total || 0) + ((e.auto || {}).cfop || []).length + ((e.auto || {}).simples || []).length + ((e.auto || {}).icms_xml || []).length;
+  const nAuto = (e) => ((e.correcoes || {}).total || 0) + ((e.auto || {}).cfop || []).length + ((e.auto || {}).simples || []).length + ((e.auto || {}).icms_xml || []).length + ((e.auto || {}).valor_xml || []).length;
   const idx = (e) => L.an.empresas.indexOf(e);
 
   async function analisar() {
@@ -3598,6 +3767,7 @@ function bindLoteSped() {
         if ((e.auto || {}).cfop?.length) chips.push(`${e.auto.cfop.length} CFOP`);
         if ((e.auto || {}).simples?.length) chips.push(`${e.auto.simples.length} Simples`);
         if ((e.auto || {}).icms_xml?.length) chips.push(`${e.auto.icms_xml.length} crédito × XML`);
+        if ((e.auto || {}).valor_xml?.length) chips.push(`${e.auto.valor_xml.length} valor/base × XML`);
         const dep = e.icms_depois ?? e.icms_antes;
         const st = e.outro_periodo ? ['b-err', 'outro período'] : e.duplicado ? ['b-warn', 'duplicado'] : (e.erro && !e.precisa_e116) ? ['b-err', 'erro']
           : nd ? ['b-warn', `${nd} decisão(ões)`] : (nAuto(e) || e.alterado) ? ['b-ok', 'pronto'] : ['b-ok', 'nada a corrigir'];
@@ -3697,7 +3867,7 @@ function bindLoteSped() {
           <td><b>${esc(e.empresa?.nome || e.arquivo)}</b><small>${esc(e.arquivo)}</small></td>
           <td>${e.corrigido ? '<span class="dif-b b-ok">corrigido</span>' : `<span class="dif-b b-err">erro</span><small style="white-space:normal">${esc(e.erro || '')}</small>`}</td>
           <td class="n">R$ ${fm(e.icms_antes)}</td><td class="n"><b>R$ ${fm(e.icms_depois ?? e.icms_antes)}</b></td>
-          <td class="n">R$ ${fm(((e.difal || {}).incluido || 0) - ((e.difal || {}).removido || 0))}</td><td class="n">${(e.icms_xml || {}).credito_retirado ? '− R$ ' + fm(e.icms_xml.credito_retirado) : '—'}</td><td class="n">R$ ${fm((e.simples || {}).credito)}</td>
+          <td class="n">R$ ${fm(((e.difal || {}).incluido || 0) - ((e.difal || {}).removido || 0))}</td><td class="n">${((e.icms_xml || {}).credito_retirado || 0) + ((e.valor_xml || {}).credito_retirado || 0) ? '− R$ ' + fm(((e.icms_xml || {}).credito_retirado || 0) + ((e.valor_xml || {}).credito_retirado || 0)) : '—'}</td><td class="n">R$ ${fm((e.simples || {}).credito)}</td>
           <td style="max-width:320px;white-space:normal;font-size:11.5px">${(e.avisos || []).map(esc).join('<br>')}</td>
           <td><div class="lote-tdb">${e.corrigido ? `<button class="act inv-export lote-baixa" data-k="${k}">Baixar</button>` : ''}
             <button class="act inv-export lote-man2" data-k="${k}">Modo manual</button></div></td></tr>`).join('')}</tbody></table></div>

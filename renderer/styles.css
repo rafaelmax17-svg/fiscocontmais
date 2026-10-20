@@ -946,3 +946,8 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .nav-item:not(.nav-item-danger):not(.nav-item-destaque):not(.nav-item-adm) .ic{
   color:var(--ic,currentColor);opacity:1;
   filter:drop-shadow(0 0 5px color-mix(in srgb,var(--ic,transparent) 45%,transparent))}
+
+/* Valor e base × XML */
+#corrValXml .v-old{display:block;color:#a3abc0;text-decoration:line-through;font-size:11.5px}
+#corrValXml .v-new{display:block;font-weight:800;color:var(--ink)}
+#corrValXml td.n small{display:block;color:#8a93a8;font-size:11px}

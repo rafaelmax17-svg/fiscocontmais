@@ -31,6 +31,7 @@ import fiscal_core as fc
 import difal_ro as dr
 import simples_ro as sr
 import icms_xml as ix
+import valor_xml as vx
 from xml_entradas import ler_xmls
 
 PULAR_PASTAS = {'NFS-E', 'NF-E', 'CT-E', 'XML', 'PDF', 'RELATÓRIOS', 'RELATORIOS', 'OUTROS CNPJ', 'CORRIGIDOS'}
@@ -193,7 +194,7 @@ def plano_empresa(corr, xmls, lidos):
     an = dr.analisar_texto(corr, xmls)
     sn = sr.analisar_texto(corr, xmls, lidos) if xmls else None
     uf_ro = an['empresa']['uf'] == 'RO'
-    auto = {'cfop': [], 'simples': [], 'icms_xml': []}
+    auto = {'cfop': [], 'simples': [], 'icms_xml': [], 'valor_xml': []}
     dec = []
     for d in an['docs']:
         nota = f"NF {d['num']} · {d['fornecedor']} ({d['uf_origem'] or 'UF ?'})"
@@ -239,6 +240,11 @@ def plano_empresa(corr, xmls, lidos):
         for x in ix.analisar_texto(corr, xmls)['docs']:
             if x['sugerido']:
                 auto['icms_xml'].append({'nota': f"NF {x['num']} · {x['fornecedor']}", 'reducao': x['reducao'], 'status': x['status']})
+        # valor do documento e base do ICMS × XML (roda depois do ICMS × XML, sobre o arquivo já ajustado)
+        for x in vx.analisar_texto(corr, xmls)['docs']:
+            if x['sugerido']:
+                auto['valor_xml'].append({'nota': f"NF {x['num']} · {x['fornecedor']}", 'doc': x['doc_dif'], 'dif_doc': x['dif_doc'],
+                                          'base': x['base']})
     cr = [x for x in an['creditos']['docs'] if x['sugerido']]
     if cr:
         tot = sum(x['credito'] for x in cr)
@@ -340,6 +346,19 @@ def processar(sped, xml_dir, escolhas=None, mes=None):
                 erro, final = ri['erro'], None
             else:
                 final = novo
+    rv = {}
+    if final is not None and xmls and auto.get('valor_xml'):
+        va = vx.analisar_texto(final, xmls)
+        ids = [x['id'] for x in va['docs'] if x['sugerido']]
+        if ids:
+            sel = {'docs': ids}
+            if e116:
+                sel['e116'] = e116
+            novo, rv = vx.aplicar_texto(final, xmls, sel)
+            if rv.get('erro'):
+                erro, final = rv['erro'], None
+            else:
+                final = novo
     if final is not None and sn_sel and xmls:
         sn2 = sr.analisar_texto(final, xmls, lidos)
         ids = {_chave_doc(x): x['id'] for x in sn2['docs']}
@@ -362,7 +381,7 @@ def processar(sped, xml_dir, escolhas=None, mes=None):
         avisos += fc.confere_e110_ajustes(final)
     if sn:
         avisos += [a for a in sn.get('avisos') or [] if a not in avisos]
-    for r in (rd, ri, rs):
+    for r in (rd, ri, rv, rs):
         avisos += [a for a in r.get('avisos') or [] if a not in avisos]
     mes_sped = f"{cab.get('dt_ini', '')[2:4]}-{cab.get('dt_ini', '')[4:8]}" if len(cab.get('dt_ini', '')) == 8 else ''
     n_corr = sum(rc.get(k) or 0 for k in ('c191_removidos', 'e500_linhas_removidas', 'gtin_limpos', 'cest_limpos', 'cod_nat_corrigidos',
@@ -385,6 +404,8 @@ def processar(sped, xml_dir, escolhas=None, mes=None):
                   'fretes': rd.get('fretes_incluidos', 0), 'cfop_notas': rd.get('notas_cfop', 0), 'cred_total': rd.get('cred_total', 0.0),
                   'cred_modo': rd.get('cred_modo', '')},
         'icms_xml': {'notas': ri.get('notas', 0), 'credito_retirado': ri.get('credito_retirado', 0.0)},
+        'valor_xml': {'notas': rv.get('notas', 0), 'notas_doc': rv.get('notas_doc', 0), 'notas_base': rv.get('notas_base', 0),
+                      'credito_retirado': rv.get('credito_retirado', 0.0)},
         'simples': {'notas': rs.get('notas', 0), 'credito': rs.get('credito_c197', 0.0), 'retirado_c190': rs.get('credito_retirado_c190', 0.0)},
         'avisos': avisos,
         'alterado': final is not None and final != texto,

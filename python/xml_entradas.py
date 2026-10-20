@@ -135,6 +135,8 @@ def ler_xml(texto):
         'crt': _t(emit, 'CRT'), 'emit_nome': _t(emit, 'xNome'), 'emit_uf': _t(emit, 'enderEmit/UF'),
         'vnf': _fx(_t(tot, 'vNF')), 'vst': _fx(_t(tot, 'vST')),
         'vbc_icms': _fx(_t(tot, 'vBC')), 'vicms': _fx(_t(tot, 'vICMS')), 'vicms_deson': _fx(_t(tot, 'vICMSDeson')),
+        'vprod': _fx(_t(tot, 'vProd')), 'vdesc': _fx(_t(tot, 'vDesc')), 'vfrete': _fx(_t(tot, 'vFrete')),
+        'vseg': _fx(_t(tot, 'vSeg')), 'voutro': _fx(_t(tot, 'vOutro')), 'vipi': _fx(_t(tot, 'vIPI')),
         'num': _t(ide, 'nNF'), 'emit_cnpj': _t(emit, 'CNPJ') or _t(emit, 'CPF'),
         'base': round(base_sn, 2), 'credito': round(cred_sn, 2), 'aliqs': sorted(aliqs_sn),
         'credito_previsto': credito_previsto, 'itens': itens,

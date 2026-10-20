@@ -993,6 +993,7 @@
           <button class="act inv-export" id="btnCorrSpedVerOriginal" disabled>Ver todos os dados (original)</button>
           <button class="act inv-export" id="btnCorrDifal" disabled title="Confere CFOP 1.556/2.556 (e ativo) pela UF do fornecedor, o DIFAL de RO e o crédito de ICMS tomado indevidamente; aplica só o que você confirmar">Uso e consumo · DIFAL e crédito</button>
           <button class="act inv-export" id="btnCorrIcmsXml" disabled title="Confere o ICMS creditado nas entradas com o ICMS destacado no XML de cada nota e corrige o crédito tomado a mais">ICMS creditado × XML</button>
+          <button class="act inv-export" id="btnCorrValXml" disabled title="Confere o valor do documento, a base de cálculo e o ICMS de cada nota de entrada com o XML (fora uso e consumo e ativo) e corrige pelo XML">Valor e base × XML</button>
           <button class="act inv-export" id="btnCorrSimples" disabled title="Confere e lança o crédito de ICMS de fornecedor do Simples Nacional (C195 + C197 RO00000001) com os XMLs de entrada">Crédito Simples Nacional</button>
           <button class="act inv-export" id="btnCorrSpedRodar" disabled style="background:#e23d4c;color:#fff;border-color:transparent">Corrigir SPED</button>
         </div>
@@ -1006,6 +1007,7 @@
         <div id="corrDifal" class="dif" hidden></div>
         <div id="corrSimples" class="dif" hidden></div>
         <div id="corrIcmsXml" class="dif" hidden></div>
+        <div id="corrValXml" class="dif" hidden></div>
         <iframe id="corrSpedFrame" class="fiscal-frame" hidden></iframe>
       </div>
 
