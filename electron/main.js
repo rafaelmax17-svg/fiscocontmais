@@ -109,7 +109,12 @@ function runCore(args, readyFile, validate) {
 // ---------------------------------------------------------------------------
 // Janelas
 // ---------------------------------------------------------------------------
-function createSplash() {
+// Tela de abertura: só aparece depois de desenhada (antes aparecia vazia enquanto carregava e, numa máquina mais
+// lenta, a animação começava quase na hora de fechar). O tempo mínimo conta a partir do momento em que ela aparece,
+// e a janela principal só começa a carregar depois disso, para não disputar a máquina com a animação.
+const SPLASH_MIN_MS = 4800;       // a animação termina em ~3,6 s; o resto é para ver a tela completa
+let splashShownAt = 0;
+function createSplash(onShown) {
   splashWindow = new BrowserWindow({
     width: 500,
     height: 340,
@@ -118,10 +123,29 @@ function createSplash() {
     transparent: true,
     alwaysOnTop: true,
     center: true,
-    show: true,
-    webPreferences: { contextIsolation: true },
+    show: false,
+    skipTaskbar: true,
+    webPreferences: { contextIsolation: true, backgroundThrottling: false },
   });
+  let feito = false;
+  const mostrar = () => {
+    if (feito) return;
+    feito = true;
+    if (splashWindow) splashWindow.show();
+    splashShownAt = Date.now();
+    setTimeout(onShown, 250);      // deixa a animação começar antes de carregar o sistema
+  };
+  splashWindow.once('ready-to-show', mostrar);
+  setTimeout(mostrar, 2500);       // segurança: se a tela de abertura travar, o sistema abre assim mesmo
   splashWindow.loadFile(path.join(__dirname, 'splash.html'), { query: { v: app.getVersion() } });
+}
+
+function fecharSplash(depois) {
+  const w = splashWindow;
+  splashWindow = null;
+  if (!w || w.isDestroyed()) { depois(); return; }
+  w.webContents.executeJavaScript("document.body.classList.add('sai')").catch(() => {});
+  setTimeout(() => { depois(); setTimeout(() => { if (!w.isDestroyed()) w.close(); }, 120); }, 380);
 }
 
 function createMainWindow() {
@@ -158,13 +182,14 @@ function createMainWindow() {
   });
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
-  const started = Date.now();
   mainWindow.once('ready-to-show', () => {
-    const wait = Math.max(0, 3700 - (Date.now() - started)); // splash mínimo (~3,7s, a linha do gráfico termina)
+    const wait = splashWindow ? Math.max(0, SPLASH_MIN_MS - (Date.now() - (splashShownAt || Date.now()))) : 0;
     setTimeout(() => {
-      if (splashWindow) { splashWindow.close(); splashWindow = null; }
-      mainWindow.maximize(); // sempre abre em tela cheia (login incluso, é a mesma janela)
-      mainWindow.show();
+      fecharSplash(() => {
+        if (!mainWindow) return;
+        mainWindow.maximize(); // sempre abre em tela cheia (login incluso, é a mesma janela)
+        mainWindow.show();
+      });
     }, wait);
   });
 
@@ -172,8 +197,7 @@ function createMainWindow() {
 }
 
 app.whenReady().then(() => {
-  createSplash();
-  createMainWindow();
+  createSplash(() => createMainWindow());
 
   updater.initAutoUpdate(() => mainWindow);
   setTimeout(() => updater.checkNow(), 15000); // não compete com a abertura do app
