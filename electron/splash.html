@@ -4,58 +4,86 @@
 <meta charset="utf-8">
 <style>
   html,body{margin:0;height:100%;background:transparent;overflow:hidden;
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
-  .card{
-    position:relative;height:100vh;border-radius:20px;
-    background:linear-gradient(150deg,#1b1e3a 0%,#2a2560 55%,#4f46e5 130%);
-    box-shadow:0 20px 60px rgba(10,12,30,.55);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    overflow:hidden;border:1px solid rgba(255,255,255,.08);
-  }
-  .glow{position:absolute;width:360px;height:360px;border-radius:50%;
-    background:radial-gradient(circle,rgba(124,58,237,.45),transparent 60%);
-    top:-120px;right:-90px;filter:blur(6px);}
-  .glow2{position:absolute;width:300px;height:300px;border-radius:50%;
-    background:radial-gradient(circle,rgba(59,130,246,.35),transparent 60%);
-    bottom:-120px;left:-80px;}
-  .logo{width:104px;height:104px;z-index:2;filter:drop-shadow(0 10px 24px rgba(0,0,0,.4))}
-  .name{z-index:2;color:#fff;font-size:26px;font-weight:800;letter-spacing:.3px;margin-top:16px}
-  .name span{color:#c7d2fe}
-  .sub{z-index:2;color:#aab3d6;font-size:12.5px;margin-top:4px;letter-spacing:.4px}
-  .barwrap{z-index:2;margin-top:26px;width:220px;height:5px;border-radius:99px;background:rgba(255,255,255,.12);overflow:hidden}
-  .bar{height:100%;width:40%;border-radius:99px;background:linear-gradient(90deg,#818cf8,#c7d2fe);
-    animation:load 1.4s ease-in-out infinite;}
-  @keyframes load{0%{transform:translateX(-120%)}100%{transform:translateX(320%)}}
-  .load-txt{z-index:2;color:#8b93bd;font-size:11px;margin-top:12px;letter-spacing:.5px}
-  .arc{transform-origin:256px 244px;animation:spin 2.4s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
+    font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .card{position:relative;height:100vh;border-radius:18px;overflow:hidden;
+    background-color:#0b1024;background-image:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px),radial-gradient(60% 85% at 8% 62%,rgba(79,70,229,.55),rgba(79,70,229,0) 70%);background-size:28px 28px,28px 28px,100% 100%;
+    border:1px solid rgba(255,255,255,.07);box-shadow:0 20px 60px rgba(5,8,25,.55);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;padding-bottom:58px;box-sizing:border-box;
+    animation:entra .5s ease both}
+  @keyframes entra{from{opacity:0;transform:scale(.97)}}
+  /* gráfico ao fundo: barras sobem uma a uma, a linha se desenha por cima */
+  .bars{position:absolute;left:22px;right:22px;bottom:0;height:78px;display:flex;align-items:flex-end;gap:8px;opacity:.30}
+  .bars i{flex:1;height:var(--h);border-radius:5px 5px 0 0;background:linear-gradient(#6366f1,rgba(99,102,241,0));
+    transform-origin:bottom;animation:sobe .8s var(--d) cubic-bezier(.2,.8,.2,1) both, respira 2.6s calc(var(--d) + .8s) ease-in-out infinite}
+  @keyframes sobe{from{transform:scaleY(0)}}
+  @keyframes respira{50%{transform:scaleY(.86)}}
+  .linha{position:absolute;left:22px;right:22px;bottom:14px;height:58px;opacity:.75}
+  .linha polyline{stroke-dasharray:700;stroke-dashoffset:700;animation:traca 2.8s .5s cubic-bezier(.45,.05,.35,1) forwards}
+  .linha circle{opacity:0;animation:aparece .4s 3.2s forwards}
+  @keyframes traca{to{stroke-dashoffset:0}}
+  @keyframes aparece{to{opacity:1}}
+  /* marca */
+  .mk{width:78px;height:78px;position:relative;z-index:1;animation:sobeM .6s .1s ease both}
+  @keyframes sobeM{from{opacity:0;transform:translateY(8px)}}
+  .arc{animation:gira 2.4s linear infinite}
+  @keyframes gira{to{transform:rotate(270deg)}}
+  .ck{stroke-dasharray:150;stroke-dashoffset:150;animation:desenha .7s .45s ease forwards}
+  @keyframes desenha{to{stroke-dashoffset:0}}
+  .plus{transform-origin:0 0;animation:pulsa .5s 1.0s ease both}
+  @keyframes pulsa{0%{transform:scale(0)}70%{transform:scale(1.15)}100%{transform:scale(1)}}
+  .name{z-index:1;color:#fff;font-size:26px;font-weight:800;letter-spacing:.2px;margin-top:10px;animation:sobeM .6s .25s ease both}
+  .name span{color:#a5b4fc}
+  .sub{z-index:1;color:#97a2cf;font-size:12px;margin-top:2px;animation:sobeM .6s .35s ease both}
+  .dots{z-index:1;margin-top:16px;display:flex;gap:6px}
+  .dots b{width:6px;height:6px;border-radius:50%;background:#a5b4fc;animation:pisca 1.2s infinite}
+  .dots b:nth-child(2){animation-delay:.2s}.dots b:nth-child(3){animation-delay:.4s}
+  @keyframes pisca{0%,100%{opacity:.25}50%{opacity:1}}
+  .load-txt{z-index:1;color:#8590bf;font-size:11px;margin-top:8px;letter-spacing:.3px;height:14px;transition:opacity .25s}
+  .ver{position:absolute;top:12px;right:16px;color:#5d678f;font-size:10.5px}
 </style>
 </head>
 <body>
   <div class="card">
-    <div class="glow"></div><div class="glow2"></div>
-    <svg class="logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="r" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c7d2fe"/>
-        </linearGradient>
-      </defs>
+    <div class="bars">
+      <i style="--h:34%;--d:.05s"></i><i style="--h:50%;--d:.12s"></i><i style="--h:42%;--d:.19s"></i>
+      <i style="--h:64%;--d:.26s"></i><i style="--h:56%;--d:.33s"></i><i style="--h:78%;--d:.40s"></i>
+      <i style="--h:70%;--d:.47s"></i><i style="--h:90%;--d:.54s"></i><i style="--h:84%;--d:.61s"></i>
+    </div>
+    <svg class="linha" viewBox="0 0 456 58" preserveAspectRatio="none">
+      <polyline points="0,52 57,38 114,44 171,26 228,32 285,15 342,20 399,5 456,9" fill="none" stroke="#a5b4fc" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="456" cy="9" r="3.5" fill="#c7d2fe"/>
+    </svg>
+    <svg class="mk" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="r" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c7d2fe"/></linearGradient></defs>
       <g transform="translate(256 244)">
-        <circle r="118" fill="none" stroke="#ffffff" stroke-opacity="0.20" stroke-width="34"/>
-        <circle class="arc" r="118" fill="none" stroke="url(#r)" stroke-width="34"
-                stroke-linecap="round" stroke-dasharray="360 741" transform="rotate(-90)"/>
-        <path d="M -46 4 L -14 40 L 52 -34" fill="none" stroke="#ffffff" stroke-width="30"
-              stroke-linecap="round" stroke-linejoin="round"/>
+        <circle r="118" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="34"/>
+        <circle class="arc" r="118" fill="none" stroke="url(#r)" stroke-width="34" stroke-linecap="round" stroke-dasharray="360 741" transform="rotate(-90)"/>
+        <path class="ck" d="M -46 4 L -14 40 L 52 -34" fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
       </g>
-      <g transform="translate(388 132)">
+      <g transform="translate(388 132)"><g class="plus">
         <circle r="52" fill="#ffffff"/>
         <path d="M 0 -26 V 26 M -26 0 H 26" stroke="#4f46e5" stroke-width="18" stroke-linecap="round"/>
-      </g>
+      </g></g>
     </svg>
     <div class="name">FiscoCont<span>+</span></div>
     <div class="sub">Automação Fiscal e Contábil · Liddera</div>
-    <div class="barwrap"><div class="bar"></div></div>
-    <div class="load-txt">Carregando módulos…</div>
+    <div class="dots"><b></b><b></b><b></b></div>
+    <div class="load-txt" id="st">Verificando a licença…</div>
+    <div class="ver" id="ver"></div>
   </div>
+<script>
+  // Etapas mostradas enquanto o sistema abre (o main pode trocar o texto de verdade: ?v=versão).
+  const etapas = ['Verificando a licença…', 'Conectando à nuvem…', 'Carregando módulos fiscais…', 'Preparando o painel…'];
+  const el = document.getElementById('st');
+  let k = 0;
+  setInterval(() => {
+    if (k >= etapas.length - 1) return;
+    k += 1;
+    el.style.opacity = 0;
+    setTimeout(() => { el.textContent = etapas[k]; el.style.opacity = 1; }, 250);
+  }, 850);
+  const v = new URLSearchParams(location.search).get('v');
+  if (v) document.getElementById('ver').textContent = 'v' + v;
+</script>
 </body>
 </html>

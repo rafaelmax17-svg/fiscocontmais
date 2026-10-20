@@ -111,8 +111,8 @@ function runCore(args, readyFile, validate) {
 // ---------------------------------------------------------------------------
 function createSplash() {
   splashWindow = new BrowserWindow({
-    width: 460,
-    height: 320,
+    width: 500,
+    height: 340,
     frame: false,
     resizable: false,
     transparent: true,
@@ -121,7 +121,7 @@ function createSplash() {
     show: true,
     webPreferences: { contextIsolation: true },
   });
-  splashWindow.loadFile(path.join(__dirname, 'splash.html'));
+  splashWindow.loadFile(path.join(__dirname, 'splash.html'), { query: { v: app.getVersion() } });
 }
 
 function createMainWindow() {
@@ -160,7 +160,7 @@ function createMainWindow() {
 
   const started = Date.now();
   mainWindow.once('ready-to-show', () => {
-    const wait = Math.max(0, 3500 - (Date.now() - started)); // splash mínimo (~3,5s)
+    const wait = Math.max(0, 3700 - (Date.now() - started)); // splash mínimo (~3,7s, a linha do gráfico termina)
     setTimeout(() => {
       if (splashWindow) { splashWindow.close(); splashWindow = null; }
       mainWindow.maximize(); // sempre abre em tela cheia (login incluso, é a mesma janela)
