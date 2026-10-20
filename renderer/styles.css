@@ -923,3 +923,26 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .lote-tdb{display:flex;gap:6px;justify-content:flex-end}.lote-tdb .act.inv-export{padding:5px 10px;font-size:12px;white-space:nowrap}
 
 .ix-det td{background:#fbfbfe;padding-top:0}
+
+/* Ícones coloridos do menu lateral (modelo A · traço colorido): cada módulo com a sua cor e um brilho leve.
+   Os itens em destaque (laranja, vermelho e roxo) mantêm a cor do próprio destaque. */
+.nav-item[data-view="fiscal-dash"]{--ic:#60a5fa}
+.nav-item[data-view="fiscal-conf"]{--ic:#34d399}
+.nav-item[data-view="fiscal-docs"]{--ic:#a78bfa}
+.nav-item[data-view="fiscal-confs"]{--ic:#22d3ee}
+.nav-item[data-view="fiscal-deson"]{--ic:#facc15}
+.nav-item[data-view="fiscal-frete"]{--ic:#fb923c}
+.nav-item[data-view="fiscal-audit"]{--ic:#f472b6}
+.nav-item[data-view="fiscal-pgdas"]{--ic:#a3e635}
+.nav-item[data-view="overview"]{--ic:#60a5fa}
+.nav-item[data-view="dre"]{--ic:#34d399}
+.nav-item[data-view="balancete"]{--ic:#a78bfa}
+.nav-item[data-view="invertidas"]{--ic:#fbbf24}
+.nav-item[data-view="indicadores"]{--ic:#a3e635}
+.nav-item[data-view="historico"]{--ic:#22d3ee}
+.nav-item[data-view="lote-balancetes"]{--ic:#f472b6}
+.nav-item[data-view="conciliacao"]{--ic:#fb923c}
+.nav-item[data-view="admin-lic"]{--ic:#facc15}
+.nav-item:not(.nav-item-danger):not(.nav-item-destaque):not(.nav-item-adm) .ic{
+  color:var(--ic,currentColor);opacity:1;
+  filter:drop-shadow(0 0 5px color-mix(in srgb,var(--ic,transparent) 45%,transparent))}
