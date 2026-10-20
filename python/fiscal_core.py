@@ -2893,6 +2893,12 @@ def main(argv):
     if modo == 'difal-ro':
         import difal_ro as _dr
         return _dr.main_cli(argv[1:])
+    if modo in ('icms-credito', 'listar-notas-xml'):
+        import icms_credito as _icr
+        return _icr.main_cli(argv)
+    if modo == 'danfe':
+        import danfe as _danfe
+        return _danfe.main_cli(argv)
     if modo == 'substituir-lmc':
         import lmc as _lmc
         return _lmc.main_cli(argv)
