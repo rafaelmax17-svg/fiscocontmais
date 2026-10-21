@@ -2127,6 +2127,43 @@ ipcMain.handle('admin:icmsXmlAplicar', async (_evt, { spedPath, usarCorrigido, x
     return { ok: true, resumo: res, origem: base.origem };
   } catch (e) { return { error: String(e.message || e) }; }
 });
+// Estoque de mercadoria que saiu da ST: crédito (Anexo VI, arts. 46 a 48) + inventário H005/H010/H020
+ipcMain.handle('admin:estoqueStPlanilha', async () => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'Planilha do estoque (código, descrição, quantidade, valor unitário)',
+    filters: [{ name: 'Planilha', extensions: ['xlsx', 'csv'] }], properties: ['openFile'] });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  return { path: r.filePaths[0] };
+});
+async function _estoqueSt({ spedPath, usarCorrigido, planilha, xmls, params }, aplicar) {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!spedPath) return { error: 'Selecione o SPED.' };
+  if (!planilha) return { error: 'Selecione a planilha do estoque.' };
+  if (!xmls) return { error: 'Selecione os XMLs das notas de entrada.' };
+  const base = _difalBase(spedPath, usarCorrigido);
+  const stamp = Date.now();
+  const pj = path.join(os.tmpdir(), `fc_est_par_${stamp}.json`);
+  const jsonOut = path.join(os.tmpdir(), `fc_est_res_${stamp}.json`);
+  const saida = path.join(os.tmpdir(), `fc_est_sped_${stamp}.txt`);
+  try {
+    fs.writeFileSync(pj, JSON.stringify(params || {}), 'utf-8');
+    await runFiscal(['estoque-st', '--sped', base.arq, '--planilha', planilha, '--xmls', xmls, '--params', pj, '--json', jsonOut,
+      ...(aplicar ? ['--aplicar', '--saida', saida] : [])], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    fs.unlink(jsonOut, () => {}); fs.unlink(pj, () => {});
+    if (res.erro) return { error: res.erro };
+    if (aplicar) {
+      if (!fs.existsSync(saida)) return { error: 'O arquivo corrigido não foi gerado.' };
+      if (lastSpedCorrigidoPath && lastSpedCorrigidoPath !== base.arq) fs.unlink(lastSpedCorrigidoPath, () => {});
+      else if (lastSpedCorrigidoPath === base.arq && base.origem === 'corrigido') fs.unlink(base.arq, () => {});
+      lastSpedCorrigidoPath = saida;
+    }
+    return { ok: true, res, origem: base.origem };
+  } catch (e) { return { error: String(e.message || e) }; }
+}
+ipcMain.handle('admin:estoqueStCalcular', (_evt, p) => _estoqueSt(p || {}, false));
+ipcMain.handle('admin:estoqueStAplicar', (_evt, p) => _estoqueSt(p || {}, true));
+
 // Valor do documento e base do ICMS × XML (entradas com crédito)
 ipcMain.handle('admin:valorXmlAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
   const bloq = _soAdmin(); if (bloq) return bloq;

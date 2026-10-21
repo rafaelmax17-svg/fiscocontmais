@@ -1369,7 +1369,7 @@ function bindFiscal() {
       $('#corrSimples').hidden = true; $('#corrSimples').innerHTML = '';
       $('#corrSpedResumo').hidden = true;
       $('#corrDifal').hidden = true; $('#corrDifal').innerHTML = '';
-      $('#corrLote').hidden = true; $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true; $('#btnCorrIcmsXml').disabled = false; $('#btnCorrValXml').disabled = false;
+      $('#corrLote').hidden = true; $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true; $('#corrEstST').hidden = true; $('#btnCorrIcmsXml').disabled = false; $('#btnCorrValXml').disabled = false; $('#btnCorrEstST').disabled = false;
       $('#corrSpedFrame').hidden = true; $('#corrSpedEmpty').hidden = false;
       toast('Modo manual: ' + sped.split(/[\\/]/).pop() + (xmls ? ' (XMLs de entrada já anexados)' : ''));
     };
@@ -1388,8 +1388,8 @@ function bindFiscal() {
       $('#corrSimples').hidden = true; $('#corrSimples').innerHTML = '';
       $('#corrSpedResumo').hidden = true;
       $('#corrDifal').hidden = true; $('#corrDifal').innerHTML = '';
-      $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true; $('#corrIcmsXml').innerHTML = ''; IX.an = null;
-      $('#btnCorrIcmsXml').disabled = false; $('#btnCorrValXml').disabled = false;
+      $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true; $('#corrEstST').hidden = true; $('#corrIcmsXml').innerHTML = ''; IX.an = null;
+      $('#btnCorrIcmsXml').disabled = false; $('#btnCorrValXml').disabled = false; $('#btnCorrEstST').disabled = false;
       toast('SPED selecionado: ' + pick.path.split(/[\\/]/).pop());
     });
 
@@ -1516,7 +1516,7 @@ function bindFiscal() {
 
     async function difalAbrir() {
       if (!corrSpedPath) return;
-      $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true;
+      $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true; $('#corrEstST').hidden = true;
       overlay(true, 'Conferindo notas de uso e consumo / ativo e o DIFAL de RO…');
       const res = await window.fiscocont.admin.difalAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path });
       overlay(false);
@@ -2042,10 +2042,10 @@ function bindFiscal() {
       st_sem_retencao: ['Escriturado como ST, nota sem ST', 'b-warn', '#4f46e5'],
       menor: ['Crédito menor que o destacado', 'b-mute', '#7c8bd6'],
     };
-    function ixFechar() { $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true; $('#corrSpedEmpty').hidden = false; }
+    function ixFechar() { $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true; $('#corrEstST').hidden = true; $('#corrSpedEmpty').hidden = false; }
     async function ixAbrir() {
       if (!corrSpedPath) return;
-      ['#corrSpedEmpty', '#corrSpedFrame', '#corrSpedResumo', '#corrDifal', '#corrSimples', '#corrLote', '#corrValXml'].forEach((s) => { const el = $(s); if (el) el.hidden = true; });
+      ['#corrSpedEmpty', '#corrSpedFrame', '#corrSpedResumo', '#corrDifal', '#corrSimples', '#corrLote', '#corrValXml', '#corrEstST'].forEach((s) => { const el = $(s); if (el) el.hidden = true; });
       const box = $('#corrIcmsXml');
       box.hidden = false;
       if (!XMLS.path) { ixVazio(); return; }
@@ -2208,7 +2208,7 @@ function bindFiscal() {
     function vxFechar() { $('#corrValXml').hidden = true; $('#corrSpedEmpty').hidden = false; }
     async function vxAbrir() {
       if (!corrSpedPath) return;
-      ['#corrSpedEmpty', '#corrSpedFrame', '#corrSpedResumo', '#corrDifal', '#corrSimples', '#corrLote', '#corrIcmsXml'].forEach((s) => { const el = $(s); if (el) el.hidden = true; });
+      ['#corrSpedEmpty', '#corrSpedFrame', '#corrSpedResumo', '#corrDifal', '#corrSimples', '#corrLote', '#corrIcmsXml', '#corrEstST'].forEach((s) => { const el = $(s); if (el) el.hidden = true; });
       $('#corrValXml').hidden = false;
       if (!XMLS.path) { vxVazio(); return; }
       await vxAnalisar();
@@ -2372,6 +2372,135 @@ function bindFiscal() {
     }
     $('#btnCorrValXml').addEventListener('click', () => vxAbrir());
 
+    // ---- Estoque de mercadoria que saiu da ST: crédito + inventário (RICMS/RO, Anexo VI, arts. 46 a 48) ----
+    const EST = { planilha: null, res: null, origem: null, params: { dt_inv: '', unid: '', upf: '' } };
+    const ddmm = (v) => (v && v.length === 8 ? `${v.slice(0, 2)}/${v.slice(2, 4)}/${v.slice(4)}` : '');
+    function estFechar() { $('#corrEstST').hidden = true; $('#corrSpedEmpty').hidden = false; }
+    function estAbrir() {
+      if (!corrSpedPath) return;
+      ['#corrSpedEmpty', '#corrSpedFrame', '#corrSpedResumo', '#corrDifal', '#corrSimples', '#corrLote', '#corrIcmsXml', '#corrValXml'].forEach((x) => { const el = $(x); if (el) el.hidden = true; });
+      $('#corrEstST').hidden = false;
+      if (EST.res) estRender(); else estEntrada();
+    }
+    function estEntrada() {
+      const box = $('#corrEstST');
+      box.innerHTML = `
+        <div class="dif-head"><div>
+          <div class="dif-k">Corretor do SPED · Admin · Estoque de mercadoria que saiu da substituição tributária</div>
+          <h3>Crédito do estoque e inventário da mudança de tributação</h3>
+          <div class="dif-sub">RICMS/RO, Anexo VI, arts. 46 a 48: para cada item, base da ST da nota de entrada × alíquota interna, lançado no E111 (RO020033), com o inventário no Bloco H (motivo 02).</div>
+        </div><button class="act inv-export" id="btnEstFechar">Fechar</button></div>
+        <div class="sn-vazio">
+          <p><b>1.</b> Planilha do estoque na data da mudança (Código, Descrição, Quantidade, Valor Unitário): ${EST.planilha ? `<b>${esc(EST.planilha.split(/[\\/]/).pop())}</b>` : 'não selecionada'}</p>
+          <button class="act inv-export sn-big" id="btnEstPlan">${EST.planilha ? 'Trocar planilha' : 'Selecionar planilha'}</button>
+          <p style="margin-top:14px"><b>2.</b> XMLs das notas de entrada desses itens (a última compra de cada um; uma nota por fornecedor já serve quando o preço da planilha é o da nota): ${XMLS.path ? '<b>anexados</b>' : 'não anexados'}</p>
+          <button class="act inv-export sn-big" id="btnEstXml">${XMLS.path ? 'Trocar XMLs' : 'Selecionar XMLs'}</button>
+          <div class="dif-acts" style="margin-top:16px"><button class="act inv-export" id="btnEstCalc" style="background:var(--accent);color:#fff;border-color:transparent" ${EST.planilha && XMLS.path ? '' : 'disabled'}>Calcular o crédito</button></div>
+        </div>`;
+      $('#btnEstFechar').addEventListener('click', estFechar);
+      $('#btnEstPlan').addEventListener('click', async () => { const r = await window.fiscocont.admin.estoqueStPlanilha(); if (r.path) { EST.planilha = r.path; estEntrada(); } });
+      $('#btnEstXml').addEventListener('click', async () => { const r = await window.fiscocont.fiscal.pickXmlsFolder(); if (r.path) { XMLS.path = r.path; estEntrada(); } });
+      $('#btnEstCalc').addEventListener('click', estCalcular);
+    }
+    async function estCalcular() {
+      overlay(true, 'Ligando a planilha às notas de entrada e calculando a base da ST de cada item…');
+      const r = await window.fiscocont.admin.estoqueStCalcular({ spedPath: corrSpedPath, usarCorrigido: corrFeito, planilha: EST.planilha, xmls: XMLS.path, params: estParams() });
+      overlay(false);
+      if (r.error) { toast(r.error, true); return; }
+      EST.res = r.res; EST.origem = r.origem;
+      if (!EST.params.dt_inv) {
+        const di = (EST.res.empresa || {}).dt_ini || '';
+        if (di.length === 8) { const d = new Date(+di.slice(4), +di.slice(2, 4) - 1, +di.slice(0, 2) - 1); EST.params.dt_inv = String(d.getDate()).padStart(2, '0') + String(d.getMonth() + 1).padStart(2, '0') + d.getFullYear(); }
+      }
+      if (!EST.params.unid) { const u = (EST.res.unidades || []).find((x) => /^UNIDADE$/i.test(x.descr.trim())) || (EST.res.unidades || [])[0]; EST.params.unid = u ? u.cod : ''; }
+      estRender();
+    }
+    function estParams() { return { dt_inv: EST.params.dt_inv, unid: EST.params.unid, upf: EST.params.upf ? Number(String(EST.params.upf).replace(',', '.')) : undefined }; }
+    function estRender() {
+      const r = EST.res, emp = r.empresa || {}, rs = r.resumo || {}, e = r.e110 || {}, box = $('#corrEstST');
+      const ok = (r.itens || []).filter((i) => i.status === 'ok');
+      const credito = r.credito_apropriado || 0;
+      const forn = [...new Set(ok.map((i) => `${i.fornecedor} (${i.uf}) · NF ${i.nota}`))];
+      const linha = (i) => i.status !== 'ok'
+        ? `<tr class="dif-off"><td><b>${esc(i.cod)}</b></td><td>${esc(i.descr)}</td><td class="n">${fm(i.qtd).replace(',00', '')}</td><td class="n">R$ ${fm(i.valor)}</td><td colspan="5"><span class="dif-b b-warn">sem nota</span><small>${esc(i.obs || '')}</small></td></tr>`
+        : `<tr><td><b>${esc(i.cod)}</b></td><td>${esc(i.descr)}<small>NF ${esc(i.nota)} · ${esc(i.item_xml)} (pacote de ${i.pacote})</small></td>
+          <td class="n">${fm(i.qtd).replace(',00', '')}</td><td class="n">R$ ${fm(i.valor)}<small>R$ ${fp(i.vunit)} / un.</small></td>
+          <td class="n">${fa(i.aliq_inter)}<small>IPI R$ ${fp(i.ipi_unit)} / un.</small></td><td class="n">${fa(i.mva_aj)}</td>
+          <td class="n">R$ ${fp(i.bc_unit)}<small>por unidade</small></td><td class="n">${fa(i.aliq_interna)}</td><td class="n"><b>R$ ${fm(i.credito)}</b><small>R$ ${fp(i.icms_unit)} / un.</small></td></tr>`;
+      const uni = (r.unidades || []).map((u) => `<option value="${esc(u.cod)}" ${u.cod === EST.params.unid ? 'selected' : ''}>${esc(u.cod)} · ${esc(u.descr)}</option>`).join('');
+      box.innerHTML = `
+        <div class="dif-head"><div>
+          <div class="dif-k">Corretor do SPED · Admin · Estoque que saiu da substituição tributária</div>
+          <h3>${esc(emp.nome || '')}</h3>
+          <div class="dif-sub">CNPJ ${esc(emp.cnpj || '')} · período ${dt(emp.dt_ini)} a ${dt(emp.dt_fin)} · arquivo <b>${EST.origem === 'corrigido' ? 'já corrigido nesta sessão' : 'original'}</b> · ${r.xml_itens || 0} itens nos XMLs</div>
+        </div><div class="sn-hbtn"><button class="act inv-export" id="btnEstTrocar">Trocar planilha/XMLs</button><button class="act inv-export" id="btnEstFechar">Fechar</button></div></div>
+        <div class="dif-kpis">
+          <div><span>Itens no estoque</span><b data-n="${rs.itens || 0}">0</b><small>${fm(rs.qtd).replace(',00', '')} unidades · R$ ${fm(rs.valor_estoque)}</small></div>
+          <div class="k-ok"><span>Itens calculados pela nota</span><b data-n="${rs.calculados || 0}">0</b><small>${rs.sem_xml ? `${rs.sem_xml} sem nota de entrada` : 'todos os itens'}</small></div>
+          <div class="k-ok"><span>Crédito do estoque</span><b data-n="${r.credito_total || 0}" data-fmt="brl">R$ 0,00</b><small>E111 RO020033 · campo 08 do E110</small></div>
+          <div><span>ICMS a recolher</span><b data-n="${Math.max(0, (e.recolher || 0) - credito)}" data-fmt="brl">R$ 0,00</b><small>antes R$ ${fm(e.recolher)}</small></div>
+        </div>
+        ${(r.avisos || []).map((a) => `<div class="dif-av">${esc(a)}</div>`).join('')}
+        <div class="mono-card"><div class="dif-k">Crédito item por item — base da ST (preço da nota + IPI, × MVA ajustada) × alíquota interna</div>
+          <div class="dif-sub" style="margin:4px 0 8px">Notas usadas: ${forn.map(esc).join(' · ') || '—'}</div>
+          <div class="dif-tw" style="max-height:560px"><table class="dif-tab"><thead><tr><th>Código</th><th>Produto</th><th class="n">Qtd.</th><th class="n">Valor do estoque</th><th class="n">Alíq. interestadual</th><th class="n">MVA ajustada</th><th class="n">Base da ST</th><th class="n">Alíq. interna</th><th class="n">Crédito</th></tr></thead>
+          <tbody>${(r.itens || []).map(linha).join('')}</tbody>
+          <tfoot><tr><td colspan="3"><b>Total</b></td><td class="n"><b>R$ ${fm(rs.valor_estoque)}</b></td><td colspan="4"></td><td class="n"><b>R$ ${fm(r.credito_total)}</b></td></tr></tfoot></table></div></div>
+        <div class="mono-grid">
+          <div class="mono-card"><div class="dif-k">O que vai para o SPED</div>
+            <div class="usr-form" style="grid-template-columns:1fr 1.4fr 1fr">
+              <label>Data do inventário<input id="estDt" value="${ddmm(EST.params.dt_inv)}" placeholder="dd/mm/aaaa"></label>
+              <label>Unidade (0190)<select id="estUn">${uni}</select></label>
+              <label>UPF/RO do mês (opcional)<input id="estUpf" value="${esc(EST.params.upf || '')}" placeholder="confere o limite"></label>
+            </div>
+            <div class="dif-sub" style="margin-top:10px">• Inventário <b>H005</b> com motivo <b>02</b> (mudança na forma de tributação) na data acima, <b>H010</b> de cada item e <b>H020</b> com CST 000, base e ICMS por unidade (art. 47).<br>
+              • Cadastro <b>0200</b> dos itens que ainda não estão no SPED.<br>
+              • Ajuste <b>E111 RO020033</b> "Crédito mudança de tributação - Art. 48 - anexo VI do RICMS" de R$ ${fm(credito)}; o E110 e a guia E116 são refeitos e o Bloco 9 recontado. O original nunca é alterado.<br>
+              • Limite: 5.000 UPF/RO por mês (art. 48, parágrafo único). Informe a UPF para o sistema conferir.</div>
+            <div class="dif-acts"><button class="act inv-export" id="btnEstAplicar" style="background:#e23d4c;color:#fff;border-color:transparent" ${ok.length ? '' : 'disabled'}>Aplicar no SPED (gera arquivo novo)</button></div>
+          </div>
+          <div class="mono-card"><div class="dif-k">Base legal</div>
+            <div class="dif-sub">RICMS/RO (Dec. 22.721/2018), Anexo VI: art. 14, I, "b", 3 (base da ST: preço do remetente + frete, seguro, impostos e encargos, + MVA); arts. 45 a 48 (estoque de mercadoria excluída da ST, redação do Dec. 29.184/2024).
+              Vinhos (CEST 02.024.00): MVA original 53,63%, ajustada 126,78% para 7% (Parte 2, Tabela III, item 24.0), revogado pelo Dec. 31.963/2026 a partir de 1º/09/2026. Alíquota interna de bebidas alcoólicas, exceto cerveja: 37% (Lei 688/96, art. 27, I, "h").</div></div>
+        </div>
+        <div id="estRes"></div>`;
+      animaNumeros(box);
+      $('#btnEstFechar').addEventListener('click', estFechar);
+      $('#btnEstTrocar').addEventListener('click', () => { EST.res = null; estEntrada(); });
+      $('#estDt').addEventListener('change', (ev) => { EST.params.dt_inv = ev.target.value.replace(/\D/g, ''); });
+      $('#estUn').addEventListener('change', (ev) => { EST.params.unid = ev.target.value; });
+      $('#estUpf').addEventListener('change', async (ev) => { EST.params.upf = ev.target.value; await estCalcular(); });
+      $('#btnEstAplicar').addEventListener('click', estAplicar);
+    }
+    async function estAplicar() {
+      if ((EST.params.dt_inv || '').length !== 8) { toast('Informe a data do inventário (dd/mm/aaaa).', true); return; }
+      overlay(true, 'Incluindo o inventário e o crédito no SPED…');
+      const r = await window.fiscocont.admin.estoqueStAplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, planilha: EST.planilha, xmls: XMLS.path, params: estParams() });
+      overlay(false);
+      if (r.error) { toast(r.error, true); return; }
+      corrFeito = true;
+      const a = r.res.aplicado || {}, ea = a.e110_antes || {}, ed = a.e110_depois || {};
+      const out = $('#estRes');
+      out.innerHTML = `<div class="dif-done sn-done"><div class="dif-k">Incluído: arquivo novo gerado (o original não foi alterado)</div>
+        <div class="dif-kpis">
+          <div class="k-ok"><span>Itens no inventário</span><b data-n="${a.itens || 0}">0</b><small>H005 motivo 02 · ${(a.r0200_criados || []).length} cadastro(s) 0200 criados</small></div>
+          <div class="k-ok"><span>Crédito lançado</span><b data-n="${a.credito || 0}" data-fmt="brl">R$ 0,00</b><small>E111 RO020033</small></div>
+          <div><span>ICMS a recolher</span><b data-n="${ed.recolher || 0}" data-fmt="brl">R$ 0,00</b><small>antes R$ ${fm(ea.recolher)}</small></div>
+        </div>
+        ${a.e116 ? `<p class="dif-sub">${esc(a.e116)}</p>` : ''}
+        ${(a.avisos || []).length ? `<div class="dif-av"><ul>${a.avisos.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+        <div class="dif-acts"><button class="act inv-export sn-big" id="btnEstBaixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button></div></div>`;
+      animaNumeros(out);
+      $('#btnEstBaixar').addEventListener('click', async () => {
+        const r3 = await window.fiscocont.fiscal.baixarSpedCorrigido();
+        if (r3.canceled) return;
+        if (r3.error) { toast(r3.error, true); return; }
+        toast('SPED corrigido salvo.'); window.fiscocont.openPath(r3.path);
+      });
+      out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    $('#btnCorrEstST').addEventListener('click', () => estAbrir());
+
     const SN = { an: null, origem: null, filtro: 'pend' };
     const SN_ST = {
       incluir: ['Crédito a incluir', 'b-err', '#2a78d6'],
@@ -2390,7 +2519,7 @@ function bindFiscal() {
       if (!corrSpedPath) return;
       $('#corrSpedEmpty').hidden = true; $('#corrSpedFrame').hidden = true; $('#corrSpedResumo').hidden = true;
       $('#corrDifal').hidden = true;
-      $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true;
+      $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true; $('#corrEstST').hidden = true;
       const box = $('#corrSimples');
       box.hidden = false;
       if (!XMLS.path) { snVazio(); return; }
