@@ -3291,7 +3291,7 @@ function _mostraLogin() {
   $('#lockCard').hidden = true;
   document.querySelector('.login-card').hidden = false;
   $('#loginGate').style.display = 'flex';
-  $('#loginPass').value = '';
+  $('#loginPass').value = ''; delete $('#loginPass').dataset.salva;
   const ut = $('#userTag'); if (ut) ut.textContent = '';
   setTimeout(() => ($('#loginEmail').value ? $('#loginPass') : $('#loginEmail')).focus(), 50);
 }
@@ -3331,14 +3331,29 @@ function _vigiaInatividade() {
 function bindLogin() {
   const form = $('#loginForm');
   if (!form) return;
-  const email = $('#loginEmail'), pass = $('#loginPass'), btn = $('#loginBtn');
+  const email = $('#loginEmail'), pass = $('#loginPass'), btn = $('#loginBtn'), salvar = $('#loginSalvar');
   try { email.value = localStorage.getItem('fc_ultimo_email') || ''; } catch (_) {}
+  // "Salvar meus dados": e-mail e senha ficam no cofre do Windows (a senha nunca vem para a tela)
+  let salvo = null;
+  const SENHA_FICTICIA = '••••••••••';
+  const aplicaSalvo = async () => {
+    try { salvo = await window.fiscocont.auth.salvo(); } catch (_) { salvo = null; }
+    if (!salvo || !salvo.disponivel) { salvar.closest('label').hidden = true; return; }
+    salvar.checked = !!salvo.temSenha;
+    if (salvo.temSenha) { email.value = salvo.email; pass.value = SENHA_FICTICIA; pass.dataset.salva = '1'; }
+  };
+  aplicaSalvo();
+  pass.addEventListener('input', () => { if (pass.dataset.salva) { delete pass.dataset.salva; pass.value = pass.value.replace(/•/g, ''); } });
+  email.addEventListener('input', () => { if (pass.dataset.salva) { delete pass.dataset.salva; pass.value = ''; } });
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     btn.disabled = true; btn.textContent = 'Entrando…';
-    const res = await window.fiscocont.login(email.value, pass.value);
+    const usarSalva = !!pass.dataset.salva;
+    const res = await window.fiscocont.login(email.value, usarSalva ? '' : pass.value, { salvar: salvar.checked, usarSalva });
     btn.disabled = false; btn.textContent = 'Entrar';
-    pass.value = '';
+    if (res && res.ok && salvar.checked) { pass.value = SENHA_FICTICIA; pass.dataset.salva = '1'; }
+    else { pass.value = ''; delete pass.dataset.salva; }
+    if (res && res.semInternet) { showLicenseBlock({ status: 'semnet', codigo: '' }); }
     if (res && res.ok) _entrou(res);
     else { _loginMsg((res && res.erro) || 'Não foi possível entrar.'); pass.focus(); }
   });
@@ -3364,11 +3379,20 @@ function bindLogin() {
     } else { $('#lockErr').textContent = r.erro || 'Senha incorreta.'; $('#lockErr').hidden = false; $('#lockPass').focus(); }
   });
   $('#lockSair').addEventListener('click', async () => { await window.fiscocont.auth.logout(); _mostraLogin(); });
+  salvar.addEventListener('change', async () => {
+    if (!salvar.checked && salvo && salvo.temSenha) {
+      await window.fiscocont.auth.esquecerSalvo();
+      salvo.temSenha = false;
+      if (pass.dataset.salva) { delete pass.dataset.salva; pass.value = ''; }
+      toast('Dados de acesso apagados deste computador.');
+    }
+  });
   const logoutLink = $('#logoutLink');
   if (logoutLink) logoutLink.addEventListener('click', async (e) => {
     e.preventDefault();
     await window.fiscocont.auth.logout();
     _mostraLogin();
+    aplicaSalvo();
   });
   window.fiscocont.auth.onMudou((d) => {
     if (d.motivo === 'bloqueado') { _mostraLogin(); _loginMsg('Seu usuário foi bloqueado pelo Admin.'); }
@@ -3477,6 +3501,11 @@ function showLicenseBlock(res) {
     if (title) title.textContent = 'Acesso bloqueado';
     if (sub) sub.textContent = 'Este computador foi bloqueado pelo administrador.';
     if (hint) hint.textContent = 'Entre em contato com a Liddera para mais informações.';
+  } else if (res.status === 'semnet') {
+    if (title) title.textContent = 'Sem internet';
+    if (sub) sub.textContent = 'Por segurança, o FiscoCont+ só abre com o computador conectado à internet.';
+    if (hint) hint.textContent = 'Conecte o computador e clique em Verificar novamente.';
+    if (codeEl) codeEl.textContent = 'OFFLINE';
   } else {
     if (title) title.textContent = 'Sem conexão';
     if (sub) sub.textContent = 'Não foi possível confirmar a liberação deste computador agora.';
@@ -3497,14 +3526,22 @@ function hideLicenseBlock() {
   // ele pra tela onde estava, sem pedir senha de novo.
   if (gate && ROLE) gate.style.display = 'none';
 }
-async function checkLicenseGate() {
+async function checkLicenseGate(inicial) {
   if (!window.fiscocont.license) return true;
+  // por segurança o sistema só abre com internet (licença, login e bloqueio em tempo real dependem dela)
+  if (inicial !== false && window.fiscocont.auth && window.fiscocont.auth.conectado) {
+    let net = { ok: true };
+    try { net = await window.fiscocont.auth.conectado(); } catch (_) { net = { ok: false }; }
+    if (!net.ok) { showLicenseBlock({ status: 'semnet', codigo: '' }); return false; }
+  }
   let res;
   try { res = await window.fiscocont.license.check(); } catch (_) { res = { status: 'offline', codigo: '' }; }
   if (!res || res.configurado === false || res.status === 'ativo') {
     hideLicenseBlock();
     return true;
   }
+  // com o sistema já em uso, uma queda rápida de internet não derruba a tela: só bloqueio/pendência do Admin
+  if (inicial === false && ROLE && res.status === 'offline') return true;
   showLicenseBlock(res);
   return false;
 }
@@ -4574,7 +4611,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (window.fiscocont.license && window.fiscocont.license.getRealtimeStatus) {
     window.fiscocont.license.getRealtimeStatus().then(renderLicRealtimeStatus).catch(() => {});
   }
-  setInterval(checkLicenseGate, 15 * 60 * 1000); // rede de segurança, caso o listener em tempo real caia sem avisar
+  setInterval(() => checkLicenseGate(false), 15 * 60 * 1000); // rede de segurança, caso o listener em tempo real caia sem avisar
   const licRefresh = $('#btnLicRefresh');
   if (licRefresh) licRefresh.addEventListener('click', loadLicensePanel);
 

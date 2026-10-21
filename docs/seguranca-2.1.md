@@ -37,5 +37,6 @@ GitHub > fiscocontmais > Settings > General > Danger Zone > **Change visibility*
 - Daqui para a frente, publique só o rascunho do **fiscocontmais-releases** (é dele que as atualizações vêm).
 
 ## Observações
+- O sistema só abre com internet (não há mais entrada offline). A opção "Salvar meus dados" guarda e-mail e senha no cofre do Windows daquele usuário; quem desmarcar apaga.
 - A chave da IA continua no Firestore (`config/chat_ia`), agora legível só para usuário logado e ativo. Como não há plano Blaze (Cloud Functions), ela ainda passa pela memória do computador durante o uso. Mantenha um **limite de gastos** na conta da Anthropic.
 - As senhas antigas (fixas no código) deixam de funcionar na 2.1. Como elas ficaram no histórico do GitHub, não as reutilize em lugar nenhum.

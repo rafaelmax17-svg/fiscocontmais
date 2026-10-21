@@ -97,7 +97,7 @@ function _readCache(userDataDir) {
 function _writeCache(userDataDir, data) {
   try { fs.writeFileSync(_cachePath(userDataDir), JSON.stringify(data)); } catch (_) {}
 }
-const OFFLINE_GRACE_DIAS = 7;
+const OFFLINE_GRACE_DIAS = 0;   // desde a 2.1 o sistema não abre sem internet (sem tolerância offline)
 function _versao() { try { return require('electron').app.getVersion(); } catch (_) { return ''; } }
 
 // Marca na licença quem está usando esta máquina (aparece no painel de Licenças).
@@ -150,7 +150,7 @@ async function checkLicense(userDataDir) {
       const cache = _readCache(userDataDir);
       if (cache && cache.codigo === codigo && cache.status === 'ativo') {
         const diasPassados = (Date.now() - cache.ts) / 86400000;
-        if (diasPassados <= OFFLINE_GRACE_DIAS) {
+        if (OFFLINE_GRACE_DIAS > 0 && diasPassados <= OFFLINE_GRACE_DIAS) {
           return { configurado: true, codigo, status: 'ativo', hostname: os.hostname(), offlineCache: true };
         }
       }

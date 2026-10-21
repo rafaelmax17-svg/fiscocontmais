@@ -200,6 +200,7 @@ app.whenReady().then(() => {
   createSplash(() => createMainWindow());
   // 2.1: a credencial de administrador do Firebase não fica mais em nenhuma máquina
   cloud.removerCredencialAntiga(app.getPath('userData'));
+  auth.limpaOfflineAntigo(app.getPath('userData'));
 
   updater.initAutoUpdate(() => mainWindow);
   setTimeout(() => updater.checkNow(), 15000); // não compete com a abertura do app
@@ -398,13 +399,13 @@ function _sessaoPublica() {
   const s = auth.sessao();
   return s ? { email: s.email, nome: s.nome, perfil: s.perfil, offline: !!s.offline, travaMin: TEMPO_TRAVA_MIN[s.perfil] || 60 } : null;
 }
-ipcMain.handle('auth:login', async (_evt, { email, senha } = {}) => {
+ipcMain.handle('auth:login', async (_evt, { email, senha, salvar, usarSalva } = {}) => {
   const r = await auth.login(app.getPath('userData'), email, senha, (info) => {
     if (info.motivo === 'bloqueado') sessionRole = null;
     else if (info.motivo === 'perfil') sessionRole = info.perfil;
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('auth:mudou', info);
-  });
-  if (!r.ok) return { ok: false, erro: r.erro };
+  }, { salvar, usarSalva });
+  if (!r.ok) return { ok: false, erro: r.erro, semInternet: !!r.semInternet };
   sessionRole = r.perfil;
   sessionLocked = false;
   license.marcarUsuario(r.email);
@@ -415,11 +416,14 @@ ipcMain.handle('auth:sessao', () => _sessaoPublica());
 ipcMain.handle('auth:travar', () => { if (sessionRole) sessionLocked = true; return { ok: true }; });
 ipcMain.handle('auth:destravar', async (_evt, senha) => {
   if (!sessionRole) return { ok: false, erro: 'Sessão encerrada. Entre de novo.' };
-  const ok = await auth.confereSenha(app.getPath('userData'), senha);
-  if (!ok) return { ok: false, erro: 'Senha incorreta.' };
+  const c = await auth.confereSenha(app.getPath('userData'), senha);
+  if (!c.ok) return { ok: false, erro: c.erro };
   sessionLocked = false;
   return { ok: true };
 });
+ipcMain.handle('auth:conectado', async () => ({ ok: await auth.conectado() }));
+ipcMain.handle('auth:salvo', () => auth.salvoPublico(app.getPath('userData')));
+ipcMain.handle('auth:esquecerSalvo', () => { auth.salvoApagar(app.getPath('userData')); return { ok: true }; });
 ipcMain.handle('auth:redefinirSenha', async (_evt, email) => auth.redefinirSenha(email));
 ipcMain.handle('auth:primeiroAcesso', async (_evt, { email, senha } = {}) => auth.criarAdminInicial(email, senha));
 

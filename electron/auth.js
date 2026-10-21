@@ -18,7 +18,6 @@ const crypto = require('crypto');
 
 const ADMIN_INICIAL = 'rafael.max17@gmail.com';
 const PERFIS = ['fiscal', 'contabil', 'admin'];
-const OFFLINE_DIAS = 7;
 
 let _app = null, _auth = null, _db = null, _am = null, _fm = null, _cfg = null;
 let _sessao = null;                 // { uid, email, nome, perfil, offline }
@@ -64,7 +63,11 @@ function _msgErro(e) {
 }
 const _offlineErr = (e) => ((e && e.code) || '') === 'auth/network-request-failed' || /network|ENOTFOUND|ECONN|offline/i.test(String(e && e.message));
 
-// ------------------------------------------------------------------ verificação offline (cofre do Windows)
+// ------------------------------------------------------------------ "Salvar meus dados" (cofre do Windows)
+// O e-mail e a senha ficam neste computador criptografados com o cofre do usuário do Windows (safeStorage/DPAPI):
+// só abrem na mesma conta do Windows, e a senha nunca é enviada para a tela — o login usa a senha salva aqui mesmo.
+// Sai do cofre quando a pessoa desmarca a opção, quando a senha salva deixa de funcionar ou quando o usuário é
+// bloqueado. Desde a 2.1 o sistema não entra sem internet (não existe mais login offline).
 let _safe = null;
 function _safeStorage() {
   if (_safe !== null) return _safe;
@@ -72,35 +75,39 @@ function _safeStorage() {
   catch (_) { _safe = false; }
   return _safe;
 }
-function _arqOffline(userDataDir) { return path.join(userDataDir, 'sessoes.dat'); }
-function _lerOffline(userDataDir) {
+function _arqSalvo(userDataDir) { return path.join(userDataDir, 'login-salvo.dat'); }
+function salvoLer(userDataDir) {
   const s = _safeStorage();
-  if (!s) return {};
-  try { return JSON.parse(s.decryptString(fs.readFileSync(_arqOffline(userDataDir)))); } catch (_) { return {}; }
+  if (!s) return null;
+  try { const d = JSON.parse(s.decryptString(fs.readFileSync(_arqSalvo(userDataDir)))); return d && d.email && d.senha ? d : null; }
+  catch (_) { return null; }
 }
-function _gravarOffline(userDataDir, dados) {
+function salvoPublico(userDataDir) {
+  const d = salvoLer(userDataDir);
+  return { disponivel: !!_safeStorage(), email: d ? d.email : '', temSenha: !!(d && d.senha) };
+}
+function _salvoGravar(userDataDir, email, senha) {
   const s = _safeStorage();
   if (!s) return;
-  try { fs.writeFileSync(_arqOffline(userDataDir), s.encryptString(JSON.stringify(dados))); } catch (_) {}
+  try { fs.writeFileSync(_arqSalvo(userDataDir), s.encryptString(JSON.stringify({ email, senha, ts: Date.now() }))); } catch (_) {}
 }
-function _hash(senha, sal) { return crypto.scryptSync(String(senha), Buffer.from(sal, 'hex'), 32, { N: 16384, r: 8, p: 1 }).toString('hex'); }
-function _guardaOffline(userDataDir, email, senha, s) {
-  const tudo = _lerOffline(userDataDir);
-  const sal = crypto.randomBytes(16).toString('hex');
-  tudo[email] = { sal, hash: _hash(senha, sal), uid: s.uid, nome: s.nome, perfil: s.perfil, ts: Date.now() };
-  _gravarOffline(userDataDir, tudo);
-}
-function _confereOffline(userDataDir, email, senha) {
-  const r = _lerOffline(userDataDir)[email];
-  if (!r) return null;
-  if ((Date.now() - r.ts) / 86400000 > OFFLINE_DIAS) return null;
-  const h = Buffer.from(_hash(senha, r.sal), 'hex');
-  if (!crypto.timingSafeEqual(h, Buffer.from(r.hash, 'hex'))) return null;
-  return { uid: r.uid, email, nome: r.nome, perfil: r.perfil, offline: true };
-}
-function _esqueceOffline(userDataDir, email) {
-  const tudo = _lerOffline(userDataDir);
-  if (tudo[email]) { delete tudo[email]; _gravarOffline(userDataDir, tudo); }
+function salvoApagar(userDataDir) { try { fs.unlinkSync(_arqSalvo(userDataDir)); } catch (_) {} }
+// limpa a verificação offline da 2.1 de teste (sessoes.dat), que não é mais usada
+function limpaOfflineAntigo(userDataDir) { try { fs.unlinkSync(path.join(userDataDir, 'sessoes.dat')); } catch (_) {} }
+
+// Conexão com a internet: o sistema só abre conectado (licença, login e bloqueio em tempo real dependem dela).
+async function conectado() {
+  const urls = ['https://firestore.googleapis.com/', 'https://www.googleapis.com/', 'https://www.google.com/generate_204'];
+  let net = null;
+  try { net = require('electron').net; } catch (_) {}
+  for (const u of urls) {
+    try {
+      const r = await (net && net.fetch ? net.fetch(u, { method: 'HEAD', signal: AbortSignal.timeout(6000) })
+                                        : fetch(u, { method: 'HEAD', signal: AbortSignal.timeout(6000) }));
+      if (r && r.status > 0) return true;
+    } catch (_) { /* tenta o próximo */ }
+  }
+  return false;
 }
 
 // ------------------------------------------------------------------ login
@@ -131,8 +138,11 @@ async function _cadastroDoUsuario(u) {
   return null;
 }
 
-async function login(userDataDir, email, senha, onBloqueado) {
+async function login(userDataDir, email, senha, onBloqueado, opcoes = {}) {
   email = _norm(email);
+  const salvo = salvoLer(userDataDir);
+  const usouSalva = !!(opcoes.usarSalva && salvo && salvo.email === email);
+  if (usouSalva) senha = salvo.senha;
   if (!email || !senha) return { ok: false, erro: 'Informe o e-mail e a senha.' };
   if (Date.now() < _travadoAte) {
     return { ok: false, erro: `Muitas tentativas erradas. Tente de novo em ${Math.ceil((_travadoAte - Date.now()) / 1000)} s.` };
@@ -142,20 +152,21 @@ async function login(userDataDir, email, senha, onBloqueado) {
     const cred = await _am.signInWithEmailAndPassword(_auth, email, senha);
     const cad = await _cadastroDoUsuario(cred.user);
     if (!cad) { await _am.signOut(_auth); return _falhou('Este e-mail não está cadastrado no FiscoCont+. Peça ao Admin para cadastrar você.'); }
-    if (cad.ativo !== true) { await _am.signOut(_auth); _esqueceOffline(userDataDir, email); return _falhou('Usuário bloqueado pelo Admin.'); }
+    if (cad.ativo !== true) { await _am.signOut(_auth); if (salvo && salvo.email === email) salvoApagar(userDataDir); return _falhou('Usuário bloqueado pelo Admin.'); }
     if (!PERFIS.includes(cad.perfil)) { await _am.signOut(_auth); return _falhou('Perfil do usuário inválido. Peça ao Admin para corrigir.'); }
     _falhas = 0;
     _sessao = { uid: cred.user.uid, email, nome: cad.nome || email, perfil: cad.perfil, offline: false };
-    _guardaOffline(userDataDir, email, senha, _sessao);
+    if (opcoes.salvar) _salvoGravar(userDataDir, email, senha);
+    else if (opcoes.salvar === false && salvo && salvo.email === email) salvoApagar(userDataDir);
     _vigia(userDataDir, onBloqueado);
     return { ok: true, ..._sessao };
   } catch (e) {
     if (e && e.code === 'fc/verificar') { try { await _am.signOut(_auth); } catch (_) {} return { ok: false, erro: e.message }; }
-    if (_offlineErr(e)) {
-      const s = _confereOffline(userDataDir, email, senha);
-      if (s) { _falhas = 0; _sessao = s; return { ok: true, ...s, aviso: 'Sem internet: entrou com o último login confirmado (válido por até 7 dias).' }; }
-      if (_lerOffline(userDataDir)[email]) return _falhou('Sem internet: e-mail ou senha incorretos.');
-      return { ok: false, erro: 'Sem internet e sem login recente salvo neste computador para esse e-mail.' };
+    if (_offlineErr(e)) return { ok: false, erro: 'Sem conexão com a internet. O FiscoCont+ só funciona conectado.', semInternet: true };
+    // a senha salva deixou de funcionar (trocada ou redefinida): sai do cofre
+    if (usouSalva && /invalid-credential|wrong-password|user-not-found/.test((e && e.code) || '')) {
+      salvoApagar(userDataDir);
+      return _falhou('A senha salva neste computador não vale mais (foi trocada?). Digite a senha atual.');
     }
     return _falhou(_msgErro(e));
   }
@@ -175,7 +186,8 @@ function _vigia(userDataDir, onBloqueado) {
     if (!_sessao) return;
     const d = snap.exists() ? snap.data() : null;
     if (!d || d.ativo !== true) {
-      _esqueceOffline(userDataDir, _sessao.email);
+      const sv = salvoLer(userDataDir);
+      if (sv && sv.email === _sessao.email) salvoApagar(userDataDir);
       logout();
       if (onBloqueado) onBloqueado({ motivo: 'bloqueado' });
     } else if (d.perfil !== _sessao.perfil && PERFIS.includes(d.perfil)) {
@@ -185,18 +197,16 @@ function _vigia(userDataDir, onBloqueado) {
   }, () => {});
 }
 
-async function confereSenha(userDataDir, senha) {
-  if (!_sessao) return false;
-  if (!_sessao.offline && _init() && _auth.currentUser) {
-    try {
-      const cred = _am.EmailAuthProvider.credential(_sessao.email, senha);
-      await _am.reauthenticateWithCredential(_auth.currentUser, cred);
-      return true;
-    } catch (e) {
-      if (!_offlineErr(e)) return false;
-    }
+async function confereSenha(_userDataDir, senha) {
+  if (!_sessao || !_init() || !_auth.currentUser) return { ok: false, erro: 'Sessão encerrada. Entre de novo.' };
+  try {
+    const cred = _am.EmailAuthProvider.credential(_sessao.email, senha);
+    await _am.reauthenticateWithCredential(_auth.currentUser, cred);
+    return { ok: true };
+  } catch (e) {
+    if (_offlineErr(e)) return { ok: false, erro: 'Sem conexão com a internet. Reconecte para continuar.' };
+    return { ok: false, erro: 'Senha incorreta.' };
   }
-  return !!_confereOffline(userDataDir, _sessao.email, senha);
 }
 
 function logout() {
@@ -323,6 +333,6 @@ async function statusLicenca(codigo, status) {
 }
 
 module.exports = {
-  ADMIN_INICIAL, login, logout, confereSenha, redefinirSenha, criarAdminInicial, sessao, logado, db, fsMod,
+  ADMIN_INICIAL, conectado, salvoPublico, salvoApagar, limpaOfflineAntigo, login, logout, confereSenha, redefinirSenha, criarAdminInicial, sessao, logado, db, fsMod,
   listarUsuarios, cadastrarUsuario, alterarUsuario, cancelarConvite, listarLicencas, statusLicenca,
 };

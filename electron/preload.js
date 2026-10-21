@@ -2,13 +2,16 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('fiscocont', {
-  login: (email, senha) => ipcRenderer.invoke('auth:login', { email, senha }),
+  login: (email, senha, opcoes = {}) => ipcRenderer.invoke('auth:login', { email, senha, ...opcoes }),
   auth: {
     logout: () => ipcRenderer.invoke('auth:logout'),
     sessao: () => ipcRenderer.invoke('auth:sessao'),
     travar: () => ipcRenderer.invoke('auth:travar'),
     destravar: (senha) => ipcRenderer.invoke('auth:destravar', senha),
     redefinirSenha: (email) => ipcRenderer.invoke('auth:redefinirSenha', email),
+    conectado: () => ipcRenderer.invoke('auth:conectado'),
+    salvo: () => ipcRenderer.invoke('auth:salvo'),
+    esquecerSalvo: () => ipcRenderer.invoke('auth:esquecerSalvo'),
     primeiroAcesso: (email, senha) => ipcRenderer.invoke('auth:primeiroAcesso', { email, senha }),
     onMudou: (cb) => ipcRenderer.on('auth:mudou', (_e, d) => cb(d)),
   },
