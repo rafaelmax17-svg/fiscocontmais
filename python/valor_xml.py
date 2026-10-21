@@ -268,9 +268,13 @@ def aplicar_texto(texto, xmls, selecao):
         if a['doc_dif']:
             _refaz_vl_opr(linhas, d, x['vnf'], remover)
             c = linhas[d['i']].split('|')
+            soma_itens = sum((_D(dr._n(linhas[it['i']].split('|')[7])) for it in d['c170']), Decimal('0'))
             for _, idx, kx, _ in CAMPOS_C100:
                 if len(c) > idx:
-                    c[idx] = _f(_D(x.get(kx) or 0.0))
+                    v = _D(x.get(kx) or 0.0)
+                    if idx == 16 and v < soma_itens:      # PVA: VL_MERC ≥ soma dos VL_ITEM do C170
+                        v = soma_itens
+                    c[idx] = _f(v)
             linhas[d['i']] = '|'.join(c)
             resumo['notas_doc'] += 1
             feito.append(f'valor do documento R$ {_f(a["vl_doc_sped"])} → R$ {_f(x["vnf"])}')

@@ -1427,7 +1427,10 @@ function bindFiscal() {
             <div><b style="font-size:20px;color:#1f2a5a">${(r.registro_0400_criado || []).length}</b><br>Registros 0400 criados</div>
             ${r.c197_campos_ajustados ? `<div><b style="font-size:20px;color:#1f2a5a">${r.c197_campos_ajustados}</b><br>C197/D197 com campo a mais corrigidos</div>` : ''}
             ${r.c100_totais_corrigidos ? `<div><b style="font-size:20px;color:#1f2a5a">${r.c100_totais_corrigidos}</b><br>C100 com total diferente do C190 corrigidos</div>` : ''}
+            ${r.vl_merc_corrigidos ? `<div><b style="font-size:20px;color:#1f2a5a">${r.vl_merc_corrigidos}</b><br>Valor das mercadorias menor que a soma dos itens</div>` : ''}
+            ${r.cod_sit_08 ? `<div><b style="font-size:20px;color:#1f2a5a">${r.cod_sit_08}</b><br>Notas com CNPJ da chave ≠ participante → situação 08</div>` : ''}
           </div>
+          ${[...(r.vl_merc_detalhe || []), ...(r.cod_sit_08_detalhe || [])].length ? `<details style="margin-top:10px;font-size:12.5px"><summary style="cursor:pointer;color:#2f4090;font-weight:600">ver as notas (valor das mercadorias e situação 08)</summary><ul style="margin:6px 0 0 18px">${[...(r.vl_merc_detalhe || []), ...(r.cod_sit_08_detalhe || [])].map((x) => `<li>${String(x).replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</li>`).join('')}</ul></details>` : ''}
           ${(r.c100_totais_detalhe || []).length ? `<details style="margin-top:10px;font-size:12.5px"><summary style="cursor:pointer;color:#2f4090;font-weight:600">ver as notas (C100 = soma do C190)</summary><ul style="margin:6px 0 0 18px">${r.c100_totais_detalhe.map((x) => `<li>${String(x).replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</li>`).join('')}</ul></details>` : ''}
           ${r.e110_creditos ? `<div class="dif-av" style="margin-top:12px"><b>E110, campo 06 (créditos) recalculado pela soma das notas:</b> R$ ${(r.e110_creditos.antes).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} → R$ ${(r.e110_creditos.depois).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             · ICMS a recolher R$ ${(r.e110_creditos.recolher_antes).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} → <b>R$ ${(r.e110_creditos.recolher_depois).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b>${r.e110_creditos.e116 ? ' · ' + r.e110_creditos.e116 : ''}</div>` : ''}
@@ -2441,13 +2444,13 @@ function bindFiscal() {
           <div><span>ICMS a recolher</span><b data-n="${Math.max(0, (e.recolher || 0) - credito)}" data-fmt="brl">R$ 0,00</b><small>antes R$ ${fm(e.recolher)}</small></div>
         </div>
         ${(r.avisos || []).map((a) => `<div class="dif-av">${esc(a)}</div>`).join('')}
-        <div class="mono-card"><div class="dif-k">Conferência com a ST paga (DARE) — obrigatória antes de lançar</div>
-          <div class="dif-sub" style="margin:4px 0 8px">Informe quanto de ICMS-ST a Elton pagou em cada nota (DARE ou demonstrativo da SEFIN). Se for igual ao esperado, o crédito está confirmado; se for menor (benefício, regime especial, outra MVA), o crédito dos itens da nota acompanha a mesma proporção (Anexo VI, art. 46, § 2º).</div>
+        <div class="mono-card"><div class="dif-k">ST de cada nota — conferência opcional</div>
+          <div class="dif-sub" style="margin:4px 0 8px">O crédito sai pela regra cheia (MVA ajustada e alíquota interna, sem benefício). Só preencha a "ST paga" se a empresa tiver benefício ou regime especial na ST: aí o crédito dos itens da nota acompanha a proporção do que foi pago (Anexo VI, art. 46, § 2º). Sem benefício, deixe em branco e aplique.</div>
           <div class="dif-tw"><table class="dif-tab"><thead><tr><th>Nota de entrada</th><th class="n">Base da ST da nota</th><th class="n">ICMS total (37%)</th><th class="n">ICMS da compra</th><th class="n">ST esperada</th><th class="n">ST paga (DARE)</th><th>Situação</th><th class="n">Crédito dos itens</th></tr></thead>
           <tbody>${(r.notas || []).map((n) => `<tr><td><b>NF ${esc(n.nota)}</b><small>${esc(n.fornecedor)} (${esc(n.uf)}) · ${esc(n.data)} · ${n.itens_estoque} de ${n.itens_nota} itens no estoque</small></td>
             <td class="n">R$ ${fm(n.bc_st)}</td><td class="n">R$ ${fm(n.icms_total)}</td><td class="n">R$ ${fm(n.icms_proprio)}</td><td class="n"><b>R$ ${fm(n.st_esperado)}</b></td>
             <td class="n"><input class="est-pago" data-nota="${esc(n.nota)}" value="${n.st_pago != null ? fm(n.st_pago) : ''}" placeholder="valor pago" style="width:120px;text-align:right;padding:6px 8px;border:1px solid var(--line);border-radius:8px"></td>
-            <td>${n.situacao === 'pendente' ? '<span class="dif-b b-warn">falta o DARE</span>' : n.situacao === 'confere' ? '<span class="dif-b b-ok">confere</span>' : `<span class="dif-b b-err">diferente</span><small>crédito ajustado para ${fa(n.fator * 100)}</small>`}</td>
+            <td>${n.situacao === 'pendente' ? '<span class="dif-b b-ok">regra cheia</span>' : n.situacao === 'confere' ? '<span class="dif-b b-ok">confere</span>' : `<span class="dif-b b-err">diferente</span><small>crédito ajustado para ${fa(n.fator * 100)}</small>`}</td>
             <td class="n"><b>R$ ${fm(n.credito)}</b></td></tr>`).join('')}</tbody></table></div></div>
         <div class="mono-card"><div class="dif-k">Crédito item por item — base da ST (preço da nota + IPI, × MVA ajustada) × alíquota interna</div>
           <div class="dif-sub" style="margin:4px 0 8px">Notas usadas: ${forn.map(esc).join(' · ') || '—'}</div>
@@ -2465,8 +2468,7 @@ function bindFiscal() {
               • Cadastro <b>0200</b> dos itens que ainda não estão no SPED.<br>
               • Ajuste <b>E111 RO020033</b> "Crédito mudança de tributação - Art. 48 - anexo VI do RICMS" de R$ ${fm(credito)}; o E110 e a guia E116 são refeitos e o Bloco 9 recontado. O original nunca é alterado.<br>
               • Limite: 5.000 UPF/RO por mês (art. 48, parágrafo único). Informe a UPF para o sistema conferir.</div>
-            <div class="dif-acts"><button class="act inv-export" id="btnEstAplicar" style="background:#e23d4c;color:#fff;border-color:transparent" ${ok.length && !r.pendentes_dare ? '' : 'disabled'} title="${r.pendentes_dare ? 'Informe a ST paga (DARE) de todas as notas' : ''}">Aplicar no SPED (gera arquivo novo)</button></div>
-            ${r.pendentes_dare ? '<div class="dif-sub"><b>Para liberar:</b> informe a ST paga de cada nota no quadro "Conferência com a ST paga".</div>' : ''}
+            <div class="dif-acts"><button class="act inv-export" id="btnEstAplicar" style="background:#e23d4c;color:#fff;border-color:transparent" ${ok.length ? '' : 'disabled'}>Aplicar no SPED (gera arquivo novo)</button></div>
           </div>
           <div class="mono-card"><div class="dif-k">Base legal</div>
             <div class="dif-sub">RICMS/RO (Dec. 22.721/2018), Anexo VI: art. 14, I, "b", 3 (base da ST: preço do remetente + frete, seguro, impostos e encargos, + MVA); arts. 45 a 48 (estoque de mercadoria excluída da ST, redação do Dec. 29.184/2024).

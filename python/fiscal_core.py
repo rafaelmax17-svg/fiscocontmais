@@ -3559,6 +3559,70 @@ def _recalcula_bloco9_global(linhas):
 _C100_C190 = ((21, 6, 'VL_BC_ICMS'), (22, 7, 'VL_ICMS'), (23, 8, 'VL_BC_ICMS_ST'), (24, 9, 'VL_ICMS_ST'), (25, 11, 'VL_IPI'))
 
 
+def _acerta_vl_merc_e_chave(linhas, resumo):
+    """Erros do PVA no C100 (Guia Prático da EFD ICMS/IPI), alterando linhas no lugar:
+    • "O valor das mercadorias (VL_MERC do C100) deve ser maior ou igual à soma dos valores dos itens dos C170
+      (exclusive para NF-e de entrada regular ou extemporânea)": o Domínio às vezes grava no VL_ITEM o valor com ST/IPI;
+      o VL_MERC passa a ser a soma dos VL_ITEM da nota (o valor do documento e os C190 não mudam).
+    • "O CNPJ/CPF da chave do documento eletrônico não confere com o CNPJ/CPF do participante informado": regra do
+      escritório (Rafael) — nota de terceiros regular ou extemporânea (COD_SIT 00/01) passa para COD_SIT 08 (documento
+      emitido com base em regime especial ou norma específica)."""
+    import difal_ro as dr
+    from decimal import Decimal
+    resumo.setdefault('vl_merc_corrigidos', 0)
+    resumo.setdefault('vl_merc_detalhe', [])
+    resumo.setdefault('cod_sit_08', 0)
+    resumo.setdefault('cod_sit_08_detalhe', [])
+    part = {}
+    for l in linhas:
+        if l.startswith('|0150|'):
+            c = l.split('|')
+            if len(c) > 6:
+                part[c[2]] = (re.sub(r'\D', '', c[5] or ''), re.sub(r'\D', '', c[6] or ''), c[3])
+    cur, soma = None, Decimal('0')
+
+    def fecha():
+        if cur is None:
+            return
+        c = linhas[cur].split('|')
+        if len(c) <= 16 or c[2] != '0' or c[5] != '55' or c[6] not in ('00', '01') or soma <= 0:
+            return
+        merc = Decimal(str(dr._n(c[16])))
+        if merc < soma - Decimal('0.005'):
+            resumo['vl_merc_corrigidos'] += 1
+            if len(resumo['vl_merc_detalhe']) < 40:
+                resumo['vl_merc_detalhe'].append(f'NF {c[8]}: valor das mercadorias {c[16] or "0,00"} → {dr._f(soma)} (soma dos itens)')
+            c[16] = dr._f(soma)
+            linhas[cur] = '|'.join(c)
+
+    for i, l in enumerate(linhas):
+        r = l[1:5] if l.startswith('|') else ''
+        if r == 'C100':
+            fecha()
+            cur, soma = i, Decimal('0')
+            c = l.split('|')
+            chave = re.sub(r'\D', '', c[9] if len(c) > 9 else '')
+            if len(c) > 9 and c[3] == '1' and c[5] in ('55', '65') and c[6] in ('00', '01') and len(chave) == 44 and c[4] in part:
+                cnpj, cpf, nome = part[c[4]]
+                doc_chave = chave[6:20]
+                bate = (cnpj and doc_chave == cnpj.zfill(14)) or (cpf and doc_chave[-11:] == cpf.zfill(11) and doc_chave.startswith('000'))
+                if (cnpj or cpf) and not bate:
+                    antes = c[6]
+                    c[6] = '08'
+                    linhas[i] = '|'.join(c)
+                    resumo['cod_sit_08'] += 1
+                    if len(resumo['cod_sit_08_detalhe']) < 40:
+                        resumo['cod_sit_08_detalhe'].append(f'NF {c[8]} ({nome}): CNPJ da chave {doc_chave} ≠ participante {cnpj or cpf}; situação {antes} → 08')
+        elif r == 'C170' and cur is not None:
+            c = l.split('|')
+            if len(c) > 7:
+                soma += Decimal(str(dr._n(c[7])))
+        elif r and not r.startswith('C1') and r != 'C190':
+            fecha()
+            cur = None
+    fecha()
+
+
 def _acerta_c100_e110(linhas, resumo):
     """Erros do PVA corrigidos aqui (Guia Prático da EFD ICMS/IPI):
     • C100: VL_BC_ICMS, VL_ICMS, VL_BC_ICMS_ST, VL_ICMS_ST e VL_IPI devem ser iguais à soma dos C190 da nota. O C190
@@ -3775,6 +3839,8 @@ def corrigir_sped_fiscal(texto, cest_invalidos=None):
 
     # 6) e 7) totais do C100 iguais à soma do C190 e campo 06 do E110 igual à soma oficial dos créditos
     _acerta_c100_e110(linhas, resumo)
+    # 8) VL_MERC menor que a soma dos itens e 9) CNPJ da chave diferente do participante (→ COD_SIT 08)
+    _acerta_vl_merc_e_chave(linhas, resumo)
 
     # recalcula bloco 9 (9900 por tipo + 9999 total de linhas do arquivo) —
     # ver `_recalcula_bloco9_global` (extraída daqui, reaproveitada também na

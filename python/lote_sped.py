@@ -385,7 +385,7 @@ def processar(sped, xml_dir, escolhas=None, mes=None):
         avisos += [a for a in r.get('avisos') or [] if a not in avisos]
     mes_sped = f"{cab.get('dt_ini', '')[2:4]}-{cab.get('dt_ini', '')[4:8]}" if len(cab.get('dt_ini', '')) == 8 else ''
     n_corr = sum(rc.get(k) or 0 for k in ('c191_removidos', 'e500_linhas_removidas', 'gtin_limpos', 'cest_limpos', 'cod_nat_corrigidos',
-                                           'c197_campos_ajustados', 'c100_totais_corrigidos')) + len(rc.get('registro_0400_criado') or []) \
+                                           'c197_campos_ajustados', 'c100_totais_corrigidos', 'vl_merc_corrigidos', 'cod_sit_08')) + len(rc.get('registro_0400_criado') or []) \
         + (1 if rc.get('e110_creditos') else 0)
     res = {
         'sped': sped, 'arquivo': os.path.basename(sped), 'xmls': xml_dir, 'xml_lidos': lidos, 'xml_erros': erros,

@@ -237,8 +237,9 @@ def calcular(planilha, itens_xml, params=None):
                       'não está incluído — se ele entrou no cálculo do antecipado, o crédito real é um pouco maior.')
     pend = [n for n in notas if n['st_pago'] is None]
     if pend:
-        avisos.insert(0, 'Confira a ST paga (DARE) de ' + ', '.join(f"NF {n['nota']}" for n in pend) + ': o crédito só pode ir para o SPED '
-                      'depois de informar o valor pago de cada nota (Anexo VI, art. 46, § 2º — benefício usado na ST vale também no crédito).')
+        avisos.insert(0, 'Crédito calculado pela regra cheia (MVA ajustada e 37%, sem benefício). Se a ST dessas notas foi paga com '
+                      'benefício ou regime especial, informe o valor pago no quadro de conferência que o crédito acompanha '
+                      '(Anexo VI, art. 46, § 2º); sem benefício, pode aplicar direto.')
     return {'itens': linhas, 'notas': notas, 'pendentes_dare': len(pend), 'credito_total': tot, 'credito_apropriado': min(tot, limite) if limite is not None else tot,
             'limite': limite, 'avisos': avisos,
             'resumo': {'itens': len(linhas), 'calculados': len(ok), 'sem_xml': sum(1 for l in linhas if l['status'] == 'sem_xml'),
@@ -298,8 +299,6 @@ def aplicar(texto, calc, params):
     itens = [l for l in calc['itens'] if l['status'] == 'ok']
     if not itens:
         return texto, {'erro': 'Nenhum item calculado para lançar.'}
-    if calc.get('pendentes_dare'):
-        return texto, {'erro': 'Informe a ST paga (DARE) de todas as notas de entrada antes de lançar o crédito no SPED.'}
     dt_inv = re.sub(r'\D', '', params.get('dt_inv') or '')
     if len(dt_inv) != 8:
         return texto, {'erro': 'Informe a data do inventário (dia anterior à exclusão da ST).'}
