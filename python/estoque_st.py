@@ -224,6 +224,7 @@ def calcular(planilha, itens_xml, params=None):
             'st_retida': x['vbcst'] > 0, 'frete_nota': float(x['vfrete']),
         })
     ok = [l for l in linhas if l['status'] == 'ok']
+    notas = _confere_notas(ok, itens_xml, params)
     tot = float(_q2(sum(_D(l['credito']) for l in ok)))
     upf = params.get('upf')
     limite = float(_q2(_D(upf) * 5000)) if upf else None
@@ -234,10 +235,52 @@ def calcular(planilha, itens_xml, params=None):
         avisos.append('As notas vieram sem ICMS-ST retido (a ST foi paga na entrada, como antecipado): a base foi refeita pela '
                       'regra do art. 14 (preço + IPI + frete/encargos da nota, mais a MVA ajustada). Frete pago à parte em CT-e '
                       'não está incluído — se ele entrou no cálculo do antecipado, o crédito real é um pouco maior.')
-    return {'itens': linhas, 'credito_total': tot, 'credito_apropriado': min(tot, limite) if limite is not None else tot,
+    pend = [n for n in notas if n['st_pago'] is None]
+    if pend:
+        avisos.insert(0, 'Confira a ST paga (DARE) de ' + ', '.join(f"NF {n['nota']}" for n in pend) + ': o crédito só pode ir para o SPED '
+                      'depois de informar o valor pago de cada nota (Anexo VI, art. 46, § 2º — benefício usado na ST vale também no crédito).')
+    return {'itens': linhas, 'notas': notas, 'pendentes_dare': len(pend), 'credito_total': tot, 'credito_apropriado': min(tot, limite) if limite is not None else tot,
             'limite': limite, 'avisos': avisos,
             'resumo': {'itens': len(linhas), 'calculados': len(ok), 'sem_xml': sum(1 for l in linhas if l['status'] == 'sem_xml'),
                        'qtd': float(sum(_D(l['qtd']) for l in linhas)), 'valor_estoque': float(_q2(sum(_D(l['qtd']) * _D(l['vunit']) for l in linhas)))}}
+
+
+def _confere_notas(ok, itens_xml, params):
+    """Por nota de entrada: ST esperada pela regra (todos os itens da nota com o mesmo CEST, inclusive os que já não
+    estão no estoque) × ST paga informada (DARE). Se a ST paga for diferente, o crédito dos itens dessa nota acompanha
+    a proporção do que foi pago de verdade (ICMS da compra + ST paga) — art. 46, § 2º."""
+    pagos = {str(k): v for k, v in (params.get('st_pago') or {}).items()}
+    out = []
+    for nota in sorted({l['nota'] for l in ok}):
+        meus = [l for l in ok if l['nota'] == nota]
+        ref = meus[0]
+        an = _D(ref['aliq_interna']) / 100
+        mva_aj = _D(ref['mva_aj']) / 100
+        nf = [x for x in itens_xml if x['num'] == nota and x['chave'] == ref['chave'] and x['cest'] == ref['cest']]
+        bc = sum((x['vprod'] + x['vipi'] + x['vfrete'] + x['vseg'] + x['voutro'] - x['vdesc']) for x in nf) * (1 + mva_aj)
+        if any(x['vbcst'] > 0 for x in nf):
+            bc = sum(x['vbcst'] for x in nf)
+        icms_total = bc * an
+        proprio = sum(x['vprod'] * x['picms'] / 100 for x in nf)
+        esperado = icms_total - proprio
+        pago = pagos.get(nota)
+        pago = _D(str(pago).replace(',', '.')) if pago not in (None, '') else None
+        fator = Decimal('1')
+        if pago is not None and icms_total > 0:
+            fator = (proprio + pago) / icms_total
+            for l in meus:
+                l['icms_unit'] = float(_q6(_D(l['icms_unit']) * fator))
+                l['credito'] = float(_q2(_D(l['credito']) * fator))
+                l['conferido'] = True
+                if abs(fator - 1) > Decimal('0.001'):
+                    l['fonte'] += f' · ajustado ao DARE ({_f(_q2(fator * 100))}% do calculado)'
+        out.append({'nota': nota, 'chave': ref['chave'], 'fornecedor': ref['fornecedor'], 'uf': ref['uf'], 'data': ref['data_nota'],
+                    'itens_nota': len(nf), 'itens_estoque': len(meus), 'bc_st': float(_q2(bc)), 'icms_total': float(_q2(icms_total)),
+                    'icms_proprio': float(_q2(proprio)), 'st_esperado': float(_q2(esperado)),
+                    'st_pago': float(pago) if pago is not None else None, 'fator': float(_q6(fator)),
+                    'credito': float(_q2(sum(_D(l['credito']) for l in meus))),
+                    'situacao': 'pendente' if pago is None else ('confere' if abs(pago - esperado) <= Decimal('1') else 'diferente')})
+    return out
 
 
 def _pub(it):
@@ -255,6 +298,8 @@ def aplicar(texto, calc, params):
     itens = [l for l in calc['itens'] if l['status'] == 'ok']
     if not itens:
         return texto, {'erro': 'Nenhum item calculado para lançar.'}
+    if calc.get('pendentes_dare'):
+        return texto, {'erro': 'Informe a ST paga (DARE) de todas as notas de entrada antes de lançar o crédito no SPED.'}
     dt_inv = re.sub(r'\D', '', params.get('dt_inv') or '')
     if len(dt_inv) != 8:
         return texto, {'erro': 'Informe a data do inventário (dia anterior à exclusão da ST).'}
