@@ -3278,12 +3278,17 @@ function applyRole(role, modulos) {
   if (role !== 'admin' && MODULOS) {
     const ok = new Set(MODULOS);
     $$('.nav .nav-item[data-view]').forEach((b) => {
-      if (b.dataset.group === 'admin-only') return;
-      b.classList.toggle('role-hidden', !ok.has(b.dataset.view));
+      const exclusivo = ['admin-usuarios', 'admin-lic'].includes(b.dataset.view);
+      b.classList.toggle('role-hidden', exclusivo || !ok.has(b.dataset.view));
     });
-    ['fiscal', 'contabil'].forEach((g) => {
-      const algum = [...document.querySelectorAll(`.nav .nav-item[data-group="${g}"]`)].some((b) => !b.classList.contains('role-hidden'));
-      $$(`.nav-group[data-group="${g}"]`).forEach((el) => el.classList.toggle('role-hidden', !algum));
+    // cada título do menu só aparece se algum item logo abaixo dele estiver liberado
+    $$('.nav .nav-group').forEach((h) => {
+      let el = h.nextElementSibling, algum = false;
+      while (el && !el.classList.contains('nav-group')) {
+        if (el.classList.contains('nav-item') && !el.classList.contains('role-hidden')) { algum = true; break; }
+        el = el.nextElementSibling;
+      }
+      h.classList.toggle('role-hidden', !algum);
     });
   }
   // Conciliação de Fornecedores: liberada só pro Admin por enquanto (ainda
@@ -3460,7 +3465,8 @@ async function loadUsuarios() {
   const r = await window.fiscocont.usuarios.listar();
   if (r.error) { box.innerHTML = `<div class="lic-warn">Não consegui carregar: ${_esc(r.error)}</div>`; return; }
   USR_LISTA = r.usuarios || [];
-  const sel = (u) => `<select class="usr-perfil" data-uid="${_esc(u.uid)}" ${u.voce ? 'disabled' : ''}>${Object.entries(PERFIL_NOME).map(([k, v]) => `<option value="${k}" ${u.perfil === k ? 'selected' : ''}>${v}</option>`).join('')}</select>`;
+  const principal = (u) => (u.email || '').toLowerCase() === 'rafael.max17@gmail.com';
+  const sel = (u) => principal(u) || u.voce ? `<span class="usr-fixo">${PERFIL_NOME[u.perfil] || u.perfil}${principal(u) ? ' · principal' : ''}</span>` : `<select class="usr-perfil" data-uid="${_esc(u.uid)}">${Object.entries(PERFIL_NOME).map(([k, v]) => `<option value="${k}" ${u.perfil === k ? 'selected' : ''}>${v}</option>`).join('')}</select>`;
   const qtdMods = (u) => u.perfil === 'admin' ? 'todos' : (u.modulos ? `${u.modulos.length} módulo(s)` : 'padrão do perfil');
   const linhas = USR_LISTA.map((u) => `<tr class="${u.ativo ? '' : 'usr-off'}">
       <td><b>${_esc(u.nome)}</b>${u.voce ? ' <span class="lic-badge ativo">você</span>' : ''}<small>${_esc(u.email)}</small></td>
@@ -3468,8 +3474,8 @@ async function loadUsuarios() {
       <td><span class="lic-badge ${u.ativo ? 'ativo' : 'bloqueado'}">${u.ativo ? 'ativo' : 'bloqueado'}</span>${u.trocarSenha ? '<small>aguardando criar a senha</small>' : ''}</td>
       <td class="lic-actions">
         ${u.perfil === 'admin' ? '' : `<button data-acao="modulos" data-uid="${_esc(u.uid)}">Módulos</button>`}
-        ${u.voce ? '' : `<button data-acao="senha" data-uid="${_esc(u.uid)}">Gerar nova senha</button>`}
-        ${u.voce ? '' : (u.ativo ? `<button class="off" data-acao="bloquear" data-uid="${_esc(u.uid)}">Bloquear</button>` : `<button class="on" data-acao="ativar" data-uid="${_esc(u.uid)}">Ativar</button>`)}
+        ${u.voce || principal(u) ? '' : `<button data-acao="senha" data-uid="${_esc(u.uid)}">Gerar nova senha</button>`}
+        ${u.voce || principal(u) ? '' : (u.ativo ? `<button class="off" data-acao="bloquear" data-uid="${_esc(u.uid)}">Bloquear</button>` : `<button class="on" data-acao="ativar" data-uid="${_esc(u.uid)}">Ativar</button>`)}
       </td></tr>`).join('');
   box.innerHTML = `<table class="lic-table usr-table"><thead><tr><th>Usuário</th><th>Perfil / módulos</th><th>Situação</th><th>Ação</th></tr></thead><tbody>${linhas}</tbody></table>`;
   box.querySelectorAll('.usr-perfil').forEach((s2) => s2.addEventListener('change', async () => {
@@ -3522,12 +3528,12 @@ function usrMostraSenha(nome, email, senha, novo) {
   $('#usrOkSenha').addEventListener('click', () => { m.hidden = true; });
 }
 function usrModulos(u) {
-  const cat = catalogoModulos().filter((x) => x.grupo !== 'admin-only');
+  const cat = catalogoModulos().filter((x) => !['admin-usuarios', 'admin-lic'].includes(x.view));
   const marcados = new Set(u.modulos || modulosPadrao(u.perfil));
   const grupos = [...new Set(cat.map((x) => x.grupoNome))];
   const m = usrModal(`
     <div class="dif-k">Módulos liberados</div>
-    <h3 style="margin:6px 0 2px">${_esc(u.nome)}</h3><div class="dif-sub">Perfil ${PERFIL_NOME[u.perfil] || u.perfil} · marque o que ${_esc(u.nome.split(' ')[0])} pode ver. Os módulos de Administração são só do Admin.</div>
+    <h3 style="margin:6px 0 2px">${_esc(u.nome)}</h3><div class="dif-sub">Perfil ${PERFIL_NOME[u.perfil] || u.perfil} · marque o que ${_esc(u.nome.split(' ')[0])} pode ver. Usuários e Licenças são só do Admin.</div>
     <div class="usr-mods">${grupos.map((g) => `<div class="usr-mod-g"><b>${_esc(g)}</b>
       ${cat.filter((x) => x.grupoNome === g).map((x) => `<label><input type="checkbox" value="${_esc(x.view)}" ${marcados.has(x.view) ? 'checked' : ''}> ${_esc(x.nome)}</label>`).join('')}</div>`).join('')}</div>
     <div class="dif-acts" style="justify-content:space-between">

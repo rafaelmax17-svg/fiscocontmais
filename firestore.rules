@@ -32,8 +32,11 @@ service cloud.firestore {
     // ------------------------------------------------------------ usuários
     match /usuarios/{uid} {
       allow read: if (logado() && request.auth.uid == uid) || admin();
-      allow delete: if admin();
-      allow update: if admin()
+      allow delete: if admin() && resource.data.email != 'rafael.max17@gmail.com';
+      allow update: if (admin()
+          // Admin principal do sistema: perfil, situação e módulos não mudam (nem por outro Admin)
+          && (resource.data.email != 'rafael.max17@gmail.com'
+              || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['perfil', 'ativo', 'modulos', 'email'])))
         // a própria pessoa só consegue marcar que já criou a senha dela (depois da senha provisória)
         || (logado() && request.auth.uid == uid && resource.data.ativo == true
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['trocarSenha', 'senhaTrocadaEm'])

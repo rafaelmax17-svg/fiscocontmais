@@ -986,3 +986,5 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .usr-mod-g b{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink2);margin-bottom:2px}
 .usr-mod-g label{display:flex;gap:8px;align-items:center;cursor:pointer}
 .usr-mod-g input{accent-color:var(--accent);width:15px;height:15px}
+.usr-fixo{display:inline-block;padding:6px 10px;border-radius:8px;background:#eef0fb;color:#1f2a5a;font-weight:700;font-size:12.5px}
+.usr-mods{grid-template-columns:repeat(3,1fr)}

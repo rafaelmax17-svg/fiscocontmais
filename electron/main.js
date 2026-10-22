@@ -394,6 +394,9 @@ ipcMain.on('news:rendererPronto', () => {
 const auth = require('./auth');
 let sessionRole = null;   // perfil da sessão atual (trava os módulos exclusivos do Admin)
 let sessionLocked = false;
+let sessionModulos = null;   // módulos liberados pelo Admin (null = padrão do perfil)
+// Módulos de Administração que o Admin pode liberar para outra pessoa (Usuários e Licenças continuam só do Admin).
+const ADMIN_EXCLUSIVOS = new Set(['admin-usuarios', 'admin-lic']);
 const TEMPO_TRAVA_MIN = { admin: 15, fiscal: 60, contabil: 60 };
 function _sessaoPublica() {
   const s = auth.sessao();
@@ -403,11 +406,12 @@ function _sessaoPublica() {
 ipcMain.handle('auth:login', async (_evt, { email, senha, salvar, usarSalva } = {}) => {
   const r = await auth.login(app.getPath('userData'), email, senha, (info) => {
     if (info.motivo === 'bloqueado') sessionRole = null;
-    else if (info.motivo === 'perfil') sessionRole = info.perfil;
+    else if (info.motivo === 'perfil') { sessionRole = info.perfil; sessionModulos = info.modulos || null; }
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('auth:mudou', info);
   }, { salvar, usarSalva });
   if (!r.ok) return { ok: false, erro: r.erro, semInternet: !!r.semInternet, info: !!r.info };
   sessionRole = r.perfil;
+  sessionModulos = r.modulos || null;
   sessionLocked = !!r.trocarSenha;     // senha provisória: nada funciona até a pessoa criar a própria senha
   license.marcarUsuario(r.email);
   return { ok: true, role: r.perfil, aviso: r.aviso || '', sessao: _sessaoPublica() };
@@ -435,7 +439,8 @@ ipcMain.handle('auth:primeiroAcesso', async (_evt, { email, senha } = {}) => aut
 
 // Cadastro de usuários (só Admin)
 const _adm = async (fn) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (sessionRole !== 'admin') return { error: 'Acesso restrito ao Admin.' };
+  if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
   try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String(e.message || e) }; }
 };
 ipcMain.handle('admin:usuariosListar', () => _adm(() => auth.listarUsuarios()));
@@ -1120,12 +1125,12 @@ ipcMain.handle('changelog:marcarVisto', (_evt, versao) => {
   return { ok: true };
 });
 ipcMain.handle('license:listAll', async () => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (sessionRole !== 'admin') return { error: 'Acesso restrito ao Admin.' };
   try { return { ok: true, itens: await cloud.listLicenses(app.getPath('userData')) }; }
   catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('license:setStatus', async (_evt, { codigo, status }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (sessionRole !== 'admin') return { error: 'Acesso restrito ao Admin.' };
   try { return await cloud.setLicenseStatus(app.getPath('userData'), codigo, status); }
   catch (e) { return { error: String(e.message || e) }; }
 });
@@ -1597,7 +1602,9 @@ ipcMain.handle('fiscal:pickSped', async () => {
 // Tudo aqui exige papel "admin" também no processo principal (não só no menu).
 // ---------------------------------------------------------------------------
 function _soAdmin() {
-  if (sessionRole !== 'admin') return { error: 'Acesso restrito ao Admin.' };
+  const liberado = sessionRole === 'admin'
+    || (Array.isArray(sessionModulos) && sessionModulos.some((m) => m.startsWith('admin-') && !ADMIN_EXCLUSIVOS.has(m)));
+  if (!liberado) return { error: 'Acesso restrito ao Admin.' };
   if (sessionLocked) return { error: 'Sessão travada por inatividade: digite a senha para continuar.' };
   return null;
 }

@@ -20,6 +20,7 @@ setGlobalOptions({ region: 'southamerica-east1', maxInstances: 5 });
 
 const db = getFirestore();
 const PERFIS = ['fiscal', 'contabil', 'admin'];
+const ADMIN_PRINCIPAL = 'rafael.max17@gmail.com';     // dono do sistema: ninguém altera perfil, situação ou senha dele
 
 async function quemChamou(req, exigirAdmin) {
   const a = req.auth;
@@ -85,6 +86,8 @@ exports.novaSenhaProvisoria = onCall(async (req) => {
   const ref = db.doc(`usuarios/${uid}`);
   const snap = await ref.get();
   if (!uid || !snap.exists) throw new HttpsError('not-found', 'Usuário não encontrado.');
+  if (String(snap.data().email || '').toLowerCase() === ADMIN_PRINCIPAL)
+    throw new HttpsError('permission-denied', 'A senha do Admin principal não pode ser trocada por aqui.');
   const senha = senhaProvisoria();
   await getAuth().updateUser(uid, { password: senha });
   await getAuth().revokeRefreshTokens(uid);          // derruba sessões abertas com a senha antiga

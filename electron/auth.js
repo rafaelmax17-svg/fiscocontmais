@@ -341,6 +341,9 @@ async function alterarUsuario(uid, { ativo, perfil, nome, modulos }) {
   _exigeAdmin();
   if (uid === _sessao.uid && (ativo === false || (perfil && perfil !== 'admin')))
     throw new Error('Você não pode bloquear nem tirar o perfil Admin de você mesmo.');
+  const alvo = (await _fm.getDoc(_fm.doc(_db, 'usuarios', uid))).data() || {};
+  if (_norm(alvo.email) === ADMIN_INICIAL && (typeof ativo === 'boolean' || perfil || modulos !== undefined))
+    throw new Error('O Admin principal do sistema não pode ser alterado.');
   const mud = {};
   if (typeof ativo === 'boolean') mud.ativo = ativo;
   if (perfil) { if (!PERFIS.includes(perfil)) throw new Error('Perfil inválido.'); mud.perfil = perfil; }
