@@ -36,7 +36,18 @@ jobs:
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
 
       - name: Publicar funções e regras
-        run: npx --yes firebase-tools@13 deploy --only functions,firestore:rules --project fiscocontmais --non-interactive --force
+        shell: bash
+        run: |
+          set +e
+          npx --yes firebase-tools@13 deploy --only functions,firestore:rules --project fiscocontmais --non-interactive --force 2>&1 | tee deploy.log
+          st=${PIPESTATUS[0]}
+          if [ "$st" != "0" ]; then
+            # resumo do erro como anotação (aparece no resumo da execução, sem precisar abrir o log inteiro)
+            msg=$(grep -iE "error|denied|permission|not enabled|failed|billing|forbidden|403|unable" deploy.log | grep -v "^npm" | tail -25 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Falha ao publicar no Firebase::${msg:0:3800}"
+            tail -60 deploy.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' | cut -c1-3800 | sed 's/^/::warning title=Final do log::/'
+          fi
+          exit $st
 
       - name: Apagar a credencial
         if: always()
