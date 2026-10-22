@@ -3357,18 +3357,12 @@ function bindLogin() {
     else { pass.value = ''; delete pass.dataset.salva; }
     if (res && res.semInternet) { showLicenseBlock({ status: 'semnet', codigo: '' }); }
     if (res && res.ok) _entrou(res);
-    else { _loginMsg((res && res.erro) || 'Não foi possível entrar.'); pass.focus(); }
+    else { _loginMsg((res && res.erro) || 'Não foi possível entrar.', !!(res && res.info)); pass.focus(); }
   });
   $('#loginEsqueci').addEventListener('click', async () => {
     if (!email.value.trim()) { _loginMsg('Digite o seu e-mail acima e clique de novo em "Esqueci a senha".'); email.focus(); return; }
     const r = await window.fiscocont.auth.redefinirSenha(email.value);
     _loginMsg(r.ok ? `Se o e-mail estiver cadastrado, chega em instantes o link para criar uma senha nova (${email.value.trim()}).` : r.erro, r.ok);
-  });
-  $('#loginPrimeiro').addEventListener('click', async () => {
-    if (!email.value.trim() || !pass.value) { _loginMsg('Primeiro acesso do Admin: digite o seu e-mail e a senha que quer usar (mínimo 6 caracteres) e clique de novo.'); return; }
-    const r = await window.fiscocont.auth.primeiroAcesso(email.value, pass.value);
-    pass.value = '';
-    _loginMsg(r.ok ? r.msg : r.erro, r.ok);
   });
   $('#lockForm').addEventListener('submit', async (e) => {
     e.preventDefault();

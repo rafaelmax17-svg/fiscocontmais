@@ -24,9 +24,10 @@ Console do Firebase > Firestore Database > **Regras** > apague tudo, cole o cont
 - Depois disso, versões antigas (2.0.0 ou anteriores) deixam de sincronizar balancetes até atualizar. Por isso publique as regras logo depois da 2.1.
 
 ## 5. Primeiro acesso do Admin
-1. Abra o FiscoCont+ 2.1, digite **rafael.max17@gmail.com** e a senha que quer usar (mínimo 6 caracteres) e clique em **"Primeiro acesso do Admin"**.
-2. Abra o e-mail e clique no link de confirmação.
-3. Volte ao sistema e clique em **Entrar** com o mesmo e-mail e senha. Você entra como Admin.
+1. Abra o FiscoCont+ 2.1, digite **rafael.max17@gmail.com** e a senha que quer usar (mínimo 6 caracteres, de preferência uma senha NOVA) e clique em **Entrar**.
+2. Como a conta ainda não existe, o sistema cria a conta e avisa que mandou um e-mail de confirmação. Abra o e-mail (confira o spam) e clique no link.
+3. Volte ao sistema e clique em **Entrar** de novo com o mesmo e-mail e senha. Você entra como Admin.
+(Não existe link de "primeiro acesso" na tela: isso só funciona para o e-mail do Admin.)
 
 ## 6. Cadastrar a equipe
 Administração > **Usuários** > nome, e-mail e perfil > **Cadastrar e enviar convite**. Cada pessoa recebe o e-mail para criar a senha.

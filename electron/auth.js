@@ -163,6 +163,13 @@ async function login(userDataDir, email, senha, onBloqueado, opcoes = {}) {
   } catch (e) {
     if (e && e.code === 'fc/verificar') { try { await _am.signOut(_auth); } catch (_) {} return { ok: false, erro: e.message }; }
     if (_offlineErr(e)) return { ok: false, erro: 'Sem conexão com a internet. O FiscoCont+ só funciona conectado.', semInternet: true };
+    // Primeiro acesso do Admin inicial, sem nada na tela: se a conta dele ainda não existe, o próprio "Entrar" cria a
+    // conta e manda o e-mail de confirmação. Se a conta já existe, a tentativa de criar falha e vale "senha incorreta".
+    if (email === ADMIN_INICIAL && !usouSalva && /invalid-credential|user-not-found/.test((e && e.code) || '')) {
+      const r = await criarAdminInicial(email, senha);
+      if (r.ok) return { ok: false, info: true, erro: r.msg };
+      if (!/já tem conta/.test(r.erro || '')) return { ok: false, erro: r.erro };
+    }
     // a senha salva deixou de funcionar (trocada ou redefinida): sai do cofre
     if (usouSalva && /invalid-credential|wrong-password|user-not-found/.test((e && e.code) || '')) {
       salvoApagar(userDataDir);

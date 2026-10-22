@@ -405,7 +405,7 @@ ipcMain.handle('auth:login', async (_evt, { email, senha, salvar, usarSalva } = 
     else if (info.motivo === 'perfil') sessionRole = info.perfil;
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('auth:mudou', info);
   }, { salvar, usarSalva });
-  if (!r.ok) return { ok: false, erro: r.erro, semInternet: !!r.semInternet };
+  if (!r.ok) return { ok: false, erro: r.erro, semInternet: !!r.semInternet, info: !!r.info };
   sessionRole = r.perfil;
   sessionLocked = false;
   license.marcarUsuario(r.email);
