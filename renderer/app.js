@@ -3573,9 +3573,27 @@ function bindUsuarios() {
 // Busca (via main process) o texto da release atual no GitHub — o mesmo
 // texto escrito na hora de publicar cada versão — e mostra num modal só
 // quando a versão mudou desde a última vez que a pessoa viu.
+// Seções "## Admin ..." são privativas do Admin: para os demais perfis, somem
+// das Novidades (rede de proteção; as notas já são escritas sem elas).
 function _notasParaHtml(notas) {
-  const itens = notas.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => l.replace(/^[-*]\s*/, ''));
-  return '<ul style="margin:0;padding-left:20px">' + itens.map((i) => `<li style="margin-bottom:8px">${_esc(i)}</li>`).join('') + '</ul>';
+  const linhas = notas.split('\n').map((l) => l.trim()).filter(Boolean);
+  let html = '', aberta = false, pula = false;
+  const fecha = () => { if (aberta) { html += '</ul>'; aberta = false; } };
+  for (const l of linhas) {
+    if (/^#\s/.test(l)) continue;                       // título "# FiscoCont+ x.y.z" (já está no cabeçalho do modal)
+    if (/^#{2,}\s/.test(l)) {
+      const tit = l.replace(/^#+\s*/, '');
+      pula = ROLE !== 'admin' && /\badmin\b/i.test(tit);
+      fecha();
+      if (!pula) html += `<div style="font-weight:600;margin:10px 0 6px">${_esc(tit)}</div>`;
+      continue;
+    }
+    if (pula) continue;
+    if (!aberta) { html += '<ul style="margin:0;padding-left:20px">'; aberta = true; }
+    html += `<li style="margin-bottom:8px">${_esc(l.replace(/^[-*]\s*/, '').replace(/\*\*/g, ''))}</li>`;
+  }
+  fecha();
+  return html;
 }
 function mostrarNovidades(info) {
   const modal = $('#modalNovidades');

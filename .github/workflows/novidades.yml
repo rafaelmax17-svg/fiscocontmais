@@ -1,0 +1,26 @@
+name: Atualizar o texto das Novidades de uma versão publicada
+
+# Reescreve o texto (release notes) de uma versão já publicada no repositório de instaladores,
+# usando o arquivo release-notes/<tag>.md da main. É esse texto que aparece em "Novidades" no sistema.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Versão (ex.: v2.1.1)'
+        required: true
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Atualizar o texto da release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          NOTES="release-notes/$TAG.md"
+          if [ ! -f "$NOTES" ]; then echo "::error::Nao existe $NOTES"; exit 1; fi
+          gh release edit "$TAG" -R rafaelmax17-svg/fiscocontmais-releases --notes-file "$NOTES"
+          echo "::notice title=Novidades atualizadas::$TAG"
