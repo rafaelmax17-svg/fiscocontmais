@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Dependências das funções
         working-directory: functions
@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          npx --yes firebase-tools@13 deploy --only functions,firestore:rules --project fiscocontmais --non-interactive --force 2>&1 | tee deploy.log
+          npx --yes firebase-tools@15 deploy --only functions,firestore:rules --project fiscocontmais --non-interactive --force 2>&1 | tee deploy.log
           st=${PIPESTATUS[0]}
           if [ "$st" != "0" ]; then
             # resumo do erro como anotação (aparece no resumo da execução, sem precisar abrir o log inteiro)

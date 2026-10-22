@@ -9,14 +9,16 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { setGlobalOptions } = require('firebase-functions/v2');
-const admin = require('firebase-admin');
+const { initializeApp } = require('firebase-admin/app');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getAuth } = require('firebase-admin/auth');
 const crypto = require('crypto');
 const { SISTEMA_CHAT_IA } = require('./chatPrompt');
 
-admin.initializeApp();
+initializeApp();
 setGlobalOptions({ region: 'southamerica-east1', maxInstances: 5 });
 
-const db = admin.firestore();
+const db = getFirestore();
 const PERFIS = ['fiscal', 'contabil', 'admin'];
 
 async function quemChamou(req, exigirAdmin) {
@@ -57,20 +59,20 @@ exports.criarUsuario = onCall(async (req) => {
   const senha = senhaProvisoria();
   let user;
   try {
-    user = await admin.auth().createUser({ email, password: senha, displayName: nome, emailVerified: true });
+    user = await getAuth().createUser({ email, password: senha, displayName: nome, emailVerified: true });
   } catch (e) {
     if (e.code === 'auth/email-already-exists') {
-      user = await admin.auth().getUserByEmail(email);
+      user = await getAuth().getUserByEmail(email);
       const ja = await db.doc(`usuarios/${user.uid}`).get();
       if (ja.exists) throw new HttpsError('already-exists', 'Esse e-mail já está cadastrado. Use "Gerar nova senha" na lista.');
-      await admin.auth().updateUser(user.uid, { password: senha, displayName: nome, disabled: false });
+      await getAuth().updateUser(user.uid, { password: senha, displayName: nome, disabled: false });
     } else {
       throw new HttpsError('internal', 'Não foi possível criar o usuário: ' + e.message);
     }
   }
   await db.doc(`usuarios/${user.uid}`).set({
     nome, email, perfil, ativo: true, trocarSenha: true, ...(modulos ? { modulos } : {}),
-    criadoEm: admin.firestore.FieldValue.serverTimestamp(), criadoPor: adm.email,
+    criadoEm: FieldValue.serverTimestamp(), criadoPor: adm.email,
   });
   await db.doc(`convites/${email}`).delete().catch(() => {});
   return { uid: user.uid, senha };
@@ -84,9 +86,9 @@ exports.novaSenhaProvisoria = onCall(async (req) => {
   const snap = await ref.get();
   if (!uid || !snap.exists) throw new HttpsError('not-found', 'Usuário não encontrado.');
   const senha = senhaProvisoria();
-  await admin.auth().updateUser(uid, { password: senha });
-  await admin.auth().revokeRefreshTokens(uid);          // derruba sessões abertas com a senha antiga
-  await ref.update({ trocarSenha: true, alteradoEm: admin.firestore.FieldValue.serverTimestamp(), alteradoPor: adm.email });
+  await getAuth().updateUser(uid, { password: senha });
+  await getAuth().revokeRefreshTokens(uid);          // derruba sessões abertas com a senha antiga
+  await ref.update({ trocarSenha: true, alteradoEm: FieldValue.serverTimestamp(), alteradoPor: adm.email });
   return { senha };
 });
 
