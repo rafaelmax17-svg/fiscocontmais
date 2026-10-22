@@ -1,7 +1,9 @@
-name: Gerar instalador e rascunho da release
+name: Gerar instalador e publicar a versão
 
-# Roda sozinho quando uma tag de versao (v1.5.7, v1.5.8...) e enviada ao GitHub.
-# Tambem pode ser rodado a mao (Actions > Gerar instalador > Run workflow) informando a tag.
+# Roda sozinho quando uma tag de versao (v2.1.1, v2.1.2...) e enviada ao GitHub (o Claude envia a tag quando a versao
+# fica pronta). Tambem pode ser rodado a mao (Actions > Gerar instalador > Run workflow) informando a tag.
+# Desde a 2.1.1 a versao e PUBLICADA direto no repositorio de instaladores (fiscocontmais-releases), de onde os
+# computadores baixam a atualizacao: nao ha mais rascunho para publicar a mao.
 on:
   push:
     tags: ['v*']
@@ -117,43 +119,26 @@ jobs:
           test -f dist/latest.yml
           grep -q "version: $V" dist/latest.yml
 
-      - name: Criar o rascunho da release com as novidades
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          V="${TAG#v}"
-          NOTES="release-notes/$TAG.md"
-          mkdir -p release-notes
-          if [ ! -f "$NOTES" ]; then
-            echo "Ajustes internos e melhorias de desempenho." > "$NOTES"
-          fi
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Ja existe uma release para $TAG; enviando os arquivos para ela."
-            gh release upload "$TAG" "dist/fiscocont-plus-setup-$V.exe" "dist/fiscocont-plus-setup-$V.exe.blockmap" dist/latest.yml --clobber
-          else
-            gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes-file "$NOTES" \
-              "dist/fiscocont-plus-setup-$V.exe" "dist/fiscocont-plus-setup-$V.exe.blockmap" dist/latest.yml
-          fi
-
-      # Desde a 2.1 o app busca as atualizações no repositório PÚBLICO só de instaladores (fiscocontmais-releases),
-      # para o código poder ficar privado. Precisa do segredo RELEASES_TOKEN (token com permissão de escrita nesse
-      # repositório). Sem o segredo, avisa e segue (a release continua criada aqui, como antes).
-      - name: Publicar o instalador no repositório de instaladores (fiscocontmais-releases)
+      - name: Publicar a versao no repositorio de instaladores (fiscocontmais-releases)
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::Segredo RELEASES_TOKEN não configurado: o instalador NÃO foi para fiscocontmais-releases."
-            exit 0
+            echo "::error::Segredo RELEASES_TOKEN nao configurado: a versao nao foi publicada."
+            exit 1
           fi
           V="${TAG#v}"
           NOTES="release-notes/$TAG.md"
+          mkdir -p release-notes
+          [ -f "$NOTES" ] || echo "Ajustes internos e melhorias de desempenho." > "$NOTES"
           R=rafaelmax17-svg/fiscocontmais-releases
+          ARQS=("dist/fiscocont-plus-setup-$V.exe" "dist/fiscocont-plus-setup-$V.exe.blockmap" dist/latest.yml)
           if gh release view "$TAG" -R "$R" >/dev/null 2>&1; then
-            gh release upload "$TAG" -R "$R" "dist/fiscocont-plus-setup-$V.exe" "dist/fiscocont-plus-setup-$V.exe.blockmap" dist/latest.yml --clobber
+            echo "Ja existe a release $TAG em $R: atualizando os arquivos e publicando."
+            gh release upload "$TAG" -R "$R" "${ARQS[@]}" --clobber
+            gh release edit "$TAG" -R "$R" --draft=false --title "$TAG" --notes-file "$NOTES" --latest
           else
-            gh release create "$TAG" -R "$R" --draft --title "$TAG" --notes-file "$NOTES" \
-              "dist/fiscocont-plus-setup-$V.exe" "dist/fiscocont-plus-setup-$V.exe.blockmap" dist/latest.yml
+            gh release create "$TAG" -R "$R" --title "$TAG" --notes-file "$NOTES" --latest "${ARQS[@]}"
           fi
+          echo "::notice title=Versao publicada::$TAG publicada em https://github.com/$R/releases/tag/$TAG"
