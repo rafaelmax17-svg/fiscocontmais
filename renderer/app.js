@@ -3361,7 +3361,7 @@ function _entrou(res) {
   if (res.aviso) toast(res.aviso);
   verificarNovidades();
 }
-// trava por inatividade: 15 min (Admin) / 60 min (demais) sem mexer no sistema
+// trava por inatividade: 40 min (Admin) / 60 min (demais) sem mexer no sistema
 function _travar() {
   if (!ROLE || SESSAO.travada) return;
   SESSAO.travada = true;

@@ -397,7 +397,7 @@ let sessionLocked = false;
 let sessionModulos = null;   // módulos liberados pelo Admin (null = padrão do perfil)
 // Módulos de Administração que o Admin pode liberar para outra pessoa (Usuários e Licenças continuam só do Admin).
 const ADMIN_EXCLUSIVOS = new Set(['admin-usuarios', 'admin-lic']);
-const TEMPO_TRAVA_MIN = { admin: 15, fiscal: 60, contabil: 60 };
+const TEMPO_TRAVA_MIN = { admin: 40, fiscal: 60, contabil: 60 };
 function _sessaoPublica() {
   const s = auth.sessao();
   return s ? { email: s.email, nome: s.nome, perfil: s.perfil, offline: !!s.offline, travaMin: TEMPO_TRAVA_MIN[s.perfil] || 60,
