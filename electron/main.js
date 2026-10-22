@@ -204,6 +204,8 @@ app.whenReady().then(() => {
 
   updater.initAutoUpdate(() => mainWindow);
   setTimeout(() => updater.checkNow(), 15000); // não compete com a abertura do app
+  // Achado real (22/10): só checava ao abrir — quem deixa o sistema aberto o dia todo nunca recebia a versão nova.
+  setInterval(() => updater.checkNow(), 30 * 60 * 1000);
 
   // achado real (Rafael, 30/09): NÃO começa por um tempo fixo chutado —
   // a tela só está pronta pra RECEBER o balão depois que registra o
