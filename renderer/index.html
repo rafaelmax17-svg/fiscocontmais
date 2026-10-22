@@ -29,9 +29,27 @@
       <label class="login-salvar"><input type="checkbox" id="loginSalvar"> Salvar meus dados neste computador</label>
       <button type="submit" class="login-btn" id="loginBtn">Entrar</button>
     </form>
-    <div class="login-links"><a id="loginEsqueci">Esqueci a senha</a></div>
+    <div class="login-links login-dica">Esqueceu a senha? Fale com o Admin do sistema.</div>
     <div class="login-err" id="loginErr" hidden>Senha incorreta.</div>
     <div class="login-ok" id="loginOk" hidden></div>
+  </div>
+  <div class="login-card" id="senhaCard" hidden>
+    <svg class="login-logo lock" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 3l7 3v5c0 4.5-3 8.4-7 10-4-1.6-7-5.5-7-10V6z" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M9 12l2 2 4-4" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="login-title">Crie a sua senha</div>
+    <div class="login-sub" id="senhaSub">Você entrou com uma senha provisória. Crie agora a sua senha pessoal: só você vai saber.</div>
+    <form id="senhaForm">
+      <input type="password" id="senhaNova" class="login-input" placeholder="Nova senha" autocomplete="new-password">
+      <input type="password" id="senhaConf" class="login-input" placeholder="Confirme a nova senha" autocomplete="new-password" style="margin-top:10px">
+      <div class="senha-regras" id="senhaRegras">
+        <span data-r="tam">8 caracteres ou mais</span><span data-r="let">letras</span><span data-r="num">números</span><span data-r="igual">as duas iguais</span>
+      </div>
+      <button type="submit" class="login-btn">Salvar e entrar</button>
+    </form>
+    <div class="login-links"><a id="senhaSair">Sair</a></div>
+    <div class="login-err" id="senhaErr" hidden></div>
   </div>
   <div class="login-card" id="lockCard" hidden>
     <svg class="login-logo lock" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -1005,10 +1023,10 @@
               <label>Nome<input id="usrNome" placeholder="Ex.: Kamila Souza"></label>
               <label>E-mail<input id="usrEmail" type="email" placeholder="nome@lidderacont.com.br"></label>
               <label>Perfil<select id="usrPerfil"><option value="fiscal">Fiscal</option><option value="contabil">Contábil</option><option value="admin">Admin</option></select></label>
-              <button class="act inv-export" id="btnUsrCadastrar" style="background:var(--accent);color:#fff;border-color:transparent">Cadastrar e enviar convite</button>
+              <button class="act inv-export" id="btnUsrCadastrar" style="background:var(--accent);color:#fff;border-color:transparent">Cadastrar e gerar senha</button>
             </div>
-            <div class="dif-sub" style="margin-top:8px">A pessoa recebe um e-mail para definir a própria senha. No primeiro login ela já entra com o perfil escolhido.
-              Quem é bloqueado sai do sistema na hora, em qualquer computador.</div>
+            <div class="dif-sub" style="margin-top:8px">O sistema gera uma senha provisória para você passar à pessoa. No primeiro acesso ela cria a própria senha (você nunca fica sabendo a definitiva).
+              Os módulos de cada pessoa são escolhidos no botão "Módulos". Quem é bloqueado sai do sistema na hora, em qualquer computador.</div>
           </div>
           <div id="usrBox"><div class="lic-empty">Carregando…</div></div>
         </div>

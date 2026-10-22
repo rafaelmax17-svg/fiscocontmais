@@ -397,7 +397,8 @@ let sessionLocked = false;
 const TEMPO_TRAVA_MIN = { admin: 15, fiscal: 60, contabil: 60 };
 function _sessaoPublica() {
   const s = auth.sessao();
-  return s ? { email: s.email, nome: s.nome, perfil: s.perfil, offline: !!s.offline, travaMin: TEMPO_TRAVA_MIN[s.perfil] || 60 } : null;
+  return s ? { email: s.email, nome: s.nome, perfil: s.perfil, offline: !!s.offline, travaMin: TEMPO_TRAVA_MIN[s.perfil] || 60,
+               modulos: s.modulos || null, trocarSenha: !!s.trocarSenha } : null;
 }
 ipcMain.handle('auth:login', async (_evt, { email, senha, salvar, usarSalva } = {}) => {
   const r = await auth.login(app.getPath('userData'), email, senha, (info) => {
@@ -407,7 +408,7 @@ ipcMain.handle('auth:login', async (_evt, { email, senha, salvar, usarSalva } = 
   }, { salvar, usarSalva });
   if (!r.ok) return { ok: false, erro: r.erro, semInternet: !!r.semInternet, info: !!r.info };
   sessionRole = r.perfil;
-  sessionLocked = false;
+  sessionLocked = !!r.trocarSenha;     // senha provisória: nada funciona até a pessoa criar a própria senha
   license.marcarUsuario(r.email);
   return { ok: true, role: r.perfil, aviso: r.aviso || '', sessao: _sessaoPublica() };
 });
@@ -420,6 +421,11 @@ ipcMain.handle('auth:destravar', async (_evt, senha) => {
   if (!c.ok) return { ok: false, erro: c.erro };
   sessionLocked = false;
   return { ok: true };
+});
+ipcMain.handle('auth:trocarSenha', async (_evt, { nova, salvar } = {}) => {
+  const r = await auth.trocarSenha(app.getPath('userData'), nova, salvar);
+  if (r.ok) sessionLocked = false;
+  return r;
 });
 ipcMain.handle('auth:conectado', async () => ({ ok: await auth.conectado() }));
 ipcMain.handle('auth:salvo', () => auth.salvoPublico(app.getPath('userData')));
@@ -435,6 +441,7 @@ const _adm = async (fn) => {
 ipcMain.handle('admin:usuariosListar', () => _adm(() => auth.listarUsuarios()));
 ipcMain.handle('admin:usuarioCadastrar', (_evt, dados) => _adm(() => auth.cadastrarUsuario(dados || {})));
 ipcMain.handle('admin:usuarioAlterar', (_evt, { uid, ...mud } = {}) => _adm(() => auth.alterarUsuario(uid, mud)));
+ipcMain.handle('admin:usuarioNovaSenha', (_evt, uid) => _adm(() => auth.novaSenhaProvisoria(uid)));
 ipcMain.handle('admin:usuarioRedefinir', (_evt, email) => _adm(async () => {
   const r = await auth.redefinirSenha(email); if (!r.ok) throw new Error(r.erro); return {};
 }));
@@ -1137,64 +1144,11 @@ ipcMain.handle('cloud:listHistorico', async (_evt, cnpj) => {
 // (renderer só manda a mensagem e recebe o texto de volta). Busca na web
 // SEMPRE ligada, porque tributário muda toda hora e "de cabeça" não serve.
 // ---------------------------------------------------------------------------
-const _SISTEMA_CHAT_IA = `Você é o assistente tributário interno da Liddera | Inteligência em Negócios, um escritório de contabilidade brasileiro. Ajuda a equipe do escritório com dúvidas de ICMS (com atenção especial a Acre, Rondônia, Amazonas, São Paulo e Mato Grosso — os estados onde a Liddera mais atua), PIS/COFINS, e a Reforma Tributária (IBS/CBS, Lei Complementar 214/2025 e normas relacionadas).
-
-Portais oficiais pra buscar primeiro, por estado (sempre que a pergunta for de ICMS estadual, inclua o domínio na busca, tipo "RICMS combustível site:sefaz.ac.gov.br"):
-- Acre: sefaz.ac.gov.br
-- Rondônia: sefin.ro.gov.br
-- Amazonas: sefaz.am.gov.br
-- São Paulo: portal.fazenda.sp.gov.br e legislacao.fazenda.sp.gov.br (texto do RICMS/SP)
-- Mato Grosso: sefaz.mt.gov.br
-Pra PIS/COFINS e regras federais: gov.br/receitafederal ou receita.fazenda.gov.br. Pra Reforma Tributária (IBS/CBS): gov.br/receitafederal, planalto.gov.br (texto de lei), e confaz.fazenda.gov.br. Se a busca nesses domínios não trouxer nada e for preciso usar outra fonte, prefira sempre official (.gov.br) antes de blog/site terceiro.
-
-Isso é um CHAT, dentro de um painel estreito (370px) — não um relatório nem um parecer técnico. Formato da resposta:
-- PRIMEIRA FRASE = a resposta em si. Nunca abra com "Ótimo", "Já tenho o suficiente", "Aqui vai", "---", ou qualquer frase de transição/preâmbulo — isso não é permitido, nem uma vez.
-- Responda EXATAMENTE o que foi perguntado, nada além. Se perguntarem "é X ou é Y", a primeira frase precisa dizer "é X" ou "é Y" (ou "não achei confirmação clara sobre isso") — não uma explicação de contexto antes de chegar lá.
-- Sem títulos, sem ###, sem tabela markdown, sem lista de bullets longa. Texto corrido, em parágrafos curtos — no máximo 2 ou 3 parágrafos curtos no total, como uma resposta de WhatsApp bem escrita, não um documento.
-- Cite a fonte de forma breve e natural dentro do texto (ex.: "conforme o RICMS/AC" ou "segundo a SEFAZ-RO"), sem seção dedicada de referências.
-
-Sobre incerteza (isso é o que mais precisa mudar): quando não achar confirmação clara de algo, diga isso em UMA frase curta e pare — nunca escreva um parágrafo explicando o raciocínio da dúvida (decretos que mudaram outra coisa, MVA de categoria genérica, "vale checar direto na SEFAZ"). Errado: um parágrafo listando o que foi encontrado, o que não foi, e por quê. Certo: "Sobre ST, não achei confirmação de que o papel higiênico tem CEST específico no Anexo I — precisa confirmar direto na SEFAZ-AC." Uma frase, sem justificar o processo de busca.
-
-Regras de conteúdo (o rigor continua o mesmo, só a forma de apresentar muda):
-- Antes de citar uma alíquota, prazo, ou regra específica, BUSQUE a informação na fonte oficial (SEFAZ do estado, Receita Federal, Confaz) em vez de responder só da memória — tributário muda com frequência e uma resposta desatualizada pode gerar problema real pro escritório ou pro cliente.
-- Sempre que o assunto envolver a Reforma Tributária, sinalize em poucas palavras se aquele ponto já está definido em lei ou ainda depende de regulamentação futura — a transição vai até 2033.
-- Não invente uma resposta definitiva pra parecer mais útil — se a fonte não confirma, diga isso claramente (numa frase, como acima) em vez de arriscar.
-- Você é apoio à pesquisa do time interno, não a palavra final — mas não repita esse aviso a cada resposta.`;
-
+// As instruções do chat e a chave da Anthropic ficam na função chatIA, no servidor do Google (functions/).
 ipcMain.handle('ia:enviarMensagem', async (_evt, { mensagem, historico }) => {
-  let chave;
   try {
-    chave = await cloud.getChaveIA();
-  } catch (e) {
-    return { error: String(e.message || e) };
-  }
-  try {
-    const messages = [...(historico || []), { role: 'user', content: mensagem }];
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': chave,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1500,
-        system: _SISTEMA_CHAT_IA,
-        messages,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-      }),
-    });
-    if (!resp.ok) {
-      const errTxt = await resp.text().catch(() => '');
-      return { error: `Erro na API (${resp.status}): ${errTxt.slice(0, 200)}` };
-    }
-    const data = await resp.json();
-    const texto = (data.content || [])
-      .filter((b) => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n');
-    return { ok: true, texto, resposta: { role: 'assistant', content: data.content } };
+    const r = await auth.chatIA(mensagem, historico || []);
+    return { ok: true, texto: r.texto, resposta: r.resposta };
   } catch (e) {
     return { error: 'Falha ao falar com a IA: ' + String(e.message || e) };
   }

@@ -969,3 +969,20 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .lic-badge.pendente{background:#fdf0e3;color:#b35a10}
 .login-salvar{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:rgba(255,255,255,.75);cursor:pointer;user-select:none}
 .login-salvar input{width:15px;height:15px;accent-color:#7c83f6;cursor:pointer}
+
+/* 2.1.1 — senha provisória e módulos por usuário */
+.login-dica{justify-content:center;color:rgba(255,255,255,.5)}
+.senha-regras{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.senha-regras span{font-size:11px;padding:3px 8px;border-radius:20px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.55)}
+.senha-regras span.ok{background:rgba(14,164,114,.22);color:#b7f0d8}
+.senha-regras span.ok::before{content:'✓ '}
+.usr-modal{position:fixed;inset:0;background:rgba(10,14,35,.55);display:flex;align-items:center;justify-content:center;z-index:9000}
+.usr-modal[hidden]{display:none}
+.usr-modal-box{background:var(--panel);color:var(--ink);border-radius:16px;padding:22px 24px;width:min(640px,92vw);max-height:86vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.3)}
+.usr-senha{display:flex;align-items:center;gap:10px;margin:16px 0 10px}
+.usr-senha code{flex:1;font-size:22px;font-weight:800;letter-spacing:1px;padding:12px 16px;border-radius:12px;background:#eef0fb;color:#1f2a5a;text-align:center}
+.usr-mods{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+.usr-mod-g{display:flex;flex-direction:column;gap:6px;font-size:13px}
+.usr-mod-g b{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink2);margin-bottom:2px}
+.usr-mod-g label{display:flex;gap:8px;align-items:center;cursor:pointer}
+.usr-mod-g input{accent-color:var(--accent);width:15px;height:15px}

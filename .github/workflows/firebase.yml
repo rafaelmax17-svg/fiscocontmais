@@ -1,0 +1,43 @@
+name: Publicar funções e regras no Firebase
+
+# Publica as Cloud Functions (functions/) e as Regras do Firestore (firestore.rules) no projeto fiscocontmais.
+# Roda sozinho quando essas pastas mudam no main, e também a mão (Actions > Publicar funções > Run workflow).
+# Precisa do segredo FIREBASE_SERVICE_ACCOUNT (chave JSON da conta de serviço github-deploy).
+on:
+  push:
+    branches: [main]
+    paths: ['functions/**', 'firestore.rules', 'firebase.json', '.github/workflows/firebase.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: firebase-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Dependências das funções
+        working-directory: functions
+        run: npm ci --no-audit --no-fund
+
+      - name: Credencial do Firebase
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then echo "::error::Segredo FIREBASE_SERVICE_ACCOUNT não configurado."; exit 1; fi
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
+
+      - name: Publicar funções e regras
+        run: npx --yes firebase-tools@13 deploy --only functions,firestore:rules --project fiscocontmais --non-interactive --force
+
+      - name: Apagar a credencial
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json"

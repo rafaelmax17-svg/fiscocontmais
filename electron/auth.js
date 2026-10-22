@@ -155,7 +155,8 @@ async function login(userDataDir, email, senha, onBloqueado, opcoes = {}) {
     if (cad.ativo !== true) { await _am.signOut(_auth); if (salvo && salvo.email === email) salvoApagar(userDataDir); return _falhou('Usuário bloqueado pelo Admin.'); }
     if (!PERFIS.includes(cad.perfil)) { await _am.signOut(_auth); return _falhou('Perfil do usuário inválido. Peça ao Admin para corrigir.'); }
     _falhas = 0;
-    _sessao = { uid: cred.user.uid, email, nome: cad.nome || email, perfil: cad.perfil, offline: false };
+    _sessao = { uid: cred.user.uid, email, nome: cad.nome || email, perfil: cad.perfil, offline: false,
+                modulos: Array.isArray(cad.modulos) ? cad.modulos : null, trocarSenha: cad.trocarSenha === true };
     if (opcoes.salvar) _salvoGravar(userDataDir, email, senha);
     else if (opcoes.salvar === false && salvo && salvo.email === email) salvoApagar(userDataDir);
     _vigia(userDataDir, onBloqueado);
@@ -197,9 +198,15 @@ function _vigia(userDataDir, onBloqueado) {
       if (sv && sv.email === _sessao.email) salvoApagar(userDataDir);
       logout();
       if (onBloqueado) onBloqueado({ motivo: 'bloqueado' });
-    } else if (d.perfil !== _sessao.perfil && PERFIS.includes(d.perfil)) {
-      _sessao.perfil = d.perfil;
-      if (onBloqueado) onBloqueado({ motivo: 'perfil', perfil: d.perfil });
+    } else {
+      const mods = Array.isArray(d.modulos) ? d.modulos : null;
+      const mudouPerfil = d.perfil !== _sessao.perfil && PERFIS.includes(d.perfil);
+      const mudouMods = JSON.stringify(mods) !== JSON.stringify(_sessao.modulos);
+      if (mudouPerfil || mudouMods) {
+        if (mudouPerfil) _sessao.perfil = d.perfil;
+        _sessao.modulos = mods;
+        if (onBloqueado) onBloqueado({ motivo: 'perfil', perfil: _sessao.perfil, modulos: mods });
+      }
     }
   }, () => {});
 }
@@ -242,6 +249,47 @@ async function criarAdminInicial(email, senha) {
 }
 
 function sessao() { return _sessao ? { ..._sessao } : null; }
+
+// ------------------------------------------------------------------ funções no servidor do Google (Cloud Functions)
+let _fn = null;
+function _chamar(nome, dados) {
+  if (!_fn) {
+    const { getFunctions } = require('firebase/functions');
+    _fn = getFunctions(_app, 'southamerica-east1');
+  }
+  const { httpsCallable } = require('firebase/functions');
+  return httpsCallable(_fn, nome, { timeout: 130000 })(dados).then((r) => r.data).catch((e) => {
+    const m = String((e && e.message) || e);
+    if (/not-found|NOT_FOUND/.test((e && e.code) || '') && !/Usuário/.test(m))
+      throw new Error('As funções do sistema ainda não foram publicadas no Firebase (rode "Publicar funções e regras" no GitHub).');
+    throw new Error(m.replace(/^FirebaseError:\s*/, ''));
+  });
+}
+
+// Primeiro acesso / senha provisória: a pessoa cria a própria senha (o Admin nunca fica sabendo a definitiva).
+async function trocarSenha(userDataDir, nova, salvar) {
+  if (!logado()) return { ok: false, erro: 'Sessão encerrada. Entre de novo.' };
+  nova = String(nova || '');
+  if (nova.length < 8 || !/[A-Za-z]/.test(nova) || !/[0-9]/.test(nova))
+    return { ok: false, erro: 'A senha precisa ter pelo menos 8 caracteres, com letras e números.' };
+  try {
+    await _am.updatePassword(_auth.currentUser, nova);
+    const { doc, updateDoc, serverTimestamp } = _fm;
+    await updateDoc(doc(_db, 'usuarios', _sessao.uid), { trocarSenha: false, senhaTrocadaEm: serverTimestamp() });
+    _sessao.trocarSenha = false;
+    if (salvar) _salvoGravar(userDataDir, _sessao.email, nova);
+    else { const sv = salvoLer(userDataDir); if (sv && sv.email === _sessao.email) salvoApagar(userDataDir); }
+    return { ok: true };
+  } catch (e) {
+    if (((e && e.code) || '') === 'auth/requires-recent-login') return { ok: false, erro: 'Por segurança, saia e entre de novo com a senha provisória.' };
+    return { ok: false, erro: _msgErro(e) };
+  }
+}
+
+async function chatIA(mensagem, historico) {
+  if (!logado()) throw new Error('Entre com o seu usuário (e com internet) para usar o chat.');
+  return _chamar('chatIA', { mensagem, historico });
+}
 function logado() { return !!(_sessao && !_sessao.offline && _auth && _auth.currentUser); }
 function db() { return logado() ? _db : null; }
 function fsMod() { return _fm; }
@@ -260,6 +308,7 @@ async function listarUsuarios() {
   (await getDocs(collection(_db, 'usuarios'))).forEach((d) => {
     const v = d.data() || {};
     out.push({ uid: d.id, nome: v.nome || '', email: v.email || '', perfil: v.perfil || '', ativo: v.ativo === true,
+               modulos: Array.isArray(v.modulos) ? v.modulos : null, trocarSenha: v.trocarSenha === true,
                criadoEm: _iso(v.criadoEm), voce: d.id === _sessao.uid });
   });
   const conv = [];
@@ -271,33 +320,24 @@ async function listarUsuarios() {
   return { usuarios: out, convites: conv };
 }
 
-async function cadastrarUsuario({ nome, email, perfil }) {
+async function cadastrarUsuario({ nome, email, perfil, modulos }) {
   _exigeAdmin();
   email = _norm(email);
   nome = String(nome || '').trim();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('E-mail inválido.');
   if (!nome) throw new Error('Informe o nome.');
   if (!PERFIS.includes(perfil)) throw new Error('Perfil inválido.');
-  const { doc, setDoc, serverTimestamp } = _fm;
-  await setDoc(doc(_db, 'convites', email), { nome, perfil, criadoEm: serverTimestamp(), criadoPor: _sessao.email });
-  // cria a conta numa instância separada (o Admin continua logado nesta)
-  const { initializeApp, deleteApp } = require('firebase/app');
-  const tmp = initializeApp(_config(), 'fc-cadastro-' + Date.now());
-  let jaTinha = false;
-  try {
-    const a2 = _am.getAuth(tmp);
-    await _am.createUserWithEmailAndPassword(a2, email, crypto.randomBytes(18).toString('base64url') + 'aA1!');
-    await _am.signOut(a2);
-  } catch (e) {
-    if (((e && e.code) || '') === 'auth/email-already-in-use') jaTinha = true;
-    else { await deleteApp(tmp).catch(() => {}); throw new Error(_msgErro(e)); }
-  }
-  await deleteApp(tmp).catch(() => {});
-  await _am.sendPasswordResetEmail(_auth, email);
-  return { ok: true, jaTinha, msg: `Enviamos para ${email} o link para definir a senha. No primeiro login a pessoa já entra como ${perfil}.` };
+  const r = await _chamar('criarUsuario', { nome, email, perfil, modulos: Array.isArray(modulos) ? modulos : null });
+  return { ok: true, uid: r.uid, senha: r.senha, email, nome };
 }
 
-async function alterarUsuario(uid, { ativo, perfil, nome }) {
+async function novaSenhaProvisoria(uid) {
+  _exigeAdmin();
+  const r = await _chamar('novaSenhaProvisoria', { uid });
+  return { ok: true, senha: r.senha };
+}
+
+async function alterarUsuario(uid, { ativo, perfil, nome, modulos }) {
   _exigeAdmin();
   if (uid === _sessao.uid && (ativo === false || (perfil && perfil !== 'admin')))
     throw new Error('Você não pode bloquear nem tirar o perfil Admin de você mesmo.');
@@ -305,6 +345,8 @@ async function alterarUsuario(uid, { ativo, perfil, nome }) {
   if (typeof ativo === 'boolean') mud.ativo = ativo;
   if (perfil) { if (!PERFIS.includes(perfil)) throw new Error('Perfil inválido.'); mud.perfil = perfil; }
   if (nome) mud.nome = String(nome).trim();
+  if (modulos === null) mud.modulos = _fm.deleteField();
+  else if (Array.isArray(modulos)) mud.modulos = [...new Set(modulos.filter((m) => typeof m === 'string' && /^[a-z0-9-]{2,40}$/.test(m)))];
   const { doc, updateDoc, serverTimestamp } = _fm;
   await updateDoc(doc(_db, 'usuarios', uid), { ...mud, alteradoEm: serverTimestamp(), alteradoPor: _sessao.email });
   return { ok: true };
@@ -341,5 +383,5 @@ async function statusLicenca(codigo, status) {
 
 module.exports = {
   ADMIN_INICIAL, conectado, salvoPublico, salvoApagar, limpaOfflineAntigo, login, logout, confereSenha, redefinirSenha, criarAdminInicial, sessao, logado, db, fsMod,
-  listarUsuarios, cadastrarUsuario, alterarUsuario, cancelarConvite, listarLicencas, statusLicenca,
+  listarUsuarios, cadastrarUsuario, novaSenhaProvisoria, alterarUsuario, cancelarConvite, trocarSenha, chatIA, listarLicencas, statusLicenca,
 };

@@ -531,6 +531,8 @@ async function doExportInvertidas() {
 
 // ------------------------------------------------------------------ nav
 function switchView(name) {
+  const navBtn = document.querySelector(`.nav .nav-item[data-view="${name}"]`);
+  if (navBtn && navBtn.classList.contains('role-hidden')) return;      // módulo não liberado para este usuário
   $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   const hasData = !!DATA;
   const contabil = ['overview', 'dre', 'balancete', 'invertidas', 'indicadores'];
@@ -3250,14 +3252,40 @@ async function startupCheck() {
 // ------------------------------------------------------------------ init
 let ROLE = null;
 
-function applyRole(role) {
+// Catálogo de módulos = itens do menu lateral (o Admin escolhe quais cada pessoa vê; o perfil é o ponto de partida).
+function catalogoModulos() {
+  const nomeGrupo = { fiscal: 'Fiscal', contabil: 'Contábil', 'admin-only': 'Administração' };
+  return [...document.querySelectorAll('.nav .nav-item[data-view]')].map((b) => ({
+    view: b.dataset.view, grupo: b.dataset.group, grupoNome: nomeGrupo[b.dataset.group] || b.dataset.group,
+    nome: (b.querySelector('span') || b).textContent.trim(),
+  }));
+}
+function modulosPadrao(perfil) {
+  return catalogoModulos().filter((m) => (perfil === 'admin') || (perfil === 'fiscal' && m.grupo === 'fiscal')
+    || (perfil === 'contabil' && m.grupo === 'contabil')).map((m) => m.view);
+}
+let MODULOS = null;      // null = padrão do perfil
+function applyRole(role, modulos) {
   ROLE = role;
+  if (modulos !== undefined) MODULOS = Array.isArray(modulos) ? modulos : null;
   const hideFiscal = role === 'contabil';
   const hideContabil = role === 'fiscal';
   const hideAdmin = role !== 'admin';
   $$('[data-group="fiscal"]').forEach((el) => el.classList.toggle('role-hidden', hideFiscal));
   $$('[data-group="contabil"]').forEach((el) => el.classList.toggle('role-hidden', hideContabil));
   $$('[data-group="admin-only"]').forEach((el) => el.classList.toggle('role-hidden', hideAdmin));
+  // módulos liberados pelo Admin para esta pessoa (Admin vê tudo; Administração continua só para Admin)
+  if (role !== 'admin' && MODULOS) {
+    const ok = new Set(MODULOS);
+    $$('.nav .nav-item[data-view]').forEach((b) => {
+      if (b.dataset.group === 'admin-only') return;
+      b.classList.toggle('role-hidden', !ok.has(b.dataset.view));
+    });
+    ['fiscal', 'contabil'].forEach((g) => {
+      const algum = [...document.querySelectorAll(`.nav .nav-item[data-group="${g}"]`)].some((b) => !b.classList.contains('role-hidden'));
+      $$(`.nav-group[data-group="${g}"]`).forEach((el) => el.classList.toggle('role-hidden', !algum));
+    });
+  }
   // Conciliação de Fornecedores: liberada só pro Admin por enquanto (ainda
   // testando com o Rafael) — os outros papéis veem o item, mas travado com
   // o selo "EM BREVE" em vez de sumir, diferente do admin-only comum.
@@ -3297,7 +3325,26 @@ function _mostraLogin() {
   const ut = $('#userTag'); if (ut) ut.textContent = '';
   setTimeout(() => ($('#loginEmail').value ? $('#loginPass') : $('#loginEmail')).focus(), 50);
 }
+let _senhaPendente = null;
+function _pedeSenhaNova(res) {
+  _senhaPendente = res;
+  document.querySelector('.login-card').hidden = true;
+  $('#lockCard').hidden = true; $('#licenseCard').hidden = true;
+  $('#senhaCard').hidden = false; $('#senhaErr').hidden = true;
+  $('#senhaNova').value = ''; $('#senhaConf').value = '';
+  $('#senhaSub').textContent = `${(res.sessao || {}).nome || ''}, você entrou com uma senha provisória. Crie agora a sua senha pessoal: só você vai saber.`;
+  _senhaRegras();
+  setTimeout(() => $('#senhaNova').focus(), 50);
+}
+function _senhaRegras() {
+  const n = $('#senhaNova').value, c = $('#senhaConf').value;
+  const ok = { tam: n.length >= 8, let: /[A-Za-z]/.test(n), num: /[0-9]/.test(n), igual: !!n && n === c };
+  $$('#senhaRegras span').forEach((sp) => sp.classList.toggle('ok', !!ok[sp.dataset.r]));
+  return Object.values(ok).every(Boolean);
+}
 function _entrou(res) {
+  if (res.sessao && res.sessao.trocarSenha) { _pedeSenhaNova(res); return; }
+  $('#senhaCard').hidden = true; document.querySelector('.login-card').hidden = false;
   SESSAO.info = res.sessao || null;
   SESSAO.ultimoUso = Date.now(); SESSAO.travada = false;
   try { localStorage.setItem('fc_ultimo_email', (res.sessao || {}).email || ''); } catch (_) {}
@@ -3305,7 +3352,7 @@ function _entrou(res) {
   $('#loginGate').style.display = 'none';
   const ut = $('#userTag');
   if (ut && SESSAO.info) ut.textContent = `${SESSAO.info.nome} · ${({ admin: 'Admin', fiscal: 'Fiscal', contabil: 'Contábil' })[SESSAO.info.perfil] || ''}${SESSAO.info.offline ? ' · sem internet' : ''}`;
-  applyRole(res.role);
+  applyRole(res.role, (res.sessao || {}).modulos || null);
   if (res.aviso) toast(res.aviso);
   verificarNovidades();
 }
@@ -3359,11 +3406,19 @@ function bindLogin() {
     if (res && res.ok) _entrou(res);
     else { _loginMsg((res && res.erro) || 'Não foi possível entrar.', !!(res && res.info)); pass.focus(); }
   });
-  $('#loginEsqueci').addEventListener('click', async () => {
-    if (!email.value.trim()) { _loginMsg('Digite o seu e-mail acima e clique de novo em "Esqueci a senha".'); email.focus(); return; }
-    const r = await window.fiscocont.auth.redefinirSenha(email.value);
-    _loginMsg(r.ok ? `Se o e-mail estiver cadastrado, chega em instantes o link para criar uma senha nova (${email.value.trim()}).` : r.erro, r.ok);
+  ['#senhaNova', '#senhaConf'].forEach((id) => $(id).addEventListener('input', _senhaRegras));
+  $('#senhaForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!_senhaRegras()) { $('#senhaErr').textContent = 'A senha precisa ter 8 caracteres ou mais, com letras e números, e as duas iguais.'; $('#senhaErr').hidden = false; return; }
+    const r = await window.fiscocont.auth.trocarSenha($('#senhaNova').value, salvar.checked);
+    if (!r.ok) { $('#senhaErr').textContent = r.erro || 'Não foi possível salvar a senha.'; $('#senhaErr').hidden = false; return; }
+    const res = _senhaPendente; _senhaPendente = null;
+    res.sessao.trocarSenha = false;
+    pass.value = ''; delete pass.dataset.salva;
+    toast('Senha criada. Use ela nos próximos acessos.');
+    _entrou(res);
   });
+  $('#senhaSair').addEventListener('click', async () => { _senhaPendente = null; $('#senhaCard').hidden = true; await window.fiscocont.auth.logout(); _mostraLogin(); });
   $('#lockForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const r = await window.fiscocont.auth.destravar($('#lockPass').value);
@@ -3392,7 +3447,7 @@ function bindLogin() {
   });
   window.fiscocont.auth.onMudou((d) => {
     if (d.motivo === 'bloqueado') { _mostraLogin(); _loginMsg('Seu usuário foi bloqueado pelo Admin.'); }
-    else if (d.motivo === 'perfil') { if (SESSAO.info) SESSAO.info.perfil = d.perfil; applyRole(d.perfil); toast('O Admin mudou o seu perfil.'); }
+    else if (d.motivo === 'perfil') { if (SESSAO.info) SESSAO.info.perfil = d.perfil; applyRole(d.perfil, d.modulos || null); toast('O Admin mudou os seus acessos.'); }
   });
   _vigiaInatividade();
 }
@@ -3404,38 +3459,94 @@ async function loadUsuarios() {
   box.innerHTML = '<div class="lic-empty">Carregando…</div>';
   const r = await window.fiscocont.usuarios.listar();
   if (r.error) { box.innerHTML = `<div class="lic-warn">Não consegui carregar: ${_esc(r.error)}</div>`; return; }
+  USR_LISTA = r.usuarios || [];
   const sel = (u) => `<select class="usr-perfil" data-uid="${_esc(u.uid)}" ${u.voce ? 'disabled' : ''}>${Object.entries(PERFIL_NOME).map(([k, v]) => `<option value="${k}" ${u.perfil === k ? 'selected' : ''}>${v}</option>`).join('')}</select>`;
-  const linhas = (r.usuarios || []).map((u) => `<tr class="${u.ativo ? '' : 'usr-off'}">
+  const qtdMods = (u) => u.perfil === 'admin' ? 'todos' : (u.modulos ? `${u.modulos.length} módulo(s)` : 'padrão do perfil');
+  const linhas = USR_LISTA.map((u) => `<tr class="${u.ativo ? '' : 'usr-off'}">
       <td><b>${_esc(u.nome)}</b>${u.voce ? ' <span class="lic-badge ativo">você</span>' : ''}<small>${_esc(u.email)}</small></td>
-      <td>${sel(u)}</td>
-      <td><span class="lic-badge ${u.ativo ? 'ativo' : 'bloqueado'}">${u.ativo ? 'ativo' : 'bloqueado'}</span></td>
+      <td>${sel(u)}<small>${qtdMods(u)}</small></td>
+      <td><span class="lic-badge ${u.ativo ? 'ativo' : 'bloqueado'}">${u.ativo ? 'ativo' : 'bloqueado'}</span>${u.trocarSenha ? '<small>aguardando criar a senha</small>' : ''}</td>
       <td class="lic-actions">
+        ${u.perfil === 'admin' ? '' : `<button data-acao="modulos" data-uid="${_esc(u.uid)}">Módulos</button>`}
+        ${u.voce ? '' : `<button data-acao="senha" data-uid="${_esc(u.uid)}">Gerar nova senha</button>`}
         ${u.voce ? '' : (u.ativo ? `<button class="off" data-acao="bloquear" data-uid="${_esc(u.uid)}">Bloquear</button>` : `<button class="on" data-acao="ativar" data-uid="${_esc(u.uid)}">Ativar</button>`)}
-        <button data-acao="senha" data-email="${_esc(u.email)}">Redefinir senha</button>
       </td></tr>`).join('');
-  const conv = (r.convites || []).map((c) => `<tr>
-      <td><b>${_esc(c.nome)}</b><small>${_esc(c.email)}</small></td><td>${PERFIL_NOME[c.perfil] || c.perfil}</td>
-      <td><span class="lic-badge pendente">convite enviado</span></td>
-      <td class="lic-actions"><button data-acao="senha" data-email="${_esc(c.email)}">Reenviar e-mail</button><button class="off" data-acao="cancelar" data-email="${_esc(c.email)}">Cancelar convite</button></td></tr>`).join('');
-  box.innerHTML = `<table class="lic-table usr-table"><thead><tr><th>Usuário</th><th>Perfil</th><th>Situação</th><th>Ação</th></tr></thead>
-    <tbody>${linhas}${conv}</tbody></table>`;
-  box.querySelectorAll('.usr-perfil').forEach((s) => s.addEventListener('change', async () => {
-    const x = await window.fiscocont.usuarios.alterar(s.dataset.uid, { perfil: s.value });
+  box.innerHTML = `<table class="lic-table usr-table"><thead><tr><th>Usuário</th><th>Perfil / módulos</th><th>Situação</th><th>Ação</th></tr></thead><tbody>${linhas}</tbody></table>`;
+  box.querySelectorAll('.usr-perfil').forEach((s2) => s2.addEventListener('change', async () => {
+    const x = await window.fiscocont.usuarios.alterar(s2.dataset.uid, { perfil: s2.value, modulos: null });
     if (x.error) { toast(x.error, true); loadUsuarios(); return; }
-    toast('Perfil alterado. Vale na hora, mesmo para quem já está usando o sistema.');
-  }));
-  box.querySelectorAll('button[data-acao]').forEach((b) => b.addEventListener('click', async () => {
-    b.disabled = true;
-    const a = b.dataset.acao;
-    let x;
-    if (a === 'bloquear' || a === 'ativar') x = await window.fiscocont.usuarios.alterar(b.dataset.uid, { ativo: a === 'ativar' });
-    else if (a === 'senha') x = await window.fiscocont.usuarios.redefinir(b.dataset.email);
-    else if (a === 'cancelar') x = await window.fiscocont.usuarios.cancelarConvite(b.dataset.email);
-    b.disabled = false;
-    if (x.error) { toast(x.error, true); return; }
-    toast(a === 'bloquear' ? 'Usuário bloqueado: ele sai do sistema na hora.' : a === 'ativar' ? 'Usuário ativado.' : a === 'senha' ? 'E-mail para definir a senha enviado.' : 'Convite cancelado.');
+    toast('Perfil alterado (módulos voltaram ao padrão do perfil). Vale na hora.');
     loadUsuarios();
   }));
+  box.querySelectorAll('button[data-acao]').forEach((b) => b.addEventListener('click', async () => {
+    const a = b.dataset.acao, u = USR_LISTA.find((x) => x.uid === b.dataset.uid);
+    if (a === 'modulos') { usrModulos(u); return; }
+    if (a === 'senha') {
+      if (!confirm(`Gerar uma nova senha provisória para ${u.nome}? A senha atual dele deixa de funcionar.`)) return;
+      b.disabled = true;
+      const x = await window.fiscocont.usuarios.novaSenha(u.uid);
+      b.disabled = false;
+      if (x.error) { toast(x.error, true); return; }
+      usrMostraSenha(u.nome, u.email, x.senha, false);
+      loadUsuarios();
+      return;
+    }
+    b.disabled = true;
+    const x = await window.fiscocont.usuarios.alterar(u.uid, { ativo: a === 'ativar' });
+    b.disabled = false;
+    if (x.error) { toast(x.error, true); return; }
+    toast(a === 'bloquear' ? 'Usuário bloqueado: ele sai do sistema na hora.' : 'Usuário ativado.');
+    loadUsuarios();
+  }));
+}
+let USR_LISTA = [];
+function usrModal(html) {
+  let m = $('#usrModal');
+  if (!m) { m = document.createElement('div'); m.id = 'usrModal'; m.className = 'usr-modal'; document.body.appendChild(m); }
+  m.innerHTML = `<div class="usr-modal-box">${html}</div>`;
+  m.hidden = false;
+  m.addEventListener('click', (e) => { if (e.target === m) m.hidden = true; });
+  return m;
+}
+function usrMostraSenha(nome, email, senha, novo) {
+  const m = usrModal(`
+    <div class="dif-k">${novo ? 'Usuário cadastrado' : 'Nova senha provisória'}</div>
+    <h3 style="margin:6px 0 2px">${_esc(nome)}</h3><div class="dif-sub">${_esc(email)}</div>
+    <div class="usr-senha"><code id="usrSenhaTxt">${_esc(senha)}</code><button class="act inv-export" id="usrCopiar">Copiar</button></div>
+    <div class="dif-sub">Passe esta senha para a pessoa. No primeiro acesso o sistema pede para ela criar a própria senha (8 caracteres ou mais, com letras e números).
+      Esta senha não aparece de novo: se perder, gere outra.</div>
+    <div class="dif-acts"><button class="act inv-export" id="usrOkSenha" style="background:var(--accent);color:#fff;border-color:transparent">Pronto</button></div>`);
+  $('#usrCopiar').addEventListener('click', () => {
+    navigator.clipboard.writeText(`Usuário: ${email}\nSenha provisória: ${senha}`).then(() => toast('Copiado: e-mail e senha provisória.'));
+  });
+  $('#usrOkSenha').addEventListener('click', () => { m.hidden = true; });
+}
+function usrModulos(u) {
+  const cat = catalogoModulos().filter((x) => x.grupo !== 'admin-only');
+  const marcados = new Set(u.modulos || modulosPadrao(u.perfil));
+  const grupos = [...new Set(cat.map((x) => x.grupoNome))];
+  const m = usrModal(`
+    <div class="dif-k">Módulos liberados</div>
+    <h3 style="margin:6px 0 2px">${_esc(u.nome)}</h3><div class="dif-sub">Perfil ${PERFIL_NOME[u.perfil] || u.perfil} · marque o que ${_esc(u.nome.split(' ')[0])} pode ver. Os módulos de Administração são só do Admin.</div>
+    <div class="usr-mods">${grupos.map((g) => `<div class="usr-mod-g"><b>${_esc(g)}</b>
+      ${cat.filter((x) => x.grupoNome === g).map((x) => `<label><input type="checkbox" value="${_esc(x.view)}" ${marcados.has(x.view) ? 'checked' : ''}> ${_esc(x.nome)}</label>`).join('')}</div>`).join('')}</div>
+    <div class="dif-acts" style="justify-content:space-between">
+      <button class="act inv-export" id="usrModPadrao">Voltar ao padrão do perfil</button>
+      <span><button class="act inv-export" id="usrModCancelar">Cancelar</button>
+      <button class="act inv-export" id="usrModSalvar" style="background:var(--accent);color:#fff;border-color:transparent">Salvar</button></span>
+    </div>`);
+  $('#usrModCancelar').addEventListener('click', () => { m.hidden = true; });
+  $('#usrModPadrao').addEventListener('click', async () => {
+    const x = await window.fiscocont.usuarios.alterar(u.uid, { modulos: null });
+    if (x.error) { toast(x.error, true); return; }
+    m.hidden = true; toast('Módulos de volta ao padrão do perfil.'); loadUsuarios();
+  });
+  $('#usrModSalvar').addEventListener('click', async () => {
+    const lista = [...m.querySelectorAll('.usr-mods input:checked')].map((i) => i.value);
+    const x = await window.fiscocont.usuarios.alterar(u.uid, { modulos: lista });
+    if (x.error) { toast(x.error, true); return; }
+    m.hidden = true; toast(`Módulos salvos (${lista.length}). Vale na hora, mesmo com o sistema aberto.`); loadUsuarios();
+  });
 }
 function bindUsuarios() {
   const b = $('#btnUsrCadastrar');
@@ -3446,7 +3557,7 @@ function bindUsuarios() {
     const r = await window.fiscocont.usuarios.cadastrar({ nome: $('#usrNome').value, email: $('#usrEmail').value, perfil: $('#usrPerfil').value });
     b.disabled = false;
     if (r.error) { toast(r.error, true); return; }
-    toast(r.msg || 'Usuário cadastrado.');
+    usrMostraSenha(r.nome, r.email, r.senha, true);
     $('#usrNome').value = ''; $('#usrEmail').value = '';
     loadUsuarios();
   });

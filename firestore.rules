@@ -1,5 +1,6 @@
 rules_version = '2';
-// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.1.
+// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.1.1.
+// Publicadas automaticamente pelo GitHub (workflow "Publicar funções e regras no Firebase").
 // Publicar em: Console do Firebase > Firestore Database > Regras > colar este arquivo inteiro > Publicar.
 //
 // • Login individual (e-mail e senha): o perfil fica em usuarios/{uid}; só Admin ativo cadastra, bloqueia e muda perfil.
@@ -31,7 +32,12 @@ service cloud.firestore {
     // ------------------------------------------------------------ usuários
     match /usuarios/{uid} {
       allow read: if (logado() && request.auth.uid == uid) || admin();
-      allow update, delete: if admin();
+      allow delete: if admin();
+      allow update: if admin()
+        // a própria pessoa só consegue marcar que já criou a senha dela (depois da senha provisória)
+        || (logado() && request.auth.uid == uid && resource.data.ativo == true
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['trocarSenha', 'senhaTrocadaEm'])
+            && request.resource.data.trocarSenha == false);
       allow create: if admin()
         // 1º acesso de quem foi convidado pelo Admin: copia exatamente o convite
         || (logado() && request.auth.uid == uid
@@ -65,9 +71,9 @@ service cloud.firestore {
     }
 
     // ------------------------------------------------------------ configuração (chave da IA)
+    // Só a função chatIA (servidor do Google) lê a chave; nenhum computador consegue mais.
     match /config/{doc} {
-      allow read: if ativo();
-      allow write: if false;          // só pelo Console do Firebase
+      allow read, write: if false;    // gravar só pelo Console do Firebase
     }
 
     // ------------------------------------------------------------ balancetes e histórico
