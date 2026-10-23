@@ -551,7 +551,7 @@ function switchView(name) {
   if (name === 'fiscal-deson') { $('#view-fiscal-deson').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-frete') { $('#view-fiscal-frete').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-audit') { $('#view-fiscal-audit').hidden = false; $('#empty').hidden = true; return; }
-  if (name === 'fiscal-pgdas') { $('#view-fiscal-pgdas').hidden = false; $('#empty').hidden = true; return; }
+  if (name === 'fiscal-pgdas') { $('#view-fiscal-pgdas').hidden = false; $('#empty').hidden = true; if (window.fechEntrar) window.fechEntrar(); return; }
   if (name === 'fiscal-downloads') { $('#view-fiscal-downloads').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-efd-contrib') { $('#view-fiscal-efd-contrib').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-lic') { $('#view-admin-lic').hidden = false; $('#empty').hidden = true; loadLicensePanel(); return; }
@@ -3324,6 +3324,7 @@ function _loginMsg(txt, ok) {
 }
 function _mostraLogin() {
   ROLE = null; SESSAO.info = null; SESSAO.travada = false;
+  if (window.fechSair) window.fechSair();
   $('#lockCard').hidden = true;
   document.querySelector('.login-card').hidden = false;
   $('#loginGate').style.display = 'flex';

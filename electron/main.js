@@ -416,7 +416,7 @@ ipcMain.handle('auth:login', async (_evt, { email, senha, salvar, usarSalva } = 
   license.marcarUsuario(r.email);
   return { ok: true, role: r.perfil, aviso: r.aviso || '', sessao: _sessaoPublica() };
 });
-ipcMain.handle('auth:logout', () => { auth.logout(); sessionRole = null; sessionLocked = false; return { ok: true }; });
+ipcMain.handle('auth:logout', () => { fechamento.parar(); auth.logout(); sessionRole = null; sessionLocked = false; return { ok: true }; });
 ipcMain.handle('auth:sessao', () => _sessaoPublica());
 ipcMain.handle('auth:travar', () => { if (sessionRole) sessionLocked = true; return { ok: true }; });
 ipcMain.handle('auth:destravar', async (_evt, senha) => {
@@ -443,6 +443,30 @@ const _adm = async (fn) => {
   if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
   try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String(e.message || e) }; }
 };
+// ---------------------------------------------------------------- Simples Nacional · Fechamento da equipe
+const fechamento = require('./fechamento');
+const _fech = async (fn) => {
+  if (sessionLocked) return { error: 'Sessão travada por inatividade: digite a senha para continuar.' };
+  try { return await fn(); } catch (e) { return { error: String((e && e.message) || e) }; }
+};
+ipcMain.handle('fech:abrir', (_evt, comp) => _fech(async () => {
+  await fechamento.abrir(comp);
+  fechamento.ouvir(comp, (dados) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('fech:mudou', dados); });
+  return { ok: true };
+}));
+ipcMain.handle('fech:parar', () => { fechamento.parar(); return { ok: true }; });
+ipcMain.handle('fech:salvar', (_evt, { comp, id, campo, valor }) => _fech(() => fechamento.salvar(comp, id, campo, valor)));
+ipcMain.handle('fech:cadastrar', (_evt, { comp, dados }) => _fech(() => fechamento.cadastrar(comp, dados || {})));
+ipcMain.handle('fech:alterar', (_evt, { comp, id, mud }) => _fech(() => fechamento.alterar(comp, id, mud || {})));
+ipcMain.handle('fech:excluir', (_evt, { comp, id }) => _fech(() => fechamento.excluir(comp, id)));
+ipcMain.handle('fech:cnpj', (_evt, cnpj) => _fech(async () => {
+  const dig = String(cnpj || '').replace(/\D/g, '');
+  if (dig.length !== 14) return { error: 'CNPJ inválido.' };
+  const api = await _consultaCnpjApi(dig);
+  if (!api) return { error: 'CNPJ não encontrado na Receita (ou consulta fora do ar).' };
+  return { ok: true, nome: api.razao_social || api.nome || '' };
+}));
+
 ipcMain.handle('admin:usuariosListar', () => _adm(() => auth.listarUsuarios()));
 ipcMain.handle('admin:usuarioCadastrar', (_evt, dados) => _adm(() => auth.cadastrarUsuario(dados || {})));
 ipcMain.handle('admin:usuarioAlterar', (_evt, { uid, ...mud } = {}) => _adm(() => auth.alterarUsuario(uid, mud)));
@@ -960,7 +984,7 @@ ipcMain.handle('fiscal:nfseAnalise', async (_evt, { empresaId, dataInicial, data
 });
 
 ipcMain.handle('fiscal:nfseExportarHtml', async (_evt, { html, tipo, empresaNome }) => {
-  const nomeArquivo = { 'efd-contrib': 'Conferencia-EFD-Contribuicoes', 'efd-corrigir': 'Correcao-EFD-Contribuicoes', 'auditoria-am': 'Auditoria-ICMS-AM', 'evolucao': 'Evolucao-Tributaria' }[tipo] || 'Painel-NFSe';
+  const nomeArquivo = { 'efd-contrib': 'Conferencia-EFD-Contribuicoes', 'efd-corrigir': 'Correcao-EFD-Contribuicoes', 'auditoria-am': 'Auditoria-ICMS-AM', 'evolucao': 'Evolucao-Tributaria', 'fech-sn': 'Fechamento-Simples-Nacional' }[tipo] || 'Painel-NFSe';
   const save = await dialog.showSaveDialog(mainWindow, {
     title: 'Salvar HTML', defaultPath: `${nomeArquivo}-${(empresaNome || '').replace(/[^\w-]+/g, '_')}.html`,
     filters: [{ name: 'HTML', extensions: ['html'] }],

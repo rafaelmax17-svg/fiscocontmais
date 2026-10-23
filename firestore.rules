@@ -1,5 +1,5 @@
 rules_version = '2';
-// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.1.1.
+// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.1.4.
 // Publicadas automaticamente pelo GitHub (workflow "Publicar funções e regras no Firebase").
 // Publicar em: Console do Firebase > Firestore Database > Regras > colar este arquivo inteiro > Publicar.
 //
@@ -85,6 +85,14 @@ service cloud.firestore {
       match /historico/{id} {
         allow read, write: if ativo();
       }
+    }
+
+    // ------------------------------------------------------------ Simples Nacional · fechamento da equipe
+    // cadastro (empresas e analistas): só o Admin grava; competências (AAAA-MM): toda a equipe ativa marca as etapas.
+    match /fechamento_sn/{doc} {
+      allow read: if ativo();
+      allow write: if (doc == 'cadastro' && admin())
+        || (doc != 'cadastro' && ativo() && doc.matches('^[0-9]{4}-(0[1-9]|1[0-2])$'));
     }
 
     // qualquer outra coleção: fechada

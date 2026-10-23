@@ -899,6 +899,9 @@
       </div>
 
       <div class="view" id="view-fiscal-pgdas" hidden>
+        <div class="sn-tabs"><button class="sn-tab" data-sntab="fech">Fechamento da equipe</button><button class="sn-tab" data-sntab="painel">Painel do cliente (PGDAS)</button></div>
+        <div id="fechSN" class="fech" hidden></div>
+        <div id="pgdasPainel" hidden>
         <div class="fiscal-bar">
           <button class="act inv-export" id="btnPgdasPick">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -914,6 +917,7 @@
           <p>Uma vitrine moderna e animada da situação do cliente no Simples Nacional — pra mostrar direto pra ele. Importe o Extrato do PGDAS-D (PDF, gerado no portal da Receita Federal) da competência que quiser. Alíquota efetiva, composição do DAS por imposto, evolução do faturamento e proximidade do teto — tudo calculado automaticamente a partir do próprio extrato.</p>
         </div>
         <iframe id="pgdasFrame" class="fiscal-frame" hidden></iframe>
+        </div>
       </div>
 
       <div class="view" id="view-overview" hidden></div>
@@ -1245,5 +1249,6 @@
 
 <script src="evolucao_dash.js"></script>
 <script src="app.js"></script>
+<script src="fechamento-sn.js"></script>
 </body>
 </html>
