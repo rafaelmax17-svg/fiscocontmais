@@ -1,0 +1,30 @@
+name: Retirar uma versão publicada
+
+# Apaga a release (e a tag) do repositório de instaladores e marca outra versão como a mais recente.
+# Quem já instalou a versão retirada continua nela; os demais param de recebê-la.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Versão a retirar (ex.: v2.1.3)'
+        required: true
+      voltar_para:
+        description: 'Versão que passa a ser a mais recente (ex.: v2.1.2)'
+        required: true
+
+jobs:
+  retirar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Retirar a versão
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          VOLTA: ${{ inputs.voltar_para }}
+        run: |
+          R=rafaelmax17-svg/fiscocontmais-releases
+          gh release view "$VOLTA" -R "$R" >/dev/null || { echo "::error::Nao existe $VOLTA em $R"; exit 1; }
+          gh release delete "$TAG" -R "$R" --yes --cleanup-tag
+          gh release edit "$VOLTA" -R "$R" --latest
+          echo "::notice title=Versao retirada::$TAG retirada; $VOLTA e a mais recente"
