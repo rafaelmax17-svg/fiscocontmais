@@ -3083,6 +3083,8 @@ function renderModalNotasFaltantes() {
 
 // ------------------------------------------------------------------ ações
 function toast(msg, err = false) {
+  // o processo principal recusou por trava: garante que a tela de senha apareça
+  if (err && ROLE && /Sess[aã]o travada/i.test(String(msg))) { if (!SESSAO.travada) { SESSAO.travada = true; $('#lockErr').hidden = true; $('#lockSub').textContent = 'Por segurança, digite a sua senha para continuar de onde parou.'; } _mostraTrava(); }
   const t = $('#toast'); t.textContent = msg; t.classList.toggle('err', err); t.hidden = false;
   clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), 4200);
 }
@@ -3368,11 +3370,18 @@ function _travar() {
   if (!ROLE || SESSAO.travada) return;
   SESSAO.travada = true;
   window.fiscocont.auth.travar();
-  document.querySelector('.login-card').hidden = true;
-  $('#licenseCard').hidden = true;
-  $('#lockCard').hidden = false;
   $('#lockErr').hidden = true;
   $('#lockSub').textContent = `${(SESSAO.info || {}).nome || ''}, o sistema ficou ${(SESSAO.info || {}).travaMin || 60} minutos sem uso. Digite a sua senha para continuar de onde parou.`;
+  _mostraTrava();
+}
+// Mostra a tela de senha da trava. Achado real (23/10): a checagem da licença (a cada 15 min e em tempo real)
+// escondia a tela inteira por cima da trava — o sistema ficava travado, mas sem onde digitar a senha.
+function _mostraTrava() {
+  if (!SESSAO.travada) return;
+  document.querySelector('.login-card').hidden = true;
+  $('#licenseCard').hidden = true;
+  const sc = $('#senhaCard'); if (sc) sc.hidden = true;
+  $('#lockCard').hidden = false;
   $('#loginGate').style.display = 'flex';
   setTimeout(() => $('#lockPass').focus(), 50);
 }
@@ -3380,6 +3389,7 @@ function _vigiaInatividade() {
   const uso = () => { if (!SESSAO.travada) SESSAO.ultimoUso = Date.now(); };
   ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => window.addEventListener(ev, uso, { passive: true }));
   setInterval(() => {
+    if (ROLE && SESSAO.travada && $('#loginGate').style.display === 'none' && $('#licenseCard').hidden) { _mostraTrava(); return; }
     if (!ROLE || SESSAO.travada || !SESSAO.info) return;
     if (Date.now() - SESSAO.ultimoUso > (SESSAO.info.travaMin || 60) * 60000) _travar();
   }, 20000);
@@ -3623,6 +3633,7 @@ function showLicenseBlock(res) {
   const gate = $('#loginGate');
   if (loginCard) loginCard.hidden = true;
   if (licCard) licCard.hidden = false;
+  const lk = $('#lockCard'); if (lk) lk.hidden = true;            // o bloqueio da licença tem prioridade; a trava volta depois
   if (gate) gate.style.display = 'flex';
   const title = $('#licenseTitle'), sub = $('#licenseSub'), hint = $('#licenseHint'), codeEl = $('#licenseCode');
   if (codeEl) codeEl.textContent = res.codigo || '----';
@@ -3650,6 +3661,7 @@ function hideLicenseBlock() {
   const licCard = $('#licenseCard');
   const gate = $('#loginGate');
   if (licCard) licCard.hidden = true;
+  if (SESSAO.travada && ROLE) { _mostraTrava(); return; }   // travado por inatividade: continua pedindo a senha
   if (loginCard) loginCard.hidden = false;
   // Achado real: essa função nunca escondia o #loginGate, só trocava qual
   // card aparecia dentro dele — então depois de bloquear e reativar, o app
