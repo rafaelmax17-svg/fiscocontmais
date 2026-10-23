@@ -298,7 +298,7 @@
     setTimeout(() => (r ? $('#fsMNome') : $('#fsMCnpj')).focus(), 30);
   }
 
-  // ------------------------------------------------------------------ HTML exportado (anéis + corrida da equipe + tabela, animados)
+  // ------------------------------------------------------------------ HTML exportado (números, anéis e tabela, animados)
   function exportar() {
     if (!FS.linhas.length) { toast('Nada para exportar nessa competência.', true); return; }
     const { tot, analistas } = resumo(FS.linhas);
@@ -307,11 +307,6 @@
       return `<circle cx="150" cy="150" r="${r}" fill="none" stroke="${a.cor}" stroke-opacity=".14" stroke-width="${larg}"/><circle class="rg" data-v="${(L * (a.n ? a.feitas / a.n : 0)).toFixed(1)}" data-l="${L.toFixed(1)}" cx="150" cy="150" r="${r}" fill="none" stroke="${a.cor}" stroke-width="${larg}" stroke-linecap="round" stroke-dasharray="0 ${L.toFixed(1)}" transform="rotate(-90 150 150)" style="transition:stroke-dasharray 1.6s cubic-bezier(.2,.8,.2,1) ${(i * 0.12).toFixed(2)}s"/>`; }).join('');
     const pctTot = tot.n ? Math.round(tot.feitas / tot.n * 100) : 0;
     const leg = analistas.map((a) => `<div class="rl"><span class="av" style="background:${a.cor}">${e(a.ini)}</span><b>${e(a.nome)}</b><span class="rp cnt" data-v="${a.pct}" data-s="%" style="color:${a.cor}">0%</span><small>${a.feitas} de ${a.n} transmitidas</small></div>`).join('');
-    const corrida = [...analistas].sort((x, y) => y.feitas / y.n - x.feitas / x.n).map((a) => {
-      const seg = [['concluida', '#0ea472'], ['transmitida', '#4f46e5'], ['escriturada', '#f59e0b'], ['alerta', '#b42318'], ['pendente', '#e23d4c']]
-        .filter(([k]) => a[k]).map(([k, c]) => `<i style="background:${c}" data-w="${(a[k] / a.n * 100).toFixed(2)}"></i>`).join('');
-      return `<div class="cr"><span class="av" style="background:${a.cor}">${e(a.ini)}</span><b>${e(a.nome)}</b><div class="bar">${seg}</div><b class="p">${a.pct}%</b><small>${a.feitas}/${a.n}</small></div>`;
-    }).join('');
     const pill = (v) => `<span class="pl ${v === 'Sim' ? 's' : v === 'Não' ? 'x' : v === 'N/A' ? 'na' : 'vz'}">${e(v || '—')}</span>`;
     const linhas = [...FS.linhas].map((r, i) => { const st = status(r);
       return `<tr><td>${i + 1}</td><td class="l"><i class="dot" style="background:${ST[st].cor}"></i><b>${e(r.nome)}</b></td><td class="l">${e(r.analista)}</td><td>${pill(r.esc)}</td><td>${pill(r.pgdas)}</td><td>${pill(r.das)}</td><td>${e(r.fin || '—')}</td><td class="l">${e(r.obs)}${st === 'alerta' ? ' <span class="neg">⚠ PGDAS sem escrituração</span>' : ''}</td></tr>`; }).join('');
@@ -338,12 +333,10 @@ td{padding:8px;border-bottom:1px solid #f0f2f7;text-align:center}.l{text-align:l
 <div class="hd"><h1>Fechamento do Simples Nacional · ${compRot(FS.comp)}</h1><p>Prazo do PGDAS-D e do DAS: ${fmtData(prazo(FS.comp))} · gerado em ${fmtData(new Date())}${quem ? ' por ' + e(quem) : ''} · FiscoCont+</p></div>
 <div class="ks">${kp}</div>
 <div class="card"><h2>Por analista · % com PGDAS transmitido</h2><div class="rings"><svg viewBox="0 0 300 300" width="300" height="300">${aneis}<text x="150" y="148" text-anchor="middle" font-size="28" font-weight="800" fill="#141b2d" class="cnt" data-v="${pctTot}" data-s="%">0%</text><text x="150" y="171" text-anchor="middle" font-size="12" fill="#5a6785">equipe</text></svg><div>${leg}</div></div></div>
-<div class="card"><h2>Corrida da equipe</h2>${corrida}<div class="leg"><span><i style="background:#0ea472"></i>Concluída</span><span><i style="background:#4f46e5"></i>PGDAS transmitido</span><span><i style="background:#f59e0b"></i>Escriturada</span><span><i style="background:#b42318"></i>Inconsistente</span><span><i style="background:#e23d4c"></i>Pendente</span></div></div>
 <div class="card"><h2>Empresas</h2><table><thead><tr><th>#</th><th class="l">Empresa</th><th class="l">Analista</th><th>Escrituração</th><th>PGDAS</th><th>DAS/DARE ao cliente</th><th>Finalização</th><th class="l">Observações</th></tr></thead><tbody>${linhas}</tbody></table></div>
 </div><script>
 setTimeout(function(){document.body.classList.add('go');
 document.querySelectorAll('.rg').forEach(function(c){c.setAttribute('stroke-dasharray',c.dataset.v+' '+c.dataset.l)});
-document.querySelectorAll('.bar i').forEach(function(i){i.style.width=i.dataset.w+'%'});
 var t0=performance.now();document.querySelectorAll('.cnt').forEach(function(el){var v=+el.dataset.v,s=el.dataset.s||'';(function f(t){var p=Math.min(1,(t-t0)/1500),q=1-Math.pow(1-p,3);el.textContent=Math.round(v*q)+s;if(p<1)requestAnimationFrame(f)})(t0)});
 },250);
 </script></body></html>`;
@@ -366,7 +359,10 @@ var t0=performance.now();document.querySelectorAll('.cnt').forEach(function(el){
       montar();
       window.fiscocont.fechamento.onMudou(aoMudar);
     }
-    if (!FS.aberto) { FS.aberto = true; abrir(); }
+    if (!FS.aberto) { FS.aberto = true; abrir(); return; }
+    // voltou para a tela: os anéis enchem e os números contam de novo
+    FS.anel = null; FS.kpiAnt = {};
+    if (FS.linhas.length) desenhaTudo();
   }
   window.fechEntrar = function () {
     const aba = document.querySelector('.sn-tab.on');
