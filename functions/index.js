@@ -30,6 +30,7 @@ async function quemChamou(req, exigirAdmin) {
   const snap = await db.doc(`usuarios/${a.uid}`).get();
   const cad = snap.exists ? snap.data() : null;
   if (!cad || cad.ativo !== true) throw new HttpsError('permission-denied', 'Usuário sem acesso.');
+  if (cad.trocarSenha === true) throw new HttpsError('permission-denied', 'Crie a sua senha antes de continuar: atualize o FiscoCont+ e entre de novo.');
   if (exigirAdmin && cad.perfil !== 'admin') throw new HttpsError('permission-denied', 'Acesso restrito ao Admin.');
   return { uid: a.uid, email: (a.token.email || '').toLowerCase(), ...cad };
 }

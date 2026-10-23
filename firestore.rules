@@ -19,8 +19,11 @@ service cloud.firestore {
     function cadastro() {
       return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
     }
+    // ativo = logado, cadastrado, não bloqueado e já trocou a senha provisória (versão antiga sem a tela
+    // "Crie a sua senha" não consegue usar a nuvem com a senha provisória)
     function ativo() {
-      return logado() && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) && cadastro().ativo == true;
+      return logado() && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) && cadastro().ativo == true
+        && cadastro().get('trocarSenha', false) != true;
     }
     function admin() {
       return ativo() && cadastro().perfil == 'admin';
