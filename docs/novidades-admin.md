@@ -5,6 +5,7 @@ As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que 
 
 ## 2.1.4
 
+- **Correção da EFD-Contribuições · conta contábil dos ajustes:** M115/M225/M515/M625 com COD_CTA em branco (erro do PVA "O campo é de preenchimento obrigatório... conta contábil analítica... registro 0500") passam a ser preenchidos com a conta dos itens da nota cuja chave está na descrição do ajuste (mesmo CST); se não houver, com a mesma conta dos outros ajustes do arquivo; ou com a conta digitada no novo campo "Conta dos ajustes" da tela. A conta precisa ser analítica no 0500; senão fica pendência.
 - **Corretor do SPED · crédito do Simples:** nota de uso e consumo (CFOP 1556/2556/1407/2407/1653/2653), ativo imobilizado (1551/2551/1406/2406) ou uso em serviço do ISS (1128/2128) não gera mais "Crédito a incluir": aparece como "Uso e consumo · sem crédito", com a base legal (LC 123/2006, art. 23, § 1º; LC 87/1996, art. 33, I). Se já houver C197 ou ICMS no C190, a nota vai para "Sem direito a crédito" com a opção de retirar. Nota mista: o crédito conta só os itens de comercialização ou industrialização.
 
 ## 2.1.2

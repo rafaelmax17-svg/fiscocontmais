@@ -2966,7 +2966,7 @@ def main(argv):
             return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
         import efd_corretor as _corr
         try:
-            _corr.corrigir_arquivo(argv[1], optc('--pva'), optc('--saida', 'efd_corrigido.txt'), optc('--painel-html'), optc('--json'))
+            _corr.corrigir_arquivo(argv[1], optc('--pva'), optc('--saida', 'efd_corrigido.txt'), optc('--painel-html'), optc('--json'), optc('--conta-ajuste', ''))
         except Exception as e:
             res = {'erro': f'Não consegui corrigir esse arquivo: {e}'}
             if '--json' in args:

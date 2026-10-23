@@ -3973,7 +3973,7 @@ function bindCorrigirEfd() {
   $('#btnCorrEfdRodar').addEventListener('click', async () => {
     if (!est.sped) return;
     overlay(true, 'Corrigindo a EFD-Contribuições…');
-    const res = await window.fiscocont.fiscal.efdCorrigir(est.sped, est.pva);
+    const res = await window.fiscocont.fiscal.efdCorrigir(est.sped, est.pva, ($('#corrEfdConta')?.value || '').trim());
     overlay(false);
     if (res.error) { toast(res.error, true); return; }
     $('#corrEfdVazio').hidden = true;
