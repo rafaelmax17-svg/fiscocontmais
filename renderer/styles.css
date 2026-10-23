@@ -1046,3 +1046,6 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .fs-mbox .fs-in{width:100%}.fs-row{display:flex;gap:6px}.fs-row .fs-in{flex:1}.fs-hint{color:var(--ink2);font-size:11px}
 .fs-mact{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 @media (max-width:1300px){.fs-kpis{grid-template-columns:repeat(3,1fr)}}
+.fs-mini{border:1px solid var(--line);background:var(--panel);color:var(--ink2);border-radius:7px;padding:4px 9px;font-size:11.5px;font-weight:700;cursor:pointer;margin-left:2px}
+.fs-mini:hover{border-color:var(--accent);color:var(--accent)}.fs-mini.del:hover{border-color:var(--neg);color:var(--neg);background:var(--negbg)}
+.fs-tag-in{background:#fdf0e3;color:#b4570f}

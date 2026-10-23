@@ -28,6 +28,7 @@
   function corAnalista(nome, idx) { return COR_FIXA[String(nome || '').trim().toLowerCase()] || PALETA[idx % PALETA.length]; }
   function iniciais(n) { const p = String(n || '?').trim().split(/\s+/); return (p[0][0] + (p[1] ? p[1][0] : (p[0][1] || ''))).toUpperCase(); }
   function compRot(c) { const [a, m] = c.split('-'); return `${MESES[+m - 1]}/${a}`; }
+  function compProx(c) { let [a, m] = c.split('-').map(Number); m++; if (m > 12) { m = 1; a++; } return `${a}-${String(m).padStart(2, '0')}`; }
   function compAnterior() { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
   function listaComps() {
     const d = new Date(); const fim = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -218,12 +219,12 @@
   function linhaHtml(r, i) {
     const st = status(r);
     return `<td class="fs-n">${i + 1}</td>
-      <td class="l"><span class="fs-dot" style="background:${ST[st].cor}" title="${ST[st].rot}"></span><b>${e(r.nome)}</b>${r.semMovimento ? '<span class="fs-tag">sem movimento</span>' : ''}${r.cnpj ? `<small>${e(r.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5'))}</small>` : ''}</td>
+      <td class="l"><span class="fs-dot" style="background:${ST[st].cor}" title="${ST[st].rot}"></span><b>${e(r.nome)}</b>${r.semMovimento ? '<span class="fs-tag">sem movimento</span>' : ''}${r.inativa && r.saida > FS.comp ? `<span class="fs-tag fs-tag-in">inativa a partir de ${e(compRot(r.saida))}</span>` : ''}${r.cnpj ? `<small>${e(r.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5'))}</small>` : ''}</td>
       <td class="l">${e(r.analista || '—')}</td>
       <td>${selEtapa(r, 'esc')}</td><td>${selEtapa(r, 'pgdas')}</td><td>${selEtapa(r, 'das')}</td>
       <td class="fs-fin" title="Preenchida sozinha quando as três etapas ficam Sim ou N/A">${r.fin ? e(r.fin) : '—'}</td>
       <td class="l"><input class="fs-obs" data-c="obs" data-id="${r.id}" value="${e(r.obs)}" placeholder="—">${st === 'alerta' ? '<small class="neg">⚠ PGDAS transmitido sem escrituração concluída</small>' : ''}</td>
-      <td class="fs-adm-col" ${FS.admin ? '' : 'hidden'}><button class="fs-ic" data-a="editar" data-id="${r.id}" title="Alterar nome ou analista">✎</button><button class="fs-ic del" data-a="excluir" data-id="${r.id}" title="Excluir da lista a partir desta competência">🗑</button></td>`;
+      <td class="fs-adm-col" ${FS.admin ? '' : 'hidden'}><button class="fs-ic" data-a="editar" data-id="${r.id}" title="Alterar nome ou analista">✎</button>${r.inativa ? `<button class="fs-mini" data-a="reativar" data-id="${r.id}" title="Volta a aparecer nos próximos meses">Reativar</button>` : `<button class="fs-mini del" data-a="inativar" data-id="${r.id}" title="Continua neste mês e some a partir do próximo">Inativar</button>`}</td>`;
   }
   function desenhaTabela(forcar) {
     const body = $('#fsBody'); if (!body) return;
@@ -242,7 +243,7 @@
     }
     $('#fsFoot').textContent = `Mostrando ${lst.length} de ${FS.linhas.length} empresas · clique na célula para escolher Sim, Não ou N/A · a data de finalização é preenchida sozinha quando as três etapas ficam Sim ou N/A`;
   }
-  const sig = (r, i) => [i, r.nome, r.analista, r.esc, r.pgdas, r.das, r.fin, r.obs, r.cnpj, FS.admin].join('¦');
+  const sig = (r, i) => [i, r.nome, r.analista, r.esc, r.pgdas, r.das, r.fin, r.obs, r.cnpj, FS.admin, r.inativa, r.saida].join('¦');
 
   async function onCelula(ev) {
     const el = ev.target; const campo = el.dataset.c, id = el.dataset.id;
@@ -257,11 +258,17 @@
     const b = ev.target.closest('[data-a]'); if (!b) return;
     const r = FS.linhas.find((x) => x.id === b.dataset.id); if (!r) return;
     if (b.dataset.a === 'editar') modalEmpresa(r);
-    if (b.dataset.a === 'excluir') {
-      if (!confirm(`Excluir "${r.nome}" do fechamento a partir de ${compRot(FS.comp)}? Os meses anteriores continuam com ela.`)) return;
-      const x = await window.fiscocont.fechamento.excluir(FS.comp, r.id);
-      if (x && x.error) toast(x.error, true); else toast('Empresa excluída do fechamento.');
+    if (b.dataset.a === 'inativar') {
+      const prox = compProx(FS.comp);
+      if (!confirm(`Inativar "${r.nome}"?\n\nEla continua em ${compRot(FS.comp)} para terminar o fechamento e não aparece mais a partir de ${compRot(prox)}.`)) return;
+      const x = await window.fiscocont.fechamento.inativar(FS.comp, r.id);
+      if (x && x.error) toast(x.error, true); else toast(`Empresa inativada a partir de ${compRot(prox)}.`);
     }
+    if (b.dataset.a === 'reativar') {
+      const x = await window.fiscocont.fechamento.reativar(FS.comp, r.id);
+      if (x && x.error) toast(x.error, true); else toast('Empresa reativada: volta a aparecer nos próximos meses.');
+    }
+
   }
 
   // ------------------------------------------------------------------ cadastro / edição (Admin)
@@ -366,7 +373,7 @@ var t0=performance.now();document.querySelectorAll('.cnt').forEach(function(el){
   }
   window.fechEntrar = function () {
     const aba = document.querySelector('.sn-tab.on');
-    abas(aba ? aba.dataset.sntab : 'fech');
+    abas(aba ? aba.dataset.sntab : 'painel');      // primeira vez no módulo: Painel do cliente
   };
   window.fechSair = function () { FS.aberto = false; FS.iniciado = false; window.fiscocont.fechamento.parar(); const b = $('#fechSN'); if (b) b.innerHTML = ''; };
   document.addEventListener('DOMContentLoaded', () => {

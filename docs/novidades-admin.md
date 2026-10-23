@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.6
+
+- **Fechamento da equipe · Inativar:** o botão "Inativar" (no lugar do excluir) mantém a empresa no mês aberto, com a etiqueta "inativa a partir de …", e tira ela do mês seguinte em diante (inclusive de meses já abertos). "Reativar" desfaz: ela volta nos próximos meses.
+
 ## 2.1.4
 
 - **Fechamento da equipe (Simples Nacional):** só o Admin cadastra empresa (CNPJ com busca na Receita, analista e mês de início), altera nome ou analista (✎) e exclui (🗑, a partir da competência aberta; os meses anteriores continuam com ela). As 97 empresas da planilha de setembro/2026 entram na primeira vez que o Admin abre a aba. Dados no Firestore em fechamento_sn (cadastro: só Admin grava; competências AAAA-MM: equipe ativa).

@@ -29,6 +29,7 @@ function _hojeBr() {
 }
 function _concluida(r) { return ETAPAS.every((k) => r[k] === 'Sim' || r[k] === 'N/A'); }
 function _novoId() { return 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function _prox(c) { let [a, m] = c.split('-').map(Number); m++; if (m > 12) { m = 1; a++; } return `${a}-${String(m).padStart(2, '0')}`; }
 function _semMovimento(obs) { return /zerad|sem\s+movimento/i.test(String(obs || '')); }
 
 function _seed() {
@@ -73,14 +74,16 @@ async function abrir(comp) {
   await f.runTransaction(db, async (tx) => {
     const s = await tx.get(ref);
     const atual = s.exists() ? (s.data().empresas || {}) : {};
-    const faltam = {};
+    const faltam = {}, sobram = [];
     for (const [id, c] of Object.entries(cad)) {
       if (!atual[id] && _vale(c, comp)) faltam[id] = { nome: c.nome, analista: c.analista || '', esc: '', pgdas: '', das: '', obs: '', fin: '' };
+      if (atual[id] && c.ativa === false && c.saida && comp >= c.saida) sobram.push(id);     // inativada num mês anterior
     }
     if (!s.exists()) tx.set(ref, { empresas: faltam, criadoPor: _quem(), criadoEm: f.serverTimestamp() });
-    else if (Object.keys(faltam).length) {
+    else if (Object.keys(faltam).length || sobram.length) {
       const upd = {};
       for (const [id, r] of Object.entries(faltam)) upd[`empresas.${id}`] = r;
+      for (const id of sobram) upd[`empresas.${id}`] = f.deleteField();
       tx.update(ref, upd);
     }
   });
@@ -103,6 +106,7 @@ function ouvir(comp, cb) {
         id, nome: c.nome || r.nome || '', cnpj: c.cnpj || '', analista: r.analista || c.analista || '', ordem: c.ordem ?? 9999,
         esc: r.esc || '', pgdas: r.pgdas || '', das: r.das || '', obs: r.obs || '', fin: r.fin || '',
         alteradoPor: r.alteradoPor || '', semMovimento: _semMovimento(r.obs),
+        inativa: c.ativa === false, saida: c.saida || '',
       };
     }).sort((a, b) => a.ordem - b.ordem || a.nome.localeCompare(b.nome));
     cb({ comp, linhas, admin: _ehAdmin() });
@@ -134,7 +138,7 @@ async function salvar(comp, id, campo, valor) {
   return { ok: true };
 }
 
-function _exigeAdmin() { if (!_ehAdmin()) throw new Error('Só o Admin pode cadastrar, alterar ou excluir empresas.'); }
+function _exigeAdmin() { if (!_ehAdmin()) throw new Error('Só o Admin pode cadastrar, alterar ou inativar empresas.'); }
 
 async function cadastrar(comp, { nome, cnpj, analista, desde }) {
   _exigeAdmin();
@@ -182,14 +186,30 @@ async function alterar(comp, id, { nome, analista }) {
   return { ok: true };
 }
 
-// Tira a empresa do cadastro a partir desta competência (os meses anteriores continuam com ela).
-async function excluir(comp, id) {
+// Inativa a empresa NO mês aberto: ela continua nesse mês (para terminar o fechamento) e some a partir do próximo.
+async function inativar(comp, id) {
   _exigeAdmin();
   if (!RE_COMP.test(comp || '')) throw new Error('Competência inválida.');
   const { db, f } = _fs();
-  await f.updateDoc(f.doc(db, COL, 'cadastro'), { [`empresas.${id}.ativa`]: false, [`empresas.${id}.saida`]: comp });
-  await f.updateDoc(f.doc(db, COL, comp), { [`empresas.${id}`]: f.deleteField() });
+  const saida = _prox(comp);
+  await f.updateDoc(f.doc(db, COL, 'cadastro'), { [`empresas.${id}.ativa`]: false, [`empresas.${id}.saida`]: saida, [`empresas.${id}.inativadaPor`]: _quem() });
+  // meses seguintes que já tenham sido abertos
+  const hoje = new Date();
+  const limite = `${hoje.getFullYear() + 1}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+  for (let c = saida; c <= limite; c = _prox(c)) {
+    const ref = f.doc(db, COL, c);
+    const sn = await f.getDoc(ref);
+    if (sn.exists() && (sn.data().empresas || {})[id]) await f.updateDoc(ref, { [`empresas.${id}`]: f.deleteField() });
+  }
+  return { ok: true, saida };
+}
+
+// Desfaz a inativação: volta a entrar nos próximos meses.
+async function reativar(comp, id) {
+  _exigeAdmin();
+  const { db, f } = _fs();
+  await f.updateDoc(f.doc(db, COL, 'cadastro'), { [`empresas.${id}.ativa`]: true, [`empresas.${id}.saida`]: f.deleteField() });
   return { ok: true };
 }
 
-module.exports = { abrir, ouvir, parar, salvar, cadastrar, alterar, excluir };
+module.exports = { abrir, ouvir, parar, salvar, cadastrar, alterar, inativar, reativar };

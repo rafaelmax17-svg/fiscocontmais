@@ -458,7 +458,8 @@ ipcMain.handle('fech:parar', () => { fechamento.parar(); return { ok: true }; })
 ipcMain.handle('fech:salvar', (_evt, { comp, id, campo, valor }) => _fech(() => fechamento.salvar(comp, id, campo, valor)));
 ipcMain.handle('fech:cadastrar', (_evt, { comp, dados }) => _fech(() => fechamento.cadastrar(comp, dados || {})));
 ipcMain.handle('fech:alterar', (_evt, { comp, id, mud }) => _fech(() => fechamento.alterar(comp, id, mud || {})));
-ipcMain.handle('fech:excluir', (_evt, { comp, id }) => _fech(() => fechamento.excluir(comp, id)));
+ipcMain.handle('fech:inativar', (_evt, { comp, id }) => _fech(() => fechamento.inativar(comp, id)));
+ipcMain.handle('fech:reativar', (_evt, { comp, id }) => _fech(() => fechamento.reativar(comp, id)));
 ipcMain.handle('fech:cnpj', (_evt, cnpj) => _fech(async () => {
   const dig = String(cnpj || '').replace(/\D/g, '');
   if (dig.length !== 14) return { error: 'CNPJ inválido.' };
