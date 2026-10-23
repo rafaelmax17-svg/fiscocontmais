@@ -39,8 +39,13 @@ jobs:
         shell: bash
         run: |
           set +e
-          npx --yes firebase-tools@15 deploy --only functions,firestore:rules --project fiscocontmais --non-interactive --force 2>&1 | tee deploy.log
+          # regras primeiro e sozinhas: não dependem de faturamento, então saem mesmo se as funções falharem
+          npx --yes firebase-tools@15 deploy --only firestore:rules --project fiscocontmais --non-interactive --force 2>&1 | tee deploy.log
           st=${PIPESTATUS[0]}
+          if [ "$st" = "0" ]; then echo "::notice title=Regras do Firestore::publicadas"; fi
+          npx --yes firebase-tools@15 deploy --only functions --project fiscocontmais --non-interactive --force 2>&1 | tee -a deploy.log
+          st2=${PIPESTATUS[0]}
+          [ "$st" = "0" ] && st=$st2
           if [ "$st" != "0" ]; then
             # resumo do erro como anotação (aparece no resumo da execução, sem precisar abrir o log inteiro)
             msg=$(grep -iE "error|denied|permission|not enabled|failed|billing|forbidden|403|unable" deploy.log | grep -v "^npm" | tail -25 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
