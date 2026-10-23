@@ -31,7 +31,8 @@
   function compProx(c) { let [a, m] = c.split('-').map(Number); m++; if (m > 12) { m = 1; a++; } return `${a}-${String(m).padStart(2, '0')}`; }
   function compAnterior() { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
   function listaComps() {
-    const d = new Date(); const fim = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 3);       // até 3 meses à frente do mês atual
+    const fim = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     const out = []; let [a, m] = INICIO.split('-').map(Number);
     for (;;) { const c = `${a}-${String(m).padStart(2, '0')}`; out.push(c); if (c >= fim) break; m++; if (m > 12) { m = 1; a++; } }
     return out.reverse();
@@ -110,6 +111,7 @@
   async function abrir() {
     FS.linhas = []; FS.anel = null; FS.kpiAnt = {};
     $('#fsRings').innerHTML = ''; $('#fsRLeg').innerHTML = ''; $('#fsBody').innerHTML = '';
+    $('#fsBody').dataset.ordem = '';        // achado real: mesmas empresas no mês novo = mesma "ordem", e a tabela não era redesenhada
     $('#fsFoot').textContent = 'Carregando…';
     const r = await window.fiscocont.fechamento.abrir(FS.comp);
     if (r && r.error) { $('#fsFoot').textContent = r.error; toast(r.error, true); }
