@@ -24,6 +24,39 @@ COD_SN = 'RO00000001'
 OBS_SN = ('CSN', 'CRÉDITO SIMPLES NACIONAL')
 CANC = {'02', '03', '04', '05'}
 
+# Final do CFOP de entrada SEM direito ao crédito do Simples. O crédito da LC 123/2006, art. 23, § 1º, só vale para
+# mercadoria destinada à comercialização ou industrialização; uso e consumo também não dá crédito de ICMS até 2033
+# (LC 87/1996, art. 33, I) e o ativo imobilizado não é comercialização nem industrialização.
+CFOP_SEM_CREDITO = {
+    '556': 'material de uso e consumo', '407': 'material de uso e consumo (com ST)',
+    '653': 'combustível ou lubrificante para consumo próprio',
+    '551': 'ativo imobilizado', '406': 'ativo imobilizado (com ST)',
+    '128': 'uso na prestação de serviço sujeito ao ISS',
+}
+BASE_LEGAL_CFOP = ('O crédito do Simples só vale para mercadoria destinada à comercialização ou industrialização '
+                   '(LC 123/2006, art. 23, § 1º); uso e consumo não dá crédito de ICMS até 2033 (LC 87/1996, art. 33, I).')
+
+
+def _credito_por_cfop(d, x):
+    """Crédito do XML só dos itens cujo CFOP de entrada (no SPED) dá direito.
+    Retorna (credito, base, cfops_sem_direito, como): como = 'todos' | 'nenhum' | 'itens' | 'proporcao'."""
+    sem = sorted({c['cfop'] for c in d['c190'] if c['cfop'][1:] in CFOP_SEM_CREDITO})
+    if not sem:
+        return x['credito'], x['base'], [], 'todos'
+    com = [c for c in d['c190'] if c['cfop'][1:] not in CFOP_SEM_CREDITO]
+    if not com:
+        return 0.0, 0.0, sem, 'nenhum'
+    itx = [it for it in x.get('itens', []) if it.get('csosn')]
+    c170 = {c['num']: c['cfop'] for c in d['c170']}
+    if c170 and len(c170) == len(x.get('itens', [])) and all(str(it['n']).lstrip('0') in c170 for it in itx):
+        ok = [it for it in itx if c170[str(it['n']).lstrip('0')][1:] not in CFOP_SEM_CREDITO]
+        cred = sum(it['vcredsn'] for it in ok)
+        base = sum(it['valor_merc'] for it in ok if it['csosn'] in ('101', '201') or it['vcredsn'] > 0)
+        return round(cred, 2), round(base, 2), sem, 'itens'
+    tot = sum(c['vl_opr'] for c in d['c190']) or 1.0
+    f = sum(c['vl_opr'] for c in com) / tot
+    return round(x['credito'] * f, 2), round(x['base'] * f, 2), sem, 'proporcao'
+
 
 # ------------------------------------------------------------------ XML (leitura compartilhada com o DIFAL)
 from xml_entradas import ler_xml, ler_xmls  # noqa: E402,F401
@@ -64,7 +97,20 @@ def analisar_texto(texto, xmls, n_lidos=0):
         obs = []
         if d['sit'] in CANC:
             continue
-        perm = x['credito']
+        perm, base_ok, cfop_sem, como = _credito_por_cfop(d, x)
+        if como == 'nenhum':
+            tipos = ', '.join(f'{c} ({CFOP_SEM_CREDITO[c[1:]]})' for c in cfop_sem)
+            obs.append(f'CFOP {tipos}: sem direito ao crédito do Simples. {BASE_LEGAL_CFOP}')
+            st = 'sem_direito' if (c190_icms > 0.004 or c197_v > 0.004) else 'uso_consumo'
+            r = _linha(d, p, part, x, c190_icms, c197, c197_v, st, obs)
+            r.update({'csosn': ', '.join(x['csosn']), 'base': x['base'], 'aliq': 0.0, 'credito': 0.0, 'aliq_fonte': 'cfop'})
+            saida.append(r)
+            continue
+        if como in ('itens', 'proporcao'):
+            obs.append(f'Parte da nota é {", ".join(CFOP_SEM_CREDITO[c[1:]] for c in cfop_sem)} (CFOP {", ".join(cfop_sem)}): '
+                       f'o crédito considera só os itens para comercialização ou industrialização'
+                       f'{"" if como == "itens" else ", na proporção do valor da operação no C190"}. {BASE_LEGAL_CFOP}')
+        x = {**x, 'credito': perm, 'base': base_ok}
         aliq = x['aliqs'][0] if len(x['aliqs']) == 1 else (round(perm / x['base'] * 100, 2) if x['base'] and perm else 0.0)
         if len(x['aliqs']) > 1:
             obs.append(f'A nota tem mais de um percentual de crédito ({", ".join(str(a).replace(".", ",") for a in x["aliqs"])}%); '
@@ -96,7 +142,7 @@ def analisar_texto(texto, xmls, n_lidos=0):
                                                        'est_deb', 'sld_ant', 'sld_apurado', 'ded', 'recolher', 'sld_transp', 'deb_esp'], start=2)}
     e116 = [{'cod': c[2], 'valor': dr._n(c[3]), 'venc': c[4], 'cod_rec': c[5]}
             for c in (ln.split('|') for ln in linhas if ln.startswith('|E116|')) if len(c) > 5]
-    cont = {k: sum(1 for x in saida if x['status'] == k) for k in ('incluir', 'lugar_errado', 'sem_direito', 'divergente', 'ok', 'sem_aliq', 'sem_xml')}
+    cont = {k: sum(1 for x in saida if x['status'] == k) for k in ('incluir', 'lugar_errado', 'sem_direito', 'divergente', 'ok', 'sem_aliq', 'sem_xml', 'uso_consumo')}
     soma = lambda st, campo: float(dr._d(sum(x[campo] for x in saida if x['status'] in st)))
     return {
         'empresa': {'nome': cab.get('nome', ''), 'cnpj': cab.get('cnpj', ''), 'uf': uf_emp, 'dt_ini': cab.get('dt_ini', ''),

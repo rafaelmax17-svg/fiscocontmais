@@ -2527,6 +2527,7 @@ function bindFiscal() {
       divergente: ['C197 divergente', 'b-warn', '#eda100'],
       sem_aliq: ['Falta a alíquota', 'b-warn', '#4a3aa7'],
       sem_xml: ['Sem XML', 'b-mute', '#8a93a8'],
+      uso_consumo: ['Uso e consumo · sem crédito', 'b-mute', '#8a93a8'],
       ok: ['Correto', 'b-ok', '#1baf7a'],
     };
     const fp = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
@@ -2683,13 +2684,13 @@ function bindFiscal() {
       if (d.status === 'sem_direito' && d.c197 > 0) acoes.push(`<label><input type="checkbox" data-sn="c197" data-id="${d.id}" checked> Retirar o C197</label>`);
       else if (edit) acoes.push(`<label><input type="checkbox" data-sn="c197" data-id="${d.id}" ${d.sug_c197 ? 'checked' : ''} ${d.status === 'sem_aliq' ? 'disabled' : ''}> ${d.c197 > 0 ? 'Substituir o C197' : 'Incluir C195 + C197'}</label>`);
       return `
-        <tr data-snrow="${d.id}" data-st="${d.status}" class="${d.status === 'ok' || d.status === 'sem_xml' ? 'dif-off' : ''}">
+        <tr data-snrow="${d.id}" data-st="${d.status}" class="${d.status === 'ok' || d.status === 'sem_xml' || d.status === 'uso_consumo' ? 'dif-off' : ''}">
           <td><b>${esc(d.num)}</b><small>${dt(d.data)}</small></td>
           <td>${esc(d.fornecedor)}<small>${esc(d.cnpj)}${d.uf ? ' · ' + esc(d.uf) : ''}</small></td>
           <td>${esc(d.csosn || '?')}</td>
           <td class="n">${d.base ? 'R$ ' + fm(d.base) : '—'}</td>
           <td class="n">${edit ? `<input class="sn-inp ${d.status === 'sem_aliq' ? 'req' : ''}" data-sn="aliq" data-id="${d.id}" value="${d.aliq ? fp(d.aliq) : ''}" placeholder="%">` : (d.aliq ? fp(d.aliq) : '—')}
-            <small>${d.status === 'sem_aliq' ? 'conforme Anexo do fornecedor' : d.aliq_fonte === 'xml' ? 'pCredSN do XML' : d.status === 'sem_direito' ? 'CSOSN sem crédito' : ''}</small></td>
+            <small>${d.status === 'sem_aliq' ? 'conforme Anexo do fornecedor' : d.aliq_fonte === 'xml' ? 'pCredSN do XML' : d.aliq_fonte === 'cfop' ? 'CFOP sem direito' : d.status === 'sem_direito' ? 'CSOSN sem crédito' : ''}</small></td>
           <td class="n"><b data-snc="${d.id}">${d.credito ? 'R$ ' + fm(d.credito) : 'R$ 0,00'}</b></td>
           <td>${hoje.join('<br>') || '<span class="dif-mute">sem crédito</span>'}</td>
           <td class="sn-ac">${acoes.join('') || '—'}</td>
@@ -2698,7 +2699,7 @@ function bindFiscal() {
     }
 
     function snFiltra() {
-      $('#corrSimples').querySelectorAll('tr[data-snrow]').forEach((tr) => { tr.hidden = SN.filtro === 'pend' && tr.dataset.st === 'ok'; });
+      $('#corrSimples').querySelectorAll('tr[data-snrow]').forEach((tr) => { tr.hidden = SN.filtro === 'pend' && (tr.dataset.st === 'ok' || tr.dataset.st === 'uso_consumo'); });
     }
 
     function snSelecao() {

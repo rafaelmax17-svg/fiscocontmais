@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.4
+
+- **Corretor do SPED · crédito do Simples:** nota de uso e consumo (CFOP 1556/2556/1407/2407/1653/2653), ativo imobilizado (1551/2551/1406/2406) ou uso em serviço do ISS (1128/2128) não gera mais "Crédito a incluir": aparece como "Uso e consumo · sem crédito", com a base legal (LC 123/2006, art. 23, § 1º; LC 87/1996, art. 33, I). Se já houver C197 ou ICMS no C190, a nota vai para "Sem direito a crédito" com a opção de retirar. Nota mista: o crédito conta só os itens de comercialização ou industrialização.
+
 ## 2.1.2
 
 - **Trava por inatividade do Admin:** passou de 15 para 40 minutos sem uso (os demais continuam com 60).
