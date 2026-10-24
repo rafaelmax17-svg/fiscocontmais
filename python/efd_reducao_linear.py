@@ -308,6 +308,24 @@ def conferir(caminho):
             f' no arquivo a base é R$ {_brl(bp)} (PIS R$ {_brl(vp)} · COFINS R$ {_brl(vc)}).'
             + (' Os produtos "para confirmar" foram mantidos dentro.' if res['v_conf'] else ''))
     res['base_esperada'] = base_esp
+    # apuração da redução linear pelo próprio sistema (independe do que foi declarado no arquivo)
+    if not (det['PIS'] or det['COFINS']):
+        usa_icms = True        # sem ajuste no arquivo: base sem o ICMS destacado, como na base do PIS/COFINS (Tema 69 do STF)
+    r_pis = min(esperadas['PIS']) if regime != '2' else ALIQ['cum'][0]
+    r_cof = min(esperadas['COFINS']) if regime != '2' else ALIQ['cum'][1]
+    if regime not in ('2', '3'):
+        r_pis, r_cof = ALIQ['nc']
+    ap_base = ap_pis = ap_cof = 0.0
+    for d in docs06.values():
+        b = round(d['v_in'] - (d['i_in'] if usa_icms else 0), 2)
+        if b <= 0:
+            continue
+        ap_base += b
+        ap_pis += round(b * r_pis / 100 + 1e-9, 2)
+        ap_cof += round(b * r_cof / 100 + 1e-9, 2)
+    res['apuracao'] = {'base': round(ap_base, 2), 'pis': round(ap_pis, 2), 'cofins': round(ap_cof, 2), 'r_pis': r_pis, 'r_cof': r_cof,
+                       'usa_icms': usa_icms, 'decl_base': bp, 'decl_pis': vp, 'decl_cofins': vc,
+                       'regime3': regime == '3', 'v_conf': res['v_conf']}
     if any(p['consolidado'] for p in res['produtos']):
         add('info', 'NFC-e consolidada (C175)', 'O C175 não traz o produto: essas vendas foram consideradas dentro da redução. Se alguma for de produto da cesta básica ou hortifruti, ela sai do ajuste.')
     res.update({'receita06_docs': receita06, 'base': bp, 'pis': vp, 'cofins': vc, 'n_docs': len(docs06), 'regime_rot': rot_reg})
@@ -326,7 +344,10 @@ def html_reducao(res):
     n_err = sum(1 for x in C if x['st'] == 'erro')
     n_dif = sum(1 for x in C if x['st'] == 'dif')
     css = ('<style>.st.err{background:#fdecec;color:#a32020}.rl-aviso{background:#fdf1dc;border:1px solid #efc98f;border-radius:12px;'
-           'padding:10px 14px;font-size:12px;color:#633806;margin:10px 20px}</style>')
+           'padding:10px 14px;font-size:12px;color:#633806;margin:10px 20px}'
+           '.rl-det summary{cursor:pointer;font-weight:700;font-size:14px;color:#1f2a5a;list-style:none;display:flex;align-items:center;gap:8px}'
+           '.rl-det summary::before{content:"▸";transition:transform .2s;display:inline-block}.rl-det[open] summary::before{transform:rotate(90deg)}'
+           '.rl-det summary span{font-weight:400;color:var(--ink2);font-size:12.5px}.rl-det[open] summary{margin-bottom:10px}</style>')
     linhas = [[f'<span class="st {_ST[x["st"]][0]}">{_ST[x["st"]][1]}</span>', f'<b>{_esc(x["titulo"])}</b>', _esc(x['detalhe'])] for x in C]
     t1 = _linhas_tabela(['Situação', 'Conferência', 'Detalhe'], linhas, ['c', 'l', 'l'])
     if len(C) == 1 and C[0]['st'] == 'info':
@@ -344,15 +365,33 @@ def html_reducao(res):
                         [[f'{mod.get(d["mod"], d["mod"])} {_esc(d["num"])}', dd(d['data']), _brl(d['valor']), _brl(d.get('v_fora', 0)), _brl(d['icms']), f'<b>{_brl(d["base"])}</b>',
                           _brl(d['pis']), _brl(d['cofins']), stm[d['st']]] for d in res['docs']],
                         ['l', 'l', 'r', 'r', 'r', 'r', 'r', 'r', 'c'])
+    a = res.get('apuracao') or {}
+    def lin(rot, ap, de):
+        dif = round(ap - de, 2)
+        cor = '#0f6e56' if abs(dif) < 0.05 else '#a32020'
+        return [rot, f'<b>R$ {_brl(ap)}</b>', f'R$ {_brl(de)}', f'<b style="color:{cor}">{"✓" if abs(dif) < 0.05 else ("+" if dif > 0 else "−") + " R$ " + _brl(abs(dif))}</b>']
+    t_ap = _linhas_tabela(['', 'Apurado pelo sistema', 'Declarado no arquivo (M220/M620)', 'Diferença'], [
+        lin(f'Base (produtos que entram · {"valor − ICMS" if a.get("usa_icms") else "valor da operação"})', a.get('base', 0), a.get('decl_base', 0)),
+        lin(f'PIS ({_pct(a.get("r_pis", 0))})', a.get('pis', 0), a.get('decl_pis', 0)),
+        lin(f'COFINS ({_pct(a.get("r_cof", 0))})', a.get('cofins', 0), a.get('decl_cofins', 0)),
+        lin('<b>Total a acrescentar</b>', a.get('pis', 0) + a.get('cofins', 0), a.get('decl_pis', 0) + a.get('decl_cofins', 0)),
+    ], ['l', 'r', 'r', 'r'], [None, None, None, 'tot']) if a else ''
+    nota_ap = ('Calculado nota a nota, só com os produtos que entram na redução (exceções da LC 224/2025 fora), com arredondamento por nota como no M225/M625.'
+               + (' Os produtos "para confirmar" estão dentro.' if a.get('v_conf') else '')
+               + (' Empresa com os dois regimes: usado o não cumulativo.' if a.get('regime3') else ''))
+    card_ap = (f'<div class="card"><h3>Apuração da redução linear pelo sistema</h3>{t_ap}'
+               f'<div style="font-size:11px;color:var(--ink2);margin-top:8px">{nota_ap}</div></div>') if a else ''
+    n_prob = sum(1 for d in res['docs'] if d['st'] not in ('ok', 'fora'))
     kp = (f'<div class="kpis"><div class="kpi"><b>R$ {_brl(res.get("m400_06") or res.get("receita06_docs", 0))}</b><span>Receita com CST 06 (alíquota zero)</span></div>'
           f'<div class="kpi"><b>R$ {_brl(res.get("base", 0))}</b><span>Base do ajuste (M225/M625) · {res.get("n_docs", 0)} notas</span></div>'
-          f'<div class="kpi laranja"><b style="color:#e8632b">R$ {_brl(res.get("pis", 0) + res.get("cofins", 0))}</b><span>Ajuste PIS + COFINS (código 11)</span></div>'
+          f'<div class="kpi laranja"><b style="color:#e8632b">R$ {_brl(a.get("pis", 0) + a.get("cofins", 0))}</b><span>Apurado pelo sistema (PIS + COFINS)</span></div>'
           f'<div class="kpi {"verde" if not n_err else "laranja"}"><b style="color:{"#0f6e56" if not n_err else "#a32020"}">{n_ok} corretas</b>'
           f'<span>{n_dif} atenção · {n_err} erro(s)</span></div></div>')
     return (css + '<div class="rl-aviso">🔒 <b>Conferência interna — redução linear (LC 224/2025).</b> Esta parte não vai para o relatório do cliente.</div>'
-            + kp + f'<div class="card"><h3>Redução linear de benefícios · conferências</h3>{t1}'
+            + kp + card_ap + f'<div class="card"><h3>Redução linear de benefícios · conferências</h3>{t1}'
             '<div style="font-size:11px;color:var(--ink2);margin-top:8px">Base legal: LC 224/2025 · Nota Técnica EFD-Contribuições nº 12/2026 · IN RFB nº 2.305/2025, art. 7º.</div></div>'
             + f'<div class="card"><h3>Redução linear · produtos com alíquota zero (CST 06)</h3>'
             f'<div style="font-size:12px;color:var(--ink2);margin:-4px 0 8px">Entram na redução: R$ {_brl(res.get("v_entra", 0))} · fora pelas exceções: R$ {_brl(res.get("v_fora", 0))}'
             + (f' · para confirmar: R$ {_brl(res.get("v_conf", 0))}' if res.get('v_conf') else '') + f'</div>{tp}</div>'
-            + f'<div class="card"><h3>Redução linear · nota a nota ({res.get("n_docs", 0)} documentos com CST 06)</h3>{t2}</div>')
+            + f'<div class="card"><details class="rl-det"><summary>Detalhar documentos <span>({res.get("n_docs", 0)} notas com CST 06'
+            + (f' · {n_prob} com divergência' if n_prob else '') + f')</span></summary>{t2}</details></div>')
