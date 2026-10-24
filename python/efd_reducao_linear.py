@@ -14,6 +14,8 @@ Como a redução é escriturada (Nota Técnica EFD-Contribuições nº 12/2026):
 import re
 from collections import defaultdict
 
+from efd_lc224_excecoes import classifica_ncm, ZFM_ALC
+
 INICIO = '2026-04'
 ALIQ = {'nc': (0.165, 0.76), 'cum': (0.065, 0.30)}
 
@@ -50,6 +52,8 @@ def conferir(caminho):
     cab = {}
     regime = ''
     contas = {}
+    prod = {}                 # COD_ITEM -> {descr, ncm}
+    part = {}                 # COD_PART -> {nome, mun}
     docs = {}                 # chave -> {num, mod, data, valor, desc, icms, c110}
     atual = None
     m400_06 = m400_04 = 0.0
@@ -64,13 +68,18 @@ def conferir(caminho):
             cab = {'nome': c[8] if len(c) > 8 else '', 'cnpj': c[9] if len(c) > 9 else '', 'ini': c[6], 'fim': c[7]}
         elif r == '0110':
             regime = c[2]
+        elif r == '0200' and len(c) > 8:
+            prod[c[2]] = {'descr': c[3], 'ncm': c[8]}
+        elif r == '0150' and len(c) > 8:
+            part[c[2]] = {'nome': c[3], 'mun': c[8].strip()}
         elif r == '0500' and len(c) > 7:
             contas[c[6].strip()] = {'nome': c[7].strip(), 'analitica': c[4].strip().upper() == 'A'}
         elif r == 'C100':
             atual = None
             if c[2] == '1' and len(c) > 9 and c[9].strip():
                 atual = docs.setdefault(c[9].strip(), {'num': c[8], 'mod': c[5], 'data': c[11] or c[10], 'valor': 0.0,
-                                                       'desc': 0.0, 'icms': 0.0, 'c110': False, 'tem06': False})
+                                                       'desc': 0.0, 'icms': 0.0, 'c110': False, 'tem06': False,
+                                                       'part': c[4], 'itens': []})
         elif r == 'C110' and atual is not None:
             if re.search(r'224\s*/\s*2025', ln):
                 atual['c110'] = True
@@ -80,11 +89,13 @@ def conferir(caminho):
                 atual['valor'] += _n(c[7]) - _n(c[8])
                 atual['desc'] += _n(c[8])
                 atual['icms'] += _n(c[15])
+                atual['itens'].append({'cod': c[3], 'valor': _n(c[7]) - _n(c[8]), 'icms': _n(c[15])})
         elif r == 'C175' and atual is not None and len(c) > 11:
             if c[5] == '06' or c[11] == '06':
                 atual['tem06'] = True
                 atual['valor'] += _n(c[3]) - _n(c[4])
                 atual['desc'] += _n(c[4])
+                atual['itens'].append({'cod': '', 'valor': _n(c[3]) - _n(c[4]), 'icms': 0.0, 'consolidado': True})
         elif r[0] != 'C':
             atual = None
             if r == 'M400':
@@ -105,6 +116,37 @@ def conferir(caminho):
     if not res['aplica']:
         return res
     docs06 = {k: d for k, d in docs.items() if d['tem06']}
+    # quais itens com alíquota zero entram de fato na redução (exceções do art. 4º, § 8º, da LC 224/2025)
+    produtos = {}
+    for d in docs06.values():
+        mun = part.get(d['part'], {}).get('mun', '')
+        zfm = ZFM_ALC.get(mun)
+        d['v_in'] = d['i_in'] = d['v_fora'] = d['v_conf'] = 0.0
+        for it in d['itens']:
+            if it.get('consolidado'):
+                st, mot = 'entra', ''
+                chave_p = '(NFC-e consolidada · C175)'
+                info = {'descr': 'Vendas de NFC-e consolidadas no C175 (sem o produto no arquivo)', 'ncm': ''}
+            else:
+                info = prod.get(it['cod'], {'descr': it['cod'], 'ncm': ''})
+                st, mot = classifica_ncm(info['ncm'])
+                chave_p = it['cod']
+            if zfm and st != 'fora':
+                st, mot = 'fora', f'venda para {zfm} — benefício da ZFM/ALC (art. 4º, § 8º, II)'
+            p = produtos.setdefault((chave_p, st, mot), {'cod': chave_p, 'descr': info['descr'], 'ncm': info['ncm'], 'st': st,
+                                                          'motivo': mot, 'valor': 0.0, 'notas': set(), 'consolidado': bool(it.get('consolidado'))})
+            p['valor'] += it['valor']; p['notas'].add(d['num'])
+            if st == 'fora':
+                d['v_fora'] += it['valor']
+            else:
+                d['v_in'] += it['valor']; d['i_in'] += it['icms']
+                if st == 'confirmar':
+                    d['v_conf'] += it['valor']
+    res['produtos'] = sorted(({**p, 'valor': round(p['valor'], 2), 'notas': len(p['notas'])} for p in produtos.values()),
+                             key=lambda x: ({'fora': 0, 'confirmar': 1, 'entra': 2}[x['st']], -x['valor']))
+    res['v_entra'] = round(sum(d['v_in'] - d['v_conf'] for d in docs06.values()), 2)
+    res['v_fora'] = round(sum(d['v_fora'] for d in docs06.values()), 2)
+    res['v_conf'] = round(sum(d['v_conf'] for d in docs06.values()), 2)
     aj11 = {t: [a for a in aj[t] if a['cod'] == '11'] for t in aj}
     if regime == '2':
         esperadas = {'PIS': {ALIQ['cum'][0]}, 'COFINS': {ALIQ['cum'][1]}}
@@ -151,17 +193,22 @@ def conferir(caminho):
         for d in det[t]:
             ch = re.findall(r'\d{44}', d['desc'])
             por_ch[t][ch[0] if ch else ''].append(d)
-    faltam = [k for k in docs06 if not por_ch['PIS'].get(k) or not por_ch['COFINS'].get(k)]
-    if docs06:
+    so_fora = {k for k, d in docs06.items() if d['v_in'] <= 0.004}          # nota só com produtos fora da redução
+    devem = {k for k in docs06 if k not in so_fora}
+    faltam = [k for k in devem if not por_ch['PIS'].get(k) or not por_ch['COFINS'].get(k)]
+    indevidas = [k for k in so_fora if por_ch['PIS'].get(k) or por_ch['COFINS'].get(k)]
+    if devem:
         if faltam:
-            add('erro', 'Notas com CST 06 sem detalhamento', f'{len(faltam)} de {len(docs06)} notas sem M225/M625 com a chave de acesso.')
+            add('erro', 'Notas que entram na redução sem detalhamento', f'{len(faltam)} de {len(devem)} notas com produto alcançado pela redução sem M225/M625.')
         else:
-            add('ok', 'Toda nota com CST 06 detalhada', f'{len(docs06)} de {len(docs06)} documentos com M225 e M625 (chave de acesso).')
+            add('ok', 'Toda nota alcançada está detalhada', f'{len(devem)} de {len(devem)} documentos com M225 e M625 (chave de acesso).')
+    if indevidas:
+        add('erro', 'Ajuste em nota que não entra na redução', f'{len(indevidas)} nota(s) com M225/M625, mas todos os produtos estão nas exceções da lei (art. 4º, § 8º).')
     sobra = [k for k in por_ch['PIS'] if k and k not in docs06]
     if sobra:
         add('dif', 'Detalhamento de nota sem CST 06', f'{len(sobra)} M225 apontam para notas que não têm item com CST 06 no arquivo.')
-    # base e valor por documento
-    base_ok = base_div = val_div = val_cent = 0
+    # base e valor por documento (só os produtos que entram na redução)
+    base_ok = base_div = base_com_fora = val_div = val_cent = 0
     notas_cent = []
     regra = defaultdict(int)
     for k, d in sorted(docs06.items(), key=lambda x: (x[1]['data'][4:] + x[1]['data'][2:4] + x[1]['data'][:2], x[1]['num'])):
@@ -169,11 +216,15 @@ def conferir(caminho):
         bp = round(sum(x['base'] for x in lp), 2)
         vp = round(sum(x['valor'] for x in lp), 2)
         vc = round(sum(x['valor'] for x in lc), 2)
-        cand = {'valor − ICMS': round(d['valor'] - d['icms'], 2), 'valor da operação': round(d['valor'], 2)}
+        cand = {'valor − ICMS': round(d['v_in'] - d['i_in'], 2), 'valor da operação': round(d['v_in'], 2)}
         r_ok = next((nm for nm, v in cand.items() if abs(v - bp) <= 0.02), '')
-        if lp:
+        com_fora = bool(d['v_fora'] > 0.004 and lp and not r_ok and
+                        any(abs(v - bp) <= 0.02 for v in (round(d['valor'] - d['icms'], 2), round(d['valor'], 2))))
+        if lp and k in devem:
             if r_ok:
                 base_ok += 1; regra[r_ok] += 1
+            elif com_fora:
+                base_com_fora += 1
             else:
                 base_div += 1
         exp_p = round(sum(round(x['base'] * x['aliq'] / 100, 2) for x in lp), 2)
@@ -183,9 +234,18 @@ def conferir(caminho):
             val_div += 1
         elif lp and dmax > 0.004:
             val_cent += 1; notas_cent.append(d['num'])
-        st = 'falta' if not lp or not lc else ('ok' if r_ok and dmax <= 0.004 else 'dif')
+        if k in so_fora:
+            st = 'indevido' if lp or lc else 'fora'
+        elif not lp or not lc:
+            st = 'falta'
+        elif com_fora:
+            st = 'com_fora'
+        else:
+            st = 'ok' if r_ok and dmax <= 0.004 else 'dif'
         res['docs'].append({'num': d['num'], 'mod': d['mod'], 'data': d['data'], 'valor': round(d['valor'], 2), 'icms': round(d['icms'], 2),
-                            'base': bp, 'pis': vp, 'cofins': vc, 'st': st, 'regra': r_ok, 'c110': d['c110']})
+                            'v_fora': round(d['v_fora'], 2), 'base': bp, 'pis': vp, 'cofins': vc, 'st': st, 'regra': r_ok, 'c110': d['c110']})
+    if base_com_fora:
+        add('erro', 'Produto fora da redução incluído na base', f'{base_com_fora} nota(s) com a base do M225 somando também produtos que estão nas exceções da lei.')
     if base_ok and not base_div:
         add('ok', 'Base de cada nota', ' · '.join(f'{nm} em {q} de {base_ok}' for nm, q in regra.items()) + ' notas.')
     elif base_div:
@@ -231,7 +291,25 @@ def conferir(caminho):
             add('dif', 'Informação na nota (C110)', f'{len(docs06) - com} de {len(docs06)} notas sem C110 citando a LC 224/2025 — a NT 12/2026 orienta replicar no C110 o texto do infAdFisco.')
         else:
             add('ok', 'Informação na nota (C110)', 'Todas as notas com CST 06 citam a LC 224/2025 no C110.')
-    add('info', 'Exceções da lei', 'Exceções previstas na LC 224/2025 (ex.: cesta básica, Zona Franca, Simples Nacional) não são conferidas automaticamente: confira se alguma receita CST 06 está nelas.')
+    n_in = sum(1 for p in res['produtos'] if p['st'] == 'entra')
+    n_fora = sum(1 for p in res['produtos'] if p['st'] == 'fora')
+    n_conf = sum(1 for p in res['produtos'] if p['st'] == 'confirmar')
+    add('ok' if not n_conf else 'dif', 'Produtos que entram na redução',
+        f'{n_in} produto(s) entram (R$ {_brl(res["v_entra"])}) · {n_fora} fora pelas exceções da lei (R$ {_brl(res["v_fora"])})'
+        + (f' · {n_conf} para confirmar (R$ {_brl(res["v_conf"])})' if n_conf else '')
+        + '. Exceções conferidas pelo NCM e pelo destino: Cesta Básica Nacional (LC 214/2025, Anexo I), hortícolas, frutas e ovos (Anexo XV) e vendas para ZFM/ALC.')
+    # base e ajuste que deveriam existir, só com os produtos que entram (regra da base usada no próprio arquivo)
+    usa_icms = regra.get('valor − ICMS', 0) >= regra.get('valor da operação', 0)
+    base_esp = round(sum((d['v_in'] - (d['i_in'] if usa_icms else 0)) for d in docs06.values()), 2)
+    if (det['PIS'] or base_esp) and abs(base_esp - bp) > 0.05:
+        r_pis = min(esperadas['PIS']); r_cof = min(esperadas['COFINS'])
+        add('erro', 'Base total do ajuste', f'Pelos produtos que entram na redução, a base seria R$ {_brl(base_esp)}'
+            f' ({"valor − ICMS" if usa_icms else "valor da operação"}) e o ajuste PIS R$ {_brl(base_esp * r_pis / 100)} · COFINS R$ {_brl(base_esp * r_cof / 100)};'
+            f' no arquivo a base é R$ {_brl(bp)} (PIS R$ {_brl(vp)} · COFINS R$ {_brl(vc)}).'
+            + (' Os produtos "para confirmar" foram mantidos dentro.' if res['v_conf'] else ''))
+    res['base_esperada'] = base_esp
+    if any(p['consolidado'] for p in res['produtos']):
+        add('info', 'NFC-e consolidada (C175)', 'O C175 não traz o produto: essas vendas foram consideradas dentro da redução. Se alguma for de produto da cesta básica ou hortifruti, ela sai do ajuste.')
     res.update({'receita06_docs': receita06, 'base': bp, 'pis': vp, 'cofins': vc, 'n_docs': len(docs06), 'regime_rot': rot_reg})
     return res
 
@@ -255,11 +333,17 @@ def html_reducao(res):
         return css + f'<div class="card"><h3>Redução linear de benefícios · LC 224/2025 <span style="font-size:11px;color:#854f0b">(conferência interna)</span></h3>{t1}</div>'
     mod = {'55': 'NF-e', '65': 'NFC-e'}
     dd = lambda d: f'{d[:2]}/{d[2:4]}' if len(d) == 8 else d
-    stm = {'ok': '<span class="st ok">✓</span>', 'dif': '<span class="st dif">diverge</span>', 'falta': '<span class="st err">sem M225/M625</span>'}
-    t2 = _linhas_tabela(['Documento', 'Data', 'Valor CST 06', 'ICMS', 'Base (M225)', 'PIS', 'COFINS', 'Situação'],
-                        [[f'{mod.get(d["mod"], d["mod"])} {_esc(d["num"])}', dd(d['data']), _brl(d['valor']), _brl(d['icms']), f'<b>{_brl(d["base"])}</b>',
+    stm = {'ok': '<span class="st ok">✓</span>', 'dif': '<span class="st dif">diverge</span>', 'falta': '<span class="st err">sem M225/M625</span>',
+           'fora': '<span class="st so">fora da redução</span>', 'indevido': '<span class="st err">ajuste indevido</span>',
+           'com_fora': '<span class="st err">base com produto fora</span>'}
+    stp = {'entra': '<span class="st ok">entra</span>', 'fora': '<span class="st so">fora</span>', 'confirmar': '<span class="st dif">confirmar</span>'}
+    tp = _linhas_tabela(['Produto', 'NCM', 'Descrição', 'Notas', 'Valor', 'Redução', 'Motivo'],
+                        [[_esc(p['cod']), _esc(p['ncm']), _esc(p['descr'][:80]), str(p['notas']), _brl(p['valor']), stp[p['st']], _esc(p['motivo']) or '—']
+                         for p in res.get('produtos', [])], ['l', 'l', 'l', 'r', 'r', 'c', 'l'])
+    t2 = _linhas_tabela(['Documento', 'Data', 'Valor CST 06', 'Fora da redução', 'ICMS', 'Base (M225)', 'PIS', 'COFINS', 'Situação'],
+                        [[f'{mod.get(d["mod"], d["mod"])} {_esc(d["num"])}', dd(d['data']), _brl(d['valor']), _brl(d.get('v_fora', 0)), _brl(d['icms']), f'<b>{_brl(d["base"])}</b>',
                           _brl(d['pis']), _brl(d['cofins']), stm[d['st']]] for d in res['docs']],
-                        ['l', 'l', 'r', 'r', 'r', 'r', 'r', 'c'])
+                        ['l', 'l', 'r', 'r', 'r', 'r', 'r', 'r', 'c'])
     kp = (f'<div class="kpis"><div class="kpi"><b>R$ {_brl(res.get("m400_06") or res.get("receita06_docs", 0))}</b><span>Receita com CST 06 (alíquota zero)</span></div>'
           f'<div class="kpi"><b>R$ {_brl(res.get("base", 0))}</b><span>Base do ajuste (M225/M625) · {res.get("n_docs", 0)} notas</span></div>'
           f'<div class="kpi laranja"><b style="color:#e8632b">R$ {_brl(res.get("pis", 0) + res.get("cofins", 0))}</b><span>Ajuste PIS + COFINS (código 11)</span></div>'
@@ -268,4 +352,7 @@ def html_reducao(res):
     return (css + '<div class="rl-aviso">🔒 <b>Conferência interna — redução linear (LC 224/2025).</b> Esta parte não vai para o relatório do cliente.</div>'
             + kp + f'<div class="card"><h3>Redução linear de benefícios · conferências</h3>{t1}'
             '<div style="font-size:11px;color:var(--ink2);margin-top:8px">Base legal: LC 224/2025 · Nota Técnica EFD-Contribuições nº 12/2026 · IN RFB nº 2.305/2025, art. 7º.</div></div>'
+            + f'<div class="card"><h3>Redução linear · produtos com alíquota zero (CST 06)</h3>'
+            f'<div style="font-size:12px;color:var(--ink2);margin:-4px 0 8px">Entram na redução: R$ {_brl(res.get("v_entra", 0))} · fora pelas exceções: R$ {_brl(res.get("v_fora", 0))}'
+            + (f' · para confirmar: R$ {_brl(res.get("v_conf", 0))}' if res.get('v_conf') else '') + f'</div>{tp}</div>'
             + f'<div class="card"><h3>Redução linear · nota a nota ({res.get("n_docs", 0)} documentos com CST 06)</h3>{t2}</div>')
