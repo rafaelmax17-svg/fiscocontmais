@@ -3000,6 +3000,12 @@ def main(argv):
                 conf_html = _conf.html_conferencia(_conf.conferir(argv[1], opte('--dominio-entradas'), opte('--dominio-saidas')))
             except Exception as e:
                 conf_html = f'<div class="aviso"><b>Não foi possível conferir com o Domínio.</b> {e}</div>'
+        # redução linear (LC 224/2025): conferência interna, só no painel (nunca no relatório do cliente)
+        try:
+            import efd_reducao_linear as _rl
+            conf_html = _rl.html_reducao(_rl.conferir(argv[1])) + conf_html
+        except Exception as e:
+            conf_html = f'<div class="aviso"><b>Não foi possível conferir a redução linear (LC 224/2025).</b> {e}</div>' + conf_html
         if '--painel-html' in args:
             _out(opte('--painel-html', 'painel_efd.html'), _efd.gerar_painel_efd_html(dados, empresa_nome, conf_html))
         resumo = {
