@@ -3,7 +3,27 @@ const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, net } = require
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const childProcess = require('child_process');
+// Todo processo filho (núcleos Python, PowerShell) fica registrado e é encerrado ao fechar o sistema.
+// Achado real (24/10): um núcleo ainda aberto travava os arquivos e a atualização falhava com
+// "Falha ao desinstalar os arquivos do aplicativo antigo".
+const _filhos = new Set();
+function spawn(...a) {
+  const ch = childProcess.spawn(...a);
+  _filhos.add(ch);
+  ch.on('exit', () => _filhos.delete(ch));
+  ch.on('error', () => _filhos.delete(ch));
+  return ch;
+}
+function _encerraFilhos() {
+  for (const ch of _filhos) {
+    try {
+      if (process.platform === 'win32' && ch.pid) childProcess.spawnSync('taskkill', ['/pid', String(ch.pid), '/T', '/F'], { windowsHide: true });
+      else ch.kill();
+    } catch (_) {}
+  }
+  _filhos.clear();
+}
 const cloud = require('./cloudSync');
 const license = require('./license');
 const changelog = require('./changelog');
@@ -196,7 +216,30 @@ function createMainWindow() {
   mainWindow.on('closed', () => (mainWindow = null));
 }
 
+// Uma janela só: abrir o atalho de novo traz a janela que já está aberta (dois FiscoCont+ ao mesmo tempo
+// travavam arquivos durante a atualização).
+const _instanciaPrincipal = app.requestSingleInstanceLock();
+if (!_instanciaPrincipal) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus(); }
+  });
+}
+
+// Ao sair: fecha os núcleos e, se houver atualização baixada, instala em silêncio e reabre o sistema sozinho.
+let _saindo = false;
+app.on('before-quit', (ev) => {
+  _encerraFilhos();
+  if (!_saindo && updater && updater.temAtualizacao && updater.temAtualizacao()) {
+    _saindo = true;
+    ev.preventDefault();
+    setTimeout(() => updater.installNow(true), 300);
+  }
+});
+
 app.whenReady().then(() => {
+  if (!_instanciaPrincipal) return;
   createSplash(() => createMainWindow());
   // 2.1: a credencial de administrador do Firebase não fica mais em nenhuma máquina
   cloud.removerCredencialAntiga(app.getPath('userData'));

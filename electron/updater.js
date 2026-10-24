@@ -12,6 +12,7 @@
 // não pode derrubar o sistema inteiro — o app sempre tem que abrir.
 
 let wired = false;
+let baixada = false;
 
 function _autoUpdater() {
   return require('electron-updater').autoUpdater;
@@ -35,6 +36,7 @@ function initAutoUpdate(getMainWindow) {
       send('updater:available', { versao: info.version });
     });
     autoUpdater.on('update-downloaded', (info) => {
+      baixada = true;
       send('updater:ready', { versao: info.version });
     });
     autoUpdater.on('error', () => {
@@ -50,8 +52,11 @@ async function checkNow() {
   try { await _autoUpdater().checkForUpdates(); } catch (_) { /* silencioso */ }
 }
 
-function installNow() {
-  try { _autoUpdater().quitAndInstall(); } catch (_) {}
+// silencioso = sem as telas do instalador; em qualquer caso o sistema reabre sozinho depois de atualizar
+function installNow(silencioso) {
+  try { _autoUpdater().quitAndInstall(!!silencioso, true); } catch (_) {}
 }
 
-module.exports = { initAutoUpdate, checkNow, installNow };
+function temAtualizacao() { return baixada; }
+
+module.exports = { initAutoUpdate, checkNow, installNow, temAtualizacao };

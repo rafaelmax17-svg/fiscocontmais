@@ -1,6 +1,6 @@
 {
   "name": "fiscocont-plus",
-  "version": "2.1.9",
+  "version": "2.1.10",
   "description": "FiscoCont+ — Automação Fiscal e Contábil da Liddera. Módulo Contábil: análise de balancete, DRE e conferência de saldos invertidos.",
   "author": "Liddera Contabilidade",
   "license": "UNLICENSED",
@@ -70,7 +70,8 @@
       "shortcutName": "FiscoCont+",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
-      "artifactName": "fiscocont-plus-setup-${version}.${ext}"
+      "artifactName": "fiscocont-plus-setup-${version}.${ext}",
+      "include": "build/installer.nsh"
     },
     "publish": [
       {
