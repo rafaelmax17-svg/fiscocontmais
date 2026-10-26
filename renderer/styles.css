@@ -1136,8 +1136,12 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 @media (prefers-reduced-motion:reduce){.news-tk .tk-track{animation-duration:calc(var(--tk-dur,60s) * 2)}}
 
 /* ===== Manual do Fiscal (leitura protegida) ===== */
-#view-manual-fiscal{height:100%}
-.mf{display:flex;flex-direction:column;height:calc(100vh - 150px);min-height:520px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--panel)}
+#view-manual-fiscal{height:100%;max-width:none;margin:0}
+.stage.stage-cheia{padding:0;overflow:hidden}
+.mf{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;background:var(--panel)}
+.mf-tg{border:1px solid var(--line);background:var(--panel);color:var(--ink2);border-radius:8px;padding:6px 11px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+.mf-tg:hover{border-color:#94a3b8}.mf-tg.on{background:#1e3a8a;border-color:#1e3a8a;color:#fff}
+.mf-body.sem-sum{grid-template-columns:1fr}.mf-body.sem-sum .mf-toc{display:none}
 .mf-top{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line)}
 .mf-top h2{margin:0;font-size:16px}
 .mf-adm{display:flex;gap:8px}.mf-adm[hidden]{display:none}

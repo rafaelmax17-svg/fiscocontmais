@@ -555,6 +555,7 @@ function switchView(name) {
   if (name === 'fiscal-frete') { $('#view-fiscal-frete').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-audit') { $('#view-fiscal-audit').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-pgdas') { $('#view-fiscal-pgdas').hidden = false; $('#empty').hidden = true; if (window.fechEntrar) window.fechEntrar(); return; }
+  const stg = document.querySelector('.stage'); if (stg) stg.classList.toggle('stage-cheia', name === 'manual-fiscal');
   if (name === 'manual-fiscal') { $('#view-manual-fiscal').hidden = false; $('#empty').hidden = true; if (window._manualEntrar) window._manualEntrar(); return; }
   if (name === 'fiscal-downloads') { $('#view-fiscal-downloads').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-efd-contrib') {
@@ -3496,7 +3497,13 @@ function bindAtualizacao() {
 function bindManual() {
   const api = window.fiscocont && window.fiscocont.manual;
   if (!api || !$('#view-manual-fiscal')) return;
-  const M = { info: null, pag: 1, zoom: 1, cache: new Map(), aberto: false, acesso: '', t0: 0, desenhando: 0 };
+  const M = { info: null, pag: 1, zoom: 1, cache: new Map(), aberto: false, acesso: '', t0: 0, desenhando: 0, sum: true, fit: false };
+  try { const pr = JSON.parse(localStorage.getItem('mfPref') || '{}'); if (pr.sum === false) M.sum = false; if (pr.fit) M.fit = true; } catch (_) {}
+  const salvaPref = () => { try { localStorage.setItem('mfPref', JSON.stringify({ sum: M.sum, fit: M.fit })); } catch (_) {} };
+  function aplicaModo() {
+    $('#mfTgSum').classList.toggle('on', M.sum); $('#mfTgFit').classList.toggle('on', M.fit);
+    $('#view-manual-fiscal .mf-body').classList.toggle('sem-sum', !M.sum);
+  }
   const cv = $('#mfCanvas'), view = $('#mfView');
   const PARTES = { 1: 'Fundamentos', 2: 'Rotina mensal', 3: 'FiscoCont+ no dia a dia', 4: 'Anexos' };
 
@@ -3531,7 +3538,7 @@ function bindManual() {
     try {
       const im = await img(M.pag);
       if (meu !== M.desenhando) return;
-      const base = Math.min(860, Math.max(520, view.clientWidth - 60));
+      const base = M.fit ? Math.max(480, view.clientWidth - 48) : Math.min(860, Math.max(520, view.clientWidth - 60));
       const w = Math.round(base * M.zoom), hgt = Math.round(w * im.height / im.width);
       const dpr = window.devicePixelRatio || 1;
       cv.width = Math.round(w * dpr); cv.height = Math.round(hgt * dpr);
@@ -3548,6 +3555,8 @@ function bindManual() {
   window._manualEntrar = async () => {
     if (M.aberto) return;
     M.aberto = true;
+    M.pag = 1;           // sempre abre na capa
+    aplicaModo();
     api.protecao(true);
     $('#mfAdm').hidden = ROLE !== 'admin';
     if (!M.info) {
@@ -3579,6 +3588,8 @@ function bindManual() {
   $('#mfMais').addEventListener('click', () => { M.zoom = Math.min(2, +(M.zoom + 0.1).toFixed(2)); desenha(); });
   $('#mfToc').addEventListener('click', (ev) => { const t = ev.target.closest('.mf-ti'); if (t) ir(Number(t.dataset.p)); });
   $('#mfBusca').addEventListener('input', toc);
+  $('#mfTgSum').addEventListener('click', () => { M.sum = !M.sum; aplicaModo(); salvaPref(); desenha(); });
+  $('#mfTgFit').addEventListener('click', () => { M.fit = !M.fit; if (M.fit) M.sum = false; M.zoom = 1; aplicaModo(); salvaPref(); desenha(); });
   window.addEventListener('resize', () => { if (M.aberto) desenha(); });
 
   // sem botão direito, arrastar, copiar ou atalhos de salvar/imprimir enquanto o manual está na tela
