@@ -37,6 +37,7 @@ _WS = {
     'PE': 'https://nfe.sefaz.pe.gov.br/nfe-service/services/NFeConsultaProtocolo4',
     'PR': 'https://nfe.sefa.pr.gov.br/nfe/NFeConsultaProtocolo4',
     'RS': 'https://nfe.sefazrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    'SVC-AN': 'https://www.svc.fazenda.gov.br/NFeConsultaProtocolo4/NFeConsultaProtocolo4.asmx',
 }
 _PROPRIO = {'13': 'AM', '23': 'CE', '26': 'PE', '29': 'BA', '31': 'MG', '35': 'SP', '41': 'PR', '43': 'RS', '50': 'MS', '51': 'MT', '52': 'GO'}
 _URL_DIST = 'https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx'
@@ -107,24 +108,31 @@ def _soap(sess, url, ns_wsdl, corpo, acao, timeout=30):
 
 
 def _consulta_situacao(sess, ch):
+    """Consulta na SEFAZ autorizadora da UF da chave. Se ela responder "não consta" (217) ou não for a autorizadora
+    (226/227), ou estiver fora do ar, tenta os outros ambientes (SVRS, SVAN e a contingência SVC-AN) antes de concluir.
+    Devolve (xml, autorizador, tentativas)."""
     corpo = (f'<consSitNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00"><tpAmb>1</tpAmb>'
              f'<xServ>CONSULTAR</xServ><chNFe>{ch}</chNFe></consSitNFe>')
     ns = 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4'
     prim = _PROPRIO.get(ch[:2], 'SVAN' if ch[:2] == '21' else 'SVRS')
-    ordem = [prim] + [a for a in ('SVRS', 'SVAN') if a != prim]
-    ultimo = None
+    ordem = [prim] + [a for a in ('SVRS', 'SVAN', 'SVC-AN') if a != prim]
+    tentativas, guardado = [], None
     for aut in ordem:
         try:
             xml = _soap(sess, _WS[aut], ns, corpo, 'nfeConsultaNF')
-        except Exception as e:          # endereço fora do ar ou de outro autorizador: tenta o próximo
-            ultimo = f'{aut}: {str(e)[:140]}'
+        except Exception as e:          # endereço fora do ar: tenta o próximo
+            tentativas.append({'aut': aut, 'cstat': '', 'motivo': str(e)[:140]})
             continue
-        cst = _txt(xml, 'cStat')
-        if cst in ('226', '227') and aut != ordem[-1]:   # UF da chave não é desse autorizador
-            ultimo = f'{aut}: {_txt(xml, "xMotivo")}'
+        cst, mot = _txt(xml, 'cStat'), _txt(xml, 'xMotivo')
+        tentativas.append({'aut': aut, 'cstat': cst, 'motivo': mot})
+        if cst in ('217', '226', '227', '236', '613'):     # não consta / não é deste autorizador / chave inválida aqui
+            if guardado is None or (cst == '217' and guardado[0] != '217'):
+                guardado = (cst, xml, aut)
             continue
-        return xml, aut
-    raise RuntimeError(ultimo or 'Sem resposta da SEFAZ.')
+        return xml, aut, tentativas
+    if guardado:
+        return guardado[1], guardado[2], tentativas
+    raise RuntimeError(' · '.join(f"{t['aut']}: {t['motivo']}" for t in tentativas) or 'Sem resposta da SEFAZ.')
 
 
 def _analisa_situacao(xml):
@@ -207,8 +215,8 @@ def consultar(chaves, cert, key, cnpj, cuf='11', progresso=None, com_resumo=True
         for i, ch in enumerate(chaves, 1):
             item = {'chave': ch, **dados_da_chave(ch)}
             try:
-                xml, aut = _consulta_situacao(sess, ch)
-                item.update(_analisa_situacao(xml)); item['autorizador'] = aut
+                xml, aut, tent = _consulta_situacao(sess, ch)
+                item.update(_analisa_situacao(xml)); item['autorizador'] = aut; item['tentativas'] = tent
             except Exception as e:
                 item.update({'situacao': 'erro', 'motivo': str(e)[:200], 'manifestacao': 'nenhuma'})
             if an_ok and item.get('situacao') in ('autorizada', 'cancelada', 'denegada'):

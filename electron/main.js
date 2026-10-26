@@ -1165,7 +1165,7 @@ ipcMain.handle('manif:consultar', (_evt, { empresaId, chaves }) => _manifAdm(asy
   const chaveCache = (c) => `${empresa.cnpj}|${c}`;
   const faltam = lista.filter((c) => {
     const h = cache.itens[chaveCache(c)];
-    if (!h || !h.item || h.item.situacao === 'erro') return true;
+    if (!h || !h.item || ['erro', 'nao_encontrada'].includes(h.item.situacao)) return true;
     const final = ['cancelada', 'denegada'].includes(h.item.situacao) || _MANIF_FINAIS.includes(h.item.manifestacao);
     return !final && (agora - new Date(h.em).getTime()) > _MANIF_CACHE_MIN * 60000;
   });

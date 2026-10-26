@@ -880,8 +880,8 @@
           <button class="mn-back" id="mnVoltar">← Baixas DF-e</button>
           <div><h2>Consulta Manifestação NF-e</h2><div class="mn-sub">Situação na SEFAZ e manifestação do destinatário, pela chave de acesso · só consulta, nada é enviado</div></div>
           <div class="mn-acts">
-            <button class="act ghost" id="mnXlsx" hidden>Exportar Excel</button>
-            <button class="act ghost" id="mnHtml" hidden>Exportar HTML</button>
+            <button class="mn-sec" id="mnXlsx" hidden>Exportar Excel</button>
+            <button class="mn-sec" id="mnHtml" hidden>Exportar HTML</button>
             <button class="act mn-pri" id="mnNova" hidden>Nova consulta</button>
           </div>
         </div>
@@ -894,15 +894,15 @@
             <span class="mn-ic">⚠️</span>
             <div><b id="mnAlertaTit"></b><p id="mnAlertaTxt"></p>
               <button class="act mn-pri" id="mnCadastrar">Cadastrar certificado desta empresa</button>
-              <button class="act ghost" id="mnOutra">Escolher outra empresa</button></div>
+              <button class="mn-sec" id="mnOutra">Escolher outra empresa</button></div>
           </div>
           <div class="mn-ok" id="mnEmpOk" hidden></div>
           <div class="mn-lbl">2 · Chaves de acesso (uma por linha, ou cole de uma planilha)</div>
           <textarea id="mnChaves" spellcheck="false" placeholder="11261012345678000190550010000123451000123459"></textarea>
           <div class="mn-info"><span class="ok" id="mnQtdOk">0 chaves válidas</span><span class="er" id="mnQtdErr" hidden></span><span class="az" id="mnQtdDup" hidden></span>
-            <button class="act ghost" id="mnImportar" style="margin-left:auto">Importar .txt ou .xlsx</button></div>
+            <button class="mn-sec" id="mnImportar" style="margin-left:auto">Importar .txt ou .xlsx</button></div>
           <div class="mn-ruins" id="mnRuins" hidden></div>
-          <div class="mn-bt"><button class="act ghost" id="mnCancelar" hidden>Cancelar</button><button class="act mn-pri" id="mnConsultar" disabled>Consultar</button></div>
+          <div class="mn-bt"><button class="mn-sec" id="mnCancelar" hidden>Cancelar</button><button class="act mn-pri" id="mnConsultar" disabled>Consultar</button></div>
         </div>
 
         <div class="mn-prog" id="mnProg" hidden><div class="mn-prog-box"><b id="mnProgTit">Consultando a SEFAZ…</b><div class="mn-pb"><div id="mnProgBar"></div></div><span id="mnProgTxt"></span></div></div>

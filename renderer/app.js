@@ -3797,7 +3797,7 @@ function bindManifestacao() {
     const venc = r.empresa.validade ? `certificado válido até ${dataBr(r.empresa.validade)}` : '';
     $('#mnQry').innerHTML = `Destinatário <b>${_esc(r.empresa.nome)} · ${cnpjFmt(r.empresa.cnpj)}</b>${venc ? `<span class="tag">${venc}</span>` : ''}<span style="margin-left:auto">${it.length} chave${it.length === 1 ? '' : 's'} · consultado em ${new Date(r.quando).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>`;
     $('#mnErros').hidden = !nErr;
-    $('#mnErros').innerHTML = nErr ? `⚠ <span><b>${nErr} nota${nErr === 1 ? '' : 's'} sem resposta da SEFAZ</b> (ou não encontrada${nErr === 1 ? '' : 's'}). Veja o motivo na tabela, no filtro "Erros".</span> <button class="act ghost" id="mnRefazer" style="margin-left:auto">Consultar essas de novo</button>` : '';
+    $('#mnErros').innerHTML = nErr ? `⚠ <span><b>${nErr} nota${nErr === 1 ? '' : 's'} não encontrada${nErr === 1 ? '' : 's'} ou sem resposta da SEFAZ.</b> Veja o motivo na tabela (filtro "Erros") e confira a chave no Portal da NF-e.</span> <button class="mn-sec" id="mnRefazer" style="margin-left:auto">Consultar essas de novo</button>` : '';
     if (nErr) $('#mnRefazer').onclick = () => consultar(it.filter((i) => i.situacao === 'erro' || i.situacao === 'nao_encontrada').map((i) => i.chave));
     $('#mnKpis').innerHTML = TIPOS.map(([k, n, cor]) => `<div class="mn-k" style="--c:${cor}" data-f="${k}"><span>${n}</span><b>${cont[k] || 0}</b><em>${val[k] ? 'R$ ' + brl(val[k]) : (cont[k] ? 'valor indisponível' : '—')}</em></div>`).join('');
     $('#mnDonut').innerHTML = comManif ? donut(cont, comManif) + `<div class="mn-lg">${TIPOS.map(([k, n, cor]) => `<div><i style="background:${cor}"></i>${n}<b>${cont[k] || 0}</b><span>${comManif ? Math.round(100 * (cont[k] || 0) / comManif) : 0}%</span></div>`).join('')}</div>` : '<div class="mn-sub">Nenhuma nota autorizada para mostrar.</div>';
@@ -3819,10 +3819,17 @@ function bindManifestacao() {
       rows.map((i) => {
         const st = SIT[i.situacao] || [i.situacao, 'cz'];
         return `<tr><td>${_esc(i.numero || '')}</td><td>${_esc(i.emitente || '')}<span class="mn-mini">${cnpjFmt(i.cnpj_emit)} · ${_esc(i.uf || '')}</span></td><td>${dataBr(i.dh_emissao) || _esc(i.aamm || '')}</td>
-          <td style="text-align:right">${i.valor ? brl(i.valor) : '—'}</td><td><span class="mn-st ${st[1]}" title="${_esc(i.motivo || '')}">${st[0]}</span>${['erro', 'nao_encontrada'].includes(i.situacao) ? `<span class="mn-mini">${_esc((i.motivo || '').slice(0, 80))}</span>` : ''}</td>
+          <td style="text-align:right">${i.valor ? brl(i.valor) : '—'}</td><td><span class="mn-st ${st[1]}" title="${_esc(i.motivo || '')}">${st[0]}</span>${['erro', 'nao_encontrada'].includes(i.situacao) ? `<span class="mn-mini">${_esc((i.motivo || '').slice(0, 90))}</span>${(i.tentativas || []).length ? `<span class="mn-mini" title="${_esc(i.tentativas.map((t) => `${t.aut}: ${t.cstat ? t.cstat + ' · ' : ''}${t.motivo}`).join('\n'))}">consultado em: ${_esc(i.tentativas.map((t) => t.aut).join(', '))}</span>` : ''}<a class="mn-link" data-ch="${i.chave}">conferir no Portal da NF-e ↗</a>` : ''}</td>
           <td>${linhaManif(i)}</td><td>${linhaData(i)}</td><td class="mono">${i.chave}</td></tr>`;
       }).join('') || '<tr><td colspan="8" class="mn-sub">Nenhuma nota neste filtro.</td></tr>'}</tbody></table>`;
   }
+  $('#mnTabela').addEventListener('click', (ev) => {
+    const a = ev.target.closest('.mn-link'); if (!a) return;
+    try { navigator.clipboard.writeText(a.dataset.ch); } catch (_) {}
+    const url = 'https://www.nfe.fazenda.gov.br/portal/consultaRecaptcha.aspx?tipoConsulta=resumo&tipoConteudo=7PhJ+gAVw2g=';
+    if (window.fiscocont.news && window.fiscocont.news.abrirLink) window.fiscocont.news.abrirLink(url); else window.open(url, '_blank');
+    toast('Chave copiada: cole no Portal da NF-e para conferir.');
+  });
   $('#mnChips').addEventListener('click', (ev) => { const c = ev.target.closest('.mn-chip'); if (c) { S.filtro = c.dataset.f; desenha(); } });
   $('#mnKpis').addEventListener('click', (ev) => { const c = ev.target.closest('.mn-k'); if (c) { S.filtro = c.dataset.f; desenha(); } });
 
