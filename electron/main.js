@@ -234,7 +234,7 @@ app.on('before-quit', (ev) => {
   if (!_saindo && updater && updater.temAtualizacao && updater.temAtualizacao()) {
     _saindo = true;
     ev.preventDefault();
-    setTimeout(() => updater.installNow(true), 300);
+    setTimeout(() => updater.installNow(false), 300);
   }
 });
 
@@ -1381,7 +1381,7 @@ ipcMain.handle('cloud:deleteHistoricoItem', async (_evt, { cnpj, id }) => {
 });
 
 // ---- Atualização automática ----
-ipcMain.handle('updater:installNow', () => { updater.installNow(); });
+ipcMain.handle('updater:installNow', (_e, versao) => { updater.installNow(true, String(versao || '')); });
 
 ipcMain.handle('app:diag', async () => {
   const { cmd, baseArgs } = pythonCore();

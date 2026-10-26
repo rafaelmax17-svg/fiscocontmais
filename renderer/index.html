@@ -1210,6 +1210,35 @@
 
 <div class="toast" id="toast" hidden></div>
 <div class="overlay" id="overlay" hidden><div class="spinner"></div><div class="ov-txt" id="ovTxt">Processando…</div></div>
+<div class="upd-ov" id="updModal" hidden>
+  <div class="upd-box">
+    <div class="upd-au"></div>
+    <div class="upd-in">
+      <div class="upd-ic" id="updIc">⬇</div>
+      <h2 id="updTit">Baixando atualização</h2>
+      <div class="upd-sub" id="updSub">Pode continuar trabalhando enquanto baixa.</div>
+      <div class="upd-ver"><span class="de" id="updDe"></span>→<span class="para" id="updPara"></span></div>
+      <div id="updBaixa">
+        <div class="upd-pb"><div id="updBar"></div></div>
+        <div class="upd-row"><span id="updPct">Preparando…</span><span id="updVel"></span></div>
+      </div>
+      <div class="upd-steps" id="updSteps" hidden>
+        <div class="d"><i>✓</i>Atualização baixada e conferida</div>
+        <div class="a" id="updStep2"><i></i>Encerrando o sistema</div>
+        <div class="p"><i>3</i>Instalando a nova versão</div>
+        <div class="p"><i>4</i>Abrindo o FiscoCont+ <span id="updStepVer"></span></div>
+        <div class="upd-sub" style="margin-top:12px">O sistema fecha por alguns segundos e uma janelinha "Atualizando o FiscoCont+" fica na tela durante a instalação. Depois ele abre sozinho. Não desligue o computador.</div>
+      </div>
+      <div class="upd-nov" id="updNov" hidden><b>O que muda nesta versão</b><ul id="updNovLista"></ul></div>
+      <div class="upd-ok" id="updAviso" hidden>💾 Salve o que estiver fazendo antes. Leva cerca de 20 segundos.</div>
+      <div class="upd-bt" id="updBts">
+        <button class="b2" id="updDepois">Continuar trabalhando</button>
+        <button class="b1" id="updAgora" hidden>Atualizar e reiniciar</button>
+      </div>
+      <div class="upd-sub upd-rod" id="updRod" hidden>Se escolher "Mais tarde", instala sozinho quando você fechar o sistema.</div>
+    </div>
+  </div>
+</div>
 <div class="update-banner" id="updateBanner" hidden>
   <span id="updateBannerText"></span>
   <button id="updateBannerBtn">Reiniciar e atualizar</button>

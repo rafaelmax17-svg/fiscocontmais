@@ -3398,6 +3398,90 @@ function _vigiaInatividade() {
     if (Date.now() - SESSAO.ultimoUso > (SESSAO.info.travaMin || 60) * 60000) _travar();
   }, 20000);
 }
+// ---------------------------------------------------------------- tela de atualização
+// 1) baixando (com progresso) · 2) pronta: "Atualizar e reiniciar" ou "Mais tarde" · 3) encerrando → o instalador
+// mostra a janelinha de progresso e o sistema reabre sozinho. "Mais tarde" instala ao fechar o sistema.
+function _updNotas(html) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = String(html || '');
+  let itens = [...tmp.querySelectorAll('li')].map((li) => li.textContent.trim()).filter(Boolean);
+  if (!itens.length) {   // veio como texto (markdown): pega as linhas "- item"
+    itens = String(html || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => /^[-*•]\s+/.test(l))
+      .map((l) => l.replace(/^[-*•]\s+/, '').replace(/\*\*/g, '').trim());
+  }
+  return itens.slice(0, 12);
+}
+function bindAtualizacao() {
+  const up = window.fiscocont && window.fiscocont.updater;
+  if (!up) return;
+  const st = { versao: '', atual: '', pronta: false, fechada: false, instalando: false };
+  const m = $('#updModal');
+  const mb = (n) => (n / 1048576).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const banner = (txt, botao) => {
+    $('#updateBannerText').textContent = txt;
+    $('#updateBannerBtn').textContent = botao;
+    $('#updateBanner').hidden = false;
+  };
+  const versoes = () => {
+    $('#updDe').textContent = st.atual ? 'v' + st.atual : '';
+    $('#updPara').textContent = 'v' + st.versao;
+    $('#updStepVer').textContent = 'v' + st.versao;
+  };
+  const novidades = (notas) => {
+    const itens = _updNotas(notas);
+    if (!itens.length) return;
+    $('#updNovLista').innerHTML = itens.map((t) => `<li>${_esc(t)}</li>`).join('');
+    $('#updNov').hidden = false;
+  };
+  const abrir = () => { m.hidden = false; $('#updateBanner').hidden = true; };
+
+  up.onAvailable((d) => {
+    st.versao = d.versao || ''; st.atual = d.atual || ''; versoes(); novidades(d.notas);
+    $('#updIc').className = 'upd-ic'; $('#updIc').textContent = '⬇';
+    $('#updTit').textContent = 'Baixando atualização';
+    $('#updSub').textContent = 'Pode continuar trabalhando enquanto baixa.';
+    $('#updBaixa').hidden = false;
+    if (!st.fechada) abrir(); else banner(`Baixando a versão v${st.versao}…`, 'Ver');
+  });
+  up.onProgress && up.onProgress((p) => {
+    if (st.pronta) return;
+    const pct = Math.max(0, Math.min(100, p.pct || 0));
+    $('#updBar').style.width = pct.toFixed(1) + '%';
+    $('#updPct').innerHTML = `<b>${Math.floor(pct)}%</b>` + (p.total ? ` · ${mb(p.feito)} de ${mb(p.total)} MB` : '');
+    const resta = p.vel > 0 && p.total ? Math.max(1, Math.round((p.total - p.feito) / p.vel)) : 0;
+    $('#updVel').textContent = p.vel > 0 ? `${mb(p.vel)} MB/s` + (resta ? ` · ~${resta < 60 ? resta + ' s' : Math.round(resta / 60) + ' min'}` : '') : '';
+    if (m.hidden && !$('#updateBanner').hidden) banner(`Baixando a versão v${st.versao} · ${Math.floor(pct)}%`, 'Ver');
+  });
+  up.onReady((d) => {
+    st.pronta = true; st.versao = d.versao || st.versao; st.atual = d.atual || st.atual; versoes();
+    if ($('#updNov').hidden) novidades(d.notas);
+    $('#updIc').className = 'upd-ic ok'; $('#updIc').textContent = '✓';
+    $('#updTit').textContent = 'Atualização pronta';
+    $('#updSub').innerHTML = 'O FiscoCont+ fecha, instala e <b>abre de novo sozinho</b>.';
+    $('#updBaixa').hidden = true; $('#updAviso').hidden = false; $('#updRod').hidden = false;
+    $('#updAgora').hidden = false; $('#updDepois').textContent = 'Mais tarde';
+    abrir();   // mesmo que tenha fechado durante o download: agora precisa da decisão
+  });
+
+  $('#updDepois').addEventListener('click', () => {
+    if (st.instalando) return;
+    m.hidden = true; st.fechada = true;
+    if (st.pronta) banner(`Versão v${st.versao} pronta. Instala quando você fechar o sistema.`, 'Atualizar agora');
+    else banner(`Baixando a versão v${st.versao}…`, 'Ver');
+  });
+  $('#updAgora').addEventListener('click', () => {
+    if (st.instalando || !st.pronta) return;
+    st.instalando = true;
+    $('#updIc').className = 'upd-ic go'; $('#updIc').textContent = '↻';
+    $('#updTit').textContent = 'Atualizando o FiscoCont+';
+    $('#updSub').textContent = 'Não desligue o computador. O sistema volta sozinho.';
+    $('#updNov').hidden = true; $('#updAviso').hidden = true; $('#updRod').hidden = true; $('#updBts').hidden = true;
+    $('#updSteps').hidden = false;
+    setTimeout(() => up.installNow(st.versao), 1600);   // dá tempo de ler; depois a janelinha "Atualizando…" fica na tela até reabrir
+  });
+  $('#updateBannerBtn').addEventListener('click', abrir);
+}
+
 function bindLogin() {
   const form = $('#loginForm');
   if (!form) return;
@@ -4829,15 +4913,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   const licRefresh = $('#btnLicRefresh');
   if (licRefresh) licRefresh.addEventListener('click', loadLicensePanel);
 
-  if (window.fiscocont.updater) {
-    window.fiscocont.updater.onAvailable((d) => toast('Baixando atualização v' + d.versao + '…'));
-    window.fiscocont.updater.onReady((d) => {
-      const bt = $('#updateBannerText'); if (bt) bt.textContent = `Nova versão v${d.versao} pronta para instalar.`;
-      const b = $('#updateBanner'); if (b) b.hidden = false;
-    });
-  }
-  const ubBtn = $('#updateBannerBtn');
-  if (ubBtn) ubBtn.addEventListener('click', () => window.fiscocont.updater.installNow());
+  bindAtualizacao();
   const ubClose = $('#updateBannerClose');
   if (ubClose) ubClose.addEventListener('click', () => { $('#updateBanner').hidden = true; });
 

@@ -80,8 +80,9 @@ contextBridge.exposeInMainWorld('fiscocont', {
     set: (nome) => ipcRenderer.invoke('tema:set', nome),
   },
   updater: {
-    installNow: () => ipcRenderer.invoke('updater:installNow'),
+    installNow: (versao) => ipcRenderer.invoke('updater:installNow', versao),
     onAvailable: (cb) => ipcRenderer.on('updater:available', (_e, d) => cb(d)),
+    onProgress: (cb) => ipcRenderer.on('updater:progress', (_e, d) => cb(d)),
     onReady: (cb) => ipcRenderer.on('updater:ready', (_e, d) => cb(d)),
   },
   fiscal: {
