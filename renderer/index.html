@@ -868,6 +868,8 @@
             <input id="corrEfdContaUso" value="359" style="width:70px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></label>
           <label style="font-size:12px;color:var(--ink2);display:flex;align-items:center;gap:6px" title="Demais itens de entrada (C170) sem conta. Precisa ser analítica no 0500.">Conta demais entradas
             <input id="corrEfdContaEnt" value="55" style="width:70px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></label>
+          <label style="font-size:12px;color:var(--ink2);display:flex;align-items:center;gap:6px" title="NF-e sem nenhum item (C100 sem C170): inclui um item único sem PIS/COFINS — entrada com CST 70, saída com CST 49 (CFOP 5929 quando acoberta NFC-e). Desligado, só aponta.">
+            <input type="checkbox" id="corrEfdItensSem"> Notas sem item: incluir item (entrada CST 70 · saída CST 49)</label>
         </div>
         <div class="fiscal-bar" style="margin-top:-4px">
           <button class="act inv-export" id="btnCorrEfdRodar" disabled style="background:#e23d4c;color:#fff;border-color:transparent">Corrigir</button>

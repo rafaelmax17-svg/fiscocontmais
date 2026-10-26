@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.29
+
+- **Correção da EFD-Contribuições · notas sem item:** nova opção na tela "Notas sem item: incluir item (entrada CST 70 · saída CST 49)". Ligada, cada C100 sem C170 recebe um item único (código DOCSEMITEM, cadastrado no 0200 como tipo 99) sem PIS/COFINS: entrada com CST 70; saída com CST 49 (CST de entrada não é aceito em nota de saída). CFOP 5929 quando há NFC-e do mesmo cliente, dia e valor; senão 5949/1949 (a conferir no XML). Conta: entrada → conta das demais entradas; saída → conta das NFC-e (ex.: 408). Desligada, só aponta como antes.
+
 ## 2.1.28
 
 - **Correção da EFD-Contribuições · conta dos itens de entrada:** C170 de entrada (C100 com IND_OPER 0) com COD_CTA em branco recebe a conta de uso e consumo (CFOP 1556, 1407, 2556, 2407 → padrão 359) ou a conta das demais entradas (padrão 55). As duas contas ficam em campos novos na tela e só são usadas se forem analíticas no 0500; itens que já têm conta não mudam.

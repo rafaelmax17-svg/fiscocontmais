@@ -4512,7 +4512,7 @@ function bindCorrigirEfd() {
     if (!est.sped) return;
     overlay(true, 'Corrigindo a EFD-Contribuições…');
     const res = await window.fiscocont.fiscal.efdCorrigir(est.sped, est.pva, ($('#corrEfdConta')?.value || '').trim(),
-      ($('#corrEfdContaUso')?.value || '').trim(), ($('#corrEfdContaEnt')?.value || '').trim());
+      ($('#corrEfdContaUso')?.value || '').trim(), ($('#corrEfdContaEnt')?.value || '').trim(), !!($('#corrEfdItensSem') || {}).checked);
     overlay(false);
     if (res.error) { toast(res.error, true); return; }
     $('#corrEfdVazio').hidden = true;

@@ -3018,7 +3018,7 @@ def main(argv):
         import efd_corretor as _corr
         try:
             _corr.corrigir_arquivo(argv[1], optc('--pva'), optc('--saida', 'efd_corrigido.txt'), optc('--painel-html'), optc('--json'), optc('--conta-ajuste', ''),
-                                   optc('--conta-uso', '359'), optc('--conta-entrada', '55'))
+                                   optc('--conta-uso', '359'), optc('--conta-entrada', '55'), '--itens-genericos' in args)
         except Exception as e:
             res = {'erro': f'Não consegui corrigir esse arquivo: {e}'}
             if '--json' in args:
