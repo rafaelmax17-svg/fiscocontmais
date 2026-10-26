@@ -1110,7 +1110,7 @@ async function _baixarNfseEmpresa(empresa, dataInicial, dataFinal, gerarPdf) {
 }
 
 // ---------------------------------------------------------------------------
-// Consulta Manifestação NF-e (só consulta, nada é enviado à SEFAZ) — por enquanto só o Admin.
+// Consulta Manifestação NF-e (só consulta, nada é enviado à SEFAZ) — liberada para a equipe (2.1.25).
 // Usa o certificado A1 da empresa destinatária cadastrado nas Baixas DF-e. Os resultados ficam guardados
 // (manifestacao-cache.json) para não consultar a mesma chave de novo: a SEFAZ bloqueia consulta repetida.
 // ---------------------------------------------------------------------------
@@ -1134,7 +1134,7 @@ function _certDaEmpresa(empresa) {
   catch (_) { return { error: 'Não consegui ler a senha salva com segurança nesta máquina.' }; }
 }
 const _manifAdm = async (fn) => {
-  if (sessionRole !== 'admin') return { error: 'Por enquanto a Consulta Manifestação NF-e é só do Admin.' };
+  if (!sessionRole) return { error: 'Entre com o seu usuário para consultar.' };
   if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
   try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String((e && e.message) || e) }; }
 };

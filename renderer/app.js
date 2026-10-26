@@ -3633,7 +3633,7 @@ function bindManual() {
 }
 
 // ---------------------------------------------------------------- Consulta Manifestação NF-e
-// Só consulta (nada é enviado à SEFAZ). Por enquanto só o Admin vê o botão nas Baixas DF-e.
+// Só consulta (nada é enviado à SEFAZ). Botão nas Baixas DF-e, para toda a equipe.
 function chaveNfeValida(ch) {
   if (!/^\d{44}$/.test(ch)) return false;
   let soma = 0, peso = 2;
@@ -3656,8 +3656,7 @@ function bindManifestacao() {
 
   $('#btnMnAbrir').addEventListener('click', () => switchView('fiscal-manifestacao'));
   $('#mnVoltar').addEventListener('click', () => switchView('fiscal-downloads'));
-  const mostraBtn = () => { $('#btnMnAbrir').hidden = ROLE !== 'admin'; };
-  mostraBtn(); setInterval(mostraBtn, 3000);
+  $('#btnMnAbrir').hidden = false;      // liberado para toda a equipe que usa as Baixas DF-e
 
   async function carregaEmpresas() {
     const r = await api.empresas();

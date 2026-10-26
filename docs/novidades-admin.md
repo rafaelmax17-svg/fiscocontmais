@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.25
+
+- Consulta Manifestação NF-e liberada para toda a equipe (deixou de ser só do Admin).
+
 ## 2.1.24
 
 - **Consulta Manifestação NF-e (Baixas DF-e, só Admin por enquanto):** botão laranja nas Baixas DF-e abre uma tela cheia. Escolha a empresa destinatária (o certificado cadastrado nas Baixas DF-e) e cole as chaves (ou importe .txt/.xlsx); chaves inválidas (tamanho ou dígito verificador) e repetidas são apontadas antes. Se a empresa não tem certificado (ou está vencido), aparece o aviso com "Cadastrar certificado desta empresa", e depois de salvar o sistema volta para a consulta com as chaves.
