@@ -154,7 +154,7 @@ contextBridge.exposeInMainWorld('fiscocont', {
       ipcRenderer.on('nfse:loteProgresso', h);
       return () => ipcRenderer.removeListener('nfse:loteProgresso', h);
     },
-    efdCorrigir: (spedPath, pvaPath, contaAjuste) => ipcRenderer.invoke('fiscal:efdCorrigir', spedPath, pvaPath || null, contaAjuste || ''),
+    efdCorrigir: (spedPath, pvaPath, contaAjuste, contaUso, contaEntrada) => ipcRenderer.invoke('fiscal:efdCorrigir', spedPath, pvaPath || null, contaAjuste || '', contaUso || '', contaEntrada || ''),
     efdCorrigirSalvar: (corrigidoPath, nomeOriginal) => ipcRenderer.invoke('fiscal:efdCorrigirSalvar', corrigidoPath, nomeOriginal),
     export: (fmt, payload) => ipcRenderer.invoke('fiscal:export', { fmt, payload }),
   },

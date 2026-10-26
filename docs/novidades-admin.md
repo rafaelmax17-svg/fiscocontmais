@@ -3,6 +3,12 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.28
+
+- **Correção da EFD-Contribuições · conta dos itens de entrada:** C170 de entrada (C100 com IND_OPER 0) com COD_CTA em branco recebe a conta de uso e consumo (CFOP 1556, 1407, 2556, 2407 → padrão 359) ou a conta das demais entradas (padrão 55). As duas contas ficam em campos novos na tela e só são usadas se forem analíticas no 0500; itens que já têm conta não mudam.
+- **M400/M800 com conta sintética:** troca pela conta analítica usada nos M410/M810 do mesmo CST (ex.: 405 sintética → 408 Venda de mercadorias).
+- **C100 sem C170:** passa a ser apontado como pendência (não cria item sozinho). Quando há NFC-e do mesmo cliente, dia e valor, avisa que pode ser NF-e emitida para acobertar a NFC-e (CFOP 5929/6929), cuja receita já está no C175.
+
 ## 2.1.27
 
 - Consulta Manifestação NF-e retirada temporariamente (botão escondido e IPC bloqueado por MANIF_ATIVA = false no renderer/app.js e no electron/main.js). Motivo: a consulta na SEFAZ do estado devolveu "não consta" (217) numa chave de RO; a ideia é refazer usando o Ambiente Nacional (NFeDistribuicaoDFe) como fonte principal. O código continua no sistema para religar depois.

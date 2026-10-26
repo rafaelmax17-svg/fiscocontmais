@@ -863,7 +863,11 @@
           <button class="act inv-export" id="btnCorrEfdPva">Relatório de erros do PVA (PDF, opcional)</button>
           <span id="corrEfdPvaNome" style="font-size:12px;color:var(--ink2)"></span>
           <label style="font-size:12px;color:var(--ink2);display:flex;align-items:center;gap:6px" title="Usada só quando o próprio arquivo não mostra a conta do ajuste (M225/M625). Precisa estar no 0500.">Conta dos ajustes (opcional)
-            <input id="corrEfdConta" placeholder="ex.: 55" style="width:90px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></label>
+            <input id="corrEfdConta" placeholder="ex.: 408" style="width:90px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></label>
+          <label style="font-size:12px;color:var(--ink2);display:flex;align-items:center;gap:6px" title="Itens de entrada (C170) sem conta, com CFOP 1556, 1407, 2556 ou 2407. Precisa ser analítica no 0500.">Conta uso e consumo
+            <input id="corrEfdContaUso" value="359" style="width:70px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></label>
+          <label style="font-size:12px;color:var(--ink2);display:flex;align-items:center;gap:6px" title="Demais itens de entrada (C170) sem conta. Precisa ser analítica no 0500.">Conta demais entradas
+            <input id="corrEfdContaEnt" value="55" style="width:70px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></label>
         </div>
         <div class="fiscal-bar" style="margin-top:-4px">
           <button class="act inv-export" id="btnCorrEfdRodar" disabled style="background:#e23d4c;color:#fff;border-color:transparent">Corrigir</button>

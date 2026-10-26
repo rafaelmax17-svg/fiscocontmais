@@ -37,6 +37,9 @@ TITULOS = {
     'm105': ('Base do crédito por natureza (M105/M505)', '#14b8a6'),
     'm410': ('Natureza da receita fora da tabela (M410/M810)', '#e23d4c'),
     'cta': ('Conta contábil em branco no detalhamento de ajuste (M115/M225/M515/M625)', '#7c3aed'),
+    'cta_item': ('Conta contábil em branco nos itens de entrada (C170)', '#a855f7'),
+    'cta_m400': ('Conta sintética na receita não tributada (M400/M800)', '#9333ea'),
+    'c100sem': ('Documento sem item (C100 sem C170)', '#b45309'),
     'contadores': ('Contadores do arquivo (9900, x990, 9999)', '#6b7392'),
 }
 
@@ -543,6 +546,152 @@ def _fix_cta(L, acoes, pend, ctx):
     return L
 
 
+# ------------------------------------------------------------------ COD_CTA em branco nos itens de ENTRADA (C170)
+# C170: REG, NUM_ITEM, COD_ITEM, DESCR_COMPL, QTD, UNID, VL_ITEM, VL_DESC, IND_MOV, CST_ICMS, CFOP (p[10]) … COD_CTA (p[36]).
+# Regra do escritório (Rafael, 26/10/2026): uso e consumo (CFOP 1556, 1407, 2556, 2407) → conta 359; demais entradas → 55.
+# As contas vêm da tela (podem ser trocadas) e só são usadas se forem analíticas no 0500.
+CFOP_USO_CONSUMO = ('1556', '1407', '2556', '2407')
+
+
+def det_cta_item(L):
+    out, ind_oper = [], None
+    for i, l in enumerate(L):
+        r = _reg(l)
+        if r == 'C100':
+            p = _partes(l['txt'])
+            ind_oper = p[1] if len(p) > 1 else None
+        elif r == 'C170' and ind_oper == '0':
+            p = _partes(l['txt'])
+            if len(p) > 36 and not p[36].strip():
+                out.append({'i': i, 'cfop': p[10].strip(), 'item': p[2].strip(), 'valor': _num(p[6])})
+        elif r[0] != 'C':
+            ind_oper = None
+    return out
+
+
+def _fix_cta_itens(L, acoes, pend, ctx):
+    achados = det_cta_item(L)
+    if not achados:
+        return L
+    contas = _contas_0500(L)
+    analit = {k for k, v in contas.items() if v['analitica']}
+    uso, outras = (ctx.get('conta_uso') or '').strip(), (ctx.get('conta_entrada') or '').strip()
+    faltou = set()
+    for f in achados:
+        eh_uso = f['cfop'] in CFOP_USO_CONSUMO
+        conta = uso if eh_uso else outras
+        if not conta or conta not in analit:
+            faltou.add((conta, eh_uso))
+            continue
+        p = _partes(L[f['i']]['txt'])
+        antes = L[f['i']]['txt']
+        p[36] = conta
+        L[f['i']]['txt'] = _monta(p)
+        regra = 'uso e consumo (CFOP 1556/1407/2556/2407)' if eh_uso else 'demais entradas'
+        acoes.append({'cat': 'cta_item', 'tipo': 'alterado', 'linha': L[f['i']]['n'], 'registro': 'C170', 'antes': antes, 'depois': L[f['i']]['txt'],
+                      'motivo': f"COD_CTA em branco no item de entrada (CFOP {f['cfop']}): preenchido com {conta} ({contas[conta]['nome']}) — regra do escritório para {regra}.",
+                      'cfop': f['cfop'], 'valor': f['valor'], 'conta': conta, 'nome_conta': contas[conta]['nome'], 'regra': regra})
+    for conta, eh_uso in sorted(faltou, key=lambda x: (x[0] or '', x[1])):
+        qtd = sum(1 for f in achados if (f['cfop'] in CFOP_USO_CONSUMO) == eh_uso)
+        tipo = 'uso e consumo (CFOP 1556/1407/2556/2407)' if eh_uso else 'demais entradas'
+        pend.append({'cat': 'cta_item', 'qtd': qtd, 'linha': L[achados[0]['i']]['n'],
+                     'titulo': f'{qtd} item(ns) de {tipo} sem conta contábil',
+                     'detalhe': (f'A conta {conta} não está cadastrada como analítica no 0500 deste arquivo.' if conta else 'Nenhuma conta informada na tela.')
+                     + ' Informe a conta certa na tela do Corretor e corrija de novo.'})
+    return L
+
+
+# ------------------------------------------------------------------ M400/M800 com conta sintética
+# M400/M800: REG, CST, VL_TOT_REC, COD_CTA (p[3]), DESC_COMPL. A conta precisa ser analítica no 0500 (PVA).
+def det_cta_m400(L):
+    contas = _contas_0500(L)
+    out = []
+    for i, l in enumerate(L):
+        if _reg(l) in ('M400', 'M800'):
+            p = _partes(l['txt'])
+            c = p[3].strip() if len(p) > 3 else ''
+            if c and not contas.get(c, {}).get('analitica'):
+                out.append({'i': i, 'reg': p[0], 'cst': p[1], 'conta': c})
+    return out
+
+
+def _fix_cta_m400(L, acoes, pend, ctx):
+    achados = det_cta_m400(L)
+    if not achados:
+        return L
+    contas = _contas_0500(L)
+    for f in achados:
+        filho = 'M410' if f['reg'] == 'M400' else 'M810'
+        usadas = set()
+        for l in L[f['i'] + 1:]:
+            r = _reg(l)
+            if r != filho:
+                break
+            p = _partes(l['txt'])
+            if len(p) > 3 and p[3].strip():
+                usadas.add(p[3].strip())
+        usadas = {c for c in usadas if contas.get(c, {}).get('analitica')}
+        if len(usadas) != 1:
+            pend.append({'cat': 'cta_m400', 'linha': L[f['i']]['n'], 'titulo': f"{f['reg']} (CST {f['cst']}) com a conta {f['conta']}, que é sintética no 0500",
+                         'detalhe': 'Os detalhamentos (M410/M810) não mostram uma conta analítica única. Informe a conta analítica certa no sistema de origem.'})
+            continue
+        conta = next(iter(usadas))
+        p = _partes(L[f['i']]['txt'])
+        antes = L[f['i']]['txt']
+        p[3] = conta
+        L[f['i']]['txt'] = _monta(p)
+        acoes.append({'cat': 'cta_m400', 'tipo': 'alterado', 'linha': L[f['i']]['n'], 'registro': f['reg'], 'antes': antes, 'depois': L[f['i']]['txt'],
+                      'motivo': f"A conta {f['conta']} ({contas.get(f['conta'], {}).get('nome', '')}) é sintética no 0500; trocada pela conta analítica {conta} ({contas[conta]['nome']}), a mesma dos detalhamentos {filho}.",
+                      'conta': conta, 'nome_conta': contas[conta]['nome'], 'regra': f'mesma conta dos {filho}'})
+    return L
+
+
+# ------------------------------------------------------------------ C100 sem C170 (só aponta: não cria item sozinho)
+def det_c100sem(L):
+    out = []
+    for i, l in enumerate(L):
+        if _reg(l) != 'C100':
+            continue
+        p = _partes(l['txt'])
+        if len(p) > 5 and p[5] in ('02', '03', '04', '05'):         # cancelada, denegada, inutilizada
+            continue
+        tem = False
+        for l2 in L[i + 1:]:
+            r = _reg(l2)
+            if r == 'C170' or r == 'C175':
+                tem = True
+                break
+            if r == 'C100' or r[0] != 'C':
+                break
+        if not tem:
+            out.append({'i': i, 'oper': p[1], 'emit': p[2], 'part': p[3], 'mod': p[4], 'num': p[7], 'chave': p[8], 'data': p[9], 'valor': _num(p[11])})
+    return out
+
+
+def _fix_c100sem(L, acoes, pend, ctx):
+    achados = det_c100sem(L)
+    if not achados:
+        return L
+    # NFC-e do mesmo participante, mesmo dia e mesmo valor: sinal de NF-e emitida para acobertar a NFC-e (CFOP 5929/6929)
+    nfce = defaultdict(list)
+    for l in L:
+        if _reg(l) == 'C100':
+            p = _partes(l['txt'])
+            if len(p) > 11 and p[4] == '65':
+                nfce[(p[3], p[9], round(_num(p[11]), 2))].append(p[7])
+    for f in achados:
+        par = nfce.get((f['part'], f['data'], round(f['valor'], 2)), [])
+        tipo = 'saída' if f['oper'] == '1' else 'entrada'
+        if par and f['oper'] == '1':
+            det = (f"Mesmo cliente, mesmo dia e mesmo valor da NFC-e nº {', '.join(par)}: parece NF-e emitida para acobertar a NFC-e (CFOP 5929/6929). "
+                   'A receita já está na NFC-e (C175); lançar de novo duplicaria o PIS/COFINS. Confirme pelo XML antes de incluir o item.')
+        else:
+            det = 'Todo C100 precisa de pelo menos um C170 (Guia Prático da EFD-Contribuições). Confira o XML e lance o item no sistema de origem.'
+        pend.append({'cat': 'c100sem', 'linha': L[f['i']]['n'],
+                     'titulo': f"NF-e {f['num']} ({tipo}, R$ {_brl(f['valor'])}, {f['data'][:2]}/{f['data'][2:4]}) sem item (C170)", 'detalhe': det})
+    return L
+
+
 def _aprender_cfop(L):
     c = defaultdict(Counter)
     cods = _cods_0400(L)
@@ -722,9 +871,10 @@ def ler_erros_pva(caminho):
 
 
 # ------------------------------------------------------------------ orquestração
-def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste=''):
+def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste='', conta_uso='359', conta_entrada='55'):
     L, eol, termina = _ler(texto)
-    ctx = {'pva': pva or {}, 'hoje': hoje or '', 'ajustes': [], 'mapa_n': {}, 'conta_ajuste': conta_ajuste or ''}
+    ctx = {'pva': pva or {}, 'hoje': hoje or '', 'ajustes': [], 'mapa_n': {}, 'conta_ajuste': conta_ajuste or '',
+           'conta_uso': conta_uso or '', 'conta_entrada': conta_entrada or ''}
     p0 = _partes(L[0]['txt']) if L and _reg(L[0]) == '0000' else []
     empresa = {'nome': p0[7] if len(p0) > 7 else '', 'cnpj': p0[8] if len(p0) > 8 else '', 'ini': p0[5] if len(p0) > 5 else '', 'fim': p0[6] if len(p0) > 6 else ''}
     avisos = []
@@ -733,19 +883,22 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
     antes = {
         'cpf': det_cpf(L), 'c100': det_c100(L), 'c175dup': det_c175dup(L), 'mdup': det_mdup(L), 'msoma': det_msoma(L),
         'natureza': det_natureza(L), 'm410': det_m410(L), 'cta': det_cta(L), 'contadores': det_contadores(L),
+        'cta_item': det_cta_item(L), 'cta_m400': det_cta_m400(L), 'c100sem': det_c100sem(L),
     }
     atencao = det_atencao_aliquota(L)
     n_antes = len(L)
     acoes, pend = [], []
-    for fix in (_fix_cpf, _fix_c100, _fix_c175dup, _fix_mdup, _fix_msoma, _fix_natureza, _fix_m105, _fix_m410, _fix_cta):
+    for fix in (_fix_cpf, _fix_c100, _fix_c175dup, _fix_mdup, _fix_msoma, _fix_natureza, _fix_m105, _fix_m410, _fix_cta,
+                _fix_cta_itens, _fix_cta_m400, _fix_c100sem):
         L = fix(L, acoes, pend, ctx)
     L = _recontar(L, acoes)
     depois = {'cpf': det_cpf(L), 'c100': det_c100(L), 'c175dup': det_c175dup(L), 'mdup': det_mdup(L), 'msoma': det_msoma(L),
-              'natureza': det_natureza(L), 'm410': det_m410(L), 'cta': det_cta(L), 'contadores': det_contadores(L)}
+              'natureza': det_natureza(L), 'm410': det_m410(L), 'cta': det_cta(L), 'contadores': det_contadores(L),
+              'cta_item': det_cta_item(L), 'cta_m400': det_cta_m400(L), 'c100sem': det_c100sem(L)}
     pva_cat = (pva or {}).get('por_cat', {})
     dup_total = pva_cat.get('dup')
     cats = []
-    for cid in ('cpf', 'c100', 'c175dup', 'mdup', 'msoma', 'natureza', 'm105', 'm410', 'cta', 'contadores'):
+    for cid in ('cpf', 'c100', 'c175dup', 'mdup', 'msoma', 'natureza', 'm105', 'm410', 'cta', 'cta_item', 'cta_m400', 'c100sem', 'contadores'):
         titulo, cor = TITULOS[cid]
         a_cat = [a for a in acoes if a['cat'] == cid]
         pendentes = sum(x.get('qtd', 1) for x in pend if x['cat'] == cid)
@@ -766,8 +919,8 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
             corrigidos = len([a for a in a_cat if a['tipo'] == 'alterado'])
         elif cid == 'contadores':
             achados, corrigidos = 0, len(a_cat)
-        elif cid == 'm410':
-            achados, corrigidos = len(antes['m410']), 0
+        elif cid in ('m410', 'c100sem'):
+            achados, corrigidos = len(antes[cid]), 0
         else:
             achados, corrigidos = len(antes[cid]), len(a_cat)
         if not achados and not a_cat and not pendentes:
@@ -783,6 +936,9 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
         ('COD_NAT sem cadastro no 0400', len(antes['natureza']), len(depois['natureza'])),
         ('Natureza da receita fora da tabela (pendência)', len(antes['m410']), len(depois['m410'])),
         ('Conta contábil em branco no M115/M225/M515/M625', len(antes['cta']), len(depois['cta'])),
+        ('Conta contábil em branco nos itens de entrada (C170)', len(antes['cta_item']), len(depois['cta_item'])),
+        ('Conta sintética no M400/M800', len(antes['cta_m400']), len(depois['cta_m400'])),
+        ('C100 sem item (pendência, não corrigido sozinho)', len(antes['c100sem']), len(depois['c100sem'])),
         ('Contadores (9900/x990/9999) divergentes', len(antes['contadores']), len(depois['contadores'])),
     ]
     resumo = {
@@ -868,10 +1024,16 @@ _EXPLICA = {
              'O sistema não altera classificação tributária sozinho: fica como pendência, com a indicação de onde o código existe.'),
     'cta': ('No detalhamento dos ajustes da contribuição (M225/M625) e do crédito (M115/M515), a conta contábil é obrigatória e precisa ser uma conta analítica do 0500.',
             'O sistema usa a conta dos itens da nota cuja chave está na descrição do ajuste (mesmo CST). Se não houver, usa a mesma conta dos outros ajustes do arquivo ou a conta informada na tela. Sem nenhuma dessas, fica como pendência.'),
+    'cta_item': ('Nos itens de entrada (C170), a conta contábil é obrigatória e precisa ser analítica no 0500.',
+                 'Regra do escritório: uso e consumo (CFOP 1556, 1407, 2556, 2407) recebe a conta de uso e consumo da tela (padrão 359) e as demais entradas a conta de entradas (padrão 55). Itens que já tinham conta não foram mexidos. Se a conta não existir como analítica no 0500, fica pendência.'),
+    'cta_m400': ('No M400/M800 (receita não tributada), a conta precisa ser analítica no 0500. Conta sintética (S) é rejeitada.',
+                 'A conta sintética foi trocada pela conta analítica usada nos detalhamentos M410/M810 do mesmo CST.'),
+    'c100sem': ('Todo C100 precisa de pelo menos um C170 (exceto nota cancelada, denegada ou inutilizada).',
+                'O sistema não cria item sozinho: aponta a nota e, quando há uma NFC-e do mesmo cliente, dia e valor, avisa que pode ser NF-e emitida para acobertar a NFC-e (a receita já está no C175).'),
     'contadores': ('Depois das correções o número de linhas muda, então os contadores do arquivo ficam errados.',
                    'Os contadores 9900, x990 e 9999 foram refeitos. Não é um erro do PVA: é consequência das correções.'),
 }
-_CURTO = {'cpf': 'CPF', 'c100': 'C100', 'c175dup': 'C175 duplic.', 'mdup': 'M210/M610', 'msoma': 'M205/M605', 'natureza': 'Natureza 0400', 'm105': 'M105/M505', 'm410': 'M410/M810', 'cta': 'COD_CTA ajustes'}
+_CURTO = {'cpf': 'CPF', 'c100': 'C100', 'c175dup': 'C175 duplic.', 'mdup': 'M210/M610', 'msoma': 'M205/M605', 'natureza': 'Natureza 0400', 'm105': 'M105/M505', 'm410': 'M410/M810', 'cta': 'COD_CTA ajustes', 'cta_item': 'COD_CTA itens', 'cta_m400': 'Conta M400', 'c100sem': 'C100 s/ item'}
 
 
 def _mix(hexc, alvo, f):
@@ -958,6 +1120,21 @@ def _tab_cat(c, res):
                               [[str(x['linha']), x['registro'], _esc(x['cst']), _brl(x['valor']), f'<b>{_esc(x["conta"])}</b> {_esc(x["nome_conta"])}', _esc(x['regra'])] for x in a] +
                               [[str(x['linha']), '—', '—', '—', '<span class="st dif">Pendente</span>', _esc(x['titulo'] + ' — ' + x['detalhe'])] for x in p],
                               ['l', 'l', 'l', 'r', 'l', 'l'])
+    if cid == 'cta_item':
+        p = [x for x in res['pendencias'] if x['cat'] == 'cta_item']
+        grupos = Counter((x['cfop'], x['conta'], x['nome_conta']) for x in a)
+        t1 = _linhas_tabela(['CFOP', 'Itens', 'Conta preenchida'], [[_esc(k[0]), str(q), f'<b>{_esc(k[1])}</b> {_esc(k[2])}'] for k, q in sorted(grupos.items())] +
+                            [['—', str(x.get('qtd', 1)), '<span class="st dif">Pendente</span> ' + _esc(x['titulo'] + ' — ' + x['detalhe'])] for x in p], ['l', 'r', 'l'])
+        t2 = _linhas_tabela(['Linha', 'Item', 'CFOP', 'Valor', 'Conta'], [[str(x['linha']), _esc(_partes(x['depois'])[2]), _esc(x['cfop']), _brl(x['valor']), f'<b>{_esc(x["conta"])}</b>'] for x in a],
+                            ['l', 'l', 'l', 'r', 'l'])
+        return t1 + ('<h3 style="margin-top:14px">Todos os itens alterados</h3>' + t2 if a else '')
+    if cid == 'cta_m400':
+        p = [x for x in res['pendencias'] if x['cat'] == 'cta_m400']
+        return _linhas_tabela(['Linha', 'Registro', 'O que foi feito'], [[str(x['linha']), x['registro'], _esc(x['motivo'])] for x in a] +
+                              [[str(x['linha']), '—', '<span class="st dif">Pendente</span> ' + _esc(x['titulo'] + ' — ' + x['detalhe'])] for x in p], ['l', 'l', 'l'])
+    if cid == 'c100sem':
+        p = [x for x in res['pendencias'] if x['cat'] == 'c100sem']
+        return _linhas_tabela(['Linha', 'Documento', 'Orientação'], [[str(x['linha']), _esc(x['titulo']), _esc(x['detalhe'])] for x in p], ['l', 'l', 'l'])
     if cid == 'contadores':
         return _linhas_tabela(['Contador', 'Antes', 'Depois'], [[_esc(x['registro']), '—' if x['antes'] is None else str(x['antes']), f'<b>{x["depois"]}</b>'] for x in a], ['l', 'r', 'r'])
     return ''
@@ -1062,7 +1239,7 @@ def resumo_leve(res):
             'pendencias': len(res['pendencias']), 'avisos': res['avisos']}
 
 
-def corrigir_arquivo(sped_path, pva_path=None, saida_path=None, html_path=None, json_path=None, conta_ajuste=''):
+def corrigir_arquivo(sped_path, pva_path=None, saida_path=None, html_path=None, json_path=None, conta_ajuste='', conta_uso='359', conta_entrada='55'):
     import datetime
     import json
     import os
@@ -1074,7 +1251,7 @@ def corrigir_arquivo(sped_path, pva_path=None, saida_path=None, html_path=None, 
             pva = ler_erros_pva(pva_path)
         except Exception as ex:
             aviso_pva = f'Não consegui ler o relatório do PVA ({ex}); a correção seguiu só com o SPED.'
-    novo, res = corrigir_efd(texto, pva, os.path.basename(sped_path), datetime.date.today().strftime('%d/%m/%Y'), conta_ajuste)
+    novo, res = corrigir_efd(texto, pva, os.path.basename(sped_path), datetime.date.today().strftime('%d/%m/%Y'), conta_ajuste, conta_uso, conta_entrada)
     if aviso_pva:
         res['avisos'].append(aviso_pva)
     if saida_path:
