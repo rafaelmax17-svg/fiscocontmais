@@ -611,10 +611,10 @@ def gerar_painel_efd_html(dados, empresa_nome='', conferencia_html=''):
       <div class="bx-s">{pctf(pct_trib)}% tributada</div></div>
     <div class="bx-c"{atraso(1)}><div class="bx-l">PIS<span class="bx-src">M200</span></div>
       <div class="bx-v" style="font-size:24px;color:#1e3a8a">{cnt(v_pis)}</div>
-      <div class="bx-s">{pctf(pct_pis)}% do total a recolher</div></div>
+      <div class="bx-s">a recolher</div></div>
     <div class="bx-c"{atraso(2)}><div class="bx-l">COFINS<span class="bx-src">M600</span></div>
       <div class="bx-v" style="font-size:24px;color:#ea580c">{cnt(v_cof)}</div>
-      <div class="bx-s">{pctf(pct_cof)}% do total a recolher</div></div>
+      <div class="bx-s">a recolher</div></div>
     <div class="bx-c"{atraso(3)}>
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
         <div><div class="bx-l">Tributada<span class="bx-src">M210</span></div><div class="bx-v" style="font-size:19px">{cnt(receita_tributada)}</div></div>
@@ -627,7 +627,7 @@ def gerar_painel_efd_html(dados, empresa_nome='', conferencia_html=''):
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div class="bx-l">Total a recolher<span class="bx-src">M200 + M600</span></div>{selo}</div>
       <div class="bx-v" style="font-size:38px;margin-top:2px">{cnt(total_a_recolher)}</div>
       <div class="bx-tr duo">{f'<div class="bx-b" style="flex:{v_pis:.2f};background:#1e3a8a"></div>' if v_pis > 0 else ''}{f'<div class="bx-b" style="flex:{v_cof:.2f};background:#ea580c;animation-delay:.7s"></div>' if v_cof > 0 else ''}</div>
-      <div class="bx-leg"><span><i style="background:#1e3a8a"></i>PIS R$ {_brl(v_pis)}</span><span><i style="background:#ea580c"></i>COFINS R$ {_brl(v_cof)}</span></div>
+      <div class="bx-leg"><span><i style="background:#1e3a8a"></i>PIS {pctf(pct_pis)}%</span><span><i style="background:#ea580c"></i>COFINS {pctf(pct_cof)}%</span></div>
       <div class="bx-dc"><span>Débito apurado <b>R$ {_brl(total_debito)}</b></span><span>Crédito descontado <b>R$ {_brl(total_credito)}</b></span></div></div>
   </div>
 </div>
