@@ -191,6 +191,13 @@ function createMainWindow() {
   mainWindow.on('unmaximize', sendMax);
 
   mainWindow.setMenuBarVisibility(false);
+  // Manual do Fiscal aberto: sem ferramentas de desenvolvedor, salvar, imprimir ou recarregar pela tecla
+  mainWindow.webContents.on('before-input-event', (ev, inp) => {
+    if (!_manualAberto || inp.type !== 'keyDown') return;
+    const k = String(inp.key || '').toLowerCase(), ctrl = inp.control || inp.meta;
+    if (k === 'f12' || (ctrl && inp.shift && ['i', 'j', 'c'].includes(k)) || (ctrl && ['s', 'p', 'r', 'u'].includes(k))) ev.preventDefault();
+  });
+  mainWindow.webContents.on('devtools-opened', () => { if (_manualAberto) mainWindow.webContents.closeDevTools(); });
   // relatórios em HTML (ex.: lote de NFS-e) trazem links relativos para os painéis salvos nas pastas dos clientes:
   // abrir no navegador padrão em vez de uma janela nova do app
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -473,6 +480,33 @@ const _adm = async (fn) => {
   if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
   try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String(e.message || e) }; }
 };
+// ---------------------------------------------------------------- Manual do Fiscal (leitura protegida)
+// Enquanto o manual está aberto: a janela fica protegida contra print/gravação/compartilhamento de tela
+// (sai preta) e as ferramentas de desenvolvedor não abrem. Nada é gravado em disco: as páginas vêm da nuvem.
+const manual = require('./manual');
+let _manualAberto = false;
+function _manualProtecao(on) {
+  _manualAberto = !!on;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try { mainWindow.setContentProtection(_manualAberto); } catch (_) {}
+  if (_manualAberto && mainWindow.webContents.isDevToolsOpened()) mainWindow.webContents.closeDevTools();
+}
+const _man = async (fn) => {
+  if (sessionLocked) return { error: 'Sessão travada por inatividade: digite a senha para continuar.' };
+  try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String((e && e.message) || e) }; }
+};
+ipcMain.handle('manual:info', () => _man(() => manual.info()));
+ipcMain.handle('manual:pagina', (_evt, i) => _man(() => manual.pagina(i)));
+ipcMain.handle('manual:protecao', (_evt, on) => { _manualProtecao(on); return { ok: true }; });
+ipcMain.handle('manual:acessoInicio', () => _man(() => manual.acessoInicio()));
+ipcMain.handle('manual:acessoFim', (_evt, { id, segundos }) => _man(() => manual.acessoFim(id, segundos)));
+ipcMain.handle('manual:acessos', () => _adm(() => manual.acessos()));
+ipcMain.handle('manual:publicar', () => _adm(async () => {
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'Pasta do manual (manual.json + imagens das páginas)', properties: ['openDirectory'] });
+  if (r.canceled || !r.filePaths.length) return { cancelado: true };
+  return manual.publicar(r.filePaths[0]);
+}));
+
 // ---------------------------------------------------------------- Simples Nacional · Fechamento da equipe
 const fechamento = require('./fechamento');
 const _fech = async (fn) => {

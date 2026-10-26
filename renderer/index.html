@@ -248,6 +248,10 @@
         <em class="nav-new">NOVO</em>
       </button>
 
+      <button class="nav-item" data-group="fiscal" data-view="manual-fiscal">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5M8 7h8M8 11h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Manual do Fiscal</span>
+      </button>
       <div class="nav-group" data-group="contabil">Contábil</div>
       <button class="nav-item active" data-group="contabil" data-view="overview">
         <svg viewBox="0 0 24 24" class="ic"><path d="M4 13h6V4H4zM14 20h6V4h-6zM4 20h6v-4H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
@@ -869,6 +873,44 @@
         <div id="corrEfdVazio" class="fiscal-empty">Escolha o SPED da EFD-Contribuições e, se tiver, o relatório "Pendências de Validação" do PVA. O sistema corrige o que é mecânico, registra cada ação e mostra tudo, separado por tipo de erro.</div>
         <iframe id="corrEfdFrame" hidden style="width:100%;height:900px;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
       </div>
+      <div class="view" id="view-manual-fiscal" hidden>
+        <div class="mf">
+          <div class="mf-top">
+            <h2>Manual do Fiscal</h2>
+            <span class="mf-adm" id="mfAdm" hidden>
+              <button class="act ghost" id="mfAcessos">Acessos</button>
+              <button class="act ghost" id="mfPublicar">Publicar manual</button>
+            </span>
+            <div class="mf-nav">
+              <button id="mfAnt" title="Página anterior">‹</button>
+              <span id="mfPag">—</span>
+              <button id="mfProx" title="Próxima página">›</button>
+              <button id="mfMenos" title="Diminuir">−</button>
+              <span id="mfZoom">100%</span>
+              <button id="mfMais" title="Aumentar">+</button>
+            </div>
+          </div>
+          <div class="mf-body">
+            <div class="mf-toc">
+              <input id="mfBusca" placeholder="🔎 Buscar capítulo…" autocomplete="off">
+              <div id="mfToc"></div>
+            </div>
+            <div class="mf-view" id="mfView">
+              <div class="mf-vazio" id="mfVazio" hidden></div>
+              <canvas id="mfCanvas"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="upd-ov" id="mfAcModal" hidden>
+          <div class="upd-box" style="width:640px"><div class="upd-in">
+            <h2 style="margin-top:0">Quem abriu o manual</h2>
+            <div class="upd-sub">Últimos 300 acessos.</div>
+            <div class="mf-ac" id="mfAcLista"></div>
+            <div class="upd-bt"><button class="b2" id="mfAcFechar">Fechar</button></div>
+          </div></div>
+        </div>
+      </div>
+
       <div class="view" id="view-fiscal-efd-contrib" hidden>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
           <svg viewBox="0 0 24 24" width="22" height="22" style="color:#854f0b;flex:0 0 auto"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM14 3v6h6M9 13h6M9 17h6M9 9h1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>

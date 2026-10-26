@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.21
+
+- **Manual do Fiscal · Publicar manual e Acessos:** na tela do manual, só o Admin vê "Publicar manual" (escolhe a pasta com manual.json + imagens das páginas; troca o manual para todos na hora) e "Acessos" (quem abriu, quando e por quanto tempo). Dados no Firestore: manual_fiscal (leitura: equipe ativa; gravação: Admin) e manual_acessos (cada pessoa grava o próprio registro; só o Admin lê). O conteúdo não vai no instalador nem no repositório.
+
 ## 2.1.6
 
 - **Fechamento da equipe · Inativar:** o botão "Inativar" (no lugar do excluir) mantém a empresa no mês aberto, com a etiqueta "inativa a partir de …", e tira ela do mês seguinte em diante (inclusive de meses já abertos). "Reativar" desfaz: ela volta nos próximos meses.

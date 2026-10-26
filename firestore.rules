@@ -1,5 +1,5 @@
 rules_version = '2';
-// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.1.4.
+// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.1.21.
 // Publicadas automaticamente pelo GitHub (workflow "Publicar funções e regras no Firebase").
 // Publicar em: Console do Firebase > Firestore Database > Regras > colar este arquivo inteiro > Publicar.
 //
@@ -96,6 +96,21 @@ service cloud.firestore {
       allow read: if ativo();
       allow write: if (doc == 'cadastro' && admin())
         || (doc != 'cadastro' && ativo() && doc.matches('^[0-9]{4}-(0[1-9]|1[0-2])$'));
+    }
+
+    // ------------------------------------------------------------ Manual do Fiscal (leitura protegida no sistema)
+    // páginas e sumário: leitura para quem está logado e ativo; só o Admin publica
+    match /manual_fiscal/{doc} {
+      allow read: if ativo();
+      allow write: if admin();
+    }
+    // registro de quem abriu o manual: cada pessoa cria e fecha o próprio registro; só o Admin lê
+    match /manual_acessos/{id} {
+      allow create: if ativo() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'nome', 'email', 'perfil', 'inicio', 'segundos']);
+      allow update: if ativo() && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fim', 'segundos']);
+      allow read, delete: if admin();
     }
 
     // qualquer outra coleção: fechada

@@ -533,6 +533,7 @@ async function doExportInvertidas() {
 function switchView(name) {
   const navBtn = document.querySelector(`.nav .nav-item[data-view="${name}"]`);
   if (navBtn && navBtn.classList.contains('role-hidden')) return;      // módulo não liberado para este usuário
+  if (name !== 'manual-fiscal' && window._manualSair) window._manualSair();
   $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   const hasData = !!DATA;
   const contabil = ['overview', 'dre', 'balancete', 'invertidas', 'indicadores'];
@@ -554,6 +555,7 @@ function switchView(name) {
   if (name === 'fiscal-frete') { $('#view-fiscal-frete').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-audit') { $('#view-fiscal-audit').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-pgdas') { $('#view-fiscal-pgdas').hidden = false; $('#empty').hidden = true; if (window.fechEntrar) window.fechEntrar(); return; }
+  if (name === 'manual-fiscal') { $('#view-manual-fiscal').hidden = false; $('#empty').hidden = true; if (window._manualEntrar) window._manualEntrar(); return; }
   if (name === 'fiscal-downloads') { $('#view-fiscal-downloads').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-efd-contrib') {
     $('#view-fiscal-efd-contrib').hidden = false; $('#empty').hidden = true;
@@ -3289,7 +3291,8 @@ function applyRole(role, modulos) {
     const ok = new Set(MODULOS);
     $$('.nav .nav-item[data-view]').forEach((b) => {
       const exclusivo = ['admin-usuarios', 'admin-lic'].includes(b.dataset.view);
-      b.classList.toggle('role-hidden', exclusivo || !ok.has(b.dataset.view));
+      const sempre = b.dataset.view === 'manual-fiscal' && !hideFiscal;     // o manual vale para todo o Fiscal
+      b.classList.toggle('role-hidden', exclusivo || (!sempre && !ok.has(b.dataset.view)));
     });
     // cada título do menu só aparece se algum item logo abaixo dele estiver liberado
     $$('.nav .nav-group').forEach((h) => {
@@ -3334,6 +3337,7 @@ function _loginMsg(txt, ok) {
 function _mostraLogin() {
   ROLE = null; SESSAO.info = null; SESSAO.travada = false;
   if (window.fechSair) window.fechSair();
+  if (window._manualSair) window._manualSair();
   $('#lockCard').hidden = true;
   document.querySelector('.login-card').hidden = false;
   $('#loginGate').style.display = 'flex';
@@ -3483,6 +3487,136 @@ function bindAtualizacao() {
     setTimeout(() => up.installNow(st.versao), 1600);   // dá tempo de ler; depois a janelinha "Atualizando…" fica na tela até reabrir
   });
   $('#updateBannerBtn').addEventListener('click', abrir);
+}
+
+// ---------------------------------------------------------------- Manual do Fiscal
+// Leitura dentro do sistema: as páginas chegam da nuvem como imagem e são desenhadas num canvas (não há arquivo,
+// texto para copiar nem "salvar imagem"). Enquanto a tela está aberta: sem botão direito, sem Ctrl+S/P/C/A, e a
+// janela fica protegida contra print e gravação de tela (main.js). Cada abertura é registrada para o Admin.
+function bindManual() {
+  const api = window.fiscocont && window.fiscocont.manual;
+  if (!api || !$('#view-manual-fiscal')) return;
+  const M = { info: null, pag: 1, zoom: 1, cache: new Map(), aberto: false, acesso: '', t0: 0, desenhando: 0 };
+  const cv = $('#mfCanvas'), view = $('#mfView');
+  const PARTES = { 1: 'Fundamentos', 2: 'Rotina mensal', 3: 'FiscoCont+ no dia a dia', 4: 'Anexos' };
+
+  const rotulo = (i) => (i <= 1 ? 'Capa' : `${i - 1} / ${(M.info.total || 1) - 1}`);
+  function toc() {
+    const termo = ($('#mfBusca').value || '').trim().toLowerCase();
+    let h = '', parte = 0;
+    const atual = [...(M.info.capitulos || [])].reverse().find((c) => c.pagina <= M.pag);
+    for (const c of M.info.capitulos || []) {
+      if (termo && !(`${c.n} ${c.titulo}`).toLowerCase().includes(termo)) continue;
+      if (c.parte !== parte) { parte = c.parte; h += `<div class="mf-tp">Parte ${c.parte} · ${_esc(c.parteNome || PARTES[c.parte] || '')}</div>`; }
+      h += `<div class="mf-ti${atual && atual.n === c.n ? ' on' : ''}" data-p="${c.pagina}"><em>${String(c.n).padStart(2, '0')}</em>${_esc(c.titulo)}</div>`;
+    }
+    $('#mfToc').innerHTML = h || '<div class="mf-vazio" style="margin:12px 4px">Nenhum capítulo encontrado.</div>';
+  }
+  async function img(i) {
+    if (M.cache.has(i)) return M.cache.get(i);
+    const pr = api.pagina(i).then((r) => {
+      if (r.error) throw new Error(r.error);
+      return new Promise((ok, err) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => err(new Error('Página inválida.')); im.src = 'data:image/jpeg;base64,' + r.img; });
+    });
+    M.cache.set(i, pr);
+    pr.catch(() => M.cache.delete(i));
+    return pr;
+  }
+  async function desenha() {
+    if (!M.info) return;
+    const meu = ++M.desenhando;
+    $('#mfPag').textContent = rotulo(M.pag);
+    $('#mfZoom').textContent = Math.round(M.zoom * 100) + '%';
+    toc();
+    try {
+      const im = await img(M.pag);
+      if (meu !== M.desenhando) return;
+      const base = Math.min(860, Math.max(520, view.clientWidth - 60));
+      const w = Math.round(base * M.zoom), hgt = Math.round(w * im.height / im.width);
+      const dpr = window.devicePixelRatio || 1;
+      cv.width = Math.round(w * dpr); cv.height = Math.round(hgt * dpr);
+      cv.style.width = w + 'px'; cv.style.height = hgt + 'px';
+      const ctx = cv.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(im, 0, 0, cv.width, cv.height);
+      view.scrollTop = 0;
+      if (M.pag < M.info.total) img(M.pag + 1).catch(() => {});   // já vai buscando a próxima
+    } catch (e) { toast(String(e.message || e), true); }
+  }
+  const ir = (i) => { if (!M.info) return; M.pag = Math.max(1, Math.min(M.info.total, i)); desenha(); };
+
+  window._manualEntrar = async () => {
+    if (M.aberto) return;
+    M.aberto = true;
+    api.protecao(true);
+    $('#mfAdm').hidden = ROLE !== 'admin';
+    if (!M.info) {
+      const r = await api.info();
+      if (r.error || r.vazio) {
+        cv.hidden = true; $('#mfVazio').hidden = false;
+        $('#mfVazio').textContent = r.error ? r.error : (ROLE === 'admin' ? 'O manual ainda não foi publicado. Use "Publicar manual" e escolha a pasta do manual.' : 'O manual ainda não está disponível.');
+        $('#mfPag').textContent = '—';
+        return;
+      }
+      M.info = r; cv.hidden = false; $('#mfVazio').hidden = true;
+    }
+    desenha();
+    M.t0 = Date.now(); M.acesso = '';
+    api.acessoInicio().then((r) => { if (r && r.id) M.acesso = r.id; }).catch(() => {});
+  };
+  window._manualSair = () => {
+    if (!M.aberto) return;
+    M.aberto = false;
+    api.protecao(false);
+    if (M.acesso) api.acessoFim(M.acesso, (Date.now() - M.t0) / 1000).catch(() => {});
+    M.acesso = '';
+  };
+  window.addEventListener('beforeunload', () => window._manualSair && window._manualSair());
+
+  $('#mfAnt').addEventListener('click', () => ir(M.pag - 1));
+  $('#mfProx').addEventListener('click', () => ir(M.pag + 1));
+  $('#mfMenos').addEventListener('click', () => { M.zoom = Math.max(0.6, +(M.zoom - 0.1).toFixed(2)); desenha(); });
+  $('#mfMais').addEventListener('click', () => { M.zoom = Math.min(2, +(M.zoom + 0.1).toFixed(2)); desenha(); });
+  $('#mfToc').addEventListener('click', (ev) => { const t = ev.target.closest('.mf-ti'); if (t) ir(Number(t.dataset.p)); });
+  $('#mfBusca').addEventListener('input', toc);
+  window.addEventListener('resize', () => { if (M.aberto) desenha(); });
+
+  // sem botão direito, arrastar, copiar ou atalhos de salvar/imprimir enquanto o manual está na tela
+  const naTela = () => M.aberto && !$('#view-manual-fiscal').hidden;
+  ['contextmenu', 'dragstart', 'copy', 'cut', 'selectstart'].forEach((tipo) =>
+    $('#view-manual-fiscal').addEventListener(tipo, (ev) => { if (ev.target.id !== 'mfBusca') ev.preventDefault(); }));
+  document.addEventListener('keydown', (ev) => {
+    if (!naTela()) return;
+    const k = (ev.key || '').toLowerCase(), ctrl = ev.ctrlKey || ev.metaKey;
+    if (ctrl && ['s', 'p', 'c', 'a', 'u'].includes(k) && ev.target.id !== 'mfBusca') { ev.preventDefault(); ev.stopPropagation(); return; }
+    if (k === 'printscreen') { ev.preventDefault(); return; }
+    if (ev.target.id === 'mfBusca') return;
+    if (k === 'arrowright' || k === 'pagedown') { ev.preventDefault(); ir(M.pag + 1); }
+    if (k === 'arrowleft' || k === 'pageup') { ev.preventDefault(); ir(M.pag - 1); }
+  }, true);
+
+  // Admin: publicar/trocar o manual e ver quem abriu
+  $('#mfPublicar').addEventListener('click', async () => {
+    overlay(true, 'Publicando o manual…');
+    const r = await api.publicar();
+    overlay(false);
+    if (r.error) { toast(r.error, true); return; }
+    if (r.cancelado) return;
+    M.info = null; M.cache.clear(); M.pag = 1;
+    toast(`Manual publicado: ${r.total} páginas.`);
+    window._manualSair(); window._manualEntrar();
+  });
+  $('#mfAcessos').addEventListener('click', async () => {
+    const r = await api.acessos();
+    if (r.error) { toast(r.error, true); return; }
+    const fmt = (iso) => { if (!iso) return '—'; const d = new Date(iso); return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); };
+    const dur = (s) => (s >= 60 ? Math.round(s / 60) + ' min' : (s ? s + ' s' : '—'));
+    $('#mfAcLista').innerHTML = (r.lista || []).length
+      ? `<table><thead><tr><th>Usuário</th><th>Abriu em</th><th>Tempo</th></tr></thead><tbody>${r.lista.map((a) => `<tr><td>${_esc(a.nome || a.email)}</td><td>${fmt(a.inicio)}</td><td>${dur(a.segundos)}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="upd-sub" style="margin-top:10px">Ninguém abriu o manual ainda.</div>';
+    $('#mfAcModal').hidden = false;
+  });
+  $('#mfAcFechar').addEventListener('click', () => { $('#mfAcModal').hidden = true; });
 }
 
 function bindLogin() {
@@ -4906,6 +5040,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (licRefresh) licRefresh.addEventListener('click', loadLicensePanel);
 
   bindAtualizacao();
+  bindManual();
   const ubClose = $('#updateBannerClose');
   if (ubClose) ubClose.addEventListener('click', () => { $('#updateBanner').hidden = true; });
 

@@ -24,6 +24,15 @@ contextBridge.exposeInMainWorld('fiscocont', {
     novaSenha: (uid) => ipcRenderer.invoke('admin:usuarioNovaSenha', uid),
     cancelarConvite: (email) => ipcRenderer.invoke('admin:conviteCancelar', email),
   },
+  manual: {
+    info: () => ipcRenderer.invoke('manual:info'),
+    pagina: (i) => ipcRenderer.invoke('manual:pagina', i),
+    protecao: (on) => ipcRenderer.invoke('manual:protecao', !!on),
+    acessoInicio: () => ipcRenderer.invoke('manual:acessoInicio'),
+    acessoFim: (id, segundos) => ipcRenderer.invoke('manual:acessoFim', { id, segundos }),
+    acessos: () => ipcRenderer.invoke('manual:acessos'),
+    publicar: () => ipcRenderer.invoke('manual:publicar'),
+  },
   fechamento: {
     abrir: (comp) => ipcRenderer.invoke('fech:abrir', comp),
     parar: () => ipcRenderer.invoke('fech:parar'),
