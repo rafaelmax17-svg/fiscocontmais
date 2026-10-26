@@ -13,6 +13,7 @@
 
 let wired = false;
 let baixada = false;
+let instalando = false;
 
 function _autoUpdater() {
   return require('electron-updater').autoUpdater;
@@ -53,10 +54,13 @@ async function checkNow() {
 }
 
 // silencioso = sem as telas do instalador; em qualquer caso o sistema reabre sozinho depois de atualizar
-function installNow(silencioso) {
-  try { _autoUpdater().quitAndInstall(!!silencioso, true); } catch (_) {}
+// Chamado uma vez só: chamar de novo (ex.: pelo before-quit) fazia o electron-updater ignorar a instalação.
+function installNow(silencioso = true) {
+  if (instalando) return;
+  instalando = true;
+  try { _autoUpdater().quitAndInstall(!!silencioso, true); } catch (_) { instalando = false; }
 }
 
-function temAtualizacao() { return baixada; }
+function temAtualizacao() { return baixada && !instalando; }
 
 module.exports = { initAutoUpdate, checkNow, installNow, temAtualizacao };
