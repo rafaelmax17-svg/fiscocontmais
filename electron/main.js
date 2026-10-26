@@ -1133,7 +1133,9 @@ function _certDaEmpresa(empresa) {
   try { return { pfxPath: path.join(_certDir(), empresa.pfxArquivo), senha: safeStorage.decryptString(fs.readFileSync(senhaPath)) }; }
   catch (_) { return { error: 'Não consegui ler a senha salva com segurança nesta máquina.' }; }
 }
+const MANIF_ATIVA = false;   // retirada temporariamente (2.1.27) — religar junto com o renderer/app.js
 const _manifAdm = async (fn) => {
+  if (!MANIF_ATIVA) return { error: 'A Consulta Manifestação NF-e está temporariamente indisponível.' };
   if (!sessionRole) return { error: 'Entre com o seu usuário para consultar.' };
   if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
   try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String((e && e.message) || e) }; }

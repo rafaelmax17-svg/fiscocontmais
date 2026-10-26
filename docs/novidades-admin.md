@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.27
+
+- Consulta Manifestação NF-e retirada temporariamente (botão escondido e IPC bloqueado por MANIF_ATIVA = false no renderer/app.js e no electron/main.js). Motivo: a consulta na SEFAZ do estado devolveu "não consta" (217) numa chave de RO; a ideia é refazer usando o Ambiente Nacional (NFeDistribuicaoDFe) como fonte principal. O código continua no sistema para religar depois.
+
 ## 2.1.25
 
 - Consulta Manifestação NF-e liberada para toda a equipe (deixou de ser só do Admin).

@@ -3656,7 +3656,11 @@ function bindManifestacao() {
 
   $('#btnMnAbrir').addEventListener('click', () => switchView('fiscal-manifestacao'));
   $('#mnVoltar').addEventListener('click', () => switchView('fiscal-downloads'));
-  $('#btnMnAbrir').hidden = false;      // liberado para toda a equipe que usa as Baixas DF-e
+  // RETIRADA TEMPORARIAMENTE (2.1.27, pedido do Rafael): o botão fica escondido até a consulta pelo Ambiente Nacional
+  // ficar pronta. Para religar: MANIF_ATIVA = true aqui e no main.js.
+  const MANIF_ATIVA = false;
+  $('#btnMnAbrir').hidden = !MANIF_ATIVA;
+  if (!MANIF_ATIVA) return;
 
   async function carregaEmpresas() {
     const r = await api.empresas();
