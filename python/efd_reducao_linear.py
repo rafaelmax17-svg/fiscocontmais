@@ -395,3 +395,28 @@ def html_reducao(res):
             + (f' · para confirmar: R$ {_brl(res.get("v_conf", 0))}' if res.get('v_conf') else '') + f'</div>{tp}</div>'
             + f'<div class="card"><details class="rl-det"><summary>Detalhar documentos <span>({res.get("n_docs", 0)} notas com CST 06'
             + (f' · {n_prob} com divergência' if n_prob else '') + f')</span></summary>{t2}</details></div>')
+
+
+def resumo_alerta(res):
+    """Resumo para o alerta da tela ao importar o arquivo: 'falta' (sem ajuste), 'menor', 'maior', 'ok' ou None."""
+    if not res.get('aplica') or not res.get('apuracao'):
+        return None
+    a = res['apuracao']
+    ap = round(a['pis'] + a['cofins'], 2)
+    de = round(a['decl_pis'] + a['decl_cofins'], 2)
+    if ap <= 0.05 and de <= 0.05:
+        return None
+    if de <= 0.004 and ap > 0.05:
+        st = 'falta'
+    elif ap - de > 0.05:
+        st = 'menor'
+    elif de - ap > 0.05:
+        st = 'maior'
+    else:
+        st = 'ok'
+    docs_in = sum(1 for d in res.get('docs', []) if d.get('st') not in ('fora',))
+    return {'status': st, 'competencia': res.get('competencia', ''), 'empresa': (res.get('empresa') or {}).get('nome', ''),
+            'regime': res.get('regime_rot', ''), 'receita': round(res.get('v_entra', 0) + res.get('v_conf', 0), 2),
+            'notas': docs_in, 'produtos': sum(1 for p in res.get('produtos', []) if p['st'] != 'fora'),
+            'r_pis': a['r_pis'], 'r_cof': a['r_cof'], 'ap_pis': a['pis'], 'ap_cofins': a['cofins'], 'ap_total': ap,
+            'de_pis': a['decl_pis'], 'de_cofins': a['decl_cofins'], 'de_total': de, 'diferenca': round(ap - de, 2)}

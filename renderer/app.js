@@ -3864,7 +3864,72 @@ function bindEfdContrib() {
     $('#btnEfdDomSaidas').disabled = false;
     $('#btnEfdDomEntradas').disabled = false;
     $('#btnEclAbrir').disabled = false;
+    rlAlerta(res.resumo && res.resumo.reducao_linear, est.rlVisto !== est.sped);
+    est.rlVisto = est.sped;
     return true;
+  }
+  // ---- alerta da redução linear (LC 224/2025) ao importar o arquivo ----
+  const brlR = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const pctR = (v) => String(Number(v) || 0).replace('.', ',') + '%';
+  function rlIrParaConferencia() {
+    try {
+      const doc = $('#efdFrame').contentDocument;
+      const alvo = doc && doc.querySelector('.rl-aviso');
+      if (alvo) alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      $('#efdFrame').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (_) {}
+  }
+  function rlAlerta(rl, abrirJanela) {
+    const ban = $('#efdRlBanner');
+    if (!rl) { ban.hidden = true; return; }
+    const comp = rl.competencia ? `${rl.competencia.slice(5)}/${rl.competencia.slice(0, 4)}` : '';
+    const cfg = {
+      falta: { cls: 'err', t: `Redução linear não informada · faltam R$ ${brlR(rl.ap_total)} de PIS/COFINS`,
+               s: `${rl.notas} nota(s) com alíquota zero que entram na redução (LC 224/2025) sem ajuste no M220/M620 · risco de multa de 75% + Selic` },
+      menor: { cls: 'warn', t: `Redução linear informada a menor · faltam R$ ${brlR(rl.diferenca)} de PIS/COFINS`,
+               s: `Declarado R$ ${brlR(rl.de_total)} · apurado pelo sistema R$ ${brlR(rl.ap_total)}` },
+      maior: { cls: 'warn', t: `Redução linear informada a maior · R$ ${brlR(-rl.diferenca)} acima do devido`,
+               s: `Declarado R$ ${brlR(rl.de_total)} · apurado pelo sistema R$ ${brlR(rl.ap_total)} — pode haver produto fora da redução (cesta básica, hortifruti, ZFM) no ajuste` },
+      ok: { cls: 'ok', t: 'Redução linear conferida ✓', s: `Ajuste de R$ ${brlR(rl.de_total)} de acordo com o apurado pelo sistema` },
+    }[rl.status];
+    if (!cfg) { ban.hidden = true; return; }
+    ban.className = 'rl-ban ' + cfg.cls;
+    ban.innerHTML = `<div class="rl-ban-ic">${cfg.cls === 'ok' ? '✓' : '⚠️'}</div><div class="rl-ban-tx"><b>${_esc(cfg.t)}</b><small>${_esc(cfg.s)}</small></div>`
+      + (cfg.cls === 'ok' ? '' : '<button class="act inv-export rl-ban-bt">Ver detalhes</button>');
+    ban.hidden = false;
+    const bt = ban.querySelector('.rl-ban-bt');
+    if (bt) bt.onclick = () => rlJanela(rl, cfg, comp);
+    if (abrirJanela && cfg.cls !== 'ok') rlJanela(rl, cfg, comp);
+  }
+  function rlJanela(rl, cfg, comp) {
+    let m = $('#efdRlModal');
+    if (!m) { m = document.createElement('div'); m.id = 'efdRlModal'; m.className = 'rl-modal'; document.body.appendChild(m); }
+    const titulo = { falta: 'Redução linear não informada nesta EFD-Contribuições', menor: 'Redução linear informada a menor', maior: 'Redução linear informada a maior' }[rl.status];
+    const intro = rl.status === 'falta'
+      ? `O arquivo tem <b>R$ ${brlR(rl.receita)}</b> de vendas com alíquota zero (CST 06) em <b>${rl.notas} nota(s)</b> de <b>${rl.produtos} produto(s)</b> que entram na redução, mas <b>não há ajuste no M220/M620 (código 11)</b>.`
+      : rl.status === 'menor'
+        ? `O ajuste declarado (R$ ${brlR(rl.de_total)}) é <b>menor</b> que o apurado pelo sistema para as vendas com alíquota zero que entram na redução (R$ ${brlR(rl.receita)} em ${rl.notas} nota(s)).`
+        : `O ajuste declarado (R$ ${brlR(rl.de_total)}) é <b>maior</b> que o apurado pelo sistema. Confira se há produto que não entra na redução (cesta básica, hortifruti, vendas para ZFM/ALC) no M225/M625.`;
+    const v3 = rl.status === 'falta'
+      ? [['PIS a acrescentar (' + pctR(rl.r_pis) + ')', rl.ap_pis], ['COFINS a acrescentar (' + pctR(rl.r_cof) + ')', rl.ap_cofins], ['Total que deixou de ser apurado', rl.ap_total]]
+      : [['Apurado pelo sistema', rl.ap_total], ['Declarado no arquivo', rl.de_total], [rl.status === 'menor' ? 'Faltam' : 'A maior', Math.abs(rl.diferenca)]];
+    const riscos = rl.status === 'maior'
+      ? `<div><b>PIS/COFINS pago a mais</b> no mês: a diferença pode ser recuperada retificando a EFD e a DCTFWeb</div><div><b>Crédito indevido do cliente</b> fica de fora: vale conferir a lista de produtos</div>`
+      : `<div><b>Multa de ofício de 75%</b> sobre a diferença, se a Receita apurar primeiro (Lei 9.430/1996, art. 44, I)</div><div><b>Juros Selic</b> desde o vencimento do PIS/COFINS do mês</div>
+         <div><b>EFD × DCTFWeb divergentes:</b> o débito declarado fica menor que o devido</div><div>Pagando antes da fiscalização: só <b>multa de mora de 0,33% ao dia, limitada a 20%</b> (Lei 9.430/1996, art. 61)</div>`;
+    const passos = rl.status === 'maior'
+      ? '<li>Conferir na lista de produtos quais não entram na redução</li><li>Corrigir o M220/M620 e o M225/M625</li><li>Retificar a EFD-Contribuições e a DCTFWeb do mês</li>'
+      : '<li>Lançar o ajuste no M220/M620 (código 11) e o detalhamento por nota no M225/M625</li><li>Retificar a EFD-Contribuições e a DCTFWeb do mês</li><li>Recolher a diferença de PIS/COFINS com os acréscimos</li>';
+    m.innerHTML = `<div class="rl-box ${cfg.cls}"><div class="rl-hd"><div class="rl-bi">⚠️</div><div><h2>${titulo}</h2><small>${_esc(rl.empresa)} · ${comp} · LC 224/2025 em vigor desde 01/04/2026</small></div></div>
+      <div class="rl-bd"><div class="rl-intro">${intro}</div>
+      <div class="rl-vals">${v3.map(([t, v]) => `<div><small>${t}</small><b>R$ ${brlR(v)}</b></div>`).join('')}</div>
+      <div class="rl-sec">${rl.status === 'maior' ? 'O QUE ISSO SIGNIFICA' : 'RISCOS SE NÃO CORRIGIR'}</div><div class="rl-risk">${riscos}</div>
+      <div class="rl-sec">O QUE FAZER</div><ol class="rl-passos">${passos}</ol></div>
+      <div class="rl-ft"><button class="act inv-export" id="rlVer">Ver produtos e notas</button><button class="act inv-export rl-prim" id="rlOk">Entendi</button></div></div>`;
+    m.hidden = false;
+    $('#rlOk').onclick = () => { m.hidden = true; };
+    $('#rlVer').onclick = () => { m.hidden = true; rlIrParaConferencia(); };
+    m.onclick = (ev) => { if (ev.target === m) m.hidden = true; };
   }
   btn.addEventListener('click', async () => {
     const pick = await window.fiscocont.fiscal.pickEfdContrib();

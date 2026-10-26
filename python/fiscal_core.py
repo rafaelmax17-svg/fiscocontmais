@@ -3001,9 +3001,12 @@ def main(argv):
             except Exception as e:
                 conf_html = f'<div class="aviso"><b>Não foi possível conferir com o Domínio.</b> {e}</div>'
         # redução linear (LC 224/2025): conferência interna, só no painel (nunca no relatório do cliente)
+        rl_resumo = None
         try:
             import efd_reducao_linear as _rl
-            conf_html = _rl.html_reducao(_rl.conferir(argv[1])) + conf_html
+            _rlx = _rl.conferir(argv[1])
+            conf_html = _rl.html_reducao(_rlx) + conf_html
+            rl_resumo = _rl.resumo_alerta(_rlx)
         except Exception as e:
             conf_html = f'<div class="aviso"><b>Não foi possível conferir a redução linear (LC 224/2025).</b> {e}</div>' + conf_html
         if '--painel-html' in args:
@@ -3015,6 +3018,7 @@ def main(argv):
             # saldo credor declarado (campo "saldo a transportar" do M100/M500): a tela avisa o escritório antes de gerar o relatório do cliente
             'saldo_credor_pis': round(sum(x['saldo_a_transportar'] for x in dados['pis']['creditos']), 2),
             'saldo_credor_cofins': round(sum(x['saldo_a_transportar'] for x in dados['cofins']['creditos']), 2),
+            'reducao_linear': rl_resumo,
         }
         if '--json' in args:
             _out(opte('--json', 'efd.json'), json.dumps(resumo, ensure_ascii=False))
