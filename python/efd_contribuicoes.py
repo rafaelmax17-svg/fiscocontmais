@@ -244,10 +244,17 @@ def parse_efd_contribuicoes(caminho):
     pis_consolidacao, pis_codigos_receita, pis_por_cst, pis_ajustes_debito, pis_ajustes_debito_det = bloco_debito('M200', 'M205', 'M210', 'M220', 'M225')
     cofins_consolidacao, cofins_codigos_receita, cofins_por_cst, cofins_ajustes_debito, cofins_ajustes_debito_det = bloco_debito('M600', 'M605', 'M610', 'M620', 'M625')
     pis_nt_cst, pis_nt_natureza = bloco_nao_tributada('M400', 'M410')
+    # Receita bruta do período. O 0111 só existe quando o crédito é por rateio proporcional (0110 IND_APRO_CRED = 2,
+    # não cumulativo); no cumulativo e na apropriação direta ele não vem. Sem 0111: receita das bases do PIS
+    # (M210, tributada) + receita não tributada (M400) — os mesmos valores do PIS valem para a COFINS.
+    _rb_m = round(sum(c['receita_bruta'] for c in pis_por_cst) + sum(n['valor'] for n in pis_nt_cst), 2)
+    receita_bruta = ({'valor': receita_0111['total'], 'origem': 'reg. 0111'} if receita_0111['total'] > 0
+                     else {'valor': _rb_m, 'origem': 'M210 + M400'})
     cofins_nt_cst, cofins_nt_natureza = bloco_nao_tributada('M800', 'M810')
 
     return {
         'empresa': empresa, 'receita_0111': receita_0111, 'regime': regime,
+        'receita_bruta': receita_bruta,
         'pis': {
             'creditos': pis_creditos, 'detalhe_credito': pis_detalhe_credito,
             'ajustes_credito': pis_ajustes_credito, 'ajustes_credito_detalhe': pis_ajustes_credito_det,
@@ -568,7 +575,8 @@ def gerar_painel_efd_html(dados, empresa_nome='', conferencia_html=''):
     pros dois tributos. É um HTML único e autônomo (vale igual no arquivo exportado)."""
     e = dados['empresa']
     pis, cofins = dados['pis'], dados['cofins']
-    receita_total = dados['receita_0111']['total']
+    rb = dados.get('receita_bruta') or {'valor': dados['receita_0111']['total'], 'origem': 'reg. 0111'}
+    receita_total = rb['valor']
     receita_tributada = sum(c['receita_bruta'] for c in pis['por_cst'])
     receita_nao_tributada = sum(n['valor'] for n in pis['nao_tributada_cst'])
     total_credito = sum(c['credito_descontado'] for c in pis['creditos']) + sum(c['credito_descontado'] for c in cofins['creditos'])
@@ -605,7 +613,7 @@ def gerar_painel_efd_html(dados, empresa_nome='', conferencia_html=''):
 <div class="bx"><div class="bx-au"></div>
   <div class="bx-top"><div><b>Painel da apuração</b><small>EFD-Contribuições · competência {_esc(comp)}{(' · regime ' + _esc(regime)) if regime else ''}</small></div><span class="bx-tag">Valores do arquivo importado</span></div>
   <div class="bx-g">
-    <div class="bx-c"{atraso(0)}><div class="bx-l">Receita bruta<span class="bx-src">reg. 0111</span></div>
+    <div class="bx-c"{atraso(0)}><div class="bx-l">Receita bruta<span class="bx-src" title="{'Registro 0111 (rateio proporcional do crédito)' if rb['origem'] == 'reg. 0111' else 'O 0111 só vem quando o crédito é por rateio proporcional (Lucro Real). Aqui: receita tributada (M210) + não tributada (M400).'}">{_esc(rb['origem'])}</span></div>
       <div class="bx-v" style="font-size:30px">{cnt(receita_total)}</div>
       <div class="bx-tr"><div class="bx-b" style="width:{larg(pct_trib)}%;background:#1e3a8a"></div></div>
       <div class="bx-s">{pctf(pct_trib)}% tributada</div></div>

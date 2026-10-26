@@ -3012,7 +3012,7 @@ def main(argv):
         if '--painel-html' in args:
             _out(opte('--painel-html', 'painel_efd.html'), _efd.gerar_painel_efd_html(dados, empresa_nome, conf_html))
         resumo = {
-            'empresa': dados['empresa'], 'receita_total': dados['receita_0111']['total'],
+            'empresa': dados['empresa'], 'receita_total': dados['receita_bruta']['valor'],
             'pis_a_recolher': dados['pis']['consolidacao']['total_a_recolher'],
             'cofins_a_recolher': dados['cofins']['consolidacao']['total_a_recolher'],
             # saldo credor declarado (campo "saldo a transportar" do M100/M500): a tela avisa o escritório antes de gerar o relatório do cliente
