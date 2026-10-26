@@ -13,6 +13,7 @@ aparece no detalhamento mesmo assim, só sem um rótulo mais específico.
 """
 import html as _html
 import re
+from datetime import date, timedelta
 
 
 def _num(s):
@@ -149,6 +150,9 @@ def parse_efd_contribuicoes(caminho):
         'periodo_ini': _fmt_data(val(c0000, 4)), 'periodo_fim': _fmt_data(val(c0000, 5)),
     }
 
+    c0110 = um('0110')
+    regime = {'1': 'não cumulativo', '2': 'cumulativo', '3': 'não cumulativo e cumulativo'}.get(val(c0110, 0), '')
+
     c0111 = um('0111')
     receita_0111 = {
         'mercado_interno': _num(val(c0111, 0)), 'mercado_interno_st': _num(val(c0111, 1)),
@@ -243,7 +247,7 @@ def parse_efd_contribuicoes(caminho):
     cofins_nt_cst, cofins_nt_natureza = bloco_nao_tributada('M800', 'M810')
 
     return {
-        'empresa': empresa, 'receita_0111': receita_0111,
+        'empresa': empresa, 'receita_0111': receita_0111, 'regime': regime,
         'pis': {
             'creditos': pis_creditos, 'detalhe_credito': pis_detalhe_credito,
             'ajustes_credito': pis_ajustes_credito, 'ajustes_credito_detalhe': pis_ajustes_credito_det,
@@ -328,38 +332,48 @@ table.t{width:100%;border-collapse:collapse;font-size:12px;min-width:520px}
 .t tbody tr.rec td:first-child{border-left:5px solid #e8632b}
 .t tbody tr.tot{background:linear-gradient(180deg,#e4ebff,#d3def9)}
 .t tbody tr.tot td{background:transparent;border-top:2px solid #1f2a5a;font-weight:800;color:#1f2a5a}
+/* painel da apuração (bento de vidro claro) */
+.bx{position:relative;overflow:hidden;margin:20px 20px 6px;border-radius:22px;padding:20px;background:#f6f8fc;border:1px solid #e2e8f0}
+.bx-au{position:absolute;inset:-20%;background:radial-gradient(circle at 12% 18%,#dbe4ff 0,transparent 40%),radial-gradient(circle at 88% 25%,#ffe8d6 0,transparent 36%),radial-gradient(circle at 50% 105%,#e0f2fe 0,transparent 45%);pointer-events:none}
+.bx-top{position:relative;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.bx-top b{display:block;font-size:17px;font-weight:800;color:#0f172a}.bx-top small{font-size:12px;color:#64748b}
+.bx-tag{font-size:11px;color:#64748b;border:1px solid #e2e8f0;background:#fff;border-radius:8px;padding:5px 10px}
+.bx-g{position:relative;display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:12px}
+.bx-c{background:rgba(255,255,255,.74);border:1px solid rgba(255,255,255,.95);border-radius:16px;padding:16px 18px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 8px 24px rgba(30,58,138,.06);opacity:0;animation:bxUp .7s cubic-bezier(.2,.8,.2,1) forwards;transition:transform .2s ease,box-shadow .2s ease}
+.bx-c:hover{transform:translateY(-3px);box-shadow:0 2px 4px rgba(15,23,42,.05),0 14px 30px rgba(30,58,138,.12)}
+.bx-c.w2{grid-column:2 / 4}
+.bx-l{font-size:11.5px;color:#64748b;font-weight:600;letter-spacing:.04em;text-transform:uppercase;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.bx-src{font-size:10.5px;color:#94a3b8;background:#f1f5f9;border-radius:6px;padding:2px 6px;text-transform:none;letter-spacing:0;font-weight:600}
+.bx-v{font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:#0f172a;margin-top:4px;white-space:nowrap}
+.bx-s{font-size:12px;color:#64748b;margin-top:4px}
+.bx-tr{height:6px;border-radius:4px;background:#e2e8f0;margin-top:12px;display:flex;overflow:hidden;gap:3px}
+.bx-tr.duo{height:8px;background:none}
+.bx-b{height:100%;border-radius:4px;clip-path:inset(0 100% 0 0);animation:bxGrow 1.1s .55s cubic-bezier(.2,.8,.2,1) forwards}
+.bx-venc{font-size:11px;font-weight:700;color:#047857;background:#ecfdf5;border-radius:999px;padding:3px 10px;white-space:nowrap;text-transform:none;letter-spacing:0}
+.bx-venc.nada{color:#475569;background:#f1f5f9}
+.bx-leg{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:#475569}
+.bx-leg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
+.bx-dc{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid #eef2f7;font-size:12px;color:#64748b}
+.bx-dc b{color:#0f172a;font-variant-numeric:tabular-nums}
+@keyframes bxUp{from{opacity:0;transform:translateY(18px) scale(.98);filter:blur(5px)}to{opacity:1;transform:none;filter:none}}
+@keyframes bxGrow{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@media (max-width:900px){.bx-g{grid-template-columns:1fr 1fr}.bx-c.w2{grid-column:1 / 3}}
+@media (prefers-reduced-motion:reduce){.bx-c{animation:none;opacity:1}.bx-b{animation:none;clip-path:none}}
+@media print{.bx-c{animation:none;opacity:1;box-shadow:none}.bx-b{animation:none;clip-path:none}}
 """
 
 _JS = """
 (function(){
-  var CX=110, CY=110, R=92, pctNT=__PCTNT__, pctT=__PCTT__;
-  function pt(d,r){var a=(d-90)*Math.PI/180;return [CX+(r||R)*Math.cos(a), CY+(r||R)*Math.sin(a)];}
-  function fatia(a0,a1){var p0=pt(a0),p1=pt(a1),g=(a1-a0)>180?1:0;
-    return 'M'+CX+' '+CY+' L'+p0[0].toFixed(2)+' '+p0[1].toFixed(2)+' A'+R+' '+R+' 0 '+g+' 1 '+p1[0].toFixed(2)+' '+p1[1].toFixed(2)+' Z';}
-  var t=document.getElementById('efdFatiaT'), n=document.getElementById('efdFatiaNT'), ang=pctNT/100*360;
-  if (pctNT<=0){ document.getElementById('efdCircT').style.display=''; t.style.display='none'; n.style.display='none'; }
-  else if (pctNT>=100){ document.getElementById('efdCircNT').style.display=''; t.style.display='none'; n.style.display='none'; }
-  else {
-    t.setAttribute('d', fatia(ang,360)); n.setAttribute('d', fatia(0,ang));
-    var m=(ang/2-90)*Math.PI/180;
-    n.setAttribute('transform','translate('+(7*Math.cos(m)).toFixed(2)+','+(7*Math.sin(m)).toFixed(2)+')');
-  }
-  var lp=pt((ang+360)/2, R*0.55), pct=document.getElementById('efdPct');
-  pct.setAttribute('x', lp[0].toFixed(1)); pct.setAttribute('y', (lp[1]+9).toFixed(1));
-  requestAnimationFrame(function(){ setTimeout(function(){
-    document.getElementById('efdPizza').style.transform='rotate(360deg)';
-    var a=document.getElementById('efdColPis'), b=document.getElementById('efdColCofins');
-    a.style.height=a.dataset.alvo+'px'; b.style.height=b.dataset.alvo+'px';
-  },150); });
-  function contar(id, alvo, atraso){
-    var el=document.getElementById(id), ini=null;
-    function passo(ts){ if(!ini) ini=ts; var p=Math.min(1,(ts-ini)/1100), f=1-Math.pow(1-p,3);
-      el.textContent='R$ '+(alvo*f).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-      if(p<1) requestAnimationFrame(passo); }
-    setTimeout(function(){ requestAnimationFrame(passo); }, atraso);
-  }
-  contar('efdNumPis', __VPIS__, 150);
-  contar('efdNumCofins', __VCOF__, 300);
+  var reduz = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll('.bx-cnt').forEach(function(el, i){
+    var alvo = parseFloat(el.getAttribute('data-v')) || 0, ini = null;
+    function fmt(v){ return 'R$ ' + v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+    if (reduz) { el.textContent = fmt(alvo); return; }
+    el.textContent = fmt(0);
+    function passo(ts){ if(!ini) ini=ts; var p=Math.min(1,(ts-ini)/1300), f=1-Math.pow(1-p,3);
+      el.textContent = fmt(p < 1 ? alvo*f : alvo); if(p<1) requestAnimationFrame(passo); }
+    setTimeout(function(){ requestAnimationFrame(passo); }, 200 + i*60);
+  });
 })();
 """
 
@@ -520,9 +534,37 @@ def _versoes_tabelas_natureza():
     return '; '.join(f"{tab} (CST {'/'.join(v['csts'])}): {v['rotulo']}" for tab, v in sorted(_TABELAS_NATUREZA.items()))
 
 
+def _pascoa(a):
+    g = a % 19; c = a // 100; h = (c - c // 4 - (8 * c + 13) // 25 + 19 * g + 15) % 30
+    i = h - (h // 28) * (1 - (h // 28) * (29 // (h + 1)) * ((21 - g) // 11))
+    j = (a + a // 4 + i + 2 - c + c // 4) % 7
+    m = 3 + (i - j + 40) // 44
+    return date(a, m, i - j + 28 - 31 * (m // 4))
+
+
+def _vencimento_darf(periodo_fim):
+    """PIS e COFINS: até o dia 25 do mês seguinte ao da apuração; se não for dia útil,
+    antecipa para o dia útil anterior (Lei 10.637/2002 art. 10 e Lei 10.833/2003 art. 11).
+    Considera fins de semana e feriados nacionais (não conta feriado estadual/municipal)."""
+    try:
+        d_, m_, a_ = (int(x) for x in periodo_fim.split('/'))
+    except (ValueError, AttributeError):
+        return ''
+    m_ += 1
+    if m_ > 12:
+        m_, a_ = 1, a_ + 1
+    v = date(a_, m_, 25)
+    p = _pascoa(a_)
+    feriados = {date(a_, mm, dd) for mm, dd in ((1, 1), (4, 21), (5, 1), (9, 7), (10, 12), (11, 2), (11, 15), (11, 20), (12, 25))}
+    feriados |= {p - timedelta(days=48), p - timedelta(days=47), p - timedelta(days=2), p + timedelta(days=60)}
+    while v.weekday() >= 5 or v in feriados:
+        v -= timedelta(days=1)
+    return v.strftime('%d/%m/%Y')
+
+
 def gerar_painel_efd_html(dados, empresa_nome='', conferencia_html=''):
-    """Painel completo: KPIs, dashboards animados com relevo (pizza tributada ×
-    não tributada, colunas PIS × COFINS) e o detalhamento completo do bloco M
+    """Painel completo: painel da apuração animado (cartões de vidro com receita, PIS, COFINS,
+    tributada × não tributada, total a recolher e vencimento) e o detalhamento completo do bloco M
     pros dois tributos. É um HTML único e autônomo (vale igual no arquivo exportado)."""
     e = dados['empresa']
     pis, cofins = dados['pis'], dados['cofins']
@@ -535,67 +577,58 @@ def gerar_painel_efd_html(dados, empresa_nome='', conferencia_html=''):
     total_a_recolher = pis['consolidacao']['total_a_recolher'] + cofins['consolidacao']['total_a_recolher']
 
     soma_rec = receita_tributada + receita_nao_tributada
-    pct_trib = round(100 * receita_tributada / soma_rec) if soma_rec else 0
-    pct_nt = (100 - pct_trib) if soma_rec else 0
-
+    pct_trib = (100 * receita_tributada / soma_rec) if soma_rec else 0
     v_pis, v_cof = pis['consolidacao']['total_a_recolher'], cofins['consolidacao']['total_a_recolher']
-    maior = max(v_pis, v_cof, 1)
-    alt_pis = max(6, round(200 * v_pis / maior)) if v_pis else 0
-    alt_cof = max(6, round(200 * v_cof / maior)) if v_cof else 0
+    soma_ar = v_pis + v_cof
+    pct_pis = (100 * v_pis / soma_ar) if soma_ar else 0
+    pct_cof = (100 * v_cof / soma_ar) if soma_ar else 0
+    pctf = lambda v: f'{v:.1f}'.replace('.', ',')
+    larg = lambda v: f'{max(v, 1.5):.2f}' if v > 0 else '0'
 
-    js = (_JS.replace('__PCTNT__', str(pct_nt)).replace('__PCTT__', str(pct_trib))
-          .replace('__VPIS__', repr(float(v_pis))).replace('__VCOF__', repr(float(v_cof))))
+    js = _JS
     titulo = f" · {_esc(empresa_nome)}" if empresa_nome else ""
     cnpj = f" · CNPJ {_esc(e['cnpj'])}" if e['cnpj'] else ''
+    regime = dados.get('regime', '')
+    comp = e['periodo_fim'][3:] if len(e['periodo_fim']) == 10 else e['periodo_fim']
+    venc = _vencimento_darf(e['periodo_fim'])
+    if total_a_recolher <= 0:
+        selo = '<span class="bx-venc nada">Nada a recolher</span>'
+    elif venc:
+        selo = f'<span class="bx-venc" title="Dia 25 do mês seguinte; antecipa se não for dia útil (Lei 10.637/2002 art. 10 e Lei 10.833/2003 art. 11). Feriados estaduais e municipais não são considerados.">● Vencimento {venc}</span>'
+    else:
+        selo = ''
+    cnt = lambda v: f'<span class="bx-cnt" data-v="{float(v)!r}">R$ {_brl(v)}</span>'
+    atraso = lambda i: f' style="animation-delay:{i * 0.1:.1f}s"'
 
     corpo = f'''<div class="hdr"><b>FiscoCont+ · Conferência EFD-Contribuições</b><div>{_esc(e['nome'])}{cnpj} · Competência {e['periodo_ini']} a {e['periodo_fim']}</div></div>
 
-<div class="kpis">
-  <div class="kpi"><b>R$ {_brl(receita_total)}</b><span>Receita bruta total (reg. 0111)</span></div>
-  <div class="kpi verde"><b style="color:#0f6e56">R$ {_brl(total_credito)}</b><span>Crédito total (PIS+COFINS)</span></div>
-  <div class="kpi laranja"><b style="color:#e8632b">R$ {_brl(total_debito)}</b><span>Débito total (PIS+COFINS)</span></div>
-  <div class="kpi destaque"><b>R$ {_brl(total_a_recolher)}</b><span>Total a recolher</span></div>
-</div>
-
-<div class="grid2">
-  <div class="card chart"><h3>Receita tributada × não tributada</h3>
-    <div style="display:flex;align-items:center;justify-content:center;gap:20px 30px;flex-wrap:wrap;padding:6px 0 4px">
-      <div class="pizza-wrap">
-        <svg id="efdPizza" width="220" height="220" viewBox="0 0 220 220">
-          <defs>
-            <radialGradient id="efdgN" cx="38%" cy="30%" r="82%"><stop offset="0" stop-color="#4f62b5"/><stop offset="55%" stop-color="#1f2a5a"/><stop offset="100%" stop-color="#101738"/></radialGradient>
-            <radialGradient id="efdgO" cx="60%" cy="22%" r="88%"><stop offset="0" stop-color="#ffb27f"/><stop offset="55%" stop-color="#e8632b"/><stop offset="100%" stop-color="#b3400d"/></radialGradient>
-            <radialGradient id="efdgL" cx="34%" cy="24%" r="58%"><stop offset="0" stop-color="#fff" stop-opacity=".38"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></radialGradient>
-          </defs>
-          <circle id="efdCircT" cx="110" cy="110" r="92" fill="url(#efdgN)" style="display:none"/>
-          <circle id="efdCircNT" cx="110" cy="110" r="92" fill="url(#efdgO)" style="display:none"/>
-          <path id="efdFatiaT" d="" fill="url(#efdgN)" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/>
-          <path id="efdFatiaNT" d="" fill="url(#efdgO)" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/>
-          <circle cx="110" cy="110" r="92" fill="url(#efdgL)" style="pointer-events:none"/>
-          <text id="efdPct" x="110" y="118" text-anchor="middle" font-size="28" font-weight="800" fill="#fff" stroke="rgba(0,0,0,.28)" stroke-width="3" paint-order="stroke">{pct_trib}%</text>
-        </svg>
+<div class="bx"><div class="bx-au"></div>
+  <div class="bx-top"><div><b>Painel da apuração</b><small>EFD-Contribuições · competência {_esc(comp)}{(' · regime ' + _esc(regime)) if regime else ''}</small></div><span class="bx-tag">Valores do arquivo importado</span></div>
+  <div class="bx-g">
+    <div class="bx-c"{atraso(0)}><div class="bx-l">Receita bruta<span class="bx-src">reg. 0111</span></div>
+      <div class="bx-v" style="font-size:30px">{cnt(receita_total)}</div>
+      <div class="bx-tr"><div class="bx-b" style="width:{larg(pct_trib)}%;background:#1e3a8a"></div></div>
+      <div class="bx-s">{pctf(pct_trib)}% tributada</div></div>
+    <div class="bx-c"{atraso(1)}><div class="bx-l">PIS<span class="bx-src">M200</span></div>
+      <div class="bx-v" style="font-size:24px;color:#1e3a8a">{cnt(v_pis)}</div>
+      <div class="bx-s">{pctf(pct_pis)}% do total a recolher</div></div>
+    <div class="bx-c"{atraso(2)}><div class="bx-l">COFINS<span class="bx-src">M600</span></div>
+      <div class="bx-v" style="font-size:24px;color:#ea580c">{cnt(v_cof)}</div>
+      <div class="bx-s">{pctf(pct_cof)}% do total a recolher</div></div>
+    <div class="bx-c"{atraso(3)}>
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div><div class="bx-l">Tributada<span class="bx-src">M210</span></div><div class="bx-v" style="font-size:19px">{cnt(receita_tributada)}</div></div>
+        <div style="text-align:right"><div class="bx-l" style="justify-content:flex-end">Não tributada<span class="bx-src">M400</span></div><div class="bx-v" style="font-size:19px">{cnt(receita_nao_tributada)}</div></div>
       </div>
-      <div class="leg">
-        <div><i style="background:linear-gradient(135deg,#4f62b5,#1f2a5a);box-shadow:0 2px 4px rgba(31,42,90,.35)"></i>Tributada<br><b>R$ {_brl(receita_tributada)}</b></div>
-        <div><i style="background:linear-gradient(135deg,#ffb27f,#e8632b);box-shadow:0 2px 4px rgba(232,99,43,.4)"></i>Não tributada<br><b>R$ {_brl(receita_nao_tributada)}</b></div>
-      </div>
-    </div>
-  </div>
-  <div class="card chart"><h3>PIS × COFINS — total a recolher</h3>
-    <div style="display:flex;align-items:flex-end;justify-content:center;gap:64px;height:292px;padding-top:8px">
-      <div style="display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end">
-        <span id="efdNumPis" class="chip" style="color:#1f2a5a">R$ 0,00</span>
-        <div id="efdColPis" class="barra b-pis" data-alvo="{alt_pis}"></div>
-        <div class="chao" style="background:radial-gradient(ellipse at center,rgba(31,42,90,.38),rgba(31,42,90,0) 70%)"></div>
-        <span style="font-size:13px;color:var(--ink2);margin-top:4px">PIS</span>
-      </div>
-      <div style="display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end">
-        <span id="efdNumCofins" class="chip" style="color:#e8632b;box-shadow:0 4px 10px rgba(232,99,43,.25)">R$ 0,00</span>
-        <div id="efdColCofins" class="barra b-cof" data-alvo="{alt_cof}"></div>
-        <div class="chao" style="background:radial-gradient(ellipse at center,rgba(232,99,43,.4),rgba(232,99,43,0) 70%)"></div>
-        <span style="font-size:13px;color:var(--ink2);margin-top:4px">COFINS</span>
-      </div>
-    </div>
+      <div class="bx-tr" style="background:#cbd5e1"><div class="bx-b" style="width:{larg(pct_trib)}%;background:#1e3a8a"></div></div>
+      <div class="bx-leg" style="justify-content:space-between"><span><i style="background:#1e3a8a"></i>{pctf(pct_trib)}% tributada</span><span><i style="background:#cbd5e1"></i>{pctf(100 - pct_trib) if soma_rec else '0,0'}% não tributada</span></div>
+      <div class="bx-dc"><span>Total das receitas <b>R$ {_brl(soma_rec)}</b></span></div></div>
+    <div class="bx-c w2"{atraso(4)}>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div class="bx-l">Total a recolher<span class="bx-src">M200 + M600</span></div>{selo}</div>
+      <div class="bx-v" style="font-size:38px;margin-top:2px">{cnt(total_a_recolher)}</div>
+      <div class="bx-tr duo">{f'<div class="bx-b" style="flex:{v_pis:.2f};background:#1e3a8a"></div>' if v_pis > 0 else ''}{f'<div class="bx-b" style="flex:{v_cof:.2f};background:#ea580c;animation-delay:.7s"></div>' if v_cof > 0 else ''}</div>
+      <div class="bx-leg"><span><i style="background:#1e3a8a"></i>PIS R$ {_brl(v_pis)}</span><span><i style="background:#ea580c"></i>COFINS R$ {_brl(v_cof)}</span></div>
+      <div class="bx-dc"><span>Débito apurado <b>R$ {_brl(total_debito)}</b></span><span>Crédito descontado <b>R$ {_brl(total_credito)}</b></span></div></div>
   </div>
 </div>
 

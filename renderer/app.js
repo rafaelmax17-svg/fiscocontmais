@@ -553,7 +553,11 @@ function switchView(name) {
   if (name === 'fiscal-audit') { $('#view-fiscal-audit').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-pgdas') { $('#view-fiscal-pgdas').hidden = false; $('#empty').hidden = true; if (window.fechEntrar) window.fechEntrar(); return; }
   if (name === 'fiscal-downloads') { $('#view-fiscal-downloads').hidden = false; $('#empty').hidden = true; return; }
-  if (name === 'fiscal-efd-contrib') { $('#view-fiscal-efd-contrib').hidden = false; $('#empty').hidden = true; return; }
+  if (name === 'fiscal-efd-contrib') {
+    $('#view-fiscal-efd-contrib').hidden = false; $('#empty').hidden = true;
+    const fr = $('#efdFrame'); if (fr && fr.srcdoc) fr.srcdoc = fr.srcdoc;   // recarrega: a animação do painel toca de novo
+    return;
+  }
   if (name === 'admin-lic') { $('#view-admin-lic').hidden = false; $('#empty').hidden = true; loadLicensePanel(); return; }
   if (name === 'admin-usuarios') { $('#view-admin-usuarios').hidden = false; $('#empty').hidden = true; loadUsuarios(); return; }
   if (name === 'admin-corrigir-sped') { $('#view-admin-corrigir-sped').hidden = false; $('#empty').hidden = true; return; }
