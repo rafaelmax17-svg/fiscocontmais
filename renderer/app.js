@@ -537,6 +537,8 @@ function switchView(name) {
   const hasData = !!DATA;
   const contabil = ['overview', 'dre', 'balancete', 'invertidas', 'indicadores'];
   $('#empty').hidden = !(contabil.includes(name) && !hasData);
+  document.body.dataset.areaContabil = contabil.includes(name) ? '1' : '';
+  _atualizaTopo();
   // "Exportar PDF" do topo sempre exporta o resumo geral (Visão Geral) — fora
   // dessa tela ele confundia, parecendo que ia exportar a tela atual (DRE,
   // Indicadores etc.), quando cada uma já tem seu próprio botão de exportar
@@ -3128,6 +3130,7 @@ function applyData(res) {
   DATA = res.data;
   const md = DATA.empresa;
   $('#topInfo').hidden = false;
+  _atualizaTopo();
   $('#empNome').textContent = md.empresa || '—';
   $('#chCnpj').textContent = 'CNPJ ' + (md.cnpj || '—');
   $('#chJunta').textContent = 'Junta ' + (md.insc_junta || '—');
@@ -4591,71 +4594,60 @@ function bindBaixaLote() {
   });
 }
 
+// Letreiro de notícias na faixa do topo (substituiu o balão): as manchetes passam da direita para a esquerda,
+// param com o mouse em cima, clique abre a notícia, ✕ desativa (reativa no rodapé do menu). Nas telas do
+// Contábil com balancete aberto, a faixa volta a mostrar a empresa do balancete.
+var _newsAtivo = true, _newsLista = [];
+function _atualizaTopo() {
+  const tk = $('#newsTk'); if (!tk) return;
+  const info = $('#topInfo');
+  const balancete = !!(info && DATA && document.body.dataset.areaContabil !== '');
+  if (info) info.hidden = !balancete;
+  const mostra = _newsAtivo && _newsLista.length > 0 && !balancete;
+  tk.hidden = !mostra;
+  const tb = tk.closest('.topbar'); if (tb) tb.classList.toggle('com-news', mostra);
+}
 function bindNewsToast() {
-  const elBalao = $('#newsToast');
-  if (!elBalao || !window.fiscocont.news) return;
-  const cat = $('#newsCat'), titulo = $('#newsTitle'), barra = $('#newsBar');
-  const fila = [];
-  let mostrando = false, timerSumir = null;
+  const tk = $('#newsTk');
+  if (!tk || !window.fiscocont.news) return;
+  const track = $('#newsTrack');
+  let assinatura = '';
 
-  const CLASSE_CAT = { 'Tributário': 'trib', 'Contábil': 'cont', 'Empresarial': 'emp' };
-
-  function esconder() {
-    clearTimeout(timerSumir);
-    elBalao.hidden = true;
-    barra.classList.remove('correndo');
-    mostrando = false;
-    if (fila.length) setTimeout(mostrarProxima, 400);
+  function desenhar() {
+    const sig = _newsLista.map((i) => i.guid).join('|');
+    if (sig === assinatura) return;
+    assinatura = sig;
+    const um = _newsLista.map((i) => `<span class="tk-it" data-link="${_esc(i.link)}" title="Abrir a notícia no navegador"><b>${_esc(i.categoria)}</b>${_esc(i.titulo)}</span>`).join('');
+    track.innerHTML = um + um;   // duas cópias: o letreiro roda sem emenda
+    requestAnimationFrame(() => {
+      const larg = track.scrollWidth / 2;
+      track.style.setProperty('--tk-dur', Math.max(30, Math.round(larg / 55)) + 's');   // ~55 px por segundo, dá para ler
+    });
   }
 
-  function mostrarProxima() {
-    if (mostrando || !fila.length) return;
-    const item = fila.shift();
-    mostrando = true;
-    cat.textContent = item.categoria;
-    cat.className = 'nt-cat ' + (CLASSE_CAT[item.categoria] || 'trib');
-    titulo.textContent = item.titulo;
-    elBalao.dataset.link = item.link;
-    elBalao.hidden = false;
-    barra.classList.remove('correndo');
-    void barra.offsetWidth; // força reiniciar a animação a cada notícia
-    requestAnimationFrame(() => barra.classList.add('correndo'));
-    timerSumir = setTimeout(esconder, 10000);
-  }
-
-  window.fiscocont.news.onNovo((item) => { fila.push(item); mostrarProxima(); });
-  // avisa o main process que já pode começar a checar — sem isso, ele usava
-  // um tempo fixo chutado (achado real, 30/09): numa rede mais lenta, o
-  // aviso de licença podia demorar mais que esse tempo, e a notícia era
-  // "enviada" antes da tela estar ouvindo, se perdendo de vez.
+  window.fiscocont.news.onLista((lista) => {
+    _newsLista = Array.isArray(lista) ? lista.filter((i) => i && i.titulo) : [];
+    desenhar(); _atualizaTopo();
+  });
   window.fiscocont.news.avisarPronto();
 
-  elBalao.addEventListener('click', (ev) => {
-    if (ev.target.id === 'newsClose' || ev.target.id === 'newsDesativar') return;
-    if (elBalao.dataset.link) window.fiscocont.news.abrirLink(elBalao.dataset.link);
-    esconder();
+  track.addEventListener('click', (ev) => {
+    const it = ev.target.closest('.tk-it');
+    if (it && it.dataset.link) window.fiscocont.news.abrirLink(it.dataset.link);
   });
-  $('#newsClose').addEventListener('click', (ev) => { ev.stopPropagation(); esconder(); });
-  $('#newsDesativar').addEventListener('click', async (ev) => {
-    ev.stopPropagation();
+  $('#newsTkX').addEventListener('click', async () => {
     await window.fiscocont.news.desativar();
-    fila.length = 0;
-    esconder();
-    atualizarLinkRodape();
-    elBalao.hidden = false;
-    cat.textContent = ''; cat.className = 'nt-cat';
-    barra.classList.remove('correndo');
-    titulo.textContent = 'Notícias desativadas — pode reativar no rodapé do menu, a qualquer momento.';
-    setTimeout(() => { elBalao.hidden = true; }, 5000);
+    _newsAtivo = false; _atualizaTopo(); atualizarLinkRodape();
+    toast('Notícias desativadas. Para reativar, use o link no rodapé do menu.');
   });
 
-  // Link no rodapé do menu: sempre visível, pra reativar sem precisar
-  // esperar aparecer outra notícia.
   const linkRodape = $('#newsToggleLink');
   async function atualizarLinkRodape() {
     if (!linkRodape) return;
     const status = await window.fiscocont.news.status();
-    linkRodape.textContent = status === 'desativado' ? '📰 notícias: desativadas (reativar)' : '📰 notícias: ativas (desativar)';
+    _newsAtivo = status !== 'desativado';
+    linkRodape.textContent = _newsAtivo ? '📰 notícias: ativas (desativar)' : '📰 notícias: desativadas (reativar)';
+    _atualizaTopo();
   }
   if (linkRodape) {
     linkRodape.addEventListener('click', async () => {
@@ -4664,8 +4656,8 @@ function bindNewsToast() {
       else await window.fiscocont.news.desativar();
       await atualizarLinkRodape();
     });
-    atualizarLinkRodape();
   }
+  atualizarLinkRodape();
 }
 
 function bindChatIA() {

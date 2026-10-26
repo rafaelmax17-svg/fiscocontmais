@@ -190,5 +190,6 @@ contextBridge.exposeInMainWorld('fiscocont', {
     abrirLink: (url) => ipcRenderer.invoke('news:abrirLink', url),
     avisarPronto: () => ipcRenderer.send('news:rendererPronto'),
     onNovo: (cb) => ipcRenderer.on('news:novo', (_e, item) => cb(item)),
+    onLista: (cb) => ipcRenderer.on('news:lista', (_e, lista) => cb(lista)),
   },
 });

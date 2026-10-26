@@ -1116,3 +1116,21 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .rl-passos{font-size:13px;line-height:1.85;color:#334155;margin:0;padding-left:20px}
 .rl-ft{display:flex;gap:10px;justify-content:flex-end;padding:13px 22px;background:#f8fafc;border-top:1px solid #eef0f6}
 .rl-ft .act.rl-prim{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#fff;border-color:transparent}
+
+/* ===== letreiro de notícias na faixa do topo ===== */
+.topbar.com-news{padding:0}
+.topbar.com-news .topbar-file{display:none}
+.news-tk{flex:1;align-self:stretch;display:flex;align-items:stretch;min-width:0;background:linear-gradient(90deg,#1e3a8a,#2b3a72);color:#fff;overflow:hidden}
+.news-tk[hidden]{display:none}
+.news-tk .tk-lab{flex:0 0 auto;display:flex;align-items:center;gap:7px;padding:0 18px;background:#ea580c;font-size:12px;font-weight:800;letter-spacing:.06em;white-space:nowrap;box-shadow:6px 0 14px rgba(15,23,42,.25);position:relative;z-index:1}
+.news-tk .tk-vp{flex:1;min-width:0;overflow:hidden;display:flex;align-items:center;-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 24px,#000 calc(100% - 40px),transparent 100%);mask-image:linear-gradient(90deg,transparent 0,#000 24px,#000 calc(100% - 40px),transparent 100%)}
+.news-tk .tk-track{display:flex;white-space:nowrap;will-change:transform;animation:tkRola var(--tk-dur,60s) linear infinite}
+.news-tk:hover .tk-track{animation-play-state:paused}
+.news-tk .tk-it{display:inline-flex;align-items:center;gap:8px;padding:0 6px 0 22px;font-size:13px;color:#e2e8f0;cursor:pointer}
+.news-tk .tk-it:hover{color:#fff;text-decoration:underline;text-underline-offset:3px}
+.news-tk .tk-it b{color:#fdba74;font-weight:700}
+.news-tk .tk-it::after{content:'•';margin-left:16px;color:rgba(255,255,255,.35)}
+.news-tk .tk-x{flex:0 0 auto;border:0;background:transparent;color:rgba(255,255,255,.55);font-size:14px;padding:0 16px;cursor:pointer}
+.news-tk .tk-x:hover{color:#fff;background:rgba(255,255,255,.08)}
+@keyframes tkRola{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion:reduce){.news-tk .tk-track{animation-duration:calc(var(--tk-dur,60s) * 2)}}

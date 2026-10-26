@@ -283,7 +283,7 @@ app.on('window-all-closed', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Canal de notícias contábeis (balão não intrusivo, some sozinho)
+// Canal de notícias contábeis (letreiro na faixa do topo)
 // ---------------------------------------------------------------------------
 // Fonte: RSS oficial do Portal Contábeis — pesquisei e testei antes de
 // implementar (28/09): feed real, atualiza a cada 30min-1h em dia útil,
@@ -389,31 +389,18 @@ function _newsChecar() {
     try {
       const todos = _newsParseRss(dados);
       const permitidos = todos.filter((i) => NEWS_CATEGORIAS_PERMITIDAS.includes(i.categoria));
-      let itens = permitidos.filter((i) => i.guid && !cfg.vistos.includes(i.guid));
-      let reiniciou = false;
-      // pedido do Rafael, 30/09: nunca fica "sem nada pra mostrar" — se já
-      // passou por todas as notícias disponíveis, esquece o que já foi
-      // visto e recomeça do início da lista atual (mantém sempre alguma
-      // notícia circulando, em vez de ficar quieto esperando algo genuinamente novo).
-      if (!itens.length && permitidos.length) {
-        cfg.vistos = [];
-        itens = permitidos;
-        reiniciou = true;
-      }
-      _newsLog({ ok: true, codificacao, itensNoFeed: todos.length, itensNovos: itens.length, reiniciou });
-      if (!itens.length) return;
-      // só a mais nova de cada checagem — nunca empilha vários balões juntos
-      const nova = itens[0];
-      cfg.vistos = [nova.guid, ...cfg.vistos].slice(0, 300);
-      _newsSalvarConfig(cfg);
-      if (mainWindow) mainWindow.webContents.send('news:novo', nova);
+      // Faixa de notícias no topo (substituiu o balão, 26/10): manda a lista das mais recentes; a tela só
+      // redesenha o letreiro quando a lista muda.
+      const lista = permitidos.slice(0, 15).map((i) => ({ titulo: i.titulo, link: i.link, categoria: i.categoria, guid: i.guid || i.link }));
+      _newsLog({ ok: true, codificacao, itensNoFeed: todos.length, naFaixa: lista.length });
+      if (lista.length && mainWindow) mainWindow.webContents.send('news:lista', lista);
     } catch (e) { _newsLog({ ok: false, motivo: 'Erro ao interpretar o feed: ' + String(e.message || e) }); }
   });
 }
 
 ipcMain.handle('news:status', () => (_newsLerConfig().desativado ? 'desativado' : 'ativo'));
 ipcMain.handle('news:desativar', () => { const c = _newsLerConfig(); c.desativado = true; _newsSalvarConfig(c); return true; });
-ipcMain.handle('news:ativar', () => { const c = _newsLerConfig(); c.desativado = false; _newsSalvarConfig(c); return true; });
+ipcMain.handle('news:ativar', () => { const c = _newsLerConfig(); c.desativado = false; _newsSalvarConfig(c); setTimeout(_newsChecar, 200); return true; });
 ipcMain.handle('news:abrirLink', (_evt, url) => { if (/^https:\/\//.test(url || '')) shell.openExternal(url); });
 
 // A tela avisa por aqui quando já registrou o listener de notícia — só a
