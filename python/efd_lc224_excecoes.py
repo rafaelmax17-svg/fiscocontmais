@@ -82,6 +82,27 @@ _XV = _mapa(ANEXO_XV)
 _COND = {k.replace('.', ''): v for k, v in ANEXO_I_CONDICIONAL.items()}
 
 
+# Revenda de combustível com tributação concentrada (monofásica) no produtor/importador. A alíquota zero do
+# distribuidor e do varejista não é incentivo: é a outra ponta da incidência monofásica, então a redução
+# linear não alcança (como o CST 04). Na EFD o CST correto dessas revendas é o 04, não o 06.
+_MONO_COMB = (
+    ('27111910', 'GLP', 'Lei 9.718/1998, art. 4º, e MP 2.158-35/2001, art. 42, I'),
+    ('271012', 'gasolina', 'Lei 9.718/1998, art. 4º, e MP 2.158-35/2001, art. 42, I'),
+    ('27101921', 'óleo diesel', 'Lei 9.718/1998, art. 4º, e MP 2.158-35/2001, art. 42, I'),
+    ('271020', 'óleo diesel com biodiesel', 'Lei 9.718/1998, art. 4º, e MP 2.158-35/2001, art. 42, I'),
+    ('220710', 'álcool (etanol)', 'Lei 9.718/1998, art. 5º, § 1º'),
+    ('220720', 'álcool (etanol)', 'Lei 9.718/1998, art. 5º, § 1º'),
+)
+_MONO_CONF = {'27111210': 'propano', '27111300': 'butano'}
+
+
+def _monofasico(n):
+    for pref, nome, base in _MONO_COMB:
+        if n.startswith(pref) and not (pref == '271012' and n.startswith('27101251')):   # gasolina de aviação não entra no art. 42
+            return f'revenda de {nome}: tributação monofásica, a alíquota zero do revendedor não é incentivo ({base}) · o CST correto é 04'
+    return ''
+
+
 def classifica_ncm(ncm):
     """('fora', motivo) | ('confirmar', motivo) | ('entra', '')"""
     n = ''.join(ch for ch in str(ncm or '') if ch.isdigit())
@@ -91,6 +112,11 @@ def classifica_ncm(ncm):
         return 'fora', f'Cesta Básica Nacional (LC 214/2025, Anexo I) · {_I[n]}'
     if n in _XV:
         return 'fora', f'LC 214/2025, Anexo XV · {_XV[n]}'
+    m = _monofasico(n)
+    if m:
+        return 'fora', m
+    if n in _MONO_CONF:
+        return 'confirmar', f'{_MONO_CONF[n]}: se for vendido como GLP, é revenda monofásica e fica fora (CST 04)'
     if n in _COND:
         return 'confirmar', f'Cesta Básica Nacional {_COND[n]}'
     return 'entra', ''
