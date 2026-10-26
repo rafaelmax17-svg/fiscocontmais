@@ -245,12 +245,13 @@
       <button class="nav-item nav-item-destaque" data-group="fiscal" data-view="fiscal-efd-contrib">
         <svg viewBox="0 0 24 24" class="ic"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM14 3v6h6M9 13h6M9 17h6M9 9h1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>EFD-Contribuições</span>
-        <em class="nav-new">NOVO</em>
+        <em class="nav-new" id="efdNewBadge" hidden>NOVO</em>
       </button>
 
       <button class="nav-item" data-group="fiscal" data-view="manual-fiscal">
         <svg viewBox="0 0 24 24" class="ic"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5M8 7h8M8 11h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Manual do Fiscal</span>
+        <em class="nav-new nav-novidade" id="manualNewBadge" hidden>NOVIDADE</em>
       </button>
       <div class="nav-group" data-group="contabil">Contábil</div>
       <button class="nav-item active" data-group="contabil" data-view="overview">
@@ -884,6 +885,7 @@
               <button class="act ghost" id="mfPublicar">Publicar manual</button>
             </span>
             <div class="mf-nav">
+              <button id="mfInicio" title="Voltar para a capa" style="padding:0 10px;font-size:12px;font-weight:700">⌂ Início</button>
               <button id="mfAnt" title="Página anterior">‹</button>
               <span id="mfPag">—</span>
               <button id="mfProx" title="Próxima página">›</button>

@@ -3554,8 +3554,7 @@ function bindManual() {
 
   window._manualEntrar = async () => {
     if (M.aberto) return;
-    M.aberto = true;
-    M.pag = 1;           // sempre abre na capa
+    M.aberto = true;      // abre na capa quando o sistema é aberto; durante o uso, volta na página em que parou
     aplicaModo();
     api.protecao(true);
     $('#mfAdm').hidden = ROLE !== 'admin';
@@ -3582,6 +3581,7 @@ function bindManual() {
   };
   window.addEventListener('beforeunload', () => window._manualSair && window._manualSair());
 
+  $('#mfInicio').addEventListener('click', () => ir(1));
   $('#mfAnt').addEventListener('click', () => ir(M.pag - 1));
   $('#mfProx').addEventListener('click', () => ir(M.pag + 1));
   $('#mfMenos').addEventListener('click', () => { M.zoom = Math.max(0.6, +(M.zoom - 0.1).toFixed(2)); desenha(); });
@@ -5024,6 +5024,12 @@ window.addEventListener('DOMContentLoaded', async () => {
     const expira = new Date('2026-10-02T23:59:59');
     if (new Date() <= expira) badge.hidden = false;
   })();
+
+  // Selos com data fixa de validade (7 dias a partir do lançamento): EFD-Contribuições (07/10/2026)
+  // e Manual do Fiscal (26/10/2026, selo "NOVIDADE" em destaque).
+  [['#efdNewBadge', '2026-10-14T23:59:59'], ['#manualNewBadge', '2026-11-02T23:59:59']].forEach(([sel, ate]) => {
+    const b = $(sel); if (b && new Date() <= new Date(ate)) b.hidden = false;
+  });
   await checkLicenseGate();
   const retryBtn = $('#licenseRetry');
   if (retryBtn) retryBtn.addEventListener('click', () => checkLicenseGate());
