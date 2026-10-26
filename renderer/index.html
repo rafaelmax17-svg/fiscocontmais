@@ -640,6 +640,7 @@
             <div style="display:flex;gap:8px">
               <button class="act inv-export" id="btnDlImportarLote">Importar certificados em lote</button>
               <button class="act inv-export" id="btnDlCadastrarCert">Cadastrar certificado</button>
+              <button class="act mn-abrir" id="btnMnAbrir" hidden>🔎 Consulta Manifestação NF-e</button>
             </div>
           </div>
           <div id="dlSemEmpresas" style="font-size:12.5px;color:var(--ink2)">Nenhuma empresa cadastrada ainda — cadastre um certificado pra começar.</div>
@@ -874,6 +875,51 @@
         <div id="corrEfdVazio" class="fiscal-empty">Escolha o SPED da EFD-Contribuições e, se tiver, o relatório "Pendências de Validação" do PVA. O sistema corrige o que é mecânico, registra cada ação e mostra tudo, separado por tipo de erro.</div>
         <iframe id="corrEfdFrame" hidden style="width:100%;height:900px;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
       </div>
+      <div class="view" id="view-fiscal-manifestacao" hidden>
+        <div class="mn-hd">
+          <button class="mn-back" id="mnVoltar">← Baixas DF-e</button>
+          <div><h2>Consulta Manifestação NF-e</h2><div class="mn-sub">Situação na SEFAZ e manifestação do destinatário, pela chave de acesso · só consulta, nada é enviado</div></div>
+          <div class="mn-acts">
+            <button class="act ghost" id="mnXlsx" hidden>Exportar Excel</button>
+            <button class="act ghost" id="mnHtml" hidden>Exportar HTML</button>
+            <button class="act mn-pri" id="mnNova" hidden>Nova consulta</button>
+          </div>
+        </div>
+
+        <div class="mn-form" id="mnForm">
+          <div class="mn-lbl">1 · Empresa destinatária (de quem é o certificado)</div>
+          <input id="mnEmpresa" list="mnEmpresasLista" placeholder="Digite o CNPJ ou o nome, ou escolha na lista" autocomplete="off">
+          <datalist id="mnEmpresasLista"></datalist>
+          <div class="mn-alert" id="mnAlerta" hidden>
+            <span class="mn-ic">⚠️</span>
+            <div><b id="mnAlertaTit"></b><p id="mnAlertaTxt"></p>
+              <button class="act mn-pri" id="mnCadastrar">Cadastrar certificado desta empresa</button>
+              <button class="act ghost" id="mnOutra">Escolher outra empresa</button></div>
+          </div>
+          <div class="mn-ok" id="mnEmpOk" hidden></div>
+          <div class="mn-lbl">2 · Chaves de acesso (uma por linha, ou cole de uma planilha)</div>
+          <textarea id="mnChaves" spellcheck="false" placeholder="11261012345678000190550010000123451000123459"></textarea>
+          <div class="mn-info"><span class="ok" id="mnQtdOk">0 chaves válidas</span><span class="er" id="mnQtdErr" hidden></span><span class="az" id="mnQtdDup" hidden></span>
+            <button class="act ghost" id="mnImportar" style="margin-left:auto">Importar .txt ou .xlsx</button></div>
+          <div class="mn-ruins" id="mnRuins" hidden></div>
+          <div class="mn-bt"><button class="act ghost" id="mnCancelar" hidden>Cancelar</button><button class="act mn-pri" id="mnConsultar" disabled>Consultar</button></div>
+        </div>
+
+        <div class="mn-prog" id="mnProg" hidden><div class="mn-prog-box"><b id="mnProgTit">Consultando a SEFAZ…</b><div class="mn-pb"><div id="mnProgBar"></div></div><span id="mnProgTxt"></span></div></div>
+
+        <div id="mnRes" hidden>
+          <div class="mn-qry" id="mnQry"></div>
+          <div class="mn-erros" id="mnErros" hidden></div>
+          <div class="mn-kp" id="mnKpis"></div>
+          <div class="mn-row">
+            <div class="mn-c"><h3>Manifestação das notas</h3><div class="mn-dn" id="mnDonut"></div></div>
+            <div class="mn-c"><h3>Situação na SEFAZ</h3><div id="mnSit"></div></div>
+            <div class="mn-c"><h3>Prazo para o evento conclusivo <small>· notas sem manifestação conclusiva</small></h3><div id="mnPrazos"></div></div>
+          </div>
+          <div class="mn-c"><div class="mn-chips" id="mnChips"></div><div class="mn-tab" id="mnTabela"></div></div>
+        </div>
+      </div>
+
       <div class="view" id="view-manual-fiscal" hidden>
         <div class="mf">
           <div class="mf-top">

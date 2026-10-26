@@ -2827,6 +2827,57 @@ def main(argv):
         print(json.dumps(info, ensure_ascii=False))
         return 0 if 'erro' not in info else 1
 
+    # "manifestacao" — Consulta Manifestação NF-e (só consulta): situação na SEFAZ + manifestação do destinatário
+    # por chave. Entrada: JSON com a lista de chaves. Saída: JSON {itens: [...]}. --progresso: arquivo {feitas, total}.
+    if modo in ('manifestacao', 'manifestacao-chaves', 'manifestacao-xlsx'):
+        import manifestacao as _mf
+        args = argv[1:]
+
+        def optm(name, default=None):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        saida = optm('--json', 'manifestacao.json')
+        try:
+            if modo == 'manifestacao':
+                with open(optm('--entrada'), encoding='utf-8') as fh:
+                    chaves = json.load(fh)
+                cert_pem, key_pem, tmp_cert = _extrair_cert_chave_temp(args[0], optm('--senha', ''))
+                try:
+                    itens = _mf.consultar(chaves, cert_pem, key_pem, optm('--cnpj', ''), optm('--uf', '11'), progresso=optm('--progresso'))
+                finally:
+                    import shutil as _sh
+                    _sh.rmtree(tmp_cert, ignore_errors=True)
+                res = {'itens': itens}
+            elif modo == 'manifestacao-chaves':
+                arq = args[0]
+                if arq.lower().endswith(('.xlsx', '.xlsm')):
+                    from openpyxl import load_workbook
+                    wb = load_workbook(arq, read_only=True, data_only=True)
+                    linhas = []
+                    for ws in wb.worksheets:
+                        for row in ws.iter_rows(values_only=True):
+                            for v in row:
+                                if v is None:
+                                    continue
+                                if isinstance(v, (int, float)):
+                                    v = f'{v:.0f}'
+                                linhas.append(str(v))
+                    texto = '\n'.join(linhas)
+                else:
+                    with open(arq, 'rb') as fh:
+                        bruto = fh.read()
+                    texto = bruto.decode('utf-8', 'replace') if bruto[:3] == b'\xef\xbb\xbf' or b'\xc3' in bruto else bruto.decode('latin-1')
+                ok, _ruins = _mf.extrair_chaves(texto)
+                res = {'chaves': ok}
+            else:
+                with open(optm('--entrada'), encoding='utf-8') as fh:
+                    itens = json.load(fh)
+                _mf.exportar_xlsx(itens, args[0], optm('--titulo', ''))
+                res = {'ok': True}
+        except Exception as e:
+            res = {'erro': str(e)}
+        _out(saida, json.dumps(res, ensure_ascii=False))
+        return 0 if 'erro' not in res else 1
+
     # "ler-certificados-lote" — testa várias senhas candidatas em vários .pfx
     # de uma vez, num processo só. Entrada: JSON [{"caminho":..., "candidatas":[...]}].
     if modo == 'ler-certificados-lote':

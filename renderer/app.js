@@ -556,6 +556,7 @@ function switchView(name) {
   if (name === 'fiscal-audit') { $('#view-fiscal-audit').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-pgdas') { $('#view-fiscal-pgdas').hidden = false; $('#empty').hidden = true; if (window.fechEntrar) window.fechEntrar(); return; }
   const stg = document.querySelector('.stage'); if (stg) stg.classList.toggle('stage-cheia', name === 'manual-fiscal');
+  if (name === 'fiscal-manifestacao') { $('#view-fiscal-manifestacao').hidden = false; $('#empty').hidden = true; if (window._manifEntrar) window._manifEntrar(); return; }
   if (name === 'manual-fiscal') { $('#view-manual-fiscal').hidden = false; $('#empty').hidden = true; if (window._manualEntrar) window._manualEntrar(); return; }
   if (name === 'fiscal-downloads') { $('#view-fiscal-downloads').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-efd-contrib') {
@@ -1111,6 +1112,7 @@ function bindFiscal() {
       toast(tipo === 'filial' ? 'Filial cadastrada — as notas vão para a pasta própria da filial.' : 'Empresa cadastrada.');
       $('#dlModalCert').hidden = true;
       dlCarregarEmpresas();
+      if (window._manifPendente) window._manifPendente();     // veio da Consulta Manifestação: volta para ela
     });
   }
 
@@ -3630,6 +3632,218 @@ function bindManual() {
   $('#mfAcFechar').addEventListener('click', () => { $('#mfAcModal').hidden = true; });
 }
 
+// ---------------------------------------------------------------- Consulta Manifestação NF-e
+// Só consulta (nada é enviado à SEFAZ). Por enquanto só o Admin vê o botão nas Baixas DF-e.
+function chaveNfeValida(ch) {
+  if (!/^\d{44}$/.test(ch)) return false;
+  let soma = 0, peso = 2;
+  for (let i = 42; i >= 0; i--) { soma += Number(ch[i]) * peso; peso = peso === 9 ? 2 : peso + 1; }
+  const dv = 11 - (soma % 11);
+  return Number(ch[43]) === (dv >= 10 ? 0 : dv);
+}
+function bindManifestacao() {
+  const api = window.fiscocont && window.fiscocont.manif;
+  if (!api || !$('#view-fiscal-manifestacao')) return;
+  const TIPOS = [
+    ['confirmada', 'Confirmada', '#16a34a', 'ok'], ['ciencia', 'Só ciência', '#f59e0b', 'am'], ['nenhuma', 'Sem manifestação', '#94a3b8', 'cz'],
+    ['desconhecida', 'Desconhecida', '#dc2626', 'er'], ['nao_realizada', 'Operação não realizada', '#7c3aed', 'ro'],
+  ];
+  const SIT = { autorizada: ['Autorizada', 'ok'], cancelada: ['Cancelada', 'er'], denegada: ['Denegada', 'er'], nao_encontrada: ['Não encontrada', 'cz'], erro: ['Erro na consulta', 'cz'] };
+  const S = { empresas: [], empresa: null, validas: [], res: null, filtro: 'todas' };
+  const brl = (v) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const cnpjFmt = (d) => (d && d.length === 14 ? `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}` : d || '');
+  const dataBr = (s) => (s && s.length >= 10 ? s.slice(0, 10).split('-').reverse().join('/') : '');
+
+  $('#btnMnAbrir').addEventListener('click', () => switchView('fiscal-manifestacao'));
+  $('#mnVoltar').addEventListener('click', () => switchView('fiscal-downloads'));
+  const mostraBtn = () => { $('#btnMnAbrir').hidden = ROLE !== 'admin'; };
+  mostraBtn(); setInterval(mostraBtn, 3000);
+
+  async function carregaEmpresas() {
+    const r = await api.empresas();
+    if (r.error) { toast(r.error, true); return; }
+    S.empresas = r.empresas || [];
+    $('#mnEmpresasLista').innerHTML = S.empresas.map((e) => `<option value="${_esc(e.nome)} · ${cnpjFmt(e.cnpj)}">`).join('');
+    checaEmpresa();
+  }
+  function checaEmpresa() {
+    const txt = $('#mnEmpresa').value;
+    const dig = txt.replace(/\D/g, '');
+    let emp = null;
+    const cn = dig.length >= 14 ? dig.slice(-14) : '';
+    if (cn) emp = S.empresas.find((e) => e.cnpj === cn);
+    if (!emp && txt.trim().length >= 3 && !cn) emp = S.empresas.find((e) => e.nome.toLowerCase() === txt.trim().toLowerCase());
+    S.empresa = null;
+    $('#mnAlerta').hidden = true; $('#mnEmpOk').hidden = true;
+    if (emp && emp.vencido) {
+      $('#mnAlertaTit').textContent = 'O certificado desta empresa está vencido';
+      $('#mnAlertaTxt').textContent = `Válido até ${dataBr(emp.validade)}. Cadastre o certificado novo nas Baixas DF-e para consultar.`;
+      $('#mnAlerta').hidden = false;
+    } else if (emp) {
+      S.empresa = emp;
+      $('#mnEmpOk').textContent = `✓ Certificado cadastrado · válido até ${dataBr(emp.validade) || '—'}`;
+      $('#mnEmpOk').hidden = false;
+    } else if (cn) {
+      $('#mnAlertaTit').textContent = 'Certificado desta empresa não está cadastrado';
+      $('#mnAlertaTxt').textContent = `Para consultar a manifestação é preciso o certificado A1 da empresa destinatária (${cnpjFmt(cn)}). Cadastre agora: as chaves que você colou continuam aqui.`;
+      $('#mnAlerta').hidden = false;
+    }
+    atualizaBotao();
+  }
+  function checaChaves() {
+    const linhas = $('#mnChaves').value.split(/\r?\n/);
+    const vistos = new Set(); const ruins = []; let dup = 0;
+    linhas.forEach((l, i) => {
+      const achadas = l.replace(/[\s.\-/]/g, '').match(/\d{44}/g);
+      if (!achadas) { const d = l.replace(/\D/g, ''); if (d) ruins.push(`Linha ${i + 1}: ${d.length} dígitos (a chave tem 44)`); return; }
+      achadas.forEach((c) => {
+        if (vistos.has(c)) { dup++; return; }
+        if (!chaveNfeValida(c)) { ruins.push(`Linha ${i + 1}: ${c} — dígito verificador não confere`); return; }
+        vistos.add(c);
+      });
+    });
+    S.validas = [...vistos];
+    $('#mnQtdOk').textContent = `${S.validas.length} chave${S.validas.length === 1 ? '' : 's'} válida${S.validas.length === 1 ? '' : 's'}`;
+    $('#mnQtdErr').hidden = !ruins.length; $('#mnQtdErr').textContent = `${ruins.length} inválida${ruins.length === 1 ? '' : 's'}`;
+    $('#mnQtdDup').hidden = !dup; $('#mnQtdDup').textContent = `${dup} repetida${dup === 1 ? '' : 's'} (ignorada${dup === 1 ? '' : 's'})`;
+    $('#mnRuins').hidden = !ruins.length; $('#mnRuins').innerHTML = ruins.slice(0, 50).map(_esc).join('<br>');
+    atualizaBotao();
+  }
+  function atualizaBotao() {
+    const b = $('#mnConsultar');
+    b.disabled = !(S.empresa && S.validas.length);
+    b.textContent = S.validas.length ? `Consultar ${S.validas.length} nota${S.validas.length === 1 ? '' : 's'}` : 'Consultar';
+  }
+  $('#mnEmpresa').addEventListener('input', checaEmpresa);
+  $('#mnChaves').addEventListener('input', checaChaves);
+  $('#mnOutra').addEventListener('click', () => { $('#mnEmpresa').value = ''; checaEmpresa(); $('#mnEmpresa').focus(); });
+  $('#mnCadastrar').addEventListener('click', () => {
+    window._manifPendente = () => { window._manifPendente = null; switchView('fiscal-manifestacao'); };
+    switchView('fiscal-downloads');
+    setTimeout(() => $('#btnDlCadastrarCert').click(), 50);
+  });
+  $('#mnImportar').addEventListener('click', async () => {
+    const r = await api.importarChaves();
+    if (r.error) { toast(r.error, true); return; }
+    if (r.cancelado) return;
+    const atual = $('#mnChaves').value.trim();
+    $('#mnChaves').value = (atual ? atual + '\n' : '') + (r.chaves || []).join('\n');
+    checaChaves();
+    toast(`${(r.chaves || []).length} chave(s) encontrada(s) no arquivo.`);
+  });
+
+  const mostraForm = (sim) => {
+    $('#mnForm').hidden = !sim; $('#mnRes').hidden = sim || !S.res;
+    $('#mnCancelar').hidden = !S.res;
+    ['#mnXlsx', '#mnHtml', '#mnNova'].forEach((x) => { $(x).hidden = sim || !S.res; });
+  };
+  $('#mnNova').addEventListener('click', () => mostraForm(true));
+  $('#mnCancelar').addEventListener('click', () => mostraForm(false));
+
+  api.onProgresso((d) => {
+    const pct = d.total ? Math.round(100 * d.feitas / d.total) : 0;
+    $('#mnProgBar').style.width = pct + '%';
+    $('#mnProgTxt').textContent = `${d.feitas} de ${d.total} consultadas na SEFAZ` + (d.guardadas ? ` · ${d.guardadas} já estavam guardadas` : '');
+  });
+  async function consultar(chaves) {
+    $('#mnProgBar').style.width = '0%'; $('#mnProgTxt').textContent = 'Preparando…'; $('#mnProg').hidden = false;
+    const r = await api.consultar(S.empresa.id, chaves);
+    $('#mnProg').hidden = true;
+    if (r.error) { toast(r.error, true); return; }
+    S.res = r; S.filtro = 'todas';
+    desenha(); mostraForm(false);
+  }
+  $('#mnConsultar').addEventListener('click', () => { if (S.empresa && S.validas.length) consultar(S.validas); });
+
+  function donut(cont, total) {
+    const r = 70, c = 2 * Math.PI * r; let off = 0;
+    let s = `<svg width="180" height="180" viewBox="0 0 180 180"><circle cx="90" cy="90" r="${r}" fill="none" stroke="var(--line)" stroke-width="24"/>`;
+    for (const [k, , cor] of TIPOS) {
+      const q = cont[k] || 0; if (!q) continue;
+      const L = c * q / total;
+      s += `<circle cx="90" cy="90" r="${r}" fill="none" stroke="${cor}" stroke-width="24" stroke-dasharray="${Math.max(L - 2, 1).toFixed(1)} ${c.toFixed(1)}" stroke-dashoffset="${(-off).toFixed(1)}" transform="rotate(-90 90 90)"/>`;
+      off += L;
+    }
+    return s + `<text x="90" y="88" text-anchor="middle" font-size="28" font-weight="800" fill="currentColor">${total}</text><text x="90" y="108" text-anchor="middle" font-size="11" fill="#64748b">notas consultadas</text></svg>`;
+  }
+  const manifDe = (i) => (['cancelada', 'denegada', 'nao_encontrada', 'erro'].includes(i.situacao) ? '' : (i.manifestacao || 'nenhuma'));
+  function linhaManif(i) {
+    const m = manifDe(i);
+    if (!m) return `<span class="mn-st cz">—</span>${i.situacao === 'cancelada' ? '<span class="mn-mini" style="color:#b91c1c">não escriturar / estornar</span>' : ''}`;
+    const t = TIPOS.find((x) => x[0] === m);
+    return `<span class="mn-st ${t[3]}">${t[1]}</span>`;
+  }
+  function linhaData(i) {
+    const m = manifDe(i);
+    if ((m === 'nenhuma' || m === 'ciencia') && typeof i.prazo_dias === 'number') {
+      const cor = i.prazo_dias <= 15 ? '#b91c1c' : (i.prazo_dias <= 60 ? '#b45309' : 'inherit');
+      return (m === 'ciencia' ? `ciência em ${dataBr(i.dh_manifestacao)}<br>` : '') + `<b style="color:${cor}">${i.prazo_dias > 0 ? `faltam ${i.prazo_dias} dias` : 'prazo vencido'}</b>`;
+    }
+    return dataBr(i.dh_manifestacao) || '—';
+  }
+  function filtrados() {
+    const it = S.res.itens || [];
+    if (S.filtro === 'todas') return it;
+    if (S.filtro === 'canceladas') return it.filter((i) => i.situacao === 'cancelada' || i.situacao === 'denegada');
+    if (S.filtro === 'erros') return it.filter((i) => i.situacao === 'erro' || i.situacao === 'nao_encontrada');
+    return it.filter((i) => manifDe(i) === S.filtro);
+  }
+  function desenha() {
+    const r = S.res, it = r.itens || [];
+    const cont = {}, val = {};
+    it.forEach((i) => { const m = manifDe(i); if (!m) return; cont[m] = (cont[m] || 0) + 1; if (i.valor) val[m] = (val[m] || 0) + Number(i.valor); });
+    const comManif = it.filter((i) => manifDe(i)).length;
+    const nAut = it.filter((i) => i.situacao === 'autorizada').length, nCan = it.filter((i) => i.situacao === 'cancelada').length,
+      nDen = it.filter((i) => i.situacao === 'denegada').length, nErr = it.filter((i) => i.situacao === 'erro' || i.situacao === 'nao_encontrada').length;
+    const venc = r.empresa.validade ? `certificado válido até ${dataBr(r.empresa.validade)}` : '';
+    $('#mnQry').innerHTML = `Destinatário <b>${_esc(r.empresa.nome)} · ${cnpjFmt(r.empresa.cnpj)}</b>${venc ? `<span class="tag">${venc}</span>` : ''}<span style="margin-left:auto">${it.length} chave${it.length === 1 ? '' : 's'} · consultado em ${new Date(r.quando).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>`;
+    $('#mnErros').hidden = !nErr;
+    $('#mnErros').innerHTML = nErr ? `⚠ <span><b>${nErr} nota${nErr === 1 ? '' : 's'} sem resposta da SEFAZ</b> (ou não encontrada${nErr === 1 ? '' : 's'}). Veja o motivo na tabela, no filtro "Erros".</span> <button class="act ghost" id="mnRefazer" style="margin-left:auto">Consultar essas de novo</button>` : '';
+    if (nErr) $('#mnRefazer').onclick = () => consultar(it.filter((i) => i.situacao === 'erro' || i.situacao === 'nao_encontrada').map((i) => i.chave));
+    $('#mnKpis').innerHTML = TIPOS.map(([k, n, cor]) => `<div class="mn-k" style="--c:${cor}" data-f="${k}"><span>${n}</span><b>${cont[k] || 0}</b><em>${val[k] ? 'R$ ' + brl(val[k]) : (cont[k] ? 'valor indisponível' : '—')}</em></div>`).join('');
+    $('#mnDonut').innerHTML = comManif ? donut(cont, comManif) + `<div class="mn-lg">${TIPOS.map(([k, n, cor]) => `<div><i style="background:${cor}"></i>${n}<b>${cont[k] || 0}</b><span>${comManif ? Math.round(100 * (cont[k] || 0) / comManif) : 0}%</span></div>`).join('')}</div>` : '<div class="mn-sub">Nenhuma nota autorizada para mostrar.</div>';
+    const tot = Math.max(1, nAut + nCan + nDen);
+    $('#mnSit').innerHTML = `<div class="mn-sitbar"><div style="width:${100 * nAut / tot}%;background:#16a34a"></div><div style="width:${100 * nCan / tot}%;background:#dc2626"></div><div style="width:${100 * nDen / tot}%;background:#7f1d1d"></div></div>
+      <div class="mn-big"><div><b>${nAut}</b>Autorizadas</div><div><b style="color:${nCan ? '#dc2626' : 'inherit'}">${nCan}</b>Canceladas</div><div><b>${nDen}</b>Denegadas</div></div>
+      ${nCan ? `<div class="mn-al">⚠ <b>${nCan} nota${nCan === 1 ? '' : 's'} cancelada${nCan === 1 ? '' : 's'} pelo emitente.</b> Se estiver${nCan === 1 ? '' : 'em'} escriturada${nCan === 1 ? '' : 's'}, precisa${nCan === 1 ? '' : 'm'} ser estornada${nCan === 1 ? '' : 's'} (risco de crédito indevido).</div>` : ''}`;
+    const pend = it.filter((i) => ['nenhuma', 'ciencia'].includes(manifDe(i)) && typeof i.prazo_dias === 'number').sort((a, b) => a.prazo_dias - b.prazo_dias);
+    $('#mnPrazos').innerHTML = pend.length ? pend.slice(0, 6).map((i) => {
+      const d = i.prazo_dias, cor = d <= 15 ? '#dc2626' : (d <= 60 ? '#f59e0b' : '#94a3b8');
+      return `<div class="mn-pz"><div class="mn-pzt"><span>NF ${_esc(i.numero)} · ${_esc(i.emitente || cnpjFmt(i.cnpj_emit))}</span><b style="color:${cor}">${d > 0 ? `faltam ${d} dias` : 'vencido'}</b></div><div class="mn-pzb"><div style="width:${Math.min(100, Math.max(3, (180 - d) / 180 * 100))}%;background:${cor}"></div></div></div>`;
+    }).join('') + (pend.length > 6 ? `<div class="mn-sub">+ ${pend.length - 6} nota(s) na tabela</div>` : '') + '<div class="mn-sub" style="margin-top:8px">O prazo conta 180 dias da autorização da nota.</div>'
+      : '<div class="mn-sub">Nenhuma nota pendente de evento conclusivo.</div>';
+    const chips = [['todas', `Todas (${it.length})`], ...TIPOS.map(([k, n]) => [k, `${n} (${cont[k] || 0})`]), ['canceladas', `Canceladas (${nCan + nDen})`]];
+    if (nErr) chips.push(['erros', `Erros (${nErr})`]);
+    $('#mnChips').innerHTML = chips.map(([k, t]) => `<span class="mn-chip${S.filtro === k ? ' on' : ''}" data-f="${k}">${t}</span>`).join('');
+    const rows = filtrados();
+    $('#mnTabela').innerHTML = `<table><thead><tr><th>Nº</th><th>Emitente</th><th>Emissão</th><th style="text-align:right">Valor (R$)</th><th>Situação</th><th>Manifestação</th><th>Data / prazo</th><th>Chave</th></tr></thead><tbody>${
+      rows.map((i) => {
+        const st = SIT[i.situacao] || [i.situacao, 'cz'];
+        return `<tr><td>${_esc(i.numero || '')}</td><td>${_esc(i.emitente || '')}<span class="mn-mini">${cnpjFmt(i.cnpj_emit)} · ${_esc(i.uf || '')}</span></td><td>${dataBr(i.dh_emissao) || _esc(i.aamm || '')}</td>
+          <td style="text-align:right">${i.valor ? brl(i.valor) : '—'}</td><td><span class="mn-st ${st[1]}" title="${_esc(i.motivo || '')}">${st[0]}</span>${['erro', 'nao_encontrada'].includes(i.situacao) ? `<span class="mn-mini">${_esc((i.motivo || '').slice(0, 80))}</span>` : ''}</td>
+          <td>${linhaManif(i)}</td><td>${linhaData(i)}</td><td class="mono">${i.chave}</td></tr>`;
+      }).join('') || '<tr><td colspan="8" class="mn-sub">Nenhuma nota neste filtro.</td></tr>'}</tbody></table>`;
+  }
+  $('#mnChips').addEventListener('click', (ev) => { const c = ev.target.closest('.mn-chip'); if (c) { S.filtro = c.dataset.f; desenha(); } });
+  $('#mnKpis').addEventListener('click', (ev) => { const c = ev.target.closest('.mn-k'); if (c) { S.filtro = c.dataset.f; desenha(); } });
+
+  const nomeArq = () => `Manifestacao_NFe_${(S.res.empresa.nome || '').split(' ').slice(0, 3).join('_')}_${new Date().toISOString().slice(0, 10)}`;
+  const titulo = () => `Consulta Manifestação NF-e · ${S.res.empresa.nome} · ${cnpjFmt(S.res.empresa.cnpj)} · ${new Date(S.res.quando).toLocaleString('pt-BR')}`;
+  $('#mnXlsx').addEventListener('click', async () => {
+    const r = await api.exportar({ formato: 'xlsx', itens: S.res.itens, titulo: titulo(), nome: nomeArq() });
+    if (r.error) toast(r.error, true); else if (!r.cancelado) toast('Planilha salva.');
+  });
+  $('#mnHtml').addEventListener('click', async () => {
+    const css = [...document.styleSheets].map((sh) => { try { return [...sh.cssRules].map((x) => x.cssText).filter((t) => /\.mn-|:root/.test(t)).join('\n'); } catch (_) { return ''; } }).join('\n');
+    const corpo = `<h2 style="margin:0 0 4px">Consulta Manifestação NF-e</h2><div class="mn-sub" style="margin-bottom:14px">Situação na SEFAZ e manifestação do destinatário · gerado pelo FiscoCont+</div>${$('#mnQry').outerHTML}${$('#mnKpis').outerHTML}<div class="mn-row">${[...document.querySelectorAll('#mnRes .mn-row .mn-c')].map((x) => x.outerHTML).join('')}</div><div class="mn-c">${$('#mnTabela').outerHTML}</div>`;
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${_esc(titulo())}</title><style>:root{--panel:#fff;--line:#e2e8f0;--ink:#0f172a;--ink2:#64748b;--bg:#f4f6fb}body{font-family:Segoe UI,Arial,sans-serif;background:#f4f6fb;color:#0f172a;margin:24px}${css}.mn-tab{max-height:none}.mn-k{cursor:default}</style></head><body>${corpo}</body></html>`;
+    const r = await api.exportar({ formato: 'html', html, nome: nomeArq() });
+    if (r.error) toast(r.error, true); else if (!r.cancelado) toast('HTML salvo.');
+  });
+
+  window._manifEntrar = () => { carregaEmpresas(); if (!S.res) mostraForm(true); };
+}
+
 function bindLogin() {
   const form = $('#loginForm');
   if (!form) return;
@@ -5058,6 +5272,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   bindAtualizacao();
   bindManual();
+  bindManifestacao();
   const ubClose = $('#updateBannerClose');
   if (ubClose) ubClose.addEventListener('click', () => { $('#updateBanner').hidden = true; });
 

@@ -24,6 +24,13 @@ contextBridge.exposeInMainWorld('fiscocont', {
     novaSenha: (uid) => ipcRenderer.invoke('admin:usuarioNovaSenha', uid),
     cancelarConvite: (email) => ipcRenderer.invoke('admin:conviteCancelar', email),
   },
+  manif: {
+    empresas: () => ipcRenderer.invoke('manif:empresas'),
+    importarChaves: () => ipcRenderer.invoke('manif:importarChaves'),
+    consultar: (empresaId, chaves) => ipcRenderer.invoke('manif:consultar', { empresaId, chaves }),
+    exportar: (dados) => ipcRenderer.invoke('manif:exportar', dados),
+    onProgresso: (cb) => { ipcRenderer.removeAllListeners('manif:progresso'); ipcRenderer.on('manif:progresso', (_e, d) => cb(d)); },
+  },
   manual: {
     info: () => ipcRenderer.invoke('manual:info'),
     pagina: (i) => ipcRenderer.invoke('manual:pagina', i),

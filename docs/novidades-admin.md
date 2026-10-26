@@ -3,6 +3,14 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.24
+
+- **Consulta Manifestação NF-e (Baixas DF-e, só Admin por enquanto):** botão laranja nas Baixas DF-e abre uma tela cheia. Escolha a empresa destinatária (o certificado cadastrado nas Baixas DF-e) e cole as chaves (ou importe .txt/.xlsx); chaves inválidas (tamanho ou dígito verificador) e repetidas são apontadas antes. Se a empresa não tem certificado (ou está vencido), aparece o aviso com "Cadastrar certificado desta empresa", e depois de salvar o sistema volta para a consulta com as chaves.
+  - Só consulta: NfeConsultaProtocolo 4.00 na SEFAZ autorizadora (pela UF da chave; se falhar, tenta SVRS e SVAN) e resumo da nota no Ambiente Nacional (DistDFe por chave) para emitente, valor e emissão. Sem resumo, o nome do emitente vem pelo CNPJ; o valor fica "—".
+  - Dashboards: cartões por tipo (confirmada, só ciência, sem manifestação, desconhecida, operação não realizada), rosca, situação na SEFAZ com alerta de canceladas, prazo do evento conclusivo (180 dias da autorização), tabela com filtros, exportar Excel/HTML.
+  - Resultados guardados em manifestacao-cache.json: manifestação conclusiva e nota cancelada não são consultadas de novo; as demais só depois de 1 hora (a SEFAZ bloqueia consulta repetida). Consulta em partes de 100 chaves.
+  - Para testar: ver se a SEFAZ devolve os eventos de manifestação em cada estado.
+
 ## 2.1.21
 
 - **Manual do Fiscal · Publicar manual e Acessos:** na tela do manual, só o Admin vê "Publicar manual" (escolhe a pasta com manual.json + imagens das páginas; troca o manual para todos na hora) e "Acessos" (quem abriu, quando e por quanto tempo). Dados no Firestore: manual_fiscal (leitura: equipe ativa; gravação: Admin) e manual_acessos (cada pessoa grava o próprio registro; só o Admin lê). O conteúdo não vai no instalador nem no repositório.

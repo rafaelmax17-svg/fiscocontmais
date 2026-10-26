@@ -1109,6 +1109,125 @@ async function _baixarNfseEmpresa(empresa, dataInicial, dataFinal, gerarPdf) {
   } catch (e) { return { error: String(e.message || e), tipo: 'erro' }; }
 }
 
+// ---------------------------------------------------------------------------
+// Consulta Manifestação NF-e (só consulta, nada é enviado à SEFAZ) — por enquanto só o Admin.
+// Usa o certificado A1 da empresa destinatária cadastrado nas Baixas DF-e. Os resultados ficam guardados
+// (manifestacao-cache.json) para não consultar a mesma chave de novo: a SEFAZ bloqueia consulta repetida.
+// ---------------------------------------------------------------------------
+const _MANIF_FINAIS = ['confirmada', 'desconhecida', 'nao_realizada'];
+const _MANIF_CACHE_MIN = 60;
+function _manifCachePath() { return path.join(app.getPath('userData'), 'manifestacao-cache.json'); }
+function _manifCacheLer() { try { return JSON.parse(fs.readFileSync(_manifCachePath(), 'utf-8')); } catch (_) { return { itens: {}, nomes: {} }; } }
+function _manifCacheGravar(c) {
+  // guarda só os últimos 20 mil resultados
+  const ent = Object.entries(c.itens || {});
+  if (ent.length > 20000) c.itens = Object.fromEntries(ent.sort((a, b) => (b[1].em || '').localeCompare(a[1].em || '')).slice(0, 20000));
+  try { fs.writeFileSync(_manifCachePath(), JSON.stringify(c)); } catch (_) {}
+}
+function _certDaEmpresa(empresa) {
+  if (empresa.validade && new Date(empresa.validade) < new Date()) {
+    return { error: `O certificado dessa empresa está VENCIDO desde ${empresa.validade.split('-').reverse().join('/')}. Cadastre um certificado válido nas Baixas DF-e.` };
+  }
+  const senhaPath = path.join(_certDir(), `${empresa.id}.senha`);
+  if (!fs.existsSync(senhaPath)) return { error: 'Senha do certificado não encontrada — cadastre a empresa novamente nas Baixas DF-e.' };
+  try { return { pfxPath: path.join(_certDir(), empresa.pfxArquivo), senha: safeStorage.decryptString(fs.readFileSync(senhaPath)) }; }
+  catch (_) { return { error: 'Não consegui ler a senha salva com segurança nesta máquina.' }; }
+}
+const _manifAdm = async (fn) => {
+  if (sessionRole !== 'admin') return { error: 'Por enquanto a Consulta Manifestação NF-e é só do Admin.' };
+  if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
+  try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String((e && e.message) || e) }; }
+};
+ipcMain.handle('manif:empresas', () => _manifAdm(async () => ({
+  empresas: (_lerIndiceCert().empresas || []).map((e) => ({
+    id: e.id, nome: e.razaoSocial, cnpj: e.cnpj, validade: e.validade || '', vencido: !!(e.validade && new Date(e.validade) < new Date()),
+  })),
+})));
+ipcMain.handle('manif:importarChaves', () => _manifAdm(async () => {
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'Arquivo com as chaves de acesso', properties: ['openFile'],
+    filters: [{ name: 'Texto ou planilha', extensions: ['txt', 'csv', 'xlsx', 'xlsm'] }] });
+  if (r.canceled || !r.filePaths.length) return { cancelado: true };
+  const saida = path.join(os.tmpdir(), `fc_manif_ch_${Date.now()}.json`);
+  await runFiscal(['manifestacao-chaves', r.filePaths[0], '--json', saida], saida);
+  const res = JSON.parse(fs.readFileSync(saida, 'utf-8')); fs.unlink(saida, () => {});
+  if (res.erro) throw new Error(res.erro);
+  return { chaves: res.chaves || [] };
+}));
+ipcMain.handle('manif:consultar', (_evt, { empresaId, chaves }) => _manifAdm(async () => {
+  const empresa = (_lerIndiceCert().empresas || []).find((e) => e.id === empresaId);
+  if (!empresa) throw new Error('Empresa não encontrada nas Baixas DF-e — cadastre o certificado dela primeiro.');
+  const cert = _certDaEmpresa(empresa);
+  if (cert.error) throw new Error(cert.error);
+  const lista = [...new Set((chaves || []).map((c) => String(c).replace(/\D/g, '')).filter((c) => c.length === 44))].slice(0, 2000);
+  if (!lista.length) throw new Error('Nenhuma chave válida para consultar.');
+  const cache = _manifCacheLer();
+  const agora = Date.now();
+  const chaveCache = (c) => `${empresa.cnpj}|${c}`;
+  const faltam = lista.filter((c) => {
+    const h = cache.itens[chaveCache(c)];
+    if (!h || !h.item || h.item.situacao === 'erro') return true;
+    const final = ['cancelada', 'denegada'].includes(h.item.situacao) || _MANIF_FINAIS.includes(h.item.manifestacao);
+    return !final && (agora - new Date(h.em).getTime()) > _MANIF_CACHE_MIN * 60000;
+  });
+  if (faltam.length) {
+    // em partes de 100 chaves: cada processo do núcleo tem limite de tempo
+    const env = (d) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('manif:progresso', d); };
+    const guardadas = lista.length - faltam.length;
+    env({ feitas: 0, total: faltam.length, guardadas });
+    for (let ini = 0; ini < faltam.length; ini += 100) {
+      const parte = faltam.slice(ini, ini + 100);
+      const tag = `${agora}_${ini}`;
+      const entrada = path.join(os.tmpdir(), `fc_manif_in_${tag}.json`);
+      const saida = path.join(os.tmpdir(), `fc_manif_out_${tag}.json`);
+      const prog = path.join(os.tmpdir(), `fc_manif_prog_${tag}.json`);
+      fs.writeFileSync(entrada, JSON.stringify(parte));
+      const tm = setInterval(() => {
+        try { const p = JSON.parse(fs.readFileSync(prog, 'utf-8')); env({ feitas: ini + p.feitas, total: faltam.length, guardadas }); } catch (_) {}
+      }, 700);
+      try {
+        await runFiscal(['manifestacao', cert.pfxPath, '--senha', cert.senha, '--cnpj', empresa.cnpj, '--entrada', entrada, '--progresso', prog, '--json', saida], saida);
+      } finally { clearInterval(tm); }
+      const res = JSON.parse(fs.readFileSync(saida, 'utf-8'));
+      for (const f of [entrada, saida, prog]) fs.unlink(f, () => {});
+      if (res.erro) throw new Error(res.erro);
+      const em = new Date().toISOString();
+      for (const it of res.itens || []) cache.itens[chaveCache(it.chave)] = { item: it, em };
+      _manifCacheGravar(cache);
+    }
+  }
+  const itens = lista.map((c) => ({ ...(cache.itens[chaveCache(c)] || {}).item, chave: c, consultadoEm: (cache.itens[chaveCache(c)] || {}).em || '' }));
+  // nome do emitente pelo CNPJ quando o Ambiente Nacional não devolveu o resumo
+  cache.nomes = cache.nomes || {};
+  for (const cnpj of [...new Set(itens.filter((i) => !i.emitente && i.cnpj_emit).map((i) => i.cnpj_emit))].slice(0, 60)) {
+    if (!(cnpj in cache.nomes)) {
+      const api = await _consultaCnpjApi(cnpj).catch(() => null);
+      cache.nomes[cnpj] = api ? (api.razao_social || api.nome || '') : '';
+    }
+  }
+  for (const i of itens) if (!i.emitente && cache.nomes[i.cnpj_emit]) i.emitente = cache.nomes[i.cnpj_emit];
+  _manifCacheGravar(cache);
+  return { empresa: { nome: empresa.razaoSocial, cnpj: empresa.cnpj, validade: empresa.validade || '' }, itens, consultadas: faltam.length, quando: new Date().toISOString() };
+}));
+ipcMain.handle('manif:exportar', (_evt, { formato, itens, titulo, html, nome }) => _manifAdm(async () => {
+  const ext = formato === 'xlsx' ? 'xlsx' : 'html';
+  const r = await dialog.showSaveDialog(mainWindow, { title: 'Salvar consulta de manifestação',
+    defaultPath: `${(nome || 'Manifestacao_NFe').replace(/[\\/:*?"<>|]/g, '_')}.${ext}`,
+    filters: [{ name: ext === 'xlsx' ? 'Planilha Excel' : 'Página HTML', extensions: [ext] }] });
+  if (r.canceled || !r.filePath) return { cancelado: true };
+  if (ext === 'html') { fs.writeFileSync(r.filePath, String(html || ''), 'utf-8'); }
+  else {
+    const entrada = path.join(os.tmpdir(), `fc_manif_x_${Date.now()}.json`);
+    const saida = entrada + '.res.json';
+    fs.writeFileSync(entrada, JSON.stringify(itens || []));
+    await runFiscal(['manifestacao-xlsx', r.filePath, '--entrada', entrada, '--titulo', String(titulo || ''), '--json', saida], saida);
+    const res = JSON.parse(fs.readFileSync(saida, 'utf-8'));
+    for (const f of [entrada, saida]) fs.unlink(f, () => {});
+    if (res.erro) throw new Error(res.erro);
+  }
+  shell.openPath(r.filePath);
+  return { path: r.filePath };
+}));
+
 ipcMain.handle('fiscal:nfseBaixar', async (_evt, { empresaId, dataInicial, dataFinal, gerarPdf }) => {
   const empresa = _lerIndiceCert().empresas.find((e) => e.id === empresaId);
   if (!empresa) return { error: 'Empresa não encontrada — cadastre o certificado primeiro.' };
