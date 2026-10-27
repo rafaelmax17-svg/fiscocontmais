@@ -1376,7 +1376,8 @@ function bindFiscal() {
     // ⚡ Automatizar correção → "Abrir no modo manual" de um cliente: escolhe o SPED (e a pasta de XMLs) como se fosse à mão
     window.__corrAbrirManual = (sped, xmls) => {
       corrSpedPath = sped; FISCAL.corrSpedPath = sped;
-      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples'].forEach((id) => { $(id).disabled = false; });
+      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum'].forEach((id) => { $(id).disabled = false; });
+      $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = '';
       corrFeito = false;
       SN.an = null; XMLS.path = xmls || null;
       $('#corrSimples').hidden = true; $('#corrSimples').innerHTML = '';
@@ -1396,6 +1397,7 @@ function bindFiscal() {
       $('#btnCorrSpedRodar').disabled = false;
       $('#btnCorrDifal').disabled = false;
       $('#btnCorrSimples').disabled = false;
+      $('#btnCorrAcum').disabled = false; $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = '';
       corrFeito = false;
       SN.an = null; XMLS.path = null;
       $('#corrSimples').hidden = true; $('#corrSimples').innerHTML = '';
@@ -1496,6 +1498,109 @@ function bindFiscal() {
 
     // ---- Uso e consumo / ativo: CFOP 1.xxx x 2.xxx e DIFAL de RO (conferência + confirmação) ----
     $('#btnCorrDifal').addEventListener('click', () => difalAbrir());
+
+    // ---- Acumulador 7000 (DESPESAS) → acumulador de despesa certo. Nada muda sozinho: só o que estiver marcado.
+    const AC = { an: null, sel: new Map(), marc: new Set(), filtro: 'todos', busca: '', mostrar: 200 };
+    const acFm = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    function acDesenhar() {
+      const box = $('#corrAcum'), an = AC.an;
+      if (!an) return;
+      const nomes = Object.fromEntries(an.acumuladores.map((a) => [a.cod, a.nome]));
+      const itens = an.itens;
+      const conf = { alta: 0, media: 0 };
+      itens.forEach((i) => { conf[i.confianca] = (conf[i.confianca] || 0) + 1; });
+      const porAc = {};
+      itens.forEach((i) => { const a = AC.sel.get(i.item) || ''; const g = porAc[a] = porAc[a] || { n: 0, v: 0 }; g.n += i.linhas; g.v += i.valor; });
+      const top = Object.entries(porAc).sort((a, b) => b[1].v - a[1].v);
+      const mx = Math.max(1, ...top.map((t) => t[1].v));
+      const marcVal = itens.filter((i) => AC.marc.has(i.item)).reduce((s, i) => s + i.valor, 0);
+      const marcLin = itens.filter((i) => AC.marc.has(i.item)).reduce((s, i) => s + i.linhas, 0);
+      const t = AC.busca.toLowerCase();
+      const vis = itens.filter((i) => (AC.filtro === 'todos' || i.confianca === AC.filtro || (AC.filtro === 'nao' && !AC.marc.has(i.item)))
+        && (!t || (i.descr + ' ' + i.item + ' ' + i.ncm).toLowerCase().includes(t)));
+      const opts = (cur) => an.acumuladores.map((a) => `<option value="${a.cod}"${a.cod === cur ? ' selected' : ''}>${a.cod} · ${esc(a.nome)}</option>`).join('');
+      const lbl = { alta: ['Alta', 'k-ok'], media: ['Média', 'k-warn'] };
+      box.innerHTML = `
+        <div class="dif-k">Acumulador 7000 (DESPESAS) — sugestão do acumulador certo pela descrição e pelo NCM</div>
+        <p class="dif-sub">${an.resumo.linhas} item(ns) de nota (${an.resumo.produtos} produtos) · R$ ${acFm(an.resumo.valor)}. Revise e troque o que precisar: só os produtos marcados são alterados. O arquivo original não muda.</p>
+        <div class="dif-kpis">
+          <div><span>Itens no 7000</span><b>${an.resumo.linhas}</b><small>R$ ${acFm(an.resumo.valor)}</small></div>
+          <div class="k-ok"><span>Confiança alta</span><b>${conf.alta || 0}</b><small>produtos · descrição e NCM concordam</small></div>
+          <div class="k-warn"><span>Confiança média</span><b>${conf.media || 0}</b><small>produtos · só a descrição ou só o NCM</small></div>
+          <div><span>Produtos marcados</span><b>${AC.marc.size}</b><small>${marcLin} item(ns) · R$ ${acFm(marcVal)}</small></div>
+        </div>
+        <div class="ac7-grid">
+          <div class="ac7-bars"><div class="ac7-h">Para onde vai cada valor</div>${top.map(([k, g]) => `<div class="ac7-br"><span>${k ? k + ' · ' + esc((nomes[k] || '').replace(/^DESP\.( COM| NA)? /, '')) : 'sem acumulador'}</span><i><em style="width:${(g.v / mx * 100).toFixed(1)}%"></em></i><b>R$ ${acFm(g.v)}</b></div>`).join('')}</div>
+          <div class="ac7-tab">
+            <div class="ac7-flt">${[['todos', `Todos (${itens.length})`], ['alta', `Alta (${conf.alta || 0})`], ['media', `Média (${conf.media || 0})`], ['nao', 'Desmarcados']].map(([k, tx]) => `<span class="ac7-ch${AC.filtro === k ? ' on' : ''}" data-f="${k}">${tx}</span>`).join('')}
+              <input id="ac7Busca" placeholder="Buscar produto, código ou NCM" value="${esc(AC.busca)}"></div>
+            <div class="ac7-wrap"><table><thead><tr><th><input type="checkbox" id="ac7Todos" title="Marcar/desmarcar os visíveis"></th><th>Produto</th><th style="text-align:right">Valor</th><th>Acumulador (pode trocar)</th><th>Confiança</th></tr></thead><tbody>
+            ${vis.slice(0, AC.mostrar).map((i) => `<tr><td><input type="checkbox" class="ac7-m" data-i="${esc(i.item)}"${AC.marc.has(i.item) ? ' checked' : ''}></td>
+              <td>${esc(i.descr || i.item)}<span class="ac7-mi">cód. ${esc(i.item)} · NCM ${esc(i.ncm || '—')} · CFOP ${esc(i.cfops.join('/'))} · ${i.linhas} item(ns) em ${i.qtd_notas} nota(s)</span></td>
+              <td style="text-align:right">${acFm(i.valor)}</td>
+              <td><select class="ac7-s" data-i="${esc(i.item)}">${opts(AC.sel.get(i.item))}</select><span class="ac7-mi">${esc(i.motivo)}</span></td>
+              <td><span class="ac7-cf ${lbl[i.confianca] ? lbl[i.confianca][1] : ''}">${lbl[i.confianca] ? lbl[i.confianca][0] : i.confianca}</span></td></tr>`).join('')}
+            </tbody></table>${vis.length > AC.mostrar ? `<button class="act inv-export" id="ac7Mais" style="margin:8px auto;display:block">Mostrar mais (${vis.length - AC.mostrar})</button>` : ''}</div>
+          </div>
+        </div>
+        <div class="dif-acts">
+          <button class="act inv-export" id="ac7Alta">Marcar todos de confiança alta</button>
+          <button class="act inv-export" id="ac7Limpar">Desmarcar todos</button>
+          <button class="act inv-export sn-big" id="ac7Aplicar" style="background:#e23d4c;color:#fff;border-color:transparent"${AC.marc.size ? '' : ' disabled'}>Aplicar no SPED (${AC.marc.size} produto${AC.marc.size === 1 ? '' : 's'})</button>
+        </div>
+        <div id="ac7Res"></div>`;
+      box.querySelectorAll('.ac7-ch').forEach((c) => c.addEventListener('click', () => { AC.filtro = c.dataset.f; AC.mostrar = 200; acDesenhar(); }));
+      const bsc = $('#ac7Busca');
+      bsc.addEventListener('change', () => { AC.busca = bsc.value; AC.mostrar = 200; acDesenhar(); });
+      box.querySelectorAll('.ac7-m').forEach((c) => c.addEventListener('change', () => { if (c.checked) AC.marc.add(c.dataset.i); else AC.marc.delete(c.dataset.i); acDesenhar(); }));
+      box.querySelectorAll('.ac7-s').forEach((c) => c.addEventListener('change', () => { AC.sel.set(c.dataset.i, c.value); AC.marc.add(c.dataset.i); acDesenhar(); }));
+      $('#ac7Todos').addEventListener('change', (ev) => { vis.slice(0, AC.mostrar).forEach((i) => { if (ev.target.checked) AC.marc.add(i.item); else AC.marc.delete(i.item); }); acDesenhar(); });
+      const mais = $('#ac7Mais'); if (mais) mais.addEventListener('click', () => { AC.mostrar += 300; acDesenhar(); });
+      $('#ac7Alta').addEventListener('click', () => { itens.forEach((i) => { if (i.confianca === 'alta') AC.marc.add(i.item); }); acDesenhar(); });
+      $('#ac7Limpar').addEventListener('click', () => { AC.marc.clear(); acDesenhar(); });
+      $('#ac7Aplicar').addEventListener('click', acAplicar);
+    }
+    async function acAbrir() {
+      if (!corrSpedPath) return;
+      overlay(true, 'Lendo os itens do acumulador 7000…');
+      const r = await window.fiscocont.admin.acum7000Analisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito });
+      overlay(false);
+      if (r.error) { toast(r.error, true); return; }
+      const box = $('#corrAcum');
+      box.hidden = false;
+      if (!r.res.itens.length) { AC.an = null; box.innerHTML = '<div class="dif-k">Nenhum item no acumulador 7000 neste arquivo.</div>'; return; }
+      AC.an = r.res; AC.sel = new Map(); AC.marc = new Set(); AC.filtro = 'todos'; AC.busca = ''; AC.mostrar = 200;
+      r.res.itens.forEach((i) => { if (i.sugestao) { AC.sel.set(i.item, i.sugestao); AC.marc.add(i.item); } });
+      acDesenhar();
+      box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    async function acAplicar() {
+      if (!AC.marc.size) return;
+      const itens = {};
+      AC.marc.forEach((k) => { const v = AC.sel.get(k); if (v) itens[k] = v; });
+      overlay(true, 'Trocando o acumulador 7000 pelos acumuladores escolhidos…');
+      const res = await window.fiscocont.admin.acum7000Aplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, selecao: { itens } });
+      overlay(false);
+      if (res.error) { toast(res.error, true); return; }
+      corrFeito = true;
+      const r = res.resumo || {};
+      $('#ac7Res').innerHTML = `<div class="dif-done sn-done">
+        <div class="dif-k">Corrigido: arquivo novo gerado (o original não foi alterado)</div>
+        <div class="dif-kpis"><div class="k-ok"><span>Itens reclassificados</span><b>${r.alterados || 0}</b><small>R$ ${acFm(r.valor)}</small></div>
+          <div><span>Acumuladores usados</span><b>${(r.acumuladores || []).length}</b><small>${(r.acumuladores || []).join(', ')}</small></div>
+          <div><span>Cadastrados no 0400</span><b>${(r.novos_0400 || []).length}</b><small>${r.removido_0400 ? 'o 7000 saiu do 0400 (sem uso)' : ''}</small></div>
+          <div class="${r.restantes ? 'k-warn' : 'k-ok'}"><span>Ainda no 7000</span><b>${r.restantes || 0}</b><small>itens não marcados</small></div></div>
+        ${(r.avisos || []).length ? `<div class="dif-av"><ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+        <p class="dif-sub">Para não voltar no próximo mês, troque também o acumulador padrão desses produtos no Domínio.</p>
+        <div class="dif-acts"><button class="act inv-export" id="ac7Reconf">Conferir de novo</button>
+          <button class="act inv-export sn-big" id="ac7Baixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button></div></div>`;
+      $('#ac7Reconf').addEventListener('click', acAbrir);
+      $('#ac7Baixar').addEventListener('click', async () => {
+        const r3 = await window.fiscocont.fiscal.baixarSpedCorrigido();
+        if (r3 && r3.error) toast(r3.error, true); else if (r3 && !r3.canceled) toast('SPED corrigido salvo.');
+      });
+    }
+    $('#btnCorrAcum').addEventListener('click', acAbrir);
     $('#btnCorrSimples').addEventListener('click', () => snAbrir());
 
     const DIF = { an: null, origem: null };

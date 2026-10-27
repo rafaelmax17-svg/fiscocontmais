@@ -2959,6 +2959,9 @@ def main(argv):
     if modo == 'substituir-lmc':
         import lmc as _lmc
         return _lmc.main_cli(argv)
+    if modo == 'acum-7000':
+        import acumulador_despesa as _ad
+        return _ad.main_cli(argv[1:])
     if modo == 'icms-xml':
         import icms_xml as _ix
         return _ix.main_cli(argv[1:])

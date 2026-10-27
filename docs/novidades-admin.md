@@ -3,6 +3,14 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.30
+
+- **Corretor do SPED Fiscal · Acumulador 7000:** botão novo "Acumulador 7000". Lê os C170 com COD_NAT 7000 (DESPESAS), agrupa por produto e sugere o acumulador de despesa certo (7001 a 7040) pela descrição e pelo NCM; CFOP x910/x911 → 7026, x922 → 7028, x116/x117 → 7029. Revenda lançada no 7000 é tratada como despesa. Alimentos vão para 7003 (arroz, feijão, óleo, macarrão) e 7009 (café, açúcar, coador).
+  - Confiança alta (descrição e NCM concordam) ou média (só um dos dois). Toda sugestão pode ser trocada na tela; só os produtos marcados mudam.
+  - Ao aplicar: troca o COD_NAT dos itens marcados, cadastra no 0400 os acumuladores novos (sem acento), tira o 0400 do 7000 se ficar sem uso e recalcula os totais dos blocos e o bloco 9. Gera arquivo novo; o original não muda.
+  - Arquivo assinado no PVA: a assinatura é retirada e o arquivo precisa ser assinado de novo no PVA.
+  - Para não voltar no mês seguinte, trocar também o acumulador padrão do produto no Domínio.
+
 ## 2.1.29
 
 - **Correção da EFD-Contribuições · notas sem item:** nova opção na tela "Notas sem item: incluir item (entrada CST 70 · saída CST 49)". Ligada, cada C100 sem C170 recebe um item único (código DOCSEMITEM, cadastrado no 0200 como tipo 99) sem PIS/COFINS: entrada com CST 70; saída com CST 49 (CST de entrada não é aceito em nota de saída). CFOP 5929 quando há NFC-e do mesmo cliente, dia e valor; senão 5949/1949 (a conferir no XML). Conta: entrada → conta das demais entradas; saída → conta das NFC-e (ex.: 408). Desligada, só aponta como antes.

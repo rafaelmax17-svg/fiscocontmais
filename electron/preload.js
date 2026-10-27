@@ -174,6 +174,8 @@ contextBridge.exposeInMainWorld('fiscocont', {
     loteAnalisar: (params) => ipcRenderer.invoke('admin:loteAnalisar', params),
     icmsXmlAnalisar: (params) => ipcRenderer.invoke('admin:icmsXmlAnalisar', params),
     icmsXmlAplicar: (params) => ipcRenderer.invoke('admin:icmsXmlAplicar', params),
+    acum7000Analisar: (params) => ipcRenderer.invoke('admin:acum7000Analisar', params),
+    acum7000Aplicar: (params) => ipcRenderer.invoke('admin:acum7000Aplicar', params),
     valorXmlAnalisar: (params) => ipcRenderer.invoke('admin:valorXmlAnalisar', params),
     estoqueStPlanilha: () => ipcRenderer.invoke('admin:estoqueStPlanilha'),
     estoqueStCalcular: (params) => ipcRenderer.invoke('admin:estoqueStCalcular', params),
