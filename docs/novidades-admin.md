@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.33
+
+- **Corretor do SPED Fiscal · Cadastro de produtos (0200):** botão novo. Lista os produtos cadastrados como mercadoria para revenda (TIPO_ITEM 00) que no período só entraram como uso e consumo (CFOP x556, x407, x653 → sugestão 07) ou ativo (x551, x406 → 08). Dá para trocar a sugestão e só os marcados mudam (campo 07 do 0200). Produto que também aparece em saída (C170 de saída, C321, C425, C470), inventário (H010), K200 ou entrada para revenda fica em "Não alterar". Nenhuma linha entra ou sai, então o bloco 9 fica igual; arquivo assinado perde a assinatura (assinar de novo no PVA). Corrigir também o cadastro no Domínio. Base: Guia Prático da EFD ICMS/IPI, registro 0200, campo 07.
+
 ## 2.1.32
 
 - **Auditoria Interna · Excel:** aba nova **"Acumulador 7000 por NF"**. Para cada nota com itens no acumulador genérico 7000 (COD_NAT do C170), três níveis com o agrupamento do Excel (botões 1/2/3): nota → acumulador de despesa sugerido (7001 a 7040, mesmas regras do corretor: descrição, NCM e CFOP) com descrição, valor e % da nota → produtos daquele acumulador (item, código, descrição, NCM, CFOP, motivo e confiança). Nota com produtos de naturezas diferentes fica em laranja como **Mista**: o sistema só destaca, não escolhe. O número da nota se repete em todas as linhas para o filtro trazer a nota inteira. Valores líquidos de desconto (VL_ITEM − VL_DESC).

@@ -1377,8 +1377,8 @@ function bindFiscal() {
     // ⚡ Automatizar correção → "Abrir no modo manual" de um cliente: escolhe o SPED (e a pasta de XMLs) como se fosse à mão
     window.__corrAbrirManual = (sped, xmls) => {
       corrSpedPath = sped; FISCAL.corrSpedPath = sped;
-      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum'].forEach((id) => { $(id).disabled = false; });
-      $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = '';
+      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad'].forEach((id) => { $(id).disabled = false; });
+      $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = ''; $('#corrCad').hidden = true; $('#corrCad').innerHTML = '';
       corrFeito = false;
       SN.an = null; XMLS.path = xmls || null;
       $('#corrSimples').hidden = true; $('#corrSimples').innerHTML = '';
@@ -1399,6 +1399,7 @@ function bindFiscal() {
       $('#btnCorrDifal').disabled = false;
       $('#btnCorrSimples').disabled = false;
       $('#btnCorrAcum').disabled = false; $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = '';
+      $('#btnCorrCad').disabled = false; $('#corrCad').hidden = true; $('#corrCad').innerHTML = '';
       corrFeito = false;
       SN.an = null; XMLS.path = null;
       $('#corrSimples').hidden = true; $('#corrSimples').innerHTML = '';
@@ -1602,6 +1603,92 @@ function bindFiscal() {
       });
     }
     $('#btnCorrAcum').addEventListener('click', acAbrir);
+
+    // ---- Cadastro de produtos (0200): tipo 00 (revenda) que só entrou como uso e consumo / ativo. Só muda o que estiver marcado.
+    const CD = { an: null, sel: new Map(), marc: new Set(), filtro: 'todos', busca: '', mostrar: 200 };
+    const cdTipos = { '07': '07 · uso e consumo', '08': '08 · ativo imobilizado', '00': '00 · manter revenda' };
+    function cdDesenhar() {
+      const box = $('#corrCad'), an = CD.an;
+      if (!an) return;
+      const itens = an.itens, rs = an.resumo;
+      const t = CD.busca.toLowerCase();
+      const vis = itens.filter((i) => (CD.filtro === 'todos' || (CD.filtro === 'nao' && !i.pode) || (CD.filtro === CD.sel.get(i.cod) && i.pode))
+        && (!t || (i.cod + ' ' + i.desc + ' ' + i.ncm).toLowerCase().includes(t)));
+      const n07 = [...CD.marc].filter((k) => CD.sel.get(k) === '07').length, n08 = [...CD.marc].filter((k) => CD.sel.get(k) === '08').length;
+      box.innerHTML = `
+        <div class="dif-k">Cadastro de produtos (0200) · tipo do item × uso nas entradas</div>
+        <p class="dif-sub">Produtos cadastrados como <b>mercadoria para revenda (tipo 00)</b> que, no período, só entraram como <b>uso e consumo ou ativo</b>. Só os marcados mudam (campo 07 TIPO_ITEM do 0200). O arquivo original não muda.</p>
+        <div class="dif-kpis">
+          <div><span>Produtos encontrados</span><b>${rs.encontrados}</b><small>tipo 00 com entrada de uso e consumo / ativo</small></div>
+          <div class="k-ok"><span>Podem ser corrigidos</span><b>${rs.podem}</b><small>sem saída, inventário ou entrada para revenda</small></div>
+          <div class="k-warn"><span>Não alterar</span><b>${rs.nao_alterar}</b><small>o código serve para mais de um uso</small></div>
+          <div><span>Marcados</span><b>${CD.marc.size}</b><small>${n07} → 07 · ${n08} → 08</small></div>
+        </div>
+        <div class="ac7-tab" style="margin-top:12px">
+          <div class="ac7-flt">${[['todos', `Todos (${itens.length})`], ['07', 'Para 07'], ['08', 'Para 08'], ['nao', `Não alterar (${rs.nao_alterar})`]].map(([k, tx]) => `<span class="ac7-ch${CD.filtro === k ? ' on' : ''}" data-f="${k}">${tx}</span>`).join('')}
+            <input id="cdBusca" placeholder="Buscar produto, código ou NCM" value="${esc(CD.busca)}"></div>
+          <div class="ac7-wrap"><table><thead><tr><th><input type="checkbox" id="cdTodos" title="Marcar/desmarcar os visíveis"></th><th>Código</th><th>Produto</th><th>NCM</th><th>CFOPs de entrada (itens)</th><th style="text-align:right">Valor</th><th>Tipo atual</th><th>Tipo novo (pode trocar)</th><th>Por quê</th></tr></thead><tbody>
+          ${vis.slice(0, CD.mostrar).map((i) => `<tr><td>${i.pode ? `<input type="checkbox" class="cd-m" data-i="${esc(i.cod)}"${CD.marc.has(i.cod) ? ' checked' : ''}>` : ''}</td>
+            <td>${esc(i.cod)}</td><td><b>${esc(i.desc)}</b></td><td>${esc(i.ncm || '—')}</td><td>${i.cfops.map(([c, n]) => `${esc(c)} (${n})`).join(' · ')}</td>
+            <td style="text-align:right">${acFm(i.valor)}</td><td><span class="ac7-cf" style="background:#fee2e2;color:#991b1b;white-space:nowrap">00 · revenda</span></td>
+            <td>${i.pode ? `<select class="ac7-s cd-s" data-i="${esc(i.cod)}">${Object.entries(cdTipos).map(([k, v]) => `<option value="${k}"${CD.sel.get(i.cod) === k ? ' selected' : ''}>${v}</option>`).join('')}</select>` : '<span class="ac7-mi">não alterar</span>'}</td>
+            <td>${i.pode ? '<span class="ac7-mi" style="color:#166534">só entradas de uso e consumo / ativo</span>' : `<span class="ac7-mi" style="color:#b45309">${esc(i.motivos.join('; '))}</span>`}</td></tr>`).join('')}
+          </tbody></table>${vis.length > CD.mostrar ? `<button class="act inv-export" id="cdMais" style="margin:8px auto;display:block">Mostrar mais (${vis.length - CD.mostrar})</button>` : ''}</div>
+        </div>
+        <div class="dif-av"><ul><li>Produto que também aparece em <b>saída</b>, no <b>inventário (H010)</b>, no <b>K200</b> ou em <b>entrada para revenda</b> fica em "Não alterar".</li>
+          <li>A correção definitiva é no <b>cadastro do produto no Domínio</b>; senão o tipo 00 volta no próximo SPED.</li></ul></div>
+        <div class="dif-acts">
+          <button class="act inv-export" id="cdTodosPodem">Marcar todos que podem ser corrigidos</button>
+          <button class="act inv-export" id="cdLimpar">Desmarcar todos</button>
+          <button class="act inv-export sn-big" id="cdAplicar" style="background:#e23d4c;color:#fff;border-color:transparent"${CD.marc.size ? '' : ' disabled'}>Aplicar no SPED (${CD.marc.size} produto${CD.marc.size === 1 ? '' : 's'})</button>
+        </div>
+        <div id="cdRes"></div>`;
+      box.querySelectorAll('.ac7-ch').forEach((c) => c.addEventListener('click', () => { CD.filtro = c.dataset.f; CD.mostrar = 200; cdDesenhar(); }));
+      const bsc = $('#cdBusca'); bsc.addEventListener('change', () => { CD.busca = bsc.value; CD.mostrar = 200; cdDesenhar(); });
+      box.querySelectorAll('.cd-m').forEach((c) => c.addEventListener('change', () => { if (c.checked) CD.marc.add(c.dataset.i); else CD.marc.delete(c.dataset.i); cdDesenhar(); }));
+      box.querySelectorAll('.cd-s').forEach((c) => c.addEventListener('change', () => { CD.sel.set(c.dataset.i, c.value); if (c.value === '00') CD.marc.delete(c.dataset.i); else CD.marc.add(c.dataset.i); cdDesenhar(); }));
+      $('#cdTodos').addEventListener('change', (ev) => { vis.slice(0, CD.mostrar).forEach((i) => { if (!i.pode || CD.sel.get(i.cod) === '00') return; if (ev.target.checked) CD.marc.add(i.cod); else CD.marc.delete(i.cod); }); cdDesenhar(); });
+      const mais = $('#cdMais'); if (mais) mais.addEventListener('click', () => { CD.mostrar += 300; cdDesenhar(); });
+      $('#cdTodosPodem').addEventListener('click', () => { itens.forEach((i) => { if (i.pode && CD.sel.get(i.cod) !== '00') CD.marc.add(i.cod); }); cdDesenhar(); });
+      $('#cdLimpar').addEventListener('click', () => { CD.marc.clear(); cdDesenhar(); });
+      $('#cdAplicar').addEventListener('click', cdAplicar);
+    }
+    async function cdAbrir() {
+      if (!corrSpedPath) return;
+      overlay(true, 'Lendo o cadastro de produtos (0200) e as entradas…');
+      const r = await window.fiscocont.admin.cad0200Analisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito });
+      overlay(false);
+      if (r.error) { toast(r.error, true); return; }
+      const box = $('#corrCad'); box.hidden = false;
+      if (!r.res.itens.length) { CD.an = null; box.innerHTML = '<div class="dif-k">Nenhum produto tipo 00 (revenda) entrando como uso e consumo ou ativo neste arquivo.</div>'; return; }
+      CD.an = r.res; CD.sel = new Map(); CD.marc = new Set(); CD.filtro = 'todos'; CD.busca = ''; CD.mostrar = 200;
+      r.res.itens.forEach((i) => { CD.sel.set(i.cod, i.sugestao); if (i.pode) CD.marc.add(i.cod); });
+      cdDesenhar();
+      box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    async function cdAplicar() {
+      if (!CD.marc.size) return;
+      const itens = {};
+      CD.marc.forEach((k) => { const v = CD.sel.get(k); if (v && v !== '00') itens[k] = v; });
+      overlay(true, 'Corrigindo o tipo dos produtos no 0200…');
+      const res = await window.fiscocont.admin.cad0200Aplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, selecao: { itens } });
+      overlay(false);
+      if (res.error) { toast(res.error, true); return; }
+      corrFeito = true;
+      const r = res.resumo || {}, pt = r.por_tipo || {};
+      $('#cdRes').innerHTML = `<div class="dif-done sn-done">
+        <div class="dif-k">Corrigido: arquivo novo gerado (o original não foi alterado)</div>
+        <div class="dif-kpis"><div class="k-ok"><span>Produtos corrigidos</span><b>${r.alterados || 0}</b><small>${pt['07'] || 0} → 07 · ${pt['08'] || 0} → 08</small></div></div>
+        ${(r.avisos || []).length ? `<div class="dif-av"><ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+        <div class="dif-acts"><button class="act inv-export" id="cdReconf">Conferir de novo</button>
+          <button class="act inv-export sn-big" id="cdBaixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button></div></div>`;
+      $('#cdReconf').addEventListener('click', cdAbrir);
+      $('#cdBaixar').addEventListener('click', async () => {
+        const r3 = await window.fiscocont.fiscal.baixarSpedCorrigido();
+        if (r3 && r3.error) toast(r3.error, true); else if (r3 && !r3.canceled) toast('SPED corrigido salvo.');
+      });
+    }
+    $('#btnCorrCad').addEventListener('click', cdAbrir);
     $('#btnCorrSimples').addEventListener('click', () => snAbrir());
 
     const DIF = { an: null, origem: null };

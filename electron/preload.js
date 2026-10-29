@@ -179,6 +179,8 @@ contextBridge.exposeInMainWorld('fiscocont', {
     icmsXmlAplicar: (params) => ipcRenderer.invoke('admin:icmsXmlAplicar', params),
     acum7000Analisar: (params) => ipcRenderer.invoke('admin:acum7000Analisar', params),
     acum7000Aplicar: (params) => ipcRenderer.invoke('admin:acum7000Aplicar', params),
+    cad0200Analisar: (params) => ipcRenderer.invoke('admin:cad0200Analisar', params),
+    cad0200Aplicar: (params) => ipcRenderer.invoke('admin:cad0200Aplicar', params),
     valorXmlAnalisar: (params) => ipcRenderer.invoke('admin:valorXmlAnalisar', params),
     estoqueStPlanilha: () => ipcRenderer.invoke('admin:estoqueStPlanilha'),
     estoqueStCalcular: (params) => ipcRenderer.invoke('admin:estoqueStCalcular', params),
