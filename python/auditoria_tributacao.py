@@ -166,7 +166,7 @@ def ler_entradas(texto):
                 itens.append(dict(nota_idx=nota['idx'], cod='(nota sem item)', desc='Nota escriturada só com totais (C190)', ncm='', tipo='',
                                   unid='', qtd=0.0, cfop=c190['cfop'], cst=c190['cst'], vl=c190['vl'], bc=c190['bc'], aliq=c190['aliq'],
                                   icms=c190['icms'], bcst=c190['bcst'], st=c190['st'], ipi=c190['ipi'], cstpis='', vpis=0.0, vcof=0.0,
-                                  sem_item=True))
+                                  nat='', num_item='', sem_item=True))
 
     for l in linhas:
         c = l.rstrip('\r').split('|')
@@ -205,7 +205,7 @@ def ler_entradas(texto):
                               unid=p0190.get(un, un), qtd=_n(c[5]), cfop=c[11], cst=c[10], vl=_n(c[7]) - _n(c[8]), bc=_n(c[13]),
                               aliq=_n(c[14]), icms=_n(c[15]), bcst=_n(c[16]), st=_n(c[18]), ipi=_n(c[24]) if len(c) > 24 else 0.0,
                               cstpis=c[25] if len(c) > 25 else '', vpis=_n(c[30]) if len(c) > 30 else 0.0,
-                              vcof=_n(c[36]) if len(c) > 36 else 0.0, sem_item=False))
+                              vcof=_n(c[36]) if len(c) > 36 else 0.0, nat=c[12], num_item=c[2], sem_item=False))
         elif r == 'C190':
             nota['c190'].append({'cst': c[2], 'cfop': c[3], 'aliq': _n(c[4]), 'vl': _n(c[5]), 'bc': _n(c[6]), 'icms': _n(c[7]),
                                  'bcst': _n(c[8]), 'st': _n(c[9]), 'ipi': _n(c[11]) if len(c) > 11 else 0.0})
@@ -322,6 +322,33 @@ def _auditar(i, nota, dt_ini, st_lista, st_rev):
     return ach
 
 
+def _acum7000(notas, itens):
+    """Itens no acumulador genérico 7000 (COD_NAT do C170), agrupados por nota e, dentro da nota, pelo acumulador de despesa
+    sugerido (acumulador_despesa.classifica: descrição + NCM + CFOP). Nota com mais de um acumulador = MISTA (só destaca)."""
+    try:
+        import acumulador_despesa as ad
+    except Exception:  # pragma: no cover
+        return {'notas': [], 'nomes': {}}
+    por_nota = OrderedDict()
+    for i in itens:
+        if i['sem_item'] or (i.get('nat') or '').strip() != ad.ACUM_GENERICO:
+            continue
+        sug, motivo, conf = ad.classifica(i['desc'], i['ncm'], i['cfop'])
+        por_nota.setdefault(i['nota_idx'], []).append({'item': i['num_item'], 'cod': i['cod'], 'desc': i['desc'], 'ncm': i['ncm'],
+                                                     'cfop': i['cfop'], 'vl': i['vl'], 'acum': sug or '', 'motivo': motivo, 'conf': conf})
+    out = []
+    for ni, its in por_nota.items():
+        n = notas[ni]
+        grupos = OrderedDict()
+        for it in sorted(its, key=lambda x: -x['vl']):
+            grupos.setdefault(it['acum'], []).append(it)
+        partes = sorted(([a, g] for a, g in grupos.items()), key=lambda x: -sum(y['vl'] for y in x[1]))
+        out.append({'num': n['num'], 'dt': n['dt_es'] or n['dt'], 'forn': n['forn'], 'cnpj': n['cnpj'], 'vl': sum(x['vl'] for x in its),
+                    'mista': len(partes) > 1, 'partes': [{'acum': a, 'vl': sum(y['vl'] for y in g), 'itens': g,
+                                                          'conf': 'media' if any(y['conf'] != 'alta' for y in g) else 'alta'} for a, g in partes]})
+    return {'notas': out, 'nomes': dict(ad.ACUM)}
+
+
 ORDEM = {'Confere': 0, 'Info': 0, 'Verificar': 1, 'Divergente': 2}
 TEMAS = [('ICMS-ST', 'Produto na ST de RO × ST da nota'), ('Alíquota', 'Interna (Lei 688, art. 27) ou interestadual'),
          ('Crédito ICMS', 'Crédito em uso e consumo, CST e conta do ICMS'), ('DIFAL', 'Entrada interestadual para uso e consumo / ativo'),
@@ -369,6 +396,7 @@ def analisar_texto(texto):
         return sorted(([k, v] for k, v in d.items()), key=lambda x: -x[1]['vl'])
 
     tot = {f: sum(i[f] for i in itens) for f in ('vl', 'bc', 'icms', 'st', 'ipi')}
+    acum7000 = _acum7000(notas, itens)
     sit_p = defaultdict(lambda: [0, 0.0])
     for g in prod.values():
         sit_p[g['sit']][0] += 1; sit_p[g['sit']][1] += g['vl']
@@ -389,7 +417,7 @@ def analisar_texto(texto):
         'itens': [{k: v for k, v in i.items()} for i in itens], 'produtos': list(prod.values()), 'totais': tot,
         'por_cfop': grupo(lambda i: i['cfop']), 'por_cst': grupo(lambda i: i['cst']), 'por_aliq': grupo(lambda i: i['aliq']),
         'por_forn': grupo(lambda i: notas[i['nota_idx']]['forn'] or '(sem nome)'),
-        'situacao': {k: v for k, v in sit_p.items()}, 'temas': temas, 'pontos': pontos,
+        'situacao': {k: v for k, v in sit_p.items()}, 'temas': temas, 'pontos': pontos, 'acum7000': acum7000,
         'fontes': {'st': f'RICMS/RO, Anexo VI, Parte 2 — consolidado até o {st_mod.VERSAO}: {len(st_mod.VIGENTES)} CEST vigentes, '
                          f'{len(st_mod.REVOGADOS)} revogados descartados; Tabela XXVI (porta a porta) fora da conferência geral',
                    'aliq': 'Lei 688/96, art. 27, I, e art. 27-A (Fecoep), sem os itens revogados',
@@ -644,6 +672,7 @@ def gerar_xlsx(res, caminho):
         c = ws[f'A{r}']
         if c.value in cor:
             c.fill = PatternFill('solid', fgColor=cor[c.value])
+    _aba_acum7000(wb, res, cab_f, cab_p, moeda)
     g = lambda lst, rot: [[rot(k), v['n'], v['vl'], v['bc'], v['icms'], v['st']] for k, v in lst]
     hd = ['Itens', 'Valor', 'Base ICMS', 'ICMS', 'ICMS-ST']
     fm5 = [None, None, moeda, moeda, moeda, moeda]
@@ -652,6 +681,73 @@ def gerar_xlsx(res, caminho):
     aba('Por alíquota', ['Alíquota'] + hd, g(res['por_aliq'], lambda a: _pc(a)), [14, 8, 15, 15, 14, 14], fm5)
     aba('Por fornecedor', ['Fornecedor'] + hd, g(res['por_forn'], lambda f: f), [46, 8, 15, 15, 14, 14], fm5)
     wb.save(caminho)
+
+
+def _aba_acum7000(wb, res, cab_f, cab_p, moeda):
+    """Aba "Acumulador 7000 por NF": nota → acumulador sugerido → produtos (agrupamento do Excel em 3 níveis)."""
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    A = res.get('acum7000') or {'notas': []}
+    ws = wb.create_sheet('Acumulador 7000 por NF')
+    nomes = A.get('nomes', {})
+    ns = A['notas']
+    mist = sum(1 for n in ns if n['mista'])
+    ws.append(['Acumulador 7000 (DESPESAS) por nota · sugestão do acumulador de despesa certo (7001 a 7040) pela descrição, NCM e CFOP'])
+    ws['A1'].font = Font(bold=True, size=13, color='1E3A8A')
+    ws.append([f'{len(ns)} nota(s) com itens no 7000 · R$ {_fm(sum(n["vl"] for n in ns))} · {len(ns) - mist} com um acumulador · {mist} mista(s) '
+               '(produtos de naturezas diferentes: divida a nota ou escolha o acumulador — o sistema não escolhe). '
+               'Botões 1/2/3 à esquerda: só notas · notas e acumuladores · tudo, com os produtos.'])
+    ws['A2'].font = Font(italic=True, color='475569')
+    cab = ['Nota', 'Entrada', 'Fornecedor', 'Valor no 7000', 'Situação / nível', 'Acumulador', 'Código do produto', 'Descrição',
+           'NCM', 'CFOP', 'Motivo da classificação', 'Confiança', 'Valor', '% da NF']
+    ws.append(cab)
+    for c in ws[3]:
+        c.font, c.fill, c.alignment = cab_f, cab_p, Alignment(vertical='center')
+    larg = [11, 11, 34, 13, 26, 11, 18, 46, 11, 7, 40, 10, 13, 8]
+    from openpyxl.utils import get_column_letter
+    for j, w in enumerate(larg):
+        ws.column_dimensions[get_column_letter(j + 1)].width = w
+    f_mh, f_uh, f_ac = PatternFill('solid', fgColor='FDE6C4'), PatternFill('solid', fgColor='EEF2FF'), PatternFill('solid', fgColor='FFF7EC')
+    cinza, azul, laranja = Font(color='94A3B8'), Font(bold=True, color='1E3A8A'), Font(bold=True, color='B45309')
+    borda = Border(top=Side(style='medium', color='F59E0B'))
+    d = lambda s: f'{s[:2]}/{s[2:4]}/{s[4:]}' if len(s or '') == 8 else (s or '')
+    conf = {'alta': 'alta', 'media': 'média'}
+    r = 3
+    for n in ns:
+        r += 1
+        sit = f'⚠ Mista · {len(n["partes"])} acumuladores' if n['mista'] else 'Única'
+        ws.append([n['num'], d(n['dt']), n['forn'], n['vl'], sit, '', '', 'divida a nota ou escolha o acumulador' if n['mista'] else '',
+                   '', '', '', '', n['vl'], 1])
+        for c in ws[r]:
+            c.fill = f_mh if n['mista'] else f_uh
+            c.font = Font(bold=True, color='B45309') if n['mista'] and c.column in (5, 8) else Font(bold=True)
+            if n['mista']:
+                c.border = borda
+        for p in n['partes']:
+            r += 1
+            ws.append([n['num'], '', '', '', f'└ {p["acum"] or "sem sugestão"}', p['acum'], '', f'{nomes.get(p["acum"], "sem sugestão: classificar")} '
+                       f'· {len(p["itens"])} produto(s)', '', '', '', conf.get(p['conf'], p['conf']), p['vl'], p['vl'] / n['vl'] if n['vl'] else 0])
+            ws.row_dimensions[r].outlineLevel = 1
+            for c in ws[r]:
+                c.fill = f_ac
+                c.font = azul if c.column in (5, 6, 8, 13, 14) else Font()
+            ws.cell(r, 1).font = cinza
+            for it in p['itens']:
+                r += 1
+                ws.append([n['num'], '', '', '', f'    · item {it["item"]}', p['acum'], it['cod'], it['desc'], it['ncm'], it['cfop'], it['motivo'],
+                           conf.get(it['conf'], it['conf']), it['vl'], it['vl'] / n['vl'] if n['vl'] else 0])
+                ws.row_dimensions[r].outlineLevel = 2
+                ws.cell(r, 1).font = cinza
+                ws.cell(r, 5).font = Font(color='64748B')
+                ws.cell(r, 6).font = cinza
+    for row in range(4, r + 1):
+        ws.cell(row, 4).number_format = moeda
+        ws.cell(row, 13).number_format = moeda
+        ws.cell(row, 14).number_format = '0%'
+    ws.sheet_properties.outlinePr.summaryBelow = False
+    ws.freeze_panes = 'A4'
+    ws.auto_filter.ref = f'A3:N{max(r, 4)}'
+    if not ns:
+        ws.append(['Nenhum item no acumulador 7000 neste SPED.'])
 
 
 # ------------------------------------------------------------------ CLI

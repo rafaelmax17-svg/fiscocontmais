@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.32
+
+- **Auditoria Interna · Excel:** aba nova **"Acumulador 7000 por NF"**. Para cada nota com itens no acumulador genérico 7000 (COD_NAT do C170), três níveis com o agrupamento do Excel (botões 1/2/3): nota → acumulador de despesa sugerido (7001 a 7040, mesmas regras do corretor: descrição, NCM e CFOP) com descrição, valor e % da nota → produtos daquele acumulador (item, código, descrição, NCM, CFOP, motivo e confiança). Nota com produtos de naturezas diferentes fica em laranja como **Mista**: o sistema só destaca, não escolhe. O número da nota se repete em todas as linhas para o filtro trazer a nota inteira. Valores líquidos de desconto (VL_ITEM − VL_DESC).
+
 ## 2.1.31
 
 - **Auditoria Interna (novo módulo de teste, só Admin):** escolha o SPED Fiscal e clique em "Auditar entradas". Abre uma página com duas abas:
