@@ -3,6 +3,16 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.31
+
+- **Auditoria Interna (novo módulo de teste, só Admin):** escolha o SPED Fiscal e clique em "Auditar entradas". Abre uma página com duas abas:
+  - **Relatório de tributação:** entradas por produto (código, descrição, NCM, CFOP, CST, alíquota, base, ICMS, ICMS-ST, IPI), gráficos por CFOP, CST, alíquota e fornecedor, filtros, busca e as notas de cada produto. Nota sem C170 entra pelos totais do C190, marcada "nota sem item".
+  - **Auditoria de tributação** por produto (Confere / Divergente / Verificar / Informativo, sempre com a base legal): ICMS-ST pela lista vigente do RICMS/RO, Anexo VI, Parte 2 (consolidado até o Dec. 31.963/26: 477 CEST vigentes; revogados e redações anteriores fora; Tabela XXVI só porta a porta); alíquota interna pela Lei 688/96, art. 27 e 27-A (Fecoep), e interestadual pelas Res. do Senado 22/89 e 13/12; crédito de ICMS em uso e consumo/ativo e CST × crédito; DIFAL sem C197; combustível monofásico (CST 61/60); crédito de PIS/COFINS em monofásico; tipo do produto no 0200 × CFOP.
+  - Exporta **HTML animado** e **Excel detalhado** (abas Resumo, Itens das notas, Por produto, Auditoria, Por CFOP, Por CST, Por alíquota, Por fornecedor).
+  - Ainda fora: benefícios de RO (Anexos I e II, isenção e redução de base). Por isso, alíquota menor que a interna aparece como "Verificar".
+  - A lista de ST é gerada por `tools/gerar_st_ro.py` a partir do texto do Anexo VI (rodar de novo quando sair decreto novo).
+  - Depois de testado, a ideia é levar para o Auditor de Classificação (botão separado).
+
 ## 2.1.30
 
 - **Corretor do SPED Fiscal · Acumulador 7000:** botão novo "Acumulador 7000". Lê os C170 com COD_NAT 7000 (DESPESAS), agrupa por produto e sugere o acumulador de despesa certo (7001 a 7040) pela descrição e pelo NCM; CFOP x910/x911 → 7026, x922 → 7028, x116/x117 → 7029. Revenda lançada no 7000 é tratada como despesa. Alimentos vão para 7003 (arroz, feijão, óleo, macarrão) e 7009 (café, açúcar, coador).

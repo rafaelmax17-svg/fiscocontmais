@@ -94,7 +94,7 @@ jobs:
               --paths . \
               --hidden-import auditoria_am --hidden-import st_am_dados --hidden-import oportunidades --hidden-import legalizacao --hidden-import efd_cliente --hidden-import efd_contribuicoes \
               --hidden-import efd_corretor --hidden-import efd_reducao_linear --hidden-import efd_lc224_excecoes --hidden-import efd_conferencia --hidden-import efd_tabelas_natureza_dados \
-              --hidden-import nfse_danfse --hidden-import manifestacao --hidden-import acumulador_despesa --hidden-import nfse_lote --hidden-import nfse_pdf_dados \
+              --hidden-import nfse_danfse --hidden-import manifestacao --hidden-import acumulador_despesa --hidden-import auditoria_tributacao --hidden-import st_ro_dados --hidden-import nfse_lote --hidden-import nfse_pdf_dados \
               --hidden-import difal_ro --hidden-import simples_ro --hidden-import corretor_dash --hidden-import xml_entradas --hidden-import tabela_ajustes_dados --hidden-import evolucao_tributaria --hidden-import monofasico --hidden-import lote_sped --hidden-import icms_xml --hidden-import lmc --hidden-import icms_credito --hidden-import danfe --hidden-import valor_xml --hidden-import estoque_st --hidden-import openpyxl \
               --collect-all pdfplumber --collect-all pdfminer --collect-all reportlab \
               $n.py

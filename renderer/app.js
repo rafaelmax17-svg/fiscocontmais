@@ -570,6 +570,7 @@ function switchView(name) {
   if (name === 'admin-corrigir-efd') { $('#view-admin-corrigir-efd').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-lmc') { $('#view-admin-lmc').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-audam') { $('#view-admin-audam').hidden = false; $('#empty').hidden = true; return; }
+  if (name === 'admin-atrib') { $('#view-admin-atrib').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-evo') { $('#view-admin-evo').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-radar') { $('#view-admin-radar').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-legal') { $('#view-admin-legal').hidden = false; $('#empty').hidden = true; return; }
@@ -5673,6 +5674,46 @@ function audSelecao() {
   $('#btnAudRodar').disabled = !AUDAM.sped.length;
 }
 
+// ---- Auditoria Interna (Admin): tributação das entradas por produto + auditoria de tributação
+const ATRIB = { sped: '', nome: '' };
+function atribInit() {
+  const adm = window.fiscocont && window.fiscocont.admin;
+  if (!adm || !$('#btnAtribSped')) return;
+  $('#btnAtribSped').addEventListener('click', async () => {
+    const r = await adm.atribPick();
+    if (!r || r.canceled || !r.path) return;
+    ATRIB.sped = r.path;
+    $('#btnAtribSped').classList.add('ok');
+    const sel = $('#atribSel'); sel.hidden = false; sel.innerHTML = `<span>SPED · ${esc(r.path.split(/[\\/]/).pop())}</span>`;
+    $('#btnAtribRodar').disabled = false;
+  });
+  $('#btnAtribRodar').addEventListener('click', async () => {
+    if (!ATRIB.sped) return;
+    overlay(true, 'Lendo as entradas e auditando a tributação de cada produto…');
+    try {
+      const r = await adm.atribAnalisar({ sped: ATRIB.sped });
+      overlay(false);
+      if (!r || r.error) { toast((r && r.error) || 'Falha na auditoria.', true); return; }
+      ATRIB.nome = r.res.empresa || '';
+      $('#atribVazio').hidden = true;
+      const fr = $('#atribFrame'); fr.hidden = false; fr.srcdoc = r.html;
+      $('#btnAtribHtml').disabled = false; $('#btnAtribXlsx').disabled = false;
+      const s = r.res.situacao || {};
+      toast(`${r.res.produtos} produtos auditados · ${(s.Divergente || [0])[0]} divergente(s) · ${(s.Verificar || [0])[0]} para verificar`);
+    } catch (e) { overlay(false); toast('Falha: ' + e.message, true); }
+  });
+  const exp = async (formato) => {
+    if (formato === 'xlsx') overlay(true, 'Montando o Excel detalhado…');
+    const r = await adm.atribExportar({ formato, nome: ATRIB.nome });
+    overlay(false);
+    if (!r || r.canceled) return;
+    if (r.error) { toast(r.error, true); return; }
+    toast(formato === 'xlsx' ? 'Excel salvo.' : 'HTML salvo.');
+  };
+  $('#btnAtribHtml').addEventListener('click', () => exp('html'));
+  $('#btnAtribXlsx').addEventListener('click', () => exp('xlsx'));
+}
+
 function audInit() {
   const adm = window.fiscocont && window.fiscocont.admin;
   if (!adm || !$('#btnAudSped')) return;
@@ -5988,6 +6029,7 @@ async function legalConsultar(cnpj, cache) {
 // ------------------------------------------------------------------ ligações
 function initAdminModulos() {
   audInit();
+  atribInit();
   evoInit();
   const adm = window.fiscocont && window.fiscocont.admin;
   if (!adm) return;

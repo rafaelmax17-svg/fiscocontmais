@@ -315,6 +315,10 @@
         <svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M15 8.6c-.6-.9-1.7-1.4-3-1.4-1.7 0-3 .9-3 2.2 0 3 6 1.6 6 4.6 0 1.3-1.3 2.3-3 2.3-1.4 0-2.6-.6-3.2-1.6M12 5.6v1.6M12 16.3v2.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
         <span>Recuperação Tributária</span>
       </button>
+      <button class="nav-item nav-item-adm" data-group="admin-only" data-view="admin-atrib">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M10.5 4a6.5 6.5 0 104.1 11.5L20 21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M7.5 10.5l2 2 3.5-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Auditoria Interna</span>
+      </button>
       <button class="nav-item nav-item-adm" data-group="admin-only" data-view="admin-audam">
         <svg viewBox="0 0 24 24" class="ic"><path d="M5 4h14v16H5zM8 9h8M8 13h8M8 17h5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Auditoria ICMS · AM</span>
@@ -1212,6 +1216,30 @@
       </div>
 
       <!-- Admin (teste): Auditoria de itens do SPED Fiscal — ICMS/AM -->
+      <!-- Admin: Auditoria Interna (teste) — tributação das entradas por produto + auditoria de tributação -->
+      <div class="view adm-view" id="view-admin-atrib" hidden>
+        <div class="fiscal-bar adm-bar">
+          <button class="act inv-export adm-btn" id="btnAtribSped">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            SPED Fiscal (.txt)
+          </button>
+          <span class="adm-sel" id="atribSel" hidden></span>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnAtribHtml" disabled>Salvar HTML (animado)</button>
+          <button class="act inv-export" id="btnAtribXlsx" disabled>Salvar Excel (detalhado)</button>
+          <button class="act adm-go" id="btnAtribRodar" disabled>Auditar entradas</button>
+        </div>
+        <div class="fiscal-empty adm-empty" id="atribVazio">
+          <svg viewBox="0 0 24 24"><path d="M10.5 4a6.5 6.5 0 104.1 11.5L20 21" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <h2>Auditoria Interna · Tributação das entradas por produto (módulo de teste do Admin)</h2>
+          <p>Selecione o SPED Fiscal. O sistema lê as notas de entrada (C100, C170, C190 e 0200) e monta: o <b>relatório de tributação</b> de cada
+          produto (CFOP, CST, alíquota, base, ICMS, ICMS-ST e IPI) e a <b>auditoria de tributação</b>, que confere ICMS-ST pela lista vigente do
+          RICMS/RO (Anexo VI), alíquota (Lei 688/96, art. 27), crédito de ICMS, DIFAL, combustível monofásico, PIS/COFINS monofásico e o cadastro
+          do produto. Revogados e redações anteriores ficam fora. Nada no SPED é alterado.</p>
+        </div>
+        <iframe id="atribFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
       <div class="view adm-view" id="view-admin-audam" hidden>
         <div class="fiscal-bar adm-bar">
           <button class="act inv-export adm-btn" id="btnAudSped">
