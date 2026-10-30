@@ -6013,7 +6013,7 @@ function audSelecao() {
   $('#btnAudRodar').disabled = !AUDAM.sped.length;
 }
 
-// ---- Auditoria Interna (Admin): tributação das entradas por produto + auditoria de tributação
+// ---- Análise Tributária (equipe): tributação das entradas por produto + auditoria de tributação
 const ATRIB = { sped: '', nome: '' };
 function atribInit() {
   const adm = window.fiscocont && window.fiscocont.admin;

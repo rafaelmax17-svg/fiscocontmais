@@ -1869,7 +1869,7 @@ ipcMain.handle('admin:audPick', async () => {
   return { paths: r.filePaths };
 });
 
-// ---------------------------------------------------------------- Auditoria Tributária (liberada para a equipe; só lê o SPED)
+// ---------------------------------------------------------------- Análise Tributária (liberada para a equipe; só lê o SPED)
 // Tributação das entradas por produto + auditoria de tributação (ST de RO, alíquota, crédito, DIFAL, combustível, PIS/COFINS).
 let _atribUltimo = null;   // { sped, html }
 ipcMain.handle('admin:atribPick', async () => {

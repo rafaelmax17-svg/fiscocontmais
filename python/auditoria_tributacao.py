@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Auditoria Interna (Admin) — Tributação das entradas por produto + auditoria de tributação.
+"""Análise Tributária (menu Fiscal, equipe) — Tributação das entradas por produto + auditoria de tributação.
 
 Módulo de TESTE do Admin (pedido do Rafael, 29/10/2026). Depois de validado, vai para o Auditor de Classificação.
 Só lê o SPED Fiscal (EFD ICMS/IPI): nada é alterado. Tudo é apontamento para o contador conferir.
@@ -579,7 +579,7 @@ def gerar_html(res):
     dados = json.dumps({'produtos': res['produtos'], 'itens': res['itens'], 'notas': res['notas']}, ensure_ascii=False).replace('</', '<\\/')
     return f'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tributação das entradas · {_h.escape(e.get("nome", ""))}</title><style>{_CSS}</style></head><body>
-<div class="top"><small>FISCOCONT+ · AUDITORIA INTERNA · TRIBUTAÇÃO DAS ENTRADAS POR PRODUTO</small><h1>{_h.escape(e.get("nome", ""))}</h1>
+<div class="top"><small>FISCOCONT+ · ANÁLISE TRIBUTÁRIA · TRIBUTAÇÃO DAS ENTRADAS POR PRODUTO</small><h1>{_h.escape(e.get("nome", ""))}</h1>
 <p>CNPJ {cnpj_f} · {d(e.get("dt_ini", ""))} a {d(e.get("dt_fin", ""))} · {nnot} notas de entrada · {nit} itens · {nprod} produtos · Fonte: SPED Fiscal (C100 de entrada, C170, C190, 0200)</p>
 <div class="tabs"><button class="on" data-p="pR">Relatório de tributação</button><button data-p="pA">Auditoria de tributação</button></div></div>
 <div class="wrap">
@@ -611,7 +611,7 @@ def gerar_html(res):
 <div style="max-height:680px;overflow:auto"><table><thead><tr><th>Situação</th><th>Produto</th><th>Como veio no SPED</th><th>O que a regra diz</th><th>Base legal</th><th class="r">Valor</th></tr></thead><tbody id="tA"></tbody></table></div>
 <small id="nA" style="display:block;text-align:center;color:#64748b;margin-top:8px"></small><button class="mais" id="mA">Mostrar mais</button></div>
 <div class="ft"><b>Tabelas usadas:</b> {_h.escape(fontes["st"])} · {_h.escape(fontes["aliq"])} · {_h.escape(fontes["pis"])}.<br><b>Ainda não incluído:</b> {_h.escape(fontes["pendente"])}.<br>
-Auditoria interna de teste: tudo é apontamento para o contador conferir. Nenhum dado do SPED é alterado.</div>
+Análise de leitura: tudo é apontamento para o contador conferir. Nenhum dado do SPED é alterado.</div>
 </section></div>
 <script id="dados" type="application/json">{dados}</script><script>{_JS}</script></body></html>'''
 
@@ -656,7 +656,7 @@ def gerar_xlsx(res, caminho):
     ws = wb.active
     ws.title = 'Resumo'
     d = lambda s: f'{s[:2]}/{s[2:4]}/{s[4:]}' if len(s or '') == 8 else (s or '')
-    ws.append(['Tributação das entradas por produto · Auditoria interna (FiscoCont+)'])
+    ws.append(['Tributação das entradas por produto · Análise Tributária (FiscoCont+)'])
     ws['A1'].font = Font(bold=True, size=14, color='1E3A8A')
     for l in [['Empresa', e.get('nome', '')], ['CNPJ', e.get('cnpj', '')], ['Período', f'{d(e.get("dt_ini", ""))} a {d(e.get("dt_fin", ""))}'], [],
               ['Notas de entrada', len(res['notas'])], ['Itens', len(res['itens'])], ['Produtos', len(res['produtos'])],

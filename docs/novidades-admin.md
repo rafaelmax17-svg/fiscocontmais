@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.37
+
+- Módulo renomeado para **Análise Tributária** (menu, tela, HTML e Excel).
+
 ## 2.1.36
 
 - **Auditoria Interna liberada para a equipe** como **"Auditoria Tributária"** no grupo Fiscal (botão verde-esmeralda, classe nav-item-verde, selo NOVO até 06/11/2026). Saiu do menu de Administração; os handlers admin:atrib* deixaram de exigir Admin (o módulo só lê o SPED). A view passou de admin-atrib para fiscal-atrib.
