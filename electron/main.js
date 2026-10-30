@@ -1861,6 +1861,59 @@ ipcMain.handle('admin:radarAnalisar', async (_evt, { efdc, fiscal, xml }) => {
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+// ---------------------------------------------------------------- Apuração Assistida IBS/CBS (Reforma Tributária) — equipe
+// Lê os XMLs (.zip) de NF-e/NFC-e, apura débitos e créditos de IBS/CBS e confere CST/cClassTrib com a tabela oficial.
+let _rtcUltimo = null;   // { args, html, nome }
+ipcMain.handle('fiscal:rtcPickXmls', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'Selecione os .zip com os XMLs de NF-e e NFC-e (saídas e entradas)',
+    properties: ['openFile', 'multiSelections'], filters: [{ name: 'ZIP', extensions: ['zip'] }] });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  return { paths: r.filePaths };
+});
+ipcMain.handle('fiscal:rtcPickSped', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'SPED Fiscal do mesmo período (opcional, só para conferência)',
+    properties: ['openFile'], filters: [{ name: 'SPED Fiscal', extensions: ['txt'] }] });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  return { path: r.filePaths[0] };
+});
+ipcMain.handle('fiscal:rtcAnalisar', async (_evt, { xmls, sped, regime }) => {
+  if (!Array.isArray(xmls) || !xmls.length) return { error: 'Selecione os .zip com os XMLs.' };
+  const stamp = Date.now();
+  const jsonOut = path.join(os.tmpdir(), `fc_rtc_${stamp}.json`);
+  const htmlOut = path.join(os.tmpdir(), `fc_rtc_${stamp}.html`);
+  const args = ['apuracao-rtc', '--xmls', ...xmls];
+  if (sped) args.push('--sped', sped);
+  if (regime) args.push('--regime', String(regime).replace(/\D/g, ''));
+  try {
+    await runFiscal([...args, '--json', jsonOut, '--html', htmlOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    const html = fs.readFileSync(htmlOut, 'utf-8');
+    if (_rtcUltimo && _rtcUltimo.html && _rtcUltimo.html !== htmlOut) fs.unlink(_rtcUltimo.html, () => {});
+    _rtcUltimo = { args, html: htmlOut, nome: res.empresa || res.cnpj || '' };
+    return { ok: true, res, html };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('fiscal:rtcExportar', async (_evt, { formato }) => {
+  if (!_rtcUltimo) return { error: 'Calcule a apuração primeiro.' };
+  const ext = formato === 'xlsx' ? 'xlsx' : 'html';
+  const base = `Apuracao-IBS-CBS-${String(_rtcUltimo.nome || '').replace(/[^\w-]+/g, '_')}`.replace(/_+$/, '');
+  const r = await dialog.showSaveDialog(mainWindow, { title: ext === 'xlsx' ? 'Salvar Excel' : 'Salvar HTML',
+    defaultPath: `${base}.${ext}`, filters: [{ name: ext === 'xlsx' ? 'Planilha Excel' : 'Página HTML', extensions: [ext] }] });
+  if (r.canceled || !r.filePath) return { canceled: true };
+  try {
+    if (ext === 'html') fs.copyFileSync(_rtcUltimo.html, r.filePath);
+    else {
+      const jsonOut = path.join(os.tmpdir(), `fc_rtcx_${Date.now()}.json`);
+      await runFiscal([..._rtcUltimo.args, '--json', jsonOut, '--xlsx', r.filePath], jsonOut);
+      const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
+      if (res.erro) return { error: res.erro };
+    }
+    shell.openPath(r.filePath);
+    return { ok: true, path: r.filePath };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
 ipcMain.handle('admin:audPick', async () => {
   const bloq = _soAdmin(); if (bloq) return bloq;
   const r = await dialog.showOpenDialog(mainWindow, { title: 'Selecione a EFD ICMS/IPI (SPED Fiscal) do cliente do Amazonas',

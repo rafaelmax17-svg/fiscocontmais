@@ -2938,6 +2938,9 @@ def main(argv):
     if modo == 'aud-tributacao':
         import auditoria_tributacao as _at
         return _at.main_cli(argv[1:])
+    if modo == 'apuracao-rtc':
+        import apuracao_rtc as _rtc
+        return _rtc.main_cli(argv[1:])
     if modo == 'auditoria-icms-am':
         import auditoria_am as _am
         return _am.main_cli(argv[1:])

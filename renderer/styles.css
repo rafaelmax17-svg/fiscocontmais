@@ -985,7 +985,7 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .nav-item[data-view="lote-balancetes"]{--ic:#f472b6}
 .nav-item[data-view="conciliacao"]{--ic:#fb923c}
 .nav-item[data-view="admin-lic"]{--ic:#facc15}
-.nav-item:not(.nav-item-danger):not(.nav-item-destaque):not(.nav-item-adm):not(.nav-item-verde) .ic{
+.nav-item:not(.nav-item-danger):not(.nav-item-destaque):not(.nav-item-adm):not(.nav-item-verde):not(.nav-item-rtc) .ic{
   color:var(--ic,currentColor);opacity:1;
   filter:drop-shadow(0 0 5px color-mix(in srgb,var(--ic,transparent) 45%,transparent))}
 
@@ -1269,3 +1269,15 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .nav-item-verde:hover:not(.disabled){background:rgba(16,185,129,.28);color:#fff}
 .nav-item-verde.active{background:linear-gradient(90deg,#059669,#10b981);color:#fff;border-color:transparent;box-shadow:0 4px 14px rgba(5,150,105,.45)}
 .nav-item-verde.active .ic{color:#fff}
+
+/* Apuração Assistida IBS/CBS — selo REFORMA TRIBUTÁRIA */
+.nav-item-rtc{flex-wrap:wrap;row-gap:3px}
+.nav-item-rtc .ic{opacity:1;color:#fb923c}
+.nav-item-rtc > span{flex:1 1 calc(100% - 40px)}
+.nav-rt{font-style:normal;font-size:8.5px;font-weight:800;letter-spacing:.6px;padding:2px 6px;border-radius:4px;
+  background:linear-gradient(90deg,#f59e0b,#ef4444);color:#fff;margin-left:31px;white-space:nowrap}
+.nav-item-rtc.active .ic{color:#fff}
+.rtc-sel{background:#fff;color:#1f2937;border:1px solid #c4b5fd;border-radius:8px;padding:8px 10px;font-size:12.5px;font-weight:600}
+.rtc-tag{display:inline-block;font-size:11px;font-weight:800;letter-spacing:1.2px;padding:4px 10px;border-radius:5px;
+  background:linear-gradient(90deg,#f59e0b,#ef4444);color:#fff;margin-bottom:10px}
+.rtc-empty .rtc-lei{font-size:12px;opacity:.75}

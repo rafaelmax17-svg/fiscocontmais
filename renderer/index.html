@@ -237,6 +237,11 @@
         <span>Análise Tributária</span>
         <em class="nav-new" id="atribNewBadge" hidden>NOVO</em>
       </button>
+      <button class="nav-item nav-item-rtc" data-group="fiscal" data-view="fiscal-rtc">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M12 3v18M5 21h14M6 7h12M6 7l-3 7a3 3 0 006 0zM18 7l-3 7a3 3 0 006 0z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Apuração Assistida</span>
+        <em class="nav-rt">REFORMA TRIBUTÁRIA</em>
+      </button>
       <button class="nav-item" data-group="fiscal" data-view="fiscal-pgdas">
         <svg viewBox="0 0 24 24" class="ic"><path d="M4 20V10 M10 20V4 M16 20v-7 M22 20H2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Simples Nacional</span>
@@ -1245,6 +1250,37 @@
           do produto. Revogados e redações anteriores ficam fora. Nada no SPED é alterado.</p>
         </div>
         <iframe id="atribFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <!-- Fiscal: Apuração Assistida IBS/CBS (Reforma Tributária) — XMLs de NF-e/NFC-e; SPED opcional só para conferência -->
+      <div class="view adm-view" id="view-fiscal-rtc" hidden>
+        <div class="fiscal-bar adm-bar">
+          <button class="act inv-export adm-btn" id="btnRtcXmls">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            XMLs (.zip)
+          </button>
+          <button class="act inv-export adm-btn" id="btnRtcSped" title="Opcional: só para conferir XML × escrituração">SPED Fiscal (opcional)</button>
+          <select id="rtcRegime" class="rtc-sel" title="Regime específico da empresa (tabela oficial cClassTrib)">
+            <option value="">Atividade: geral</option>
+            <option value="200047">Bares e restaurantes (200047 · art. 275)</option>
+          </select>
+          <span class="adm-sel" id="rtcSel" hidden></span>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnRtcHtml" disabled>Exportar HTML</button>
+          <button class="act inv-export" id="btnRtcXlsx" disabled>Exportar Excel</button>
+          <button class="act adm-go" id="btnRtcRodar" disabled>Calcular apuração</button>
+        </div>
+        <div class="fiscal-empty adm-empty rtc-empty" id="rtcVazio">
+          <span class="rtc-tag">REFORMA TRIBUTÁRIA</span>
+          <h2>Apuração Assistida · IBS e CBS</h2>
+          <p>Selecione os <b>.zip com os XMLs</b> de NF-e e NFC-e do período, de saídas e de entradas. O sistema separa saídas e entradas
+          pelo CNPJ da empresa, soma o IBS e a CBS destacados (débitos e créditos) e confere o <b>CST e o cClassTrib</b> de cada item com a
+          <b>tabela oficial cClassTrib</b> (Informe Técnico 2025.002): código vigente, CST compatível, permitido no modelo, redução e valor.
+          O <b>SPED Fiscal</b> é opcional e serve só para conferir XML × escrituração. Crédito de item de uso pessoal (LC 214/2025, art. 57) e
+          crédito estimado ficam para a equipe decidir. Nenhum arquivo é alterado.</p>
+          <p class="rtc-lei">LC 214/2025 — art. 46 (apuração assistida), art. 47 (créditos), art. 57 (uso ou consumo pessoal) e art. 343 e seguintes (2026, ano de teste).</p>
+        </div>
+        <iframe id="rtcFrame" class="fiscal-frame" hidden></iframe>
       </div>
 
       <div class="view adm-view" id="view-admin-audam" hidden>

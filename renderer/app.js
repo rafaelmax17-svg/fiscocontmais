@@ -571,6 +571,7 @@ function switchView(name) {
   if (name === 'admin-lmc') { $('#view-admin-lmc').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-audam') { $('#view-admin-audam').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-atrib') { $('#view-fiscal-atrib').hidden = false; $('#empty').hidden = true; return; }
+  if (name === 'fiscal-rtc') { $('#view-fiscal-rtc').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-evo') { $('#view-admin-evo').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-radar') { $('#view-admin-radar').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-legal') { $('#view-admin-legal').hidden = false; $('#empty').hidden = true; return; }
@@ -6013,6 +6014,54 @@ function audSelecao() {
   $('#btnAudRodar').disabled = !AUDAM.sped.length;
 }
 
+// ---- Apuração Assistida IBS/CBS (Reforma Tributária) — equipe
+const RTC = { xmls: [], sped: '' };
+function rtcInit() {
+  const fis = window.fiscocont && window.fiscocont.fiscal;
+  if (!fis || !$('#btnRtcXmls') || !fis.rtcAnalisar) return;
+  const mostraSel = () => {
+    const p = [];
+    if (RTC.xmls.length) p.push(`<span>${RTC.xmls.length} zip · ${esc(RTC.xmls.map((x) => x.split(/[\\/]/).pop()).join(', ')).slice(0, 90)}</span>`);
+    if (RTC.sped) p.push(`<span>SPED · ${esc(RTC.sped.split(/[\\/]/).pop())}</span>`);
+    const sel = $('#rtcSel'); sel.hidden = !p.length; sel.innerHTML = p.join(' ');
+    $('#btnRtcRodar').disabled = !RTC.xmls.length;
+  };
+  $('#btnRtcXmls').addEventListener('click', async () => {
+    const r = await fis.rtcPickXmls();
+    if (!r || r.canceled || !r.paths) return;
+    RTC.xmls = r.paths; $('#btnRtcXmls').classList.add('ok'); mostraSel();
+  });
+  $('#btnRtcSped').addEventListener('click', async () => {
+    const r = await fis.rtcPickSped();
+    if (!r || r.canceled || !r.path) return;
+    RTC.sped = r.path; $('#btnRtcSped').classList.add('ok'); mostraSel();
+  });
+  $('#btnRtcRodar').addEventListener('click', async () => {
+    if (!RTC.xmls.length) return;
+    overlay(true, 'Lendo os XMLs e apurando IBS e CBS…');
+    try {
+      const r = await fis.rtcAnalisar({ xmls: RTC.xmls, sped: RTC.sped, regime: $('#rtcRegime').value });
+      overlay(false);
+      if (!r || r.error) { toast((r && r.error) || 'Falha na apuração.', true); return; }
+      $('#rtcVazio').hidden = true;
+      const fr = $('#rtcFrame'); fr.hidden = false; fr.srcdoc = r.html;
+      $('#btnRtcHtml').disabled = false; $('#btnRtcXlsx').disabled = false;
+      const s = r.res.situacao || {};
+      toast(`${r.res.notas.debito} saídas · ${r.res.notas.credito} entradas · ${s.Divergente || 0} item(ns) divergente(s) · ${s.Verificar || 0} para verificar`);
+    } catch (e) { overlay(false); toast('Falha: ' + e.message, true); }
+  });
+  const exp = async (formato) => {
+    if (formato === 'xlsx') overlay(true, 'Montando o Excel…');
+    const r = await fis.rtcExportar({ formato });
+    overlay(false);
+    if (!r || r.canceled) return;
+    if (r.error) { toast(r.error, true); return; }
+    toast(formato === 'xlsx' ? 'Excel salvo.' : 'HTML salvo.');
+  };
+  $('#btnRtcHtml').addEventListener('click', () => exp('html'));
+  $('#btnRtcXlsx').addEventListener('click', () => exp('xlsx'));
+}
+
 // ---- Análise Tributária (equipe): tributação das entradas por produto + auditoria de tributação
 const ATRIB = { sped: '', nome: '' };
 function atribInit() {
@@ -6369,6 +6418,7 @@ async function legalConsultar(cnpj, cache) {
 function initAdminModulos() {
   audInit();
   atribInit();
+  rtcInit();
   evoInit();
   const adm = window.fiscocont && window.fiscocont.admin;
   if (!adm) return;
