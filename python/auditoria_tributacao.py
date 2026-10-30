@@ -655,24 +655,8 @@ def gerar_xlsx(res, caminho):
 
     ws = wb.active
     ws.title = 'Resumo'
+    _resumo_moderno(ws, res)
     d = lambda s: f'{s[:2]}/{s[2:4]}/{s[4:]}' if len(s or '') == 8 else (s or '')
-    ws.append(['Tributação das entradas por produto · Análise Tributária (FiscoCont+)'])
-    ws['A1'].font = Font(bold=True, size=14, color='1E3A8A')
-    for l in [['Empresa', e.get('nome', '')], ['CNPJ', e.get('cnpj', '')], ['Período', f'{d(e.get("dt_ini", ""))} a {d(e.get("dt_fin", ""))}'], [],
-              ['Notas de entrada', len(res['notas'])], ['Itens', len(res['itens'])], ['Produtos', len(res['produtos'])],
-              ['Valor das entradas', t['vl']], ['Base do ICMS', t['bc']], ['ICMS creditado', t['icms']], ['ICMS-ST', t['st']], ['IPI', t['ipi']], [],
-              ['Auditoria (produtos)', 'Quantidade', 'Valor']] + [[s, res['situacao'].get(s, [0, 0])[0], res['situacao'].get(s, [0, 0])[1]]
-                                                                for s in ('Confere', 'Divergente', 'Verificar')] + [[], ['Pontos para conferir']] + \
-             [[p[1]] for p in res['pontos']] + [[], ['Tabelas usadas'], [res['fontes']['st']], [res['fontes']['aliq']], [res['fontes']['pis']],
-                                                ['Ainda não incluído: ' + res['fontes']['pendente']]]:
-        ws.append(l)
-    for r in range(9, 14):
-        ws[f'B{r}'].number_format = moeda
-    for r in range(16, 19):
-        ws[f'C{r}'].number_format = moeda
-    ws.column_dimensions['A'].width = 34
-    ws.column_dimensions['B'].width = 22
-    ws.column_dimensions['C'].width = 18
     N = res['notas']
     linhas = []
     for i in res['itens']:
@@ -715,6 +699,150 @@ def gerar_xlsx(res, caminho):
     aba('Por alíquota', ['Alíquota'] + hd, g(res['por_aliq'], lambda a: _pc(a)), [14, 8, 15, 15, 14, 14], fm5)
     aba('Por fornecedor', ['Fornecedor'] + hd, g(res['por_forn'], lambda f: f), [46, 8, 15, 15, 14, 14], fm5)
     wb.save(caminho)
+
+
+def _resumo_moderno(ws, res):
+    """Aba Resumo em formato de painel: faixa de título, cartões de indicadores, auditoria, tipo de operação com gráfico,
+    pontos para conferir e tabelas usadas. Sem linhas de grade."""
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.formatting.rule import DataBarRule
+    e, t = res['empresa'], res['totais']
+    d = lambda s: f'{s[:2]}/{s[2:4]}/{s[4:]}' if len(s or '') == 8 else (s or '')
+    cnpj = e.get('cnpj', '')
+    cnpj_f = f'{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}' if len(cnpj) == 14 else cnpj
+    FUNDO, BRANCO, NAVY = PatternFill('solid', fgColor='F1F4F9'), PatternFill('solid', fgColor='FFFFFF'), PatternFill('solid', fgColor='1E3A8A')
+    moeda = '"R$" #,##0.00'
+    ws.sheet_view.showGridLines = False
+    ws.sheet_view.zoomScale = 90
+    ws.column_dimensions['A'].width = 2
+    for col in 'BCDEFGHIJKLM':
+        ws.column_dimensions[col].width = 12.5
+    ws.column_dimensions['N'].width = 2
+    for r in range(1, 70):
+        ws.row_dimensions[r].height = 18
+        for col in 'ABCDEFGHIJKLMN':
+            ws[f'{col}{r}'].fill = FUNDO
+    # faixa de título
+    for r in (1, 2, 3, 4):
+        for col in 'ABCDEFGHIJKLMN':
+            ws[f'{col}{r}'].fill = NAVY
+    ws.row_dimensions[2].height = 26
+    ws['B1'] = 'FISCOCONT+ · TRIBUTAÇÃO DAS ENTRADAS POR PRODUTO'
+    ws['B1'].font = Font(bold=True, size=9, color='A5B4FC')
+    ws['B2'] = e.get('nome', '')
+    ws['B2'].font = Font(bold=True, size=17, color='FFFFFF')
+    ws['B3'] = f"CNPJ {cnpj_f}   ·   Período {d(e.get('dt_ini', ''))} a {d(e.get('dt_fin', ''))}   ·   Fonte: SPED Fiscal (C100, C170, C190 e 0200)"
+    ws['B3'].font = Font(size=10, color='E0E7FF')
+
+    def secao(r, txt):
+        ws[f'B{r}'] = txt
+        ws[f'B{r}'].font = Font(bold=True, size=10, color='1E3A8A')
+        ws.row_dimensions[r].height = 22
+
+    def cartao(r, c0, rot, valor, sub, cor, fmt=None, cor_valor='0F172A'):
+        cols = [chr(ord(c0) + k) for k in range(3)]
+        for rr in (r, r + 1, r + 2):
+            for col in cols:
+                ws[f'{col}{rr}'].fill = BRANCO
+        for col in cols:
+            ws[f'{col}{r}'].border = Border(top=Side(style='thick', color=cor))
+        ws[f'{cols[0]}{r}'] = rot.upper()
+        ws[f'{cols[0]}{r}'].font = Font(size=8.5, bold=True, color='64748B')
+        ws.merge_cells(f'{cols[0]}{r + 1}:{cols[2]}{r + 1}')
+        c = ws[f'{cols[0]}{r + 1}']
+        c.value = valor
+        c.font = Font(size=16, bold=True, color=cor_valor)
+        c.alignment = Alignment(horizontal='left', vertical='center')
+        if fmt:
+            c.number_format = fmt
+        ws.row_dimensions[r + 1].height = 26
+        ws[f'{cols[0]}{r + 2}'] = sub
+        ws[f'{cols[0]}{r + 2}'].font = Font(size=8.5, color='64748B')
+
+    nnot, nit, nprod = len(res['notas']), len(res['itens']), len(res['produtos'])
+    secao(6, 'VISÃO GERAL')
+    cartao(7, 'B', 'Valor das entradas', t['vl'], f'{nnot} notas · {nit} itens', '1E3A8A', moeda)
+    cartao(7, 'E', 'Notas de entrada', nnot, 'modelo 55 e demais, sem canceladas', '7C3AED', '#,##0')
+    cartao(7, 'H', 'Itens', nit, 'linhas de produto (C170)', '0891B2', '#,##0')
+    cartao(7, 'K', 'Produtos', nprod, 'códigos diferentes (0200)', '64748B', '#,##0')
+    ncr = sum(1 for i in res['itens'] if i['icms'] > 0)
+    cartao(11, 'B', 'Base do ICMS', t['bc'], f"{(t['bc'] / t['vl'] * 100 if t['vl'] else 0):.2f}% do valor".replace('.', ','), '0891B2', moeda)
+    cartao(11, 'E', 'ICMS creditado', t['icms'], f'{ncr} item(ns) com crédito', '0EA472', moeda, '0EA472')
+    cartao(11, 'H', 'ICMS-ST', t['st'], 'retido nos itens', 'EA580C', moeda)
+    cartao(11, 'K', 'IPI', t['ipi'], 'nos itens', '64748B', moeda)
+    sit = res['situacao']
+    k = lambda s: sit.get(s, [0, 0.0])
+    ninfo = sum(1 for p in res['produtos'] if p['sit'] == 'Confere' and any(a[0] == 'Info' for a in p['ach']))
+    secao(15, 'AUDITORIA DE TRIBUTAÇÃO (PRODUTOS)')
+    cartao(16, 'B', 'Confere', k('Confere')[0], f"R$ {_fm(k('Confere')[1])}", '0EA472', '#,##0', '0EA472')
+    cartao(16, 'E', 'Divergente', k('Divergente')[0], f"R$ {_fm(k('Divergente')[1])} · veja a aba Auditoria", 'E23D4C', '#,##0', 'E23D4C')
+    cartao(16, 'H', 'Verificar', k('Verificar')[0], f"R$ {_fm(k('Verificar')[1])}", 'F59E0B', '#,##0', 'B45309')
+    cartao(16, 'K', 'Só informativos', ninfo, 'conferem, com observação', '6366F1', '#,##0', '4F46E5')
+    # por tipo de operação + gráfico
+    secao(20, 'ENTRADAS POR TIPO DE OPERAÇÃO')
+    cab = [('B', 'Tipo de operação'), ('G', 'Itens'), ('H', 'Valor'), ('J', '% das entradas'), ('L', 'ICMS creditado')]
+    for col, txt in cab:
+        ws[f'{col}21'] = txt
+        ws[f'{col}21'].font = Font(bold=True, size=9, color='FFFFFF')
+        ws[f'{col}21'].alignment = Alignment(horizontal='left' if col == 'B' else 'right')
+    for col in 'BCDEFGHIJKLM':
+        ws[f'{col}21'].fill = NAVY
+    for m in ('B21:F21', 'H21:I21', 'J21:K21', 'L21:M21'):
+        ws.merge_cells(m)
+    ws.row_dimensions[21].height = 20
+    lin = [x for x in res['por_tipo'] if x[1]['n']]
+    tot = t['vl'] or 1
+    r = 22
+    for nome, g in lin:
+        for col in 'BCDEFGHIJKLM':
+            ws[f'{col}{r}'].fill = BRANCO
+            ws[f'{col}{r}'].border = Border(bottom=Side(style='thin', color='E2E8F0'))
+        for m in (f'B{r}:F{r}', f'H{r}:I{r}', f'J{r}:K{r}', f'L{r}:M{r}'):
+            ws.merge_cells(m)
+        ws[f'B{r}'] = nome
+        ws[f'G{r}'] = g['n']
+        ws[f'G{r}'].number_format = '#,##0'
+        ws[f'H{r}'] = g['vl']
+        ws[f'H{r}'].number_format = moeda
+        ws[f'J{r}'] = g['vl'] / tot
+        ws[f'J{r}'].number_format = '0.0%'
+        ws[f'L{r}'] = g['icms']
+        ws[f'L{r}'].number_format = moeda
+        ws.row_dimensions[r].height = 20
+        r += 1
+    if lin:
+        ws.conditional_formatting.add(f'J22:J{r - 1}', DataBarRule(start_type='num', start_value=0, end_type='num', end_value=1, color='3B82F6'))
+    r += 1
+    # pontos para conferir
+    secao(r, 'PONTOS PARA CONFERIR')
+    r += 1
+    for tipo, txt in res['pontos']:
+        cor = 'FFF7ED' if tipo == 'a' else 'EFF6FF'
+        borda = 'EA580C' if tipo == 'a' else '1E3A8A'
+        for col in 'BCDEFGHIJKLM':
+            ws[f'{col}{r}'].fill = PatternFill('solid', fgColor=cor)
+        ws[f'B{r}'].border = Border(left=Side(style='thick', color=borda))
+        ws.merge_cells(f'B{r}:M{r}')
+        ws[f'B{r}'] = ('⚠  ' if tipo == 'a' else 'ⓘ  ') + txt
+        ws[f'B{r}'].font = Font(size=10, color='7C2D12' if tipo == 'a' else '1E3A8A', bold=tipo == 'a')
+        ws.row_dimensions[r].height = 22
+        r += 1
+    r += 1
+    # tabelas usadas
+    secao(r, 'TABELAS USADAS')
+    r += 1
+    for txt in (res['fontes']['st'], res['fontes']['aliq'], res['fontes']['pis'], 'Ainda não incluído: ' + res['fontes']['pendente'],
+                'Análise de leitura: tudo é apontamento para o contador conferir. Nenhum dado do SPED é alterado.'):
+        ws.merge_cells(f'B{r}:M{r}')
+        ws[f'B{r}'] = txt
+        ws[f'B{r}'].font = Font(size=9, color='64748B')
+        ws[f'B{r}'].alignment = Alignment(wrap_text=True, vertical='top')
+        ws.row_dimensions[r].height = 28 if len(txt) > 120 else 16
+        r += 1
+    ws.print_area = f'A1:N{r}'
+    ws.page_setup.orientation = 'landscape'
+    ws.page_setup.fitToWidth = 1
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
 
 
 def _aba_tipo_oper(wb, res, cab_f, cab_p, moeda):
