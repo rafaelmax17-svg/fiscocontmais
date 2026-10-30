@@ -3,6 +3,11 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.36
+
+- **Auditoria Interna liberada para a equipe** como **"Auditoria Tributária"** no grupo Fiscal (botão verde-esmeralda, classe nav-item-verde, selo NOVO até 06/11/2026). Saiu do menu de Administração; os handlers admin:atrib* deixaram de exigir Admin (o módulo só lê o SPED). A view passou de admin-atrib para fiscal-atrib.
+- Baixas DF-e e EFD-Contribuições sem o destaque amarelo (nav-item-destaque); ganharam cor de ícone própria.
+
 ## 2.1.35
 
 - **Auditoria Interna · uso e consumo:** entrada de material de uso e consumo (CFOP x556, x407, x653) com base, alíquota ou ICMS no C170 passa a sair como um apontamento só: "Mercadoria de uso e consumo não pode ter destaque de ICMS na escrituração da entrada: base, alíquota e ICMS ficam zerados, porque não há crédito" (LC 87/96, art. 33, I; Guia Prático, C170). As conferências de alíquota interna/interestadual e de conta do ICMS deixam de rodar nesses itens (antes saía "alíquota de 25% maior que a interna" ou "3,32% não é interestadual"). Ativo continua com o aviso do CIAP.

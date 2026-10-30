@@ -973,6 +973,8 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .nav-item[data-view="fiscal-deson"]{--ic:#facc15}
 .nav-item[data-view="fiscal-frete"]{--ic:#fb923c}
 .nav-item[data-view="fiscal-audit"]{--ic:#f472b6}
+.nav-item[data-view="fiscal-downloads"]{--ic:#fbbf24}
+.nav-item[data-view="fiscal-efd-contrib"]{--ic:#60a5fa}
 .nav-item[data-view="fiscal-pgdas"]{--ic:#a3e635}
 .nav-item[data-view="overview"]{--ic:#60a5fa}
 .nav-item[data-view="dre"]{--ic:#34d399}
@@ -983,7 +985,7 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .nav-item[data-view="lote-balancetes"]{--ic:#f472b6}
 .nav-item[data-view="conciliacao"]{--ic:#fb923c}
 .nav-item[data-view="admin-lic"]{--ic:#facc15}
-.nav-item:not(.nav-item-danger):not(.nav-item-destaque):not(.nav-item-adm) .ic{
+.nav-item:not(.nav-item-danger):not(.nav-item-destaque):not(.nav-item-adm):not(.nav-item-verde) .ic{
   color:var(--ic,currentColor);opacity:1;
   filter:drop-shadow(0 0 5px color-mix(in srgb,var(--ic,transparent) 45%,transparent))}
 
@@ -1261,3 +1263,9 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .td-bloq td{opacity:.6}
 .td-busca{border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:inherit;font-size:12px;margin:4px 0 6px;min-width:260px;background:var(--bg);color:var(--ink)}
 .td-mais{margin:8px auto;display:block}
+/* Auditoria Tributária no menu Fiscal (verde-esmeralda) */
+.nav-item-verde{color:#c9f7e6;background:rgba(16,185,129,.16);border:1px solid rgba(16,185,129,.45);margin-top:4px;font-weight:700}
+.nav-item-verde .ic{opacity:1;color:#10b981}
+.nav-item-verde:hover:not(.disabled){background:rgba(16,185,129,.28);color:#fff}
+.nav-item-verde.active{background:linear-gradient(90deg,#059669,#10b981);color:#fff;border-color:transparent;box-shadow:0 4px 14px rgba(5,150,105,.45)}
+.nav-item-verde.active .ic{color:#fff}

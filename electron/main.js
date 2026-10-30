@@ -1869,18 +1869,16 @@ ipcMain.handle('admin:audPick', async () => {
   return { paths: r.filePaths };
 });
 
-// ---------------------------------------------------------------- Auditoria Interna (Admin, módulo de teste)
+// ---------------------------------------------------------------- Auditoria Tributária (liberada para a equipe; só lê o SPED)
 // Tributação das entradas por produto + auditoria de tributação (ST de RO, alíquota, crédito, DIFAL, combustível, PIS/COFINS).
 let _atribUltimo = null;   // { sped, html }
 ipcMain.handle('admin:atribPick', async () => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
   const r = await dialog.showOpenDialog(mainWindow, { title: 'Selecione o SPED Fiscal (EFD ICMS/IPI) para a auditoria das entradas',
     properties: ['openFile'], filters: [{ name: 'SPED Fiscal', extensions: ['txt'] }] });
   if (r.canceled || !r.filePaths.length) return { canceled: true };
   return { path: r.filePaths[0] };
 });
 ipcMain.handle('admin:atribAnalisar', async (_evt, { sped }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
   if (!sped) return { error: 'Selecione o SPED Fiscal.' };
   const stamp = Date.now();
   const jsonOut = path.join(os.tmpdir(), `fc_atrib_${stamp}.json`);
@@ -1896,7 +1894,6 @@ ipcMain.handle('admin:atribAnalisar', async (_evt, { sped }) => {
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:atribExportar', async (_evt, { formato, nome }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
   if (!_atribUltimo) return { error: 'Rode a auditoria primeiro.' };
   const ext = formato === 'xlsx' ? 'xlsx' : 'html';
   const base = `Tributacao-Entradas-${String(nome || '').replace(/[^\w-]+/g, '_')}`.replace(/_+$/, '');
