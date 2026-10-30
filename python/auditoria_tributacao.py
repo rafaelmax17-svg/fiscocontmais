@@ -622,35 +622,35 @@ def gerar_xlsx(res, caminho):
     from openpyxl.styles import Font, PatternFill, Alignment
     from openpyxl.utils import get_column_letter
     wb = Workbook()
-    cab_f, cab_p = Font(bold=True, color='FFFFFF'), PatternFill('solid', fgColor='1E3A8A')
+    cab_f, cab_p = Font(bold=True, color='FFFFFF', size=10), PatternFill('solid', fgColor='334155')
     moeda, pct = '#,##0.00', '0.00"%"'
     e, t = res['empresa'], res['totais']
 
-    def aba(nome, cab, linhas, larg, fmt):
+    def aba(nome, cab, linhas, larg, fmt, sub=''):
         ws = wb.create_sheet(nome)
-        ws.append(cab)
-        for c in ws[1]:
-            c.font, c.fill, c.alignment = cab_f, cab_p, Alignment(vertical='center', wrap_text=True)
-        for l in linhas:
-            ws.append(l)
-        n = len(linhas) + 1
+        _faixa(ws, nome, sub, len(cab), res)
+        H = 3
+        for j, c in enumerate(cab, 1):
+            ws.cell(H, j, c)
+        for i, l in enumerate(linhas, H + 1):
+            for j, v in enumerate(l, 1):
+                ws.cell(i, j, v)
+        n = H + len(linhas)
         if linhas:
-            tot = ['Total'] + [''] * (len(cab) - 1)
             for j, f in enumerate(fmt):
+                ws.cell(n + 1, j + 1, 'Total' if j == 0 else None)
                 if f == moeda:
                     col = get_column_letter(j + 1)
-                    tot[j] = f'=SUBTOTAL(9,{col}2:{col}{n})'
-            ws.append(tot)
-            for c in ws[n + 1]:
-                c.font = Font(bold=True)
+                    ws.cell(n + 1, j + 1, f'=SUBTOTAL(9,{col}{H + 1}:{col}{n})')
         for j, (w, f) in enumerate(zip(larg, fmt)):
             col = get_column_letter(j + 1)
             ws.column_dimensions[col].width = w
             if f:
-                for r in range(2, n + 2):
+                for r in range(H + 1, n + 2):
                     ws[f'{col}{r}'].number_format = f
-        ws.freeze_panes = 'A2'
-        ws.auto_filter.ref = f'A1:{get_column_letter(len(cab))}{n}'
+        ws.freeze_panes = f'A{H + 1}'
+        ws.auto_filter.ref = f'A{H}:{get_column_letter(len(cab))}{max(n, H + 1)}'
+        _estilo_tabela(ws, H, n, len(cab), total=bool(linhas), sit_col=(cab.index('Situação') + 1) if 'Situação' in cab else None)
         return ws
 
     ws = wb.active
@@ -682,13 +682,9 @@ def gerar_xlsx(res, caminho):
             au.append([a[0] if a[0] != 'Info' else 'Informativo', a[1], p['cod'], p['desc'], p['ncm'], '/'.join(p['cfops']), '/'.join(p['csts']),
                        '/'.join(_pc(x) for x in p['aliqs']), a[2], a[3], p['vl']])
     au.sort(key=lambda x: ({'Divergente': 0, 'Verificar': 1}.get(x[0], 2), -x[10]))
-    ws = aba('Auditoria', ['Situação', 'Tema', 'Código', 'Descrição', 'NCM', 'CFOPs', 'CSTs', 'Alíquotas', 'O que a regra diz', 'Base legal', 'Valor do produto'],
-             au, [12, 13, 16, 40, 11, 12, 10, 12, 80, 40, 15], [None] * 10 + [moeda])
-    cor = {'Divergente': 'FEE2E2', 'Verificar': 'FEF3C7', 'Informativo': 'E0E7FF'}
-    for r in range(2, len(au) + 2):
-        c = ws[f'A{r}']
-        if c.value in cor:
-            c.fill = PatternFill('solid', fgColor=cor[c.value])
+    aba('Auditoria', ['Situação', 'Tema', 'Código', 'Descrição', 'NCM', 'CFOPs', 'CSTs', 'Alíquotas', 'O que a regra diz', 'Base legal', 'Valor do produto'],
+        au, [12, 13, 16, 40, 11, 12, 10, 12, 80, 40, 15], [None] * 10 + [moeda],
+        'Divergentes primeiro, depois os itens para verificar e os informativos · cada linha traz a regra e a base legal')
     _aba_tipo_oper(wb, res, cab_f, cab_p, moeda)
     _aba_acum7000(wb, res, cab_f, cab_p, moeda)
     g = lambda lst, rot: [[rot(k), v['n'], v['vl'], v['bc'], v['icms'], v['st']] for k, v in lst]
@@ -857,10 +853,8 @@ def _aba_tipo_oper(wb, res, cab_f, cab_p, moeda):
     for k, i in enumerate(itens):
         grupos[tipo_operacao(i['cfop'])].append(k)
     tot = sum(i['vl'] for i in itens) or 1
-    ws.append(['Entradas por tipo de operação (pelo CFOP de cada item)'])
-    ws['A1'].font = Font(bold=True, size=13, color='1E3A8A')
-    ws.append(['Resumo no topo; abaixo, cada tipo abre por CFOP e por produto (botões 1/2/3 à esquerda).'])
-    ws['A2'].font = Font(italic=True, color='475569')
+    _faixa(ws, 'Por tipo de operação', 'Pelo CFOP de cada item · resumo no topo; abaixo, cada tipo abre por CFOP e por produto '
+           '(botões 1/2/3 à esquerda)', 14, res)
     cab = ['Tipo de operação', 'CFOP', 'Código', 'Produto', 'NCM', 'Notas', 'Itens', 'Valor', '% das entradas', 'Base ICMS', 'ICMS', 'ICMS-ST', 'IPI',
            'Situação na auditoria']
     ws.append(cab)
@@ -930,6 +924,7 @@ def _aba_tipo_oper(wb, res, cab_f, cab_p, moeda):
         ws.cell(row, 9).number_format = '0.0%'
     ws.sheet_properties.outlinePr.summaryBelow = False
     ws.freeze_panes = 'A4'
+    _estilo_tabela(ws, 3, r, 14, zebra=False, sit_col=14)
 
 
 def _aba_acum7000(wb, res, cab_f, cab_p, moeda):
@@ -940,12 +935,9 @@ def _aba_acum7000(wb, res, cab_f, cab_p, moeda):
     nomes = A.get('nomes', {})
     ns = A['notas']
     mist = sum(1 for n in ns if n['mista'])
-    ws.append(['Acumulador 7000 (DESPESAS) por nota · sugestão do acumulador de despesa certo (7001 a 7040) pela descrição, NCM e CFOP'])
-    ws['A1'].font = Font(bold=True, size=13, color='1E3A8A')
-    ws.append([f'{len(ns)} nota(s) com itens no 7000 · R$ {_fm(sum(n["vl"] for n in ns))} · {len(ns) - mist} com um acumulador · {mist} mista(s) '
+    _faixa(ws, 'Acumulador 7000 por NF', f'{len(ns)} nota(s) com itens no 7000 · R$ {_fm(sum(n["vl"] for n in ns))} · {len(ns) - mist} com um acumulador · {mist} mista(s) '
                '(produtos de naturezas diferentes: divida a nota ou escolha o acumulador — o sistema não escolhe). '
-               'Botões 1/2/3 à esquerda: só notas · notas e acumuladores · tudo, com os produtos.'])
-    ws['A2'].font = Font(italic=True, color='475569')
+               'Botões 1/2/3 à esquerda: só notas · notas e acumuladores · tudo, com os produtos.', 14, res)
     cab = ['Nota', 'Entrada', 'Fornecedor', 'Valor no 7000', 'Situação / nível', 'Acumulador', 'Código do produto', 'Descrição',
            'NCM', 'CFOP', 'Motivo da classificação', 'Confiança', 'Valor', '% da NF']
     ws.append(cab)
@@ -995,8 +987,68 @@ def _aba_acum7000(wb, res, cab_f, cab_p, moeda):
     ws.sheet_properties.outlinePr.summaryBelow = False
     ws.freeze_panes = 'A4'
     ws.auto_filter.ref = f'A3:N{max(r, 4)}'
+    _estilo_tabela(ws, 3, r, 14, zebra=False)
     if not ns:
         ws.append(['Nenhum item no acumulador 7000 neste SPED.'])
+
+
+def _faixa(ws, titulo, sub, ncols, res):
+    """Faixa de título (azul-marinho) nas linhas 1 e 2 das abas de detalhe, no mesmo visual da aba Resumo."""
+    from openpyxl.styles import Font, PatternFill, Alignment
+    e = res['empresa']
+    d = lambda s: f'{s[:2]}/{s[2:4]}/{s[4:]}' if len(s or '') == 8 else (s or '')
+    navy = PatternFill('solid', fgColor='1E3A8A')
+    for r in (1, 2):
+        for c in range(1, max(ncols, 10) + 1):
+            ws.cell(r, c).fill = navy
+    ws.row_dimensions[1].height = 30
+    ws.row_dimensions[2].height = 20
+    ws.cell(1, 1, f"{titulo.upper()}   ·   {e.get('nome', '')}").font = Font(bold=True, size=13, color='FFFFFF')
+    ws.cell(1, 1).alignment = Alignment(vertical='center')
+    ws.cell(2, 1, sub or f"Período {d(e.get('dt_ini', ''))} a {d(e.get('dt_fin', ''))}   ·   Fonte: SPED Fiscal (C100, C170, C190 e 0200)"
+            ).font = Font(size=9.5, color='C7D2FE')
+    ws.cell(2, 1).alignment = Alignment(vertical='top')
+    ws.sheet_view.showGridLines = False
+    ws.sheet_view.zoomScale = 90
+
+
+def _estilo_tabela(ws, h, ultima, ncols, total=False, zebra=True, sit_col=None):
+    """Cabeçalho escuro, linhas zebradas, divisórias finas e a coluna Situação colorida (formatação condicional: leve
+    mesmo com dezenas de milhares de linhas)."""
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles.differential import DifferentialStyle
+    from openpyxl.formatting.rule import Rule, FormulaRule
+    from openpyxl.utils import get_column_letter
+    fim = get_column_letter(ncols)
+    ws.row_dimensions[h].height = 32
+    for c in range(1, ncols + 1):
+        x = ws.cell(h, c)
+        x.font = Font(bold=True, color='FFFFFF', size=10)
+        x.fill = PatternFill('solid', fgColor='334155')
+        x.alignment = Alignment(vertical='center', wrap_text=True)
+        x.border = Border(bottom=Side(style='medium', color='1E3A8A'))
+    if ultima <= h:
+        return
+    faixa = f'A{h + 1}:{fim}{ultima}'
+    linha = Side(style='thin', color='E2E8F0')
+    if sit_col:
+        col = get_column_letter(sit_col)
+        for txt, bg, fg in (('Divergente', 'FEE2E2', 'B91C1C'), ('Verificar', 'FEF3C7', 'B45309'), ('Confere', 'DCFCE7', '15803D'),
+                            ('Informativo', 'E0E7FF', '4338CA')):
+            ds = DifferentialStyle(font=Font(bold=True, color=fg), fill=PatternFill('solid', fgColor=bg, bgColor=bg))
+            r = Rule(type='containsText', operator='containsText', text=txt, dxf=ds)
+            r.formula = [f'NOT(ISERROR(SEARCH("{txt}",{col}{h + 1})))']
+            ws.conditional_formatting.add(f'{col}{h + 1}:{col}{ultima}', r)
+    if zebra:
+        ws.conditional_formatting.add(faixa, FormulaRule(formula=[f'MOD(ROW()-{h},2)=0'], fill=PatternFill('solid', fgColor='F8FAFC', bgColor='F8FAFC'),
+                                                         border=Border(bottom=linha)))
+        ws.conditional_formatting.add(faixa, FormulaRule(formula=[f'MOD(ROW()-{h},2)=1'], border=Border(bottom=linha)))
+    if total:
+        for c in range(1, ncols + 1):
+            x = ws.cell(ultima + 1, c)
+            x.font = Font(bold=True, color='1E3A8A')
+            x.fill = PatternFill('solid', fgColor='EEF2FF')
+            x.border = Border(top=Side(style='medium', color='1E3A8A'))
 
 
 # ------------------------------------------------------------------ CLI
