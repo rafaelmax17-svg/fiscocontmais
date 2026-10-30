@@ -3,6 +3,11 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.35
+
+- **Auditoria Interna · uso e consumo:** entrada de material de uso e consumo (CFOP x556, x407, x653) com base, alíquota ou ICMS no C170 passa a sair como um apontamento só: "Mercadoria de uso e consumo não pode ter destaque de ICMS na escrituração da entrada: base, alíquota e ICMS ficam zerados, porque não há crédito" (LC 87/96, art. 33, I; Guia Prático, C170). As conferências de alíquota interna/interestadual e de conta do ICMS deixam de rodar nesses itens (antes saía "alíquota de 25% maior que a interna" ou "3,32% não é interestadual"). Ativo continua com o aviso do CIAP.
+- **Auditoria Interna · tipo de operação:** aba nova no Excel **"Por tipo de operação"** (revenda, industrialização/insumo, uso e consumo, ativo, devolução de venda, transferência, energia/comunicação/transporte, bonificação/brinde/amostra, remessas e retornos, venda à ordem/entrega futura, outras), pelo CFOP de cada item: resumo no topo e, abaixo, tipo → CFOP → produto com o agrupamento do Excel, valor, % das entradas, base, ICMS, ST, IPI e a situação na auditoria. No HTML, gráfico "Por tipo de operação" no Relatório.
+
 ## 2.1.34
 
 - **Corretor do SPED Fiscal · 🔎 Analisar tudo / Aplicar tudo:** roda todas as conferências num painel só, na ordem de aplicação: validação do PVA (sempre), DIFAL e crédito (CFOP pela UF, DIFAL, balcão, frete, crédito em uso e consumo), Desconto × XML, ICMS × XML, Valor e base × XML, crédito do Simples, Acumulador 7000 e Cadastro 0200. Cada etapa abre em grupos, cada grupo abre a lista de notas ou produtos com caixa própria (desmarcar uma nota tira só ela), "ver itens" mostra os produtos da nota, busca e "mostrar mais" nas listas grandes. "Aplicar tudo o que está marcado" aplica uma sobre a outra no mesmo arquivo e gera um arquivo só, com ICMS antes/depois e resumo. Se a correção criar ICMS a recolher sem E116, pede vencimento e código da guia na própria tela. Estoque ST continua no botão próprio (precisa da planilha). Módulo: python/analisar_tudo.py.

@@ -245,8 +245,16 @@ def _auditar(i, nota, dt_ini, st_lista, st_rev):
         elif ncm:
             ach.append(('Verificar', 'ICMS-ST', f'Entrou com ST (CST {cst} / CFOP {cf}), mas o NCM {ncm} não está na lista de ST de RO',
                         'RICMS/RO, Anexo VI, Parte 2'))
-    # alíquota
-    if i['aliq'] > 0:
+    uso_consumo = fim in FIM_USO and not ativo
+    # material de uso e consumo: a entrada é escriturada sem base, alíquota e ICMS (não gera crédito até 2033)
+    if uso_consumo and (i['aliq'] > 0 or i['bc'] > 0 or i['icms'] > 0):
+        veio = ', '.join(x for x in ((f"base R$ {_fm(i['bc'])}" if i['bc'] > 0 else ''), (f"alíquota {_pc(i['aliq'])}" if i['aliq'] > 0 else ''),
+                                     (f"ICMS R$ {_fm(i['icms'])}" if i['icms'] > 0 else '')) if x)
+        ach.append(('Divergente', 'Crédito ICMS', f'Mercadoria de uso e consumo (CFOP {cf}) não pode ter destaque de ICMS na escrituração da '
+                    f'entrada: base, alíquota e ICMS ficam zerados, porque não há crédito (veio {veio}).',
+                    'LC 87/96, art. 33, I; Guia Prático da EFD ICMS/IPI, registro C170'))
+    # alíquota (uso e consumo fica de fora: já apontado acima)
+    if i['aliq'] > 0 and not uso_consumo:
         if cf[:1] == '1' and cst2 not in ('20', '70'):     # CST 20/70: redução de base (benefício) — a alíquota nominal pode diferir da carga
             a, rot, disp, ver = _aliq_interna(ncm, dt_ini)
             if abs(i['aliq'] - a) > 0.009:
@@ -276,18 +284,14 @@ def _auditar(i, nota, dt_ini, st_lista, st_rev):
                     ach.append(('Verificar', 'Alíquota', f'4% com origem {orig} (nacional): os 4% são para importados ou com conteúdo de importação acima de 40%',
                                 'Resolução do Senado 13/2012'))
     # conta do ICMS
-    if i['bc'] > 0 and i['aliq'] > 0 and abs(round(i['bc'] * i['aliq'] / 100, 2) - i['icms']) > 0.05:
+    if not uso_consumo and i['bc'] > 0 and i['aliq'] > 0 and abs(round(i['bc'] * i['aliq'] / 100, 2) - i['icms']) > 0.05:
         ach.append(('Divergente', 'Crédito ICMS', f"ICMS lançado ({_fm(i['icms'])}) ≠ base × alíquota ({_fm(i['bc'] * i['aliq'] / 100)})",
                     'Guia Prático da EFD ICMS/IPI, registro C170'))
     # crédito em uso e consumo / ativo
-    if uso and i['icms'] > 0:
-        if ativo:
-            ach.append(('Verificar', 'Crédito ICMS', 'Crédito de ICMS em compra de ativo: só é permitido pelo CIAP (1/48 por mês); conferir o bloco G',
-                        'LC 87/96, art. 20, § 5º'))
-        else:
-            ach.append(('Divergente', 'Crédito ICMS', 'Crédito de ICMS em material de uso e consumo (permitido só a partir de 2033)',
-                        'LC 87/96, art. 33, I'))
-    if cst2 in ('40', '41', '50', '60', '61') and i['icms'] > 0:
+    if ativo and i['icms'] > 0:
+        ach.append(('Verificar', 'Crédito ICMS', 'Crédito de ICMS em compra de ativo: só é permitido pelo CIAP (1/48 por mês); conferir o bloco G',
+                    'LC 87/96, art. 20, § 5º'))
+    if cst2 in ('40', '41', '50', '60', '61') and i['icms'] > 0 and not uso_consumo:
         ach.append(('Divergente', 'Crédito ICMS', f"CST {cst} ({CST_NOME.get(cst2, '')}) com ICMS creditado de {_fm(i['icms'])}",
                     'Guia Prático da EFD ICMS/IPI; LC 87/96, art. 20'))
     # DIFAL
@@ -347,6 +351,32 @@ def _acum7000(notas, itens):
                     'mista': len(partes) > 1, 'partes': [{'acum': a, 'vl': sum(y['vl'] for y in g), 'itens': g,
                                                           'conf': 'media' if any(y['conf'] != 'alta' for y in g) else 'alta'} for a, g in partes]})
     return {'notas': out, 'nomes': dict(ad.ACUM)}
+
+
+# Tipo de operação da entrada pelo CFOP (3 últimos dígitos) — Ajuste SINIEF s/nº/1970 (Tabela de CFOP)
+TIPO_OPER = [
+    ('Revenda', {'102', '403', '117', '118', '120', '652', '113', '114', '115', '121'}),
+    ('Industrialização / insumo', {'101', '401', '116', '122', '124', '125', '651', '111', '126', '128'}),
+    ('Uso e consumo', {'556', '407', '653', '557'}),
+    ('Ativo imobilizado', {'551', '406', '552', '553', '554', '555'}),
+    ('Devolução de venda', {'201', '202', '203', '204', '208', '209', '410', '411', '412', '413', '503', '504', '660', '661', '662'}),
+    ('Transferência', {'151', '152', '153', '154', '408', '409', '658', '659'}),
+    ('Energia, comunicação e transporte', {'251', '252', '253', '254', '255', '256', '257', '301', '302', '303', '304', '305', '306',
+                                           '351', '352', '353', '354', '355', '356', '360'}),
+    ('Bonificação, brinde e amostra', {'910', '911'}),
+    ('Remessas e retornos (conserto, demonstração, industrialização, comodato, vasilhame)',
+     {'901', '902', '903', '904', '905', '906', '907', '908', '909', '912', '913', '914', '915', '916', '917', '918', '919', '920', '921', '924',
+      '925', '934'}),
+    ('Venda à ordem / entrega futura (simbólicas)', {'922', '923'}),
+]
+
+
+def tipo_operacao(cfop):
+    fim = (cfop or '')[1:]
+    for nome, finais in TIPO_OPER:
+        if fim in finais:
+            return nome
+    return 'Outras entradas'
 
 
 ORDEM = {'Confere': 0, 'Info': 0, 'Verificar': 1, 'Divergente': 2}
@@ -417,6 +447,7 @@ def analisar_texto(texto):
         'itens': [{k: v for k, v in i.items()} for i in itens], 'produtos': list(prod.values()), 'totais': tot,
         'por_cfop': grupo(lambda i: i['cfop']), 'por_cst': grupo(lambda i: i['cst']), 'por_aliq': grupo(lambda i: i['aliq']),
         'por_forn': grupo(lambda i: notas[i['nota_idx']]['forn'] or '(sem nome)'),
+        'por_tipo': grupo(lambda i: tipo_operacao(i['cfop'])),
         'situacao': {k: v for k, v in sit_p.items()}, 'temas': temas, 'pontos': pontos, 'acum7000': acum7000,
         'fontes': {'st': f'RICMS/RO, Anexo VI, Parte 2 — consolidado até o {st_mod.VERSAO}: {len(st_mod.VIGENTES)} CEST vigentes, '
                          f'{len(st_mod.REVOGADOS)} revogados descartados; Tabela XXVI (porta a porta) fora da conferência geral',
@@ -532,6 +563,7 @@ def gerar_html(res):
     b_cst = barras(res['por_cst'], lambda c: f'{c} · {CST_NOME.get((c or "")[-2:], "")}')
     b_al = barras(res['por_aliq'], lambda a: 'sem destaque (0%)' if not a else _pc(a))
     b_fo = barras(res['por_forn'], lambda f: f[:40])
+    b_ti = barras(res['por_tipo'], lambda t: t, 12)
     pontos = ''.join(f'<div class="al {c}">{"⚠" if c == "a" else "ⓘ"} {_h.escape(tx)}</div>' for c, tx in res['pontos'])
     op_cf = ''.join(f'<option value="{_h.escape(c)}">{_h.escape(c)}</option>' for c, _ in res['por_cfop'])
     op_cs = ''.join(f'<option value="{_h.escape(c)}">{_h.escape(c)}</option>' for c, _ in res['por_cst'])
@@ -560,6 +592,7 @@ def gerar_html(res):
 <div style="border-color:#64748b"><span>IPI</span><b data-cnt="{t["ipi"]:.2f}" data-din="1">R$ {_fm(t["ipi"])}</b><small>nos itens</small></div></div>
 <div class="g2"><div class="c"><h3>Entradas por CFOP</h3><div class="donut"><svg width="160" height="160" viewBox="0 0 160 160">{segs}<text x="80" y="76" text-anchor="middle" font-size="11" fill="#64748b">CFOPs</text><text x="80" y="97" text-anchor="middle" font-size="21" font-weight="800">{len(cf)}</text></svg><div style="flex:1">{leg}</div></div></div>
 <div class="c"><h3>Por CST do ICMS</h3>{b_cst}<h3 style="margin-top:14px">Pontos para conferir</h3>{pontos}</div></div>
+<div class="c"><h3>Por tipo de operação</h3>{b_ti}</div>
 <div class="g2" style="margin-top:14px"><div class="c"><h3>Por alíquota do ICMS</h3>{b_al}</div><div class="c"><h3>Maiores fornecedores</h3>{b_fo}</div></div>
 <div class="c"><h3>Produtos · tributação item a item</h3>
 <div class="f" id="fR"><span class="on" data-f="todos">Todos</span><span data-f="cred">Com crédito de ICMS</span><span data-f="sem">Sem crédito</span><span data-f="uso">Uso e consumo / ativo</span><span data-f="rev">Revenda / industrialização</span>
@@ -672,6 +705,7 @@ def gerar_xlsx(res, caminho):
         c = ws[f'A{r}']
         if c.value in cor:
             c.fill = PatternFill('solid', fgColor=cor[c.value])
+    _aba_tipo_oper(wb, res, cab_f, cab_p, moeda)
     _aba_acum7000(wb, res, cab_f, cab_p, moeda)
     g = lambda lst, rot: [[rot(k), v['n'], v['vl'], v['bc'], v['icms'], v['st']] for k, v in lst]
     hd = ['Itens', 'Valor', 'Base ICMS', 'ICMS', 'ICMS-ST']
@@ -681,6 +715,93 @@ def gerar_xlsx(res, caminho):
     aba('Por alíquota', ['Alíquota'] + hd, g(res['por_aliq'], lambda a: _pc(a)), [14, 8, 15, 15, 14, 14], fm5)
     aba('Por fornecedor', ['Fornecedor'] + hd, g(res['por_forn'], lambda f: f), [46, 8, 15, 15, 14, 14], fm5)
     wb.save(caminho)
+
+
+def _aba_tipo_oper(wb, res, cab_f, cab_p, moeda):
+    """Aba "Por tipo de operação": resumo por tipo (revenda, uso e consumo, ativo...) e, abaixo, tipo → CFOP → produto
+    com o agrupamento do Excel (botões 1/2/3)."""
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    ws = wb.create_sheet('Por tipo de operação')
+    itens, notas = res['itens'], res['notas']
+    grupos = OrderedDict((nome, []) for nome, _ in TIPO_OPER)
+    grupos['Outras entradas'] = []
+    for k, i in enumerate(itens):
+        grupos[tipo_operacao(i['cfop'])].append(k)
+    tot = sum(i['vl'] for i in itens) or 1
+    ws.append(['Entradas por tipo de operação (pelo CFOP de cada item)'])
+    ws['A1'].font = Font(bold=True, size=13, color='1E3A8A')
+    ws.append(['Resumo no topo; abaixo, cada tipo abre por CFOP e por produto (botões 1/2/3 à esquerda).'])
+    ws['A2'].font = Font(italic=True, color='475569')
+    cab = ['Tipo de operação', 'CFOP', 'Código', 'Produto', 'NCM', 'Notas', 'Itens', 'Valor', '% das entradas', 'Base ICMS', 'ICMS', 'ICMS-ST', 'IPI',
+           'Situação na auditoria']
+    ws.append(cab)
+    for c in ws[3]:
+        c.font, c.fill, c.alignment = cab_f, cab_p, Alignment(vertical='center', wrap_text=True)
+    for j, w in enumerate([34, 34, 16, 44, 11, 7, 7, 15, 10, 15, 13, 13, 12, 18]):
+        ws.column_dimensions[get_column_letter(j + 1)].width = w
+    soma = lambda ks, f: sum(itens[k][f] for k in ks)
+    nn = lambda ks: len({itens[k]['nota_idx'] for k in ks})
+    f_res, f_tipo, f_cf = PatternFill('solid', fgColor='EEF2FF'), PatternFill('solid', fgColor='DBEAFE'), PatternFill('solid', fgColor='F8FAFC')
+    r = 3
+    for nome, ks in grupos.items():           # resumo
+        if not ks:
+            continue
+        r += 1
+        ws.append([nome, ', '.join(sorted({itens[k]['cfop'] for k in ks})), '', '', '', nn(ks), len(ks), soma(ks, 'vl'), soma(ks, 'vl') / tot,
+                   soma(ks, 'bc'), soma(ks, 'icms'), soma(ks, 'st'), soma(ks, 'ipi'),
+                   f"{sum(1 for k in ks if itens[k]['sit'] == 'Divergente')} div. · {sum(1 for k in ks if itens[k]['sit'] == 'Verificar')} verif."])
+        for c in ws[r]:
+            c.fill = f_res
+        ws.cell(r, 1).font = Font(bold=True)
+    r += 1
+    ws.append(['Total', '', '', '', '', len(notas), len(itens), tot if itens else 0, 1 if itens else 0, sum(i['bc'] for i in itens),
+               sum(i['icms'] for i in itens), sum(i['st'] for i in itens), sum(i['ipi'] for i in itens), ''])
+    for c in ws[r]:
+        c.font = Font(bold=True)
+    r += 1
+    ws.append([])
+    for nome, ks in grupos.items():           # detalhe
+        if not ks:
+            continue
+        r += 1
+        ws.append([nome, '', '', '', '', nn(ks), len(ks), soma(ks, 'vl'), soma(ks, 'vl') / tot, soma(ks, 'bc'), soma(ks, 'icms'), soma(ks, 'st'),
+                   soma(ks, 'ipi'), ''])
+        for c in ws[r]:
+            c.fill, c.font = f_tipo, Font(bold=True, color='1E3A8A')
+        por_cf = OrderedDict()
+        for k in sorted(ks, key=lambda k: itens[k]['cfop']):
+            por_cf.setdefault(itens[k]['cfop'], []).append(k)
+        for cf, kc in por_cf.items():
+            r += 1
+            ws.append([nome, f"{cf} · {CFOP_NOME.get(cf[1:], '')}", '', '', '', nn(kc), len(kc), soma(kc, 'vl'), soma(kc, 'vl') / tot, soma(kc, 'bc'),
+                       soma(kc, 'icms'), soma(kc, 'st'), soma(kc, 'ipi'), ''])
+            ws.row_dimensions[r].outlineLevel = 1
+            for c in ws[r]:
+                c.fill = f_cf
+            ws.cell(r, 2).font = Font(bold=True)
+            ws.cell(r, 1).font = Font(color='94A3B8')
+            por_p = OrderedDict()
+            for k in kc:
+                por_p.setdefault(itens[k]['cod'], []).append(k)
+            for cod, kp in sorted(por_p.items(), key=lambda x: -soma(x[1], 'vl')):
+                i0 = itens[kp[0]]
+                sits = {itens[k]['sit'] for k in kp}
+                sit = 'Divergente' if 'Divergente' in sits else 'Verificar' if 'Verificar' in sits else 'Confere'
+                r += 1
+                ws.append([nome, cf, cod, i0['desc'], i0['ncm'], nn(kp), len(kp), soma(kp, 'vl'), soma(kp, 'vl') / tot, soma(kp, 'bc'), soma(kp, 'icms'),
+                           soma(kp, 'st'), soma(kp, 'ipi'), sit])
+                ws.row_dimensions[r].outlineLevel = 2
+                ws.cell(r, 1).font = Font(color='94A3B8')
+                ws.cell(r, 2).font = Font(color='94A3B8')
+                if sit != 'Confere':
+                    ws.cell(r, 14).fill = PatternFill('solid', fgColor='FEE2E2' if sit == 'Divergente' else 'FEF3C7')
+    for row in range(4, r + 1):
+        for col in (8, 10, 11, 12, 13):
+            ws.cell(row, col).number_format = moeda
+        ws.cell(row, 9).number_format = '0.0%'
+    ws.sheet_properties.outlinePr.summaryBelow = False
+    ws.freeze_panes = 'A4'
 
 
 def _aba_acum7000(wb, res, cab_f, cab_p, moeda):
