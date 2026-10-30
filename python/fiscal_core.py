@@ -2962,6 +2962,12 @@ def main(argv):
     if modo == 'substituir-lmc':
         import lmc as _lmc
         return _lmc.main_cli(argv)
+    if modo == 'analisar-tudo':
+        import analisar_tudo as _tudo
+        return _tudo.main_cli(argv[1:])
+    if modo == 'desconto-xml':
+        import desconto_xml as _dx
+        return _dx.main_cli(argv[1:])
     if modo == 'cad-0200':
         import cadastro_0200 as _c2
         return _c2.main_cli(argv[1:])

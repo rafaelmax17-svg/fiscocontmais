@@ -3,6 +3,12 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.34
+
+- **Corretor do SPED Fiscal · 🔎 Analisar tudo / Aplicar tudo:** roda todas as conferências num painel só, na ordem de aplicação: validação do PVA (sempre), DIFAL e crédito (CFOP pela UF, DIFAL, balcão, frete, crédito em uso e consumo), Desconto × XML, ICMS × XML, Valor e base × XML, crédito do Simples, Acumulador 7000 e Cadastro 0200. Cada etapa abre em grupos, cada grupo abre a lista de notas ou produtos com caixa própria (desmarcar uma nota tira só ela), "ver itens" mostra os produtos da nota, busca e "mostrar mais" nas listas grandes. "Aplicar tudo o que está marcado" aplica uma sobre a outra no mesmo arquivo e gera um arquivo só, com ICMS antes/depois e resumo. Se a correção criar ICMS a recolher sem E116, pede vencimento e código da guia na própria tela. Estoque ST continua no botão próprio (precisa da planilha). Módulo: python/analisar_tudo.py.
+- **Botão "⚡ Automatizar correção" (lote) escondido** — substituído pelo Analisar tudo (o código do lote continua no sistema).
+- **Desconto × XML (aba própria):** desconto do C100 (campo 14) e de cada item do C170 (campo 08) pelo XML; o desconto do item vem do vDesc do item; se o XML só tiver o desconto no total (ou os itens não casarem), divide em proporção ao VL_ITEM e o centavo do arredondamento vai para o item de maior valor. O VL_DOC acompanha quando a diferença com o vNF é exatamente o desconto. C190 refeito para somar o valor do documento; base e ICMS não mudam. Módulo: python/desconto_xml.py.
+
 ## 2.1.33
 
 - **Corretor do SPED Fiscal · Cadastro de produtos (0200):** botão novo. Lista os produtos cadastrados como mercadoria para revenda (TIPO_ITEM 00) que no período só entraram como uso e consumo (CFOP x556, x407, x653 → sugestão 07) ou ativo (x551, x406 → 08). Dá para trocar a sugestão e só os marcados mudam (campo 07 do 0200). Produto que também aparece em saída (C170 de saída, C321, C425, C470), inventário (H010), K200 ou entrada para revenda fica em "Não alterar". Nenhuma linha entra ou sai, então o bloco 9 fica igual; arquivo assinado perde a assinatura (assinar de novo no PVA). Corrigir também o cadastro no Domínio. Base: Guia Prático da EFD ICMS/IPI, registro 0200, campo 07.

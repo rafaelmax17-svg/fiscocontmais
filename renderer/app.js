@@ -1377,7 +1377,8 @@ function bindFiscal() {
     // ⚡ Automatizar correção → "Abrir no modo manual" de um cliente: escolhe o SPED (e a pasta de XMLs) como se fosse à mão
     window.__corrAbrirManual = (sped, xmls) => {
       corrSpedPath = sped; FISCAL.corrSpedPath = sped;
-      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad'].forEach((id) => { $(id).disabled = false; });
+      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad', '#btnCorrTudo', '#btnCorrDesc'].forEach((id) => { $(id).disabled = false; });
+      $('#corrTudo').hidden = true; $('#corrTudo').innerHTML = ''; $('#corrDesc').hidden = true; $('#corrDesc').innerHTML = '';
       $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = ''; $('#corrCad').hidden = true; $('#corrCad').innerHTML = '';
       corrFeito = false;
       SN.an = null; XMLS.path = xmls || null;
@@ -1400,6 +1401,8 @@ function bindFiscal() {
       $('#btnCorrSimples').disabled = false;
       $('#btnCorrAcum').disabled = false; $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = '';
       $('#btnCorrCad').disabled = false; $('#corrCad').hidden = true; $('#corrCad').innerHTML = '';
+      ['#btnCorrTudo', '#btnCorrDesc'].forEach((id) => { $(id).disabled = false; });
+      $('#corrTudo').hidden = true; $('#corrTudo').innerHTML = ''; $('#corrDesc').hidden = true; $('#corrDesc').innerHTML = '';
       corrFeito = false;
       SN.an = null; XMLS.path = null;
       $('#corrSimples').hidden = true; $('#corrSimples').innerHTML = '';
@@ -1689,6 +1692,255 @@ function bindFiscal() {
       });
     }
     $('#btnCorrCad').addEventListener('click', cdAbrir);
+
+    // ---- painéis do Corretor: esconde os outros ao abrir um
+    const CORR_PAINEIS = ['#corrSpedEmpty', '#corrSpedFrame', '#corrSpedResumo', '#corrDifal', '#corrSimples', '#corrLote', '#corrIcmsXml',
+      '#corrValXml', '#corrEstST', '#corrAcum', '#corrCad', '#corrDesc', '#corrTudo'];
+    const corrSoMostra = (id) => CORR_PAINEIS.forEach((x) => { const el = $(x); if (el) el.hidden = x !== id; });
+    const fmR = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    async function corrPedeXmls() {
+      const pick = await window.fiscocont.fiscal.pickXmlsFolder();
+      if (!pick || pick.canceled || !pick.path) return false;
+      XMLS.path = pick.path;
+      return true;
+    }
+    async function corrBaixar() {
+      const r3 = await window.fiscocont.fiscal.baixarSpedCorrigido();
+      if (r3 && r3.error) toast(r3.error, true); else if (r3 && !r3.canceled) toast('SPED corrigido salvo.');
+    }
+
+    // ---- Desconto × XML (aba própria)
+    const DS = { an: null, marc: new Set(), aberta: new Set() };
+    function dsDesenhar() {
+      const box = $('#corrDesc'), an = DS.an, rs = an.resumo;
+      box.innerHTML = `
+        <div class="dif-head"><div><div class="dif-k">Corretor do SPED · Admin · Desconto × XML</div>
+          <h3>Desconto da nota e dos itens pelo XML</h3>
+          <div class="dif-sub">O desconto de cada item vem do próprio XML (vDesc do item). Se o XML só tiver o desconto no total, ele é <b>dividido em proporção ao valor de cada item</b> (o centavo que sobra vai para o item de maior valor). Base de cálculo e ICMS não mudam.</div></div>
+          <div class="sn-hbtn"><button class="act inv-export" id="dsXmls">Trocar XMLs</button><button class="act inv-export" id="dsFechar">Fechar</button></div></div>
+        <div class="dif-kpis">
+          <div><span>Notas com diferença</span><b>${rs.com_diferenca}</b><small>de ${rs.conferidas} nota(s) com XML · ${rs.sem_xml} sem XML</small></div>
+          <div class="k-ok"><span>Pelo item do XML</span><b>${rs.pelo_item}</b><small>nota(s)</small></div>
+          <div class="k-warn"><span>Em proporção</span><b>${rs.proporcao}</b><small>XML sem desconto no item</small></div>
+          <div><span>Desconto a lançar</span><b>R$ ${fmR(rs.desconto_a_lancar)}</b><small>${rs.itens} item(ns)</small></div></div>
+        ${an.docs.length ? `<div class="ac7-wrap" style="margin-top:12px"><table><thead><tr><th><input type="checkbox" id="dsTodos" checked></th><th>Nota</th><th>Fornecedor</th><th style="text-align:right">Valor (SPED)</th><th style="text-align:right">Desconto SPED</th><th style="text-align:right">Desconto XML</th><th>De onde vem</th><th></th></tr></thead><tbody>
+        ${an.docs.map((d) => `<tr><td><input type="checkbox" class="ds-m" data-c="${esc(d.chave)}"${DS.marc.has(d.chave) ? ' checked' : ''}></td><td><b>NF ${esc(d.num)}</b><span class="ac7-mi">${esc(d.data || '')}${d.corrige_doc ? ' · valor do documento acompanha' : ''}</span></td>
+          <td>${esc(d.fornecedor)} ${d.uf ? `<span class="ac7-mi">${esc(d.uf)}</span>` : ''}</td><td style="text-align:right">${fmR(d.vl_doc)}</td><td style="text-align:right">${fmR(d.desc_sped)}</td><td style="text-align:right"><b>${fmR(d.desc_xml)}</b></td>
+          <td><span class="ac7-cf ${d.origem === 'item do XML' ? 'k-ok' : 'k-warn'}">${esc(d.origem)}</span></td><td><a class="td-lk" data-ds="${esc(d.chave)}">${DS.aberta.has(d.chave) ? 'fechar itens' : 'ver itens'}</a></td></tr>
+          ${DS.aberta.has(d.chave) ? `<tr><td></td><td colspan="7"><table class="td-sub"><tr><th>Item</th><th>Produto</th><th style="text-align:right">Valor do item</th><th style="text-align:right">Desconto SPED</th><th style="text-align:right">Desconto XML</th><th style="text-align:right">Desconto novo</th><th>De onde vem</th></tr>
+            ${d.itens.map((i) => `<tr><td>${esc(i.num)}</td><td>${esc(i.descr || i.cod)}</td><td style="text-align:right">${fmR(i.vl_item)}</td><td style="text-align:right">${fmR(i.desc_sped)}</td><td style="text-align:right">${i.desc_xml == null ? '—' : fmR(i.desc_xml)}</td><td style="text-align:right"><b>${fmR(i.desc_novo)}</b></td><td>${esc(i.origem === 'proporção' ? `proporção (${i.pct.toFixed(1).replace('.', ',')}%)` : i.origem)}</td></tr>`).join('')}</table></td></tr>` : ''}`).join('')}
+        </tbody></table></div>
+        <div class="dif-acts"><button class="act inv-export sn-big" id="dsAplicar" style="background:#e23d4c;color:#fff;border-color:transparent"${DS.marc.size ? '' : ' disabled'}>Aplicar no SPED (${DS.marc.size} nota${DS.marc.size === 1 ? '' : 's'})</button></div>`
+        : '<div class="dif-av ok"><b>Nenhuma diferença de desconto</b> entre o SPED e os XMLs.</div>'}
+        <div id="dsRes"></div>`;
+      $('#dsFechar').addEventListener('click', () => { box.hidden = true; $('#corrSpedEmpty').hidden = false; });
+      $('#dsXmls').addEventListener('click', async () => { if (await corrPedeXmls()) dsAbrir(); });
+      box.querySelectorAll('.ds-m').forEach((c) => c.addEventListener('change', () => { if (c.checked) DS.marc.add(c.dataset.c); else DS.marc.delete(c.dataset.c); dsDesenhar(); }));
+      box.querySelectorAll('[data-ds]').forEach((a) => a.addEventListener('click', () => { const k = a.dataset.ds; if (DS.aberta.has(k)) DS.aberta.delete(k); else DS.aberta.add(k); dsDesenhar(); }));
+      const tt = $('#dsTodos'); if (tt) tt.addEventListener('change', (ev) => { an.docs.forEach((d) => { if (ev.target.checked) DS.marc.add(d.chave); else DS.marc.delete(d.chave); }); dsDesenhar(); });
+      const ap = $('#dsAplicar'); if (ap) ap.addEventListener('click', dsAplicar);
+    }
+    async function dsAbrir() {
+      if (!corrSpedPath) return;
+      corrSoMostra('#corrDesc');
+      const box = $('#corrDesc');
+      if (!XMLS.path) {
+        box.innerHTML = `<div class="dif-head"><div><div class="dif-k">Corretor do SPED · Admin · Desconto × XML</div><h3>Selecione os XMLs de entrada do período</h3></div></div>
+          <div class="sn-vazio"><p>Anexe a pasta ou os <b>.zip</b> com os XMLs das notas de entrada.</p><button class="act inv-export sn-big" id="dsPick">Selecionar XMLs</button></div>`;
+        $('#dsPick').addEventListener('click', async () => { if (await corrPedeXmls()) dsAbrir(); });
+        return;
+      }
+      overlay(true, 'Comparando o desconto do SPED com os XMLs…');
+      const r = await window.fiscocont.admin.descAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path });
+      overlay(false);
+      if (r.error) { toast(r.error, true); return; }
+      DS.an = r.res; DS.marc = new Set(r.res.docs.map((d) => d.chave)); DS.aberta = new Set();
+      dsDesenhar();
+    }
+    async function dsAplicar() {
+      overlay(true, 'Lançando o desconto pelo XML…');
+      const res = await window.fiscocont.admin.descAplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path, selecao: { chaves: [...DS.marc] } });
+      overlay(false);
+      if (res.error) { toast(res.error, true); return; }
+      corrFeito = true;
+      const r = res.resumo || {};
+      $('#dsRes').innerHTML = `<div class="dif-done sn-done"><div class="dif-k">Corrigido: arquivo novo gerado (o original não foi alterado)</div>
+        <div class="dif-kpis"><div class="k-ok"><span>Notas</span><b>${r.notas || 0}</b><small>${r.itens || 0} item(ns) · R$ ${fmR(r.desconto)}</small></div><div><span>Valor do documento</span><b>${r.vl_doc_corrigido || 0}</b><small>nota(s) acertadas junto</small></div></div>
+        ${(r.avisos || []).length ? `<div class="dif-av"><ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+        <div class="dif-acts"><button class="act inv-export" id="dsReconf">Conferir de novo</button><button class="act inv-export sn-big" id="dsBaixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button></div></div>`;
+      $('#dsReconf').addEventListener('click', dsAbrir);
+      $('#dsBaixar').addEventListener('click', corrBaixar);
+    }
+    $('#btnCorrDesc').addEventListener('click', dsAbrir);
+
+    // ---- 🔎 Analisar tudo / Aplicar tudo
+    const TD = { an: null, etapa: {}, marc: {}, val: {}, aberto: new Set(), gAberto: new Set(), lAberta: new Set(), busca: {}, lim: {}, modo: {}, e116: null };
+    const TD_DICT = { cfop: 'difal', difal: 'difal', balcao: 'difal', frete: 'difal', cred: 'difal', desconto: 'desconto', icms: 'icms', valor: 'valor',
+      simples: 'simples', snd: 'simples', acum: 'acum', cad: 'cad' };
+    const tdK = (g, l) => `${g}|${l.sel}`;
+    function tdIniciar(an) {
+      Object.assign(TD, { an, etapa: {}, marc: {}, val: {}, aberto: new Set(), gAberto: new Set(), lAberta: new Set(), busca: {}, lim: {}, modo: {} });
+      an.etapas.forEach((e) => {
+        TD.etapa[e.key] = !['zero', 'fora', 'sem_xml'].includes(e.tipo);
+        e.grupos.forEach((g) => {
+          if (g.modo) TD.modo[g.id] = g.modo.padrao;
+          (g.linhas || []).forEach((l) => { if (l.sel !== undefined && !l.bloqueado) { TD.marc[tdK(g.id, l)] = l.marcado !== false; if (l.padrao) TD.val[tdK(g.id, l)] = l.padrao; } });
+        });
+      });
+    }
+    function tdContas() {
+      let marc = 0, dec = 0;
+      TD.an.etapas.forEach((e) => { if (!TD.etapa[e.key]) return; e.grupos.forEach((g) => (g.linhas || []).forEach((l) => {
+        if (TD.marc[tdK(g.id, l)]) { marc += l.qtd || 1; if (['difal', 'balcao', 'frete', 'cred', 'acum', 'snd'].includes(g.id)) dec += 1; } })); });
+      return { marc, dec };
+    }
+    function tdLinhas(e, g) {
+      const q = (TD.busca[g.id] || '').toLowerCase();
+      const L = (g.linhas || []).filter((l) => !q || `${l.nota} ${l.det || ''} ${l.sel}`.toLowerCase().includes(q));
+      const lim = TD.lim[g.id] || 100;
+      const sel = (l) => {
+        const k = tdK(g.id, l);
+        if (g.id === 'acum') return `<select class="ac7-s td-v" data-k="${esc(k)}">${g.acumuladores.map((a) => `<option value="${a.cod}"${TD.val[k] === a.cod ? ' selected' : ''}>${a.cod} · ${esc(a.nome)}</option>`).join('')}</select>`;
+        if (g.id === 'cad' && !l.bloqueado) return `<select class="ac7-s td-v" data-k="${esc(k)}">${[['07', '07 · uso e consumo'], ['08', '08 · ativo imobilizado']].map(([v, t]) => `<option value="${v}"${TD.val[k] === v ? ' selected' : ''}>${t}</option>`).join('')}</select>`;
+        if (g.select && l.opcoes) return `<select class="ac7-s td-v" data-k="${esc(k)}">${l.opcoes.map((o) => `<option value="${o.v}"${(TD.val[k] || l.padrao) === o.v ? ' selected' : ''}>${esc(o.rot)}</option>`).join('')}</select>`;
+        return '';
+      };
+      const itens = (l) => {
+        const k = tdK(g.id, l);
+        if (!TD.lAberta.has(k)) return '';
+        if (l.itens) return `<tr><td></td><td colspan="5"><table class="td-sub"><tr><th>Item</th><th>Produto</th><th style="text-align:right">Valor</th><th style="text-align:right">Desc. SPED</th><th style="text-align:right">Desc. XML</th><th style="text-align:right">Desc. novo</th><th>De onde vem</th></tr>
+          ${l.itens.map((i) => `<tr><td>${esc(i.num)}</td><td>${esc(i.descr || i.cod)}</td><td style="text-align:right">${fmR(i.vl_item)}</td><td style="text-align:right">${fmR(i.antes)}</td><td style="text-align:right">${i.xml == null ? '—' : fmR(i.xml)}</td><td style="text-align:right"><b>${fmR(i.novo)}</b></td><td>${esc(i.origem)}</td></tr>`).join('')}</table></td></tr>`;
+        const its = (l.extra || {}).itens || [];
+        return `<tr><td></td><td colspan="5"><table class="td-sub"><tr><th>Código</th><th>Produto</th><th>CFOP</th><th style="text-align:right">Valor</th></tr>
+          ${its.map((i) => `<tr><td>${esc(i.cod)}</td><td>${esc(i.descr)}</td><td>${esc(i.cfop || '')}</td><td style="text-align:right">${fmR(i.valor)}</td></tr>`).join('') || '<tr><td colspan="4">Sem itens.</td></tr>'}</table></td></tr>`;
+      };
+      const temItens = (l) => (l.itens && l.itens.length) || ((l.extra || {}).itens || []).length;
+      const linhasVal = g.id === 'val';
+      return `<div class="td-notas">
+        ${(g.linhas || []).length > 8 && !linhasVal ? `<input class="td-busca" data-g="${esc(g.id)}" placeholder="Buscar por número, fornecedor ou produto" value="${esc(TD.busca[g.id] || '')}">` : ''}
+        <table class="td-sub"><tbody>
+        ${L.slice(0, lim).map((l) => { const k = tdK(g.id, l); return `<tr${l.bloqueado ? ' class="td-bloq"' : ''}>
+          <td>${linhasVal || l.bloqueado ? '' : `<input type="checkbox" class="td-l" data-k="${esc(k)}"${TD.marc[k] ? ' checked' : ''}>`}</td>
+          <td><b>${esc(linhasVal ? l.txt : l.nota)}</b>${l.det ? `<span class="ac7-mi">${esc(l.det)}</span>` : ''}</td>
+          <td style="text-align:right">${linhasVal ? l.qtd : (l.valor == null ? '—' : fmR(l.valor))}</td>
+          <td>${l.confianca ? `<span class="ac7-cf ${l.confianca === 'alta' ? 'k-ok' : 'k-warn'}">${l.confianca === 'alta' ? 'Alta' : 'Média'}</span>` : (l.origem ? `<span class="ac7-cf ${l.origem === 'item do XML' ? 'k-ok' : 'k-warn'}">${esc(l.origem)}</span>` : '')}</td>
+          <td>${sel(l)}</td><td>${temItens(l) ? `<a class="td-lk" data-li="${esc(k)}">${TD.lAberta.has(k) ? 'fechar itens' : 'ver itens'}</a>` : ''}</td></tr>${itens(l)}`; }).join('')}
+        </tbody></table>${L.length > lim ? `<button class="act inv-export td-mais" data-g="${esc(g.id)}">Mostrar mais (${L.length - lim})</button>` : ''}</div>`;
+    }
+    function tdDesenhar() {
+      const box = $('#corrTudo'), an = TD.an, ct = tdContas();
+      const ativas = an.etapas.filter((e) => !['zero', 'fora', 'sem_xml'].includes(e.tipo)).length;
+      const bad = { auto: 'k-ok', decidir: 'k-warn', zero: '', fora: '', sem_xml: '' };
+      box.innerHTML = `
+        <div class="dif-head"><div><div class="dif-k">Corretor do SPED · Admin · Analisar tudo</div>
+          <h3>${esc(an.empresa.nome || an.arquivo)}</h3>
+          <div class="dif-sub">Tudo o que o Corretor confere, num painel só. O que é certo já vem marcado; o que depende de decisão vem com a sugestão marcada para você revisar. Nada muda até clicar em <b>Aplicar tudo</b>. O arquivo original nunca é alterado.</div></div>
+          <div class="sn-hbtn"><button class="act inv-export" id="tdXmls">${XMLS.path ? 'Trocar XMLs' : 'Anexar XMLs de entrada'}</button><button class="act inv-export" id="tdFechar">Fechar</button></div></div>
+        ${XMLS.path ? `<div class="dif-av ok dif-xmlbar"><b>XMLs de entrada anexados:</b> ${an.xml_lidos || 0} lido(s).</div>` : '<div class="dif-av"><b>Sem XMLs de entrada:</b> Desconto, ICMS × XML, Valor e base × XML e Simples não rodam. Anexe os XMLs para incluir essas conferências.</div>'}
+        <div class="dif-kpis">
+          <div><span>Conferências</span><b>${an.etapas.length}</b><small>${ativas} com correção</small></div>
+          <div class="k-ok"><span>Marcadas</span><b>${ct.marc}</b><small>serão aplicadas</small></div>
+          <div class="k-warn"><span>Para decidir</span><b>${ct.dec}</b><small>com a sugestão marcada</small></div>
+          <div><span>ICMS a recolher hoje</span><b>R$ ${fmR(an.icms_antes)}</b><small>o novo valor aparece depois de aplicar</small></div></div>
+        <div class="td-lista">${an.etapas.map((e, n) => {
+          const ab = TD.aberto.has(e.key), sem = ['zero', 'fora', 'sem_xml'].includes(e.tipo);
+          return `<div class="td-sec${sem ? ' td-sem' : ''}"><div class="td-sh">
+            <input type="checkbox" class="td-e" data-e="${e.key}"${TD.etapa[e.key] ? ' checked' : ''}${sem || e.fixo ? ' disabled' : ''}>
+            <div><b>${n + 1} · ${esc(e.titulo)}</b><small>${esc(e.desc)}</small></div><div class="td-r">${esc(e.qtd)}</div><div class="td-r">${esc(e.valor || '—')}</div>
+            <span class="ac7-cf ${bad[e.tipo] || ''}">${esc(e.badge)}</span>${e.grupos.length ? `<a class="td-lk" data-ab="${e.key}">${ab ? 'fechar ▴' : 'ver ▾'}</a>` : '<span></span>'}</div>
+            ${ab ? `<div class="td-det">${e.grupos.map((g) => {
+              const gab = TD.gAberto.has(g.id), qs = (g.linhas || []).length;
+              const nm = (g.linhas || []).filter((l) => TD.marc[tdK(g.id, l)]).length;
+              return `<div class="td-g"><div class="td-gh"><a class="td-lk" data-g="${esc(g.id)}">${gab ? '▴' : '▾'} ${esc(g.titulo)}</a>
+                <span>${qs} ${g.id === 'acum' || g.id === 'cad' ? 'produto(s)' : (g.id === 'val' ? 'tipo(s)' : 'nota(s)')}${g.id === 'val' ? '' : ` · ${nm} marcada(s)`}</span><span class="ac7-mi">sugestão: ${esc(g.sugestao || '—')}</span>
+                ${g.modo ? `<select class="ac7-s td-modo" data-g="${esc(g.id)}">${g.modo.opcoes.map((o) => `<option value="${o.v}"${TD.modo[g.id] === o.v ? ' selected' : ''}>${esc(o.rot)}</option>`).join('')}</select>` : ''}</div>
+                ${gab ? tdLinhas(e, g) : ''}</div>`; }).join('')}</div>` : ''}</div>`; }).join('')}</div>
+        <div class="dif-acts"><span class="ac7-mi" style="margin-right:auto">As correções são aplicadas nesta ordem, uma sobre a outra, no mesmo arquivo. No fim: um resumo e um arquivo só para baixar.</span>
+          <button class="act inv-export" id="tdLimpar">Desmarcar tudo</button>
+          <button class="act inv-export sn-big" id="tdAplicar" style="background:#e23d4c;color:#fff;border-color:transparent">Aplicar tudo o que está marcado</button></div>
+        <div id="tdRes"></div>`;
+      $('#tdFechar').addEventListener('click', () => { box.hidden = true; $('#corrSpedEmpty').hidden = false; });
+      $('#tdXmls').addEventListener('click', async () => { if (await corrPedeXmls()) tdAbrir(); });
+      box.querySelectorAll('.td-e').forEach((c) => c.addEventListener('change', () => { TD.etapa[c.dataset.e] = c.checked; tdDesenhar(); }));
+      box.querySelectorAll('[data-ab]').forEach((a) => a.addEventListener('click', () => { const k = a.dataset.ab; if (TD.aberto.has(k)) TD.aberto.delete(k); else TD.aberto.add(k); tdDesenhar(); }));
+      box.querySelectorAll('.td-gh [data-g]').forEach((a) => a.addEventListener('click', () => { const k = a.dataset.g; if (TD.gAberto.has(k)) TD.gAberto.delete(k); else TD.gAberto.add(k); tdDesenhar(); }));
+      box.querySelectorAll('.td-l').forEach((c) => c.addEventListener('change', () => { TD.marc[c.dataset.k] = c.checked; tdDesenhar(); }));
+      box.querySelectorAll('.td-v').forEach((c) => c.addEventListener('change', () => { TD.val[c.dataset.k] = c.value; TD.marc[c.dataset.k] = true; tdDesenhar(); }));
+      box.querySelectorAll('.td-modo').forEach((c) => c.addEventListener('change', () => { TD.modo[c.dataset.g] = c.value; }));
+      box.querySelectorAll('[data-li]').forEach((a) => a.addEventListener('click', () => { const k = a.dataset.li; if (TD.lAberta.has(k)) TD.lAberta.delete(k); else TD.lAberta.add(k); tdDesenhar(); }));
+      box.querySelectorAll('.td-busca').forEach((i) => i.addEventListener('change', () => { TD.busca[i.dataset.g] = i.value; TD.lim[i.dataset.g] = 100; tdDesenhar(); }));
+      box.querySelectorAll('.td-mais').forEach((b) => b.addEventListener('click', () => { TD.lim[b.dataset.g] = (TD.lim[b.dataset.g] || 100) + 300; tdDesenhar(); }));
+      $('#tdLimpar').addEventListener('click', () => { Object.keys(TD.marc).forEach((k) => { TD.marc[k] = false; }); tdDesenhar(); });
+      $('#tdAplicar').addEventListener('click', () => tdAplicar());
+    }
+    function tdEscolhas() {
+      const esc2 = { etapas: { ...TD.etapa }, difal: {}, desconto: {}, icms: {}, valor: {}, simples: {}, acum: {}, cad: {} };
+      if (TD.e116) esc2.e116 = TD.e116;
+      TD.an.etapas.forEach((e) => e.grupos.forEach((g) => {
+        const dic = TD_DICT[g.id];
+        if (!dic) return;
+        if (g.modo) esc2.difal.cred_modo = TD.modo[g.id];
+        (g.linhas || []).forEach((l) => {
+          if (l.bloqueado) return;
+          const k = tdK(g.id, l), on = !!TD.marc[k];
+          if (['cfop', 'cred', 'desconto', 'icms', 'valor', 'simples'].includes(g.id)) { if (!on) esc2[dic][l.sel] = false; return; }
+          if (g.id === 'acum' || g.id === 'cad') { esc2[dic][l.sel] = on ? (TD.val[k] || l.padrao || false) : false; return; }
+          if (g.id === 'snd') { esc2.simples[l.sel] = on; return; }
+          if (!on) { esc2.difal[l.sel] = g.id === 'balcao' ? 'manter' : 'nao'; return; }
+          let v = TD.val[k] || l.padrao;
+          if (['nao', 'manter'].includes(v) && g.id !== 'balcao') v = ((l.opcoes || []).find((o) => !['nao', 'manter'].includes(o.v)) || {}).v || v;
+          esc2.difal[l.sel] = v;
+        });
+      }));
+      return esc2;
+    }
+    async function tdAbrir() {
+      if (!corrSpedPath) return;
+      corrSoMostra('#corrTudo');
+      overlay(true, 'Rodando todas as conferências do Corretor…');
+      const r = await window.fiscocont.admin.tudoAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path });
+      overlay(false);
+      if (r.error) { toast(r.error, true); return; }
+      TD.e116 = null;
+      tdIniciar(r.res);
+      tdDesenhar();
+      $('#corrTudo').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    async function tdAplicar() {
+      overlay(true, 'Aplicando todas as correções marcadas, uma sobre a outra…');
+      const res = await window.fiscocont.admin.tudoAplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path, escolhas: tdEscolhas() });
+      overlay(false);
+      const out = $('#tdRes');
+      if (res.precisa_e116) {
+        out.innerHTML = `<div class="dif-av"><b>${esc(res.error)}</b><div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+          <label>Vencimento (ddmmaaaa) <input id="tdVenc" class="td-busca" style="width:120px"></label><label>Código de receita <input id="tdCod" class="td-busca" style="width:120px"></label>
+          <button class="act inv-export" id="tdE116">Aplicar com essa guia</button></div></div>`;
+        $('#tdE116').addEventListener('click', () => { TD.e116 = { venc: $('#tdVenc').value.replace(/\D/g, ''), cod_rec: $('#tdCod').value.trim() }; tdAplicar(); });
+        return;
+      }
+      if (res.error) { toast(res.error, true); return; }
+      corrFeito = true;
+      const r = res.resumo || {}, z = r.resumo || {};
+      const lin = [];
+      if (z.validacao && z.validacao.feito) lin.push(`Validação do PVA: ${z.validacao.feito} correção(ões)`);
+      if (z.difal) lin.push(`DIFAL e crédito: ${z.difal.notas} nota(s) com DIFAL · CFOP em ${z.difal.cfop} nota(s)${z.difal.credito ? ` · crédito de uso e consumo R$ ${fmR(z.difal.credito)}` : ''}`);
+      if (z.desconto) lin.push(`Desconto × XML: ${z.desconto.notas} nota(s), ${z.desconto.itens} item(ns), R$ ${fmR(z.desconto.desconto)}`);
+      if (z.icms) lin.push(`ICMS × XML: ${z.icms.notas} nota(s), crédito retirado R$ ${fmR(z.icms.credito_retirado)}`);
+      if (z.valor) lin.push(`Valor e base × XML: ${z.valor.notas} nota(s)${z.valor.credito_retirado ? `, crédito retirado R$ ${fmR(z.valor.credito_retirado)}` : ''}`);
+      if (z.simples) lin.push(`Crédito do Simples: ${z.simples.notas} nota(s), R$ ${fmR(z.simples.credito)}`);
+      if (z.acum) lin.push(`Acumulador 7000: ${z.acum.itens} item(ns) reclassificados (${(z.acum.acumuladores || []).length} acumuladores)`);
+      if (z.cad) lin.push(`Cadastro 0200: ${z.cad.produtos} produto(s) (${Object.entries(z.cad.por_tipo || {}).map(([k, v]) => `${v} → ${k}`).join(' · ')})`);
+      out.innerHTML = `<div class="dif-done sn-done"><div class="dif-k">Corrigido: um arquivo novo com tudo o que estava marcado (o original não foi alterado)</div>
+        <div class="dif-kpis"><div><span>ICMS a recolher antes</span><b>R$ ${fmR(r.icms_antes)}</b></div><div class="k-ok"><span>ICMS a recolher depois</span><b>R$ ${fmR(r.icms_depois)}</b></div>
+          <div><span>Saldo credor depois</span><b>R$ ${fmR(r.credor_depois)}</b></div></div>
+        <div class="dif-av ok"><ul>${lin.map((t) => `<li>${esc(t)}</li>`).join('') || '<li>Nada foi alterado.</li>'}</ul></div>
+        ${(r.avisos || []).length ? `<div class="dif-av"><ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+        <div class="dif-acts"><button class="act inv-export" id="tdReconf">Analisar de novo</button><button class="act inv-export sn-big" id="tdBaixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button></div></div>`;
+      $('#tdReconf').addEventListener('click', tdAbrir);
+      $('#tdBaixar').addEventListener('click', corrBaixar);
+      out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    $('#btnCorrTudo').addEventListener('click', tdAbrir);
     $('#btnCorrSimples').addEventListener('click', () => snAbrir());
 
     const DIF = { an: null, origem: null };

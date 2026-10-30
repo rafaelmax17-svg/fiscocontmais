@@ -2311,6 +2311,78 @@ ipcMain.handle('admin:acum7000Aplicar', async (_evt, { spedPath, usarCorrigido, 
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+// 🔎 Analisar tudo / Aplicar tudo (todas as conferências do Corretor num painel só) e Desconto × XML — só Admin
+ipcMain.handle('admin:tudoAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!spedPath) return { error: 'Selecione o SPED.' };
+  const base = _difalBase(spedPath, usarCorrigido);
+  const jsonOut = path.join(os.tmpdir(), `fc_tudo_${Date.now()}.json`);
+  try {
+    const regimes = await _regimesJson([base.arq]);
+    await runFiscal(['analisar-tudo', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--regimes', regimes, '--json', jsonOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {}); fs.unlink(regimes, () => {});
+    if (res.erro) return { error: res.erro };
+    return { ok: true, res, origem: base.origem };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('admin:tudoAplicar', async (_evt, { spedPath, usarCorrigido, xmls, escolhas }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!spedPath) return { error: 'Selecione o SPED.' };
+  const base = _difalBase(spedPath, usarCorrigido);
+  const stamp = Date.now();
+  const escJson = path.join(os.tmpdir(), `fc_tudo_esc_${stamp}.json`);
+  const jsonOut = path.join(os.tmpdir(), `fc_tudo_res_${stamp}.json`);
+  const saida = path.join(os.tmpdir(), `fc_tudo_sped_${stamp}.txt`);
+  try {
+    fs.writeFileSync(escJson, JSON.stringify(escolhas || {}), 'utf-8');
+    const regimes = await _regimesJson([base.arq]);
+    await runFiscal(['analisar-tudo', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--regimes', regimes, '--json', jsonOut,
+      '--aplicar', escJson, '--saida', saida], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    for (const f of [jsonOut, escJson, regimes]) fs.unlink(f, () => {});
+    if (res.precisa_e116) return { precisa_e116: true, error: res.erro };
+    if (res.erro) return { error: res.erro };
+    if (!fs.existsSync(saida)) return { error: 'O arquivo corrigido não foi gerado.' };
+    if (lastSpedCorrigidoPath && lastSpedCorrigidoPath !== base.arq) fs.unlink(lastSpedCorrigidoPath, () => {});
+    else if (lastSpedCorrigidoPath === base.arq && base.origem === 'corrigido') fs.unlink(base.arq, () => {});
+    lastSpedCorrigidoPath = saida;
+    return { ok: true, resumo: res, origem: base.origem };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('admin:descAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!spedPath || !xmls) return { error: 'Selecione o SPED e os XMLs de entrada.' };
+  const base = _difalBase(spedPath, usarCorrigido);
+  const jsonOut = path.join(os.tmpdir(), `fc_desc_${Date.now()}.json`);
+  try {
+    await runFiscal(['desconto-xml', '--sped', base.arq, '--xmls', xmls, '--json', jsonOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    return { ok: true, res, origem: base.origem };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('admin:descAplicar', async (_evt, { spedPath, usarCorrigido, xmls, selecao }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!spedPath || !xmls) return { error: 'Selecione o SPED e os XMLs de entrada.' };
+  const base = _difalBase(spedPath, usarCorrigido);
+  const stamp = Date.now();
+  const selJson = path.join(os.tmpdir(), `fc_desc_sel_${stamp}.json`);
+  const jsonOut = path.join(os.tmpdir(), `fc_desc_res_${stamp}.json`);
+  const saida = path.join(os.tmpdir(), `fc_desc_sped_${stamp}.txt`);
+  try {
+    fs.writeFileSync(selJson, JSON.stringify(selecao || {}), 'utf-8');
+    await runFiscal(['desconto-xml', '--sped', base.arq, '--xmls', xmls, '--json', jsonOut, '--aplicar', selJson, '--saida', saida], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    fs.unlink(jsonOut, () => {}); fs.unlink(selJson, () => {});
+    if (res.erro) return { error: res.erro };
+    if (!fs.existsSync(saida)) return { error: 'O arquivo corrigido não foi gerado.' };
+    if (lastSpedCorrigidoPath && lastSpedCorrigidoPath !== base.arq) fs.unlink(lastSpedCorrigidoPath, () => {});
+    else if (lastSpedCorrigidoPath === base.arq && base.origem === 'corrigido') fs.unlink(base.arq, () => {});
+    lastSpedCorrigidoPath = saida;
+    return { ok: true, resumo: res, origem: base.origem };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
 // Cadastro de produtos (0200): tipo 00 (revenda) que só entrou como uso e consumo / ativo → 07 / 08, revisado pelo Admin — só Admin
 ipcMain.handle('admin:cad0200Analisar', async (_evt, { spedPath, usarCorrigido }) => {
   const bloq = _soAdmin(); if (bloq) return bloq;

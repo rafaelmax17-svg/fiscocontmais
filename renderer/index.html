@@ -1163,9 +1163,10 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
             SPED Fiscal (.txt)
           </button>
-          <button class="act inv-export btn-auto" id="btnCorrLote" title="Corrige os SPEDs de todos os clientes do mês de uma vez — você só decide as exceções">⚡ Automatizar correção</button>
+          <button class="act inv-export btn-auto" id="btnCorrLote" hidden title="Corrige os SPEDs de todos os clientes do mês de uma vez — você só decide as exceções">⚡ Automatizar correção</button>
           <span class="fiscal-spacer"></span>
           <button class="act inv-export" id="btnCorrSpedVerOriginal" disabled>Ver todos os dados (original)</button>
+          <button class="act inv-export" id="btnCorrDesc" disabled title="Confere o desconto do C100 e de cada item (C170) com o XML; sem desconto no item do XML, divide em proporção ao valor de cada item">Desconto × XML</button>
           <button class="act inv-export" id="btnCorrDifal" disabled title="Confere CFOP 1.556/2.556 (e ativo) pela UF do fornecedor, o DIFAL de RO e o crédito de ICMS tomado indevidamente; aplica só o que você confirmar">Uso e consumo · DIFAL e crédito</button>
           <button class="act inv-export" id="btnCorrIcmsXml" disabled title="Confere o ICMS creditado nas entradas com o ICMS destacado no XML de cada nota e corrige o crédito tomado a mais">ICMS creditado × XML</button>
           <button class="act inv-export" id="btnCorrValXml" disabled title="Confere o valor do documento, a base de cálculo e o ICMS de cada nota de entrada com o XML (fora uso e consumo e ativo) e corrige pelo XML">Valor e base × XML</button>
@@ -1173,6 +1174,7 @@
           <button class="act inv-export" id="btnCorrAcum" disabled title="Itens lançados no acumulador genérico 7000 (DESPESAS): sugere o acumulador de despesa certo (7001–7040) pela descrição e pelo NCM; aplica só o que você marcar">Acumulador 7000</button>
           <button class="act inv-export" id="btnCorrCad" disabled title="Produtos cadastrados no 0200 como revenda (tipo 00) que só entraram como uso e consumo ou ativo: sugere o tipo 07 ou 08; aplica só o que você marcar">Cadastro de produtos (0200)</button>
           <button class="act inv-export" id="btnCorrSimples" disabled title="Confere e lança o crédito de ICMS de fornecedor do Simples Nacional (C195 + C197 RO00000001) com os XMLs de entrada">Crédito Simples Nacional</button>
+          <button class="act inv-export" id="btnCorrTudo" disabled style="background:#1e3a8a;color:#fff;border-color:transparent" title="Roda todas as conferências do Corretor de uma vez; você revisa e aplica tudo num arquivo só">🔎 Analisar tudo</button>
           <button class="act inv-export" id="btnCorrSpedRodar" disabled style="background:#e23d4c;color:#fff;border-color:transparent">Corrigir SPED</button>
         </div>
         <div class="fiscal-empty" id="corrSpedEmpty">
@@ -1186,6 +1188,8 @@
         <div id="corrSimples" class="dif" hidden></div>
         <div id="corrAcum" class="dif ac7" hidden></div>
         <div id="corrCad" class="dif ac7" hidden></div>
+        <div id="corrDesc" class="dif ac7" hidden></div>
+        <div id="corrTudo" class="dif tudo" hidden></div>
         <div id="corrIcmsXml" class="dif" hidden></div>
         <div id="corrValXml" class="dif" hidden></div>
         <div id="corrEstST" class="dif" hidden></div>
