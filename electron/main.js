@@ -132,12 +132,12 @@ function runCore(args, readyFile, validate) {
 // Tela de abertura: só aparece depois de desenhada (antes aparecia vazia enquanto carregava e, numa máquina mais
 // lenta, a animação começava quase na hora de fechar). O tempo mínimo conta a partir do momento em que ela aparece,
 // e a janela principal só começa a carregar depois disso, para não disputar a máquina com a animação.
-const SPLASH_MIN_MS = 4800;       // a animação termina em ~3,6 s; o resto é para ver a tela completa
+const SPLASH_MIN_MS = 5000;       // a animação termina em ~4 s (barra de carregamento); o resto é para ver a tela completa
 let splashShownAt = 0;
 function createSplash(onShown) {
   splashWindow = new BrowserWindow({
-    width: 500,
-    height: 340,
+    width: 720,
+    height: 470,
     frame: false,
     resizable: false,
     transparent: true,

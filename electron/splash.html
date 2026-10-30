@@ -1,92 +1,67 @@
 <!doctype html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8">
-<style>
-  html,body{margin:0;height:100%;background:transparent;overflow:hidden;
-    font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
-  .card{position:relative;height:100vh;border-radius:18px;overflow:hidden;
-    background-color:#0b1024;background-image:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px),radial-gradient(60% 85% at 8% 62%,rgba(79,70,229,.55),rgba(79,70,229,0) 70%);background-size:28px 28px,28px 28px,100% 100%;
-    border:1px solid rgba(255,255,255,.07);box-shadow:0 20px 60px rgba(5,8,25,.55);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;padding-bottom:58px;box-sizing:border-box;
-    animation:entra .5s ease both}
-  @keyframes entra{from{opacity:0;transform:scale(.97)}}
-  /* saída suave quando o sistema termina de carregar */
-  body.sai .card{animation:sai .38s ease forwards}
-  @keyframes sai{to{opacity:0;transform:scale(.98)}}
-  /* gráfico ao fundo: barras sobem uma a uma, a linha se desenha por cima */
-  .bars{position:absolute;left:22px;right:22px;bottom:0;height:78px;display:flex;align-items:flex-end;gap:8px;opacity:.30}
-  .bars i{flex:1;height:var(--h);border-radius:5px 5px 0 0;background:linear-gradient(#6366f1,rgba(99,102,241,0));
-    transform-origin:bottom;animation:sobe .8s var(--d) cubic-bezier(.2,.8,.2,1) both, respira 2.6s calc(var(--d) + .8s) ease-in-out infinite}
-  @keyframes sobe{from{transform:scaleY(0)}}
-  @keyframes respira{50%{transform:scaleY(.86)}}
-  .linha{position:absolute;left:22px;right:22px;bottom:14px;height:58px;opacity:.75}
-  .linha polyline{stroke-dasharray:700;stroke-dashoffset:700;animation:traca 2.8s .5s cubic-bezier(.45,.05,.35,1) forwards}
-  .linha circle{opacity:0;animation:aparece .4s 3.2s forwards}
-  @keyframes traca{to{stroke-dashoffset:0}}
-  @keyframes aparece{to{opacity:1}}
-  /* marca */
-  .mk{width:78px;height:78px;position:relative;z-index:1;animation:sobeM .6s .1s ease both}
-  @keyframes sobeM{from{opacity:0;transform:translateY(8px)}}
-  .arc{animation:gira 2.4s linear infinite}
-  @keyframes gira{to{transform:rotate(270deg)}}
-  .ck{stroke-dasharray:150;stroke-dashoffset:150;animation:desenha .7s .45s ease forwards}
-  @keyframes desenha{to{stroke-dashoffset:0}}
-  .plus{transform-origin:0 0;animation:pulsa .5s 1.0s ease both}
-  @keyframes pulsa{0%{transform:scale(0)}70%{transform:scale(1.15)}100%{transform:scale(1)}}
-  .name{z-index:1;color:#fff;font-size:26px;font-weight:800;letter-spacing:.2px;margin-top:10px;animation:sobeM .6s .25s ease both}
-  .name span{color:#a5b4fc}
-  .sub{z-index:1;color:#97a2cf;font-size:12px;margin-top:2px;animation:sobeM .6s .35s ease both}
-  .dots{z-index:1;margin-top:16px;display:flex;gap:6px}
-  .dots b{width:6px;height:6px;border-radius:50%;background:#a5b4fc;animation:pisca 1.2s infinite}
-  .dots b:nth-child(2){animation-delay:.2s}.dots b:nth-child(3){animation-delay:.4s}
-  @keyframes pisca{0%,100%{opacity:.25}50%{opacity:1}}
-  .load-txt{z-index:1;color:#8590bf;font-size:11px;margin-top:8px;letter-spacing:.3px;height:14px;transition:opacity .25s}
-  .ver{position:absolute;top:12px;right:16px;color:#5d678f;font-size:10.5px}
-</style>
-</head>
-<body>
-  <div class="card">
-    <div class="bars">
-      <i style="--h:34%;--d:.05s"></i><i style="--h:50%;--d:.12s"></i><i style="--h:42%;--d:.19s"></i>
-      <i style="--h:64%;--d:.26s"></i><i style="--h:56%;--d:.33s"></i><i style="--h:78%;--d:.40s"></i>
-      <i style="--h:70%;--d:.47s"></i><i style="--h:90%;--d:.54s"></i><i style="--h:84%;--d:.61s"></i>
-    </div>
-    <svg class="linha" viewBox="0 0 456 58" preserveAspectRatio="none">
-      <polyline points="0,52 57,38 114,44 171,26 228,32 285,15 342,20 399,5 456,9" fill="none" stroke="#a5b4fc" stroke-width="2" stroke-linejoin="round"/>
-      <circle cx="456" cy="9" r="3.5" fill="#c7d2fe"/>
-    </svg>
-    <svg class="mk" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-      <defs><linearGradient id="r" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c7d2fe"/></linearGradient></defs>
-      <g transform="translate(256 244)">
-        <circle r="118" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="34"/>
-        <circle class="arc" r="118" fill="none" stroke="url(#r)" stroke-width="34" stroke-linecap="round" stroke-dasharray="360 741" transform="rotate(-90)"/>
-        <path class="ck" d="M -46 4 L -14 40 L 52 -34" fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
-      </g>
-      <g transform="translate(388 132)"><g class="plus">
-        <circle r="52" fill="#ffffff"/>
-        <path d="M 0 -26 V 26 M -26 0 H 26" stroke="#4f46e5" stroke-width="18" stroke-linecap="round"/>
-      </g></g>
-    </svg>
-    <div class="name">FiscoCont<span>+</span></div>
-    <div class="sub">Automação Fiscal e Contábil · Liddera</div>
-    <div class="dots"><b></b><b></b><b></b></div>
-    <div class="load-txt" id="st">Verificando a licença…</div>
-    <div class="ver" id="ver"></div>
-  </div>
+<!-- Tela de abertura (modelo Constelação · Ondas, 720 × 470): partículas que se ligam e convergem para a marca,
+     mar de pontos ondulando embaixo, nome letra a letra, barra de carregamento e etapas. body.sai = saída suave. -->
+<html lang="pt-BR"><head><meta charset="utf-8"><style>
+html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-family:Inter,"Segoe UI",Roboto,Arial,sans-serif}
+.card{position:relative;height:100vh;border-radius:22px;overflow:hidden;box-sizing:border-box;animation:entra .6s cubic-bezier(.2,.8,.2,1) both}
+@keyframes entra{from{opacity:0;transform:scale(.94)}}
+body.sai .card{animation:sai .4s ease forwards}@keyframes sai{to{opacity:0;transform:scale(.97)}}
+.arc{animation:gira 2.4s linear infinite;transform-origin:0 0}@keyframes gira{to{transform:rotate(270deg)}}
+.ck{stroke-dasharray:150;stroke-dashoffset:150;animation:desenha .7s .5s ease forwards}@keyframes desenha{to{stroke-dashoffset:0}}
+.plus{transform-origin:0 0;animation:pulsa .55s 1.05s ease both}@keyframes pulsa{0%{transform:scale(0)}70%{transform:scale(1.18)}100%{transform:scale(1)}}
+.ver{position:absolute;top:14px;right:18px;font-size:11px;opacity:.6}
+.sobe{animation:sobe .7s cubic-bezier(.2,.8,.2,1) both}@keyframes sobe{from{opacity:0;transform:translateY(12px)}}
+.letras span{display:inline-block;animation:letra .5s cubic-bezier(.2,.8,.2,1) both}
+@keyframes letra{from{opacity:0;transform:translateY(14px) rotateX(70deg);filter:blur(4px)}}
+#st{transition:opacity .25s}
+
+:root{--plus:#38bdf8}
+.card{background:radial-gradient(90% 90% at 50% 45%,#0b1a33 0%,#050914 70%);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center}
+canvas{position:absolute;inset:0;width:100%;height:100%}
+.halo{position:absolute;width:260px;height:260px;border-radius:50%;background:radial-gradient(circle,rgba(56,189,248,.35),transparent 65%);top:58px;animation:halo 2.4s 1.2s ease-in-out infinite alternate;opacity:0}
+@keyframes halo{from{opacity:.35;transform:scale(.9)}to{opacity:.8;transform:scale(1.08)}}
+.mk{position:relative;width:118px;height:118px;opacity:0;animation:nasce .9s 1.5s cubic-bezier(.2,.8,.2,1) forwards;filter:drop-shadow(0 0 18px rgba(56,189,248,.6))}
+@keyframes nasce{from{opacity:0;transform:scale(.4)}to{opacity:1;transform:none}}
+.name{position:relative;font-size:46px;font-weight:800;letter-spacing:.5px;margin-top:8px;perspective:400px}
+.sub{position:relative;color:#7dd3fc;font-size:14px;opacity:.85}
+.bar{position:relative;width:300px;height:3px;margin-top:26px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden}
+.bar i{position:absolute;inset:0;width:0;background:linear-gradient(90deg,#38bdf8,#a78bfa);box-shadow:0 0 12px #38bdf8;animation:carrega 3.4s .6s cubic-bezier(.4,0,.2,1) forwards}
+@keyframes carrega{to{width:100%}}
+#st{position:relative;font-size:12.5px;color:#93c5fd;margin-top:10px;height:16px}
+.ver{color:#7dd3fc}.rod{position:absolute;bottom:14px;font-size:11.5px;color:#bae6fd;opacity:.9;padding:3px 12px;border-radius:20px;background:rgba(3,7,18,.6);backdrop-filter:blur(4px);z-index:3}
+.card{background:linear-gradient(#030712,#0b1026 60%,#111a3a)}
+.bgc{position:absolute;inset:0;width:100%;height:100%}</style></head><body><div class="card"><canvas id="wv" class="bgc"></canvas><script>
+(()=>{const c=document.getElementById('wv'),x=c.getContext('2d'),W=c.width=innerWidth*2,H=c.height=innerHeight*2;x.scale(2,2);const w=W/2,h=H/2;
+(function f(t){x.clearRect(0,0,w,h);const s=t/1000;
+ for(let zi=0;zi<26;zi++){const z=zi/25,py=h*.66+Math.pow(z,1.6)*h*.4,esc=.35+z*1.4;
+  for(let xi=-30;xi<=30;xi++){const X=w/2+xi*12*esc,yy=py+Math.sin(xi*.35+s*1.8+zi*.45)*10*esc+Math.cos(zi*.6-s*1.2)*6*esc;
+   if(X<-10||X>w+10)continue;x.globalAlpha=.15+z*.75;x.fillStyle=`hsl(${200+xi*1.5+z*60},90%,${60+z*15}%)`;x.beginPath();x.arc(X,yy,.7+z*1.5,0,7);x.fill();}}
+ requestAnimationFrame(f)})(0)})();</script><canvas id="cv"></canvas><div class="halo"></div><svg class="mk" viewBox="0 0 512 512"><defs><linearGradient id="r" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c7d2fe"/></linearGradient></defs>
+<g transform="translate(256 244)"><circle r="118" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="34"/>
+<circle class="arc" r="118" fill="none" stroke="url(#r)" stroke-width="34" stroke-linecap="round" stroke-dasharray="360 741" transform="rotate(-90)"/>
+<path class="ck" d="M -46 4 L -14 40 L 52 -34" fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g transform="translate(388 132)"><g class="plus"><circle r="52" fill="#ffffff"/><path d="M 0 -26 V 26 M -26 0 H 26" stroke="#4f46e5" stroke-width="18" stroke-linecap="round"/></g></g></svg>
+
+<div class="name letras" data-t="FiscoCont+" data-d="1.7"></div><div class="sub sobe" style="animation-delay:2.2s">Automação Fiscal e Contábil · Liddera</div>
+<div class="bar"><i></i></div><div id="st">Verificando a licença…</div><div class="rod">Liddera · Inteligência em Negócios</div><div class="ver" id="ver"></div></div>
 <script>
-  // Etapas mostradas enquanto o sistema abre (o main pode trocar o texto de verdade: ?v=versão).
-  const etapas = ['Verificando a licença…', 'Conectando à nuvem…', 'Carregando módulos fiscais…', 'Preparando o painel…'];
-  const el = document.getElementById('st');
-  let k = 0;
-  setInterval(() => {
-    if (k >= etapas.length - 1) return;
-    k += 1;
-    el.style.opacity = 0;
-    setTimeout(() => { el.textContent = etapas[k]; el.style.opacity = 1; }, 250);
-  }, 850);
-  const v = new URLSearchParams(location.search).get('v');
-  if (v) document.getElementById('ver').textContent = 'v' + v;
-</script>
-</body>
-</html>
+const cv=document.getElementById('cv'),cx=cv.getContext('2d'),W=cv.width=innerWidth*2,H=cv.height=innerHeight*2;cx.scale(2,2);
+const w=W/2,h=H/2,alvo={x:w/2,y:118},N=90,t0=performance.now();
+const P=[...Array(N)].map(()=>({x:Math.random()*w,y:Math.random()*h,vx:(Math.random()-.5)*.6,vy:(Math.random()-.5)*.6,a:Math.random()*Math.PI*2,r:40+Math.random()*90}));
+(function f(t){const s=(t-t0)/1000;cx.clearRect(0,0,w,h);
+ const k=Math.min(1,Math.max(0,(s-.2)/1.3)),e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+ P.forEach(p=>{p.x+=p.vx;p.y+=p.vy;if(p.x<0||p.x>w)p.vx*=-1;if(p.y<0||p.y>h)p.vy*=-1;p.a+=.01;
+  const ox=alvo.x+Math.cos(p.a)*p.r*1.25,oy=alvo.y+Math.sin(p.a)*p.r*.9;p.dx=p.x+(ox-p.x)*e*.85;p.dy=p.y+(oy-p.y)*e*.85;});
+ for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){const a=P[i],b=P[j],d=Math.hypot(a.dx-b.dx,a.dy-b.dy);if(d<70){cx.strokeStyle=`rgba(125,211,252,${(1-d/70)*.35})`;cx.lineWidth=.7;cx.beginPath();cx.moveTo(a.dx,a.dy);cx.lineTo(b.dx,b.dy);cx.stroke();}}
+ P.forEach(p=>{cx.fillStyle='rgba(186,230,253,.9)';cx.beginPath();cx.arc(p.dx,p.dy,1.6,0,7);cx.fill();});
+ requestAnimationFrame(f);})(t0);
+</script><script>
+const etapas=['Verificando a licença…','Conectando à nuvem…','Carregando módulos fiscais…','Preparando o painel…'];
+const el=document.getElementById('st');let k=0;
+const passo=()=>{document.querySelectorAll('[data-etapa]').forEach(x=>x.classList.toggle('on',+x.dataset.etapa<=k));
+ document.querySelectorAll('[data-etapa]').forEach(x=>x.classList.toggle('feito',+x.dataset.etapa<k));};
+passo();
+setInterval(()=>{if(k>=etapas.length-1)return;k++;el.style.opacity=0;setTimeout(()=>{el.textContent=etapas[k];el.style.opacity=1;passo();},250);},900);
+const v=new URLSearchParams(location.search).get('v');if(v)document.getElementById('ver').textContent='v'+v;
+document.querySelectorAll('.letras').forEach(n=>{const t=n.dataset.t;n.innerHTML=[...t].map((c,i)=>`<span style="animation-delay:${(+n.dataset.d||0)+i*.045}s;${c==='+'?'color:var(--plus)':''}">${c===' '?'&nbsp;':c}</span>`).join('');});
+</script></body></html>
