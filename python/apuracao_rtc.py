@@ -601,6 +601,7 @@ def gerar_html(res):
     dados['documentos'] = res['documentos'][:8000]
     dados['pontos'] = res['pontos'][:8000]
     dados['n_pontos'] = len(res['pontos'])
+    dados['chips'] = Counter(re.split(r'[:—(]', p['texto'])[0].strip()[:52] for p in res['pontos']).most_common(5)
     js = json.dumps(dados, ensure_ascii=False).replace('</', '<\\/')
     return HTML.replace('/*DADOS*/', js)
 
@@ -640,6 +641,15 @@ input.q{border:1px solid var(--linha);border-radius:10px;padding:8px 12px;font-s
 .sim td input{width:70px;border:1px solid var(--linha);border-radius:6px;padding:4px 6px;text-align:right}
 .vazio{padding:30px;text-align:center;color:var(--fraco);background:#fff;border-radius:14px;border:1px dashed var(--linha)}
 .mais{margin-top:8px;font-size:12px;color:var(--fraco)}
+.gw{transform-box:fill-box;transform-origin:50% 100%;animation:cresce .9s cubic-bezier(.2,.8,.2,1) both}
+.gx{transform-box:fill-box;transform-origin:0 50%;animation:estica .8s cubic-bezier(.2,.8,.2,1) both}
+.rib{animation:flui .9s ease both}.fd{animation:surge .6s ease both}
+.anel .arco{transition:stroke-dasharray 1.1s cubic-bezier(.2,.8,.2,1)}
+@keyframes cresce{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes estica{from{transform:scaleX(0);opacity:0}to{transform:scaleX(1);opacity:1}}
+@keyframes flui{from{opacity:0;clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes surge{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.gw,.gx,.rib,.fd,.pg{animation:none}.anel .arco{transition:none}}
 @media (max-width:900px){.bento{grid-template-columns:1fr}}
 </style></head><body><div class="wrap">
 <div class="hd"><div><h1>Apuração Assistida<span class="rt">REFORMA TRIBUTÁRIA</span></h1></div><div class="m" id="cab"></div></div>
@@ -657,41 +667,54 @@ const tp=p=>p==='debito'?'Saída':'Entrada';
 const P=D.painel;
 $('#cab').innerHTML=`${e(D.empresa||'')} · CNPJ ${e(D.cnpj)}<br>competência ${D.meses.map(x=>x.slice(5)+'/'+x.slice(0,4)).join(', ')} · ${D.notas.debito} notas de saída · ${D.notas.credito} de entrada`+(D.regime?`<br>regime específico informado: ${e(D.regime_nome)} (${e(D.regime)})`:'');
 $('#foot').innerHTML=`Base legal: LC 214/2025 — art. 46 (apuração assistida), art. 47 (créditos), art. 57 (uso ou consumo pessoal), art. 343 e seguintes (ano de teste 2026). Classificação conferida com a tabela oficial cClassTrib ${e(D.tabela.versao)} (atualizada em ${br(D.tabela.atualizacao)}; ${D.tabela.codigos} códigos, ${D.tabela.revogados} com vigência encerrada). ${D.xmls_lidos} arquivos lidos · ${D.canceladas} cancelamento(s) no lote${Object.entries(D.ignorados).map(([k,v])=>` · ${v} ${k}`).join('')}.`;
-document.querySelectorAll('#tabs span').forEach(t=>t.onclick=()=>{document.querySelectorAll('#tabs span').forEach(x=>x.classList.toggle('on',x===t));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('on',x.id==='pg-'+t.dataset.p));});
-// ---------- Painel
-(function(){
- const deb=P.debito.total,cred=P.credito.total,sal=P.saldo.total,H=250,y0=30;
- const hc=deb>0?Math.max(6,Math.min(H-6,H*Math.min(cred,deb)/deb)):H/2,hs=H-hc,pct=deb>0?Math.round(100*Math.min(cred,deb)/deb):0;
- const fl=`<svg width="100%" viewBox="0 0 470 320"><rect x="10" y="${y0}" width="120" height="${H}" rx="10" fill="#e2552d"/>
- <text x="70" y="${y0+H/2-6}" fill="#fff" font-size="13" text-anchor="middle" font-weight="700">Débitos</text><text x="70" y="${y0+H/2+16}" fill="#fff" font-size="16" text-anchor="middle" font-weight="800">${m(deb)}</text>
- <path d="M130 ${y0} C200 ${y0},200 ${y0+8},270 ${y0+8} L270 ${y0+8+hc} C200 ${y0+8+hc},200 ${y0+hc},130 ${y0+hc} Z" fill="#0f766e" opacity=".85"/>
- <path d="M130 ${y0+hc} C200 ${y0+hc},200 ${y0+hc+24},270 ${y0+hc+24} L270 ${y0+H+24} C200 ${y0+H+24},200 ${y0+H},130 ${y0+H} Z" fill="#1c1917" opacity=".9"/>
- <rect x="270" y="${y0+8}" width="190" height="${hc}" rx="10" fill="#0f766e"/>
- <text x="365" y="${y0+8+hc/2-6}" fill="#fff" font-size="12.5" text-anchor="middle" font-weight="700">compensado por créditos</text><text x="365" y="${y0+8+hc/2+16}" fill="#fff" font-size="17" text-anchor="middle" font-weight="800">${m(cred)}</text>
- <rect x="270" y="${y0+hc+24}" width="190" height="${Math.max(hs,40)}" rx="10" fill="#1c1917"/>
- <text x="365" y="${y0+hc+24+Math.max(hs,40)/2-4}" fill="#fff" font-size="12.5" text-anchor="middle" font-weight="700">${sal>=0?'saldo a recolher':'saldo credor'}</text><text x="365" y="${y0+hc+24+Math.max(hs,40)/2+16}" fill="#fbbf24" font-size="17" text-anchor="middle" font-weight="800">${m(Math.abs(sal))}</text></svg>`;
+document.querySelectorAll('#tabs span').forEach(t=>t.onclick=()=>{document.querySelectorAll('#tabs span').forEach(x=>x.classList.toggle('on',x===t));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('on',x.id==='pg-'+t.dataset.p));if(t.dataset.p==='painel')painel();});
+// ---------- Painel (animado: barras crescem, fluxo aparece, números contam, anel gira)
+function painel(){
+ const deb=P.debito.total,cred=Math.max(0,P.credito.total),sal=P.saldo.total,H=250,y0=30;
+ const temC=cred>0.004&&deb>0;
+ const hc=temC?Math.max(18,Math.min(H-40,H*Math.min(cred,deb)/deb)):0,hs=H-hc,pct=deb>0?Math.round(100*Math.min(cred,deb)/deb):0;
+ const ys=y0+(temC?hc+24:8),hsal=temC?Math.max(hs,40):H;
+ const cnt=(v,cls='')=>`<tspan class="cnt ${cls}" data-v="${v}">0,00</tspan>`;
+ const fl=`<svg width="100%" viewBox="0 0 470 320" class="fluxo"><rect class="gw" style="animation-delay:.05s" x="10" y="${y0}" width="120" height="${H}" rx="10" fill="#e2552d"/>
+ <text class="fd" style="animation-delay:.5s" x="70" y="${y0+H/2-6}" fill="#fff" font-size="13" text-anchor="middle" font-weight="700">Débitos</text><text class="fd" style="animation-delay:.5s" x="70" y="${y0+H/2+16}" fill="#fff" font-size="16" text-anchor="middle" font-weight="800">${cnt(deb)}</text>
+ ${temC?`<path class="rib" style="animation-delay:.55s" d="M130 ${y0} C200 ${y0},200 ${y0+8},270 ${y0+8} L270 ${y0+8+hc} C200 ${y0+8+hc},200 ${y0+hc},130 ${y0+hc} Z" fill="#0f766e" opacity=".85"/>
+ <rect class="gx" style="animation-delay:.9s" x="270" y="${y0+8}" width="190" height="${hc}" rx="10" fill="#0f766e"/>
+ ${hc>=44?`<text class="fd" style="animation-delay:1.2s" x="365" y="${y0+8+hc/2-6}" fill="#fff" font-size="12.5" text-anchor="middle" font-weight="700">compensado por créditos</text><text class="fd" style="animation-delay:1.2s" x="365" y="${y0+8+hc/2+16}" fill="#fff" font-size="17" text-anchor="middle" font-weight="800">${cnt(cred)}</text>`
+ :`<text class="fd" style="animation-delay:1.2s" x="365" y="${y0+8+hc/2+5}" fill="#fff" font-size="12" text-anchor="middle" font-weight="700">créditos ${cnt(cred)}</text>`}`:''}
+ <path class="rib" style="animation-delay:.75s" d="M130 ${temC?y0+hc:y0} C200 ${temC?y0+hc:y0},200 ${ys},270 ${ys} L270 ${ys+hsal} C200 ${ys+hsal},200 ${y0+H},130 ${y0+H} Z" fill="#1c1917" opacity=".9"/>
+ <rect class="gx" style="animation-delay:1.1s" x="270" y="${ys}" width="190" height="${hsal}" rx="10" fill="#1c1917"/>
+ <text class="fd" style="animation-delay:1.4s" x="365" y="${ys+hsal/2-4}" fill="#fff" font-size="12.5" text-anchor="middle" font-weight="700">${sal>=0?'saldo a recolher':'saldo credor'}</text><text class="fd" style="animation-delay:1.4s" x="365" y="${ys+hsal/2+16}" fill="#fbbf24" font-size="17" text-anchor="middle" font-weight="800">${cnt(Math.abs(sal))}</text>
+ ${temC?'':`<text class="fd" style="animation-delay:1.4s" x="365" y="${y0}" fill="#78716c" font-size="11" text-anchor="middle">sem créditos destacados no período</text>`}</svg>`;
  const tot=Math.abs(P.saldo.cbs)+Math.abs(P.saldo.ibs)||1,fc=100*Math.abs(P.saldo.cbs)/tot;
  const S=D.situacao,nd=S.Divergente||0,nv=S.Verificar||0;
- const cont={};D.pontos.forEach(p=>{const k=p.texto.split(/[:—(]/)[0].trim().slice(0,52);cont[k]=(cont[k]||0)+1});
- const chips=Object.entries(cont).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`<span class="chip">${v} · ${e(k)}</span>`).join('');
- // barras da transição
+ const chips=(D.chips||[]).slice(0,5).map(([k,v])=>`<span class="chip fd" style="animation-delay:.9s">${v.toLocaleString('pt-BR')} · ${e(k)}</span>`).join('');
  const b=D.simulacao.bases,cen=D.simulacao.cenarios,vals=cen.map(c=>({a:c.ano,cbs:((b.debito_cbs||0)-(b.credito_cbs||0))*c.cbs/100,ibs:((b.debito_ibs||0)-(b.credito_ibs||0))*c.ibs/100}));
  const mx=Math.max(...vals.map(v=>Math.max(0,v.cbs)+Math.max(0,v.ibs)),1);
- const bars=vals.map((v,i)=>{const x=20+i*75,hc=110*Math.max(0,v.cbs)/mx,hi=110*Math.max(0,v.ibs)/mx,top=150-hc-hi;const k=v.cbs+v.ibs;
-  return `<rect x="${x}" y="${150-hc}" width="48" height="${hc}" fill="#e2552d"/><rect x="${x}" y="${top}" width="48" height="${hi}" fill="#0f766e"/><text x="${x+24}" y="167" text-anchor="middle" font-size="10.5" fill="#57534e">${v.a}</text><text x="${x+24}" y="${top-6}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#1c1917">${k>=1000?(k/1000).toLocaleString('pt-BR',{maximumFractionDigits:1})+' mil':m(k)}</text>`}).join('');
+ const bars=vals.map((v,i)=>{const x=20+i*75,h1=110*Math.max(0,v.cbs)/mx,hi=110*Math.max(0,v.ibs)/mx,top=150-h1-hi,k=v.cbs+v.ibs,d=.25+i*.12;
+  return `<rect class="gw" style="animation-delay:${d}s" x="${x}" y="${150-h1}" width="48" height="${h1}" fill="#e2552d"/><rect class="gw" style="animation-delay:${d+.45}s" x="${x}" y="${top}" width="48" height="${hi}" fill="#0f766e"/><text x="${x+24}" y="167" text-anchor="middle" font-size="10.5" fill="#57534e">${v.a}</text><text class="fd" style="animation-delay:${d+.8}s" x="${x+24}" y="${top-6}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#1c1917">${k>=1000?(k/1000).toLocaleString('pt-BR',{maximumFractionDigits:1})+' mil':m(k)}</text>`}).join('');
  $('#pg-painel').innerHTML=`<div class="bento">
  <div class="c" style="grid-row:span 2"><h3>Do débito ao saldo</h3><div class="lbl">IBS + CBS destacados nos XMLs do período</div>${fl}
  <div class="legend"><span><i style="background:#e2552d"></i>saídas</span><span><i style="background:#0f766e"></i>créditos das entradas (${pct}% do débito)</span><span><i style="background:#1c1917"></i>saldo</span></div>
- <div style="margin-top:10px"><div class="aj"><span>Crédito estimado (fornecedor do regime normal sem IBS/CBS no XML)</span><b>${m(P.estimado.total)}</b></div>
- <div class="aj"><span>Crédito a confirmar — art. 57 (uso pessoal × atividade)</span><b>${m(P.art57.total)}</b></div>
- <div class="aj"><span>Saldo se os dois forem confirmados</span><b>${m(P.saldo_com_ajustes)}</b></div>
+ <div style="margin-top:10px"><div class="aj"><span>Crédito estimado (fornecedor do regime normal sem IBS/CBS no XML)</span><b class="cnt" data-v="${P.estimado.total}">0,00</b></div>
+ <div class="aj"><span>Crédito a confirmar — art. 57 (uso pessoal × atividade)</span><b class="cnt" data-v="${P.art57.total}">0,00</b></div>
+ <div class="aj"><span>Saldo se os dois forem confirmados</span><b class="cnt" data-v="${P.saldo_com_ajustes}">0,00</b></div>
  ${P.simples.notas?`<div class="aj"><span>${P.simples.notas} nota(s) de fornecedor do Simples sem IBS/CBS — sem crédito</span><b></b></div>`:''}</div></div>
- <div class="c"><h3>Saldo por tributo</h3><div style="display:flex;align-items:center;gap:14px"><svg width="118" height="118" viewBox="0 0 42 42"><circle cx="21" cy="21" r="15.9" fill="none" stroke="#f4f1ea" stroke-width="6"/><circle cx="21" cy="21" r="15.9" fill="none" stroke="#e2552d" stroke-width="6" stroke-dasharray="${fc} ${100-fc}" stroke-dashoffset="25"/><circle cx="21" cy="21" r="15.9" fill="none" stroke="#0f766e" stroke-width="6" stroke-dasharray="${100-fc} ${fc}" stroke-dashoffset="${25-fc}"/></svg>
- <div><div class="lbl">CBS</div><div style="font-size:21px;font-weight:800;color:#e2552d">${m(P.saldo.cbs)}</div><div class="lbl" style="margin-top:6px">IBS (UF ${m(P.debito.ibsuf-P.credito.ibsuf)} · município ${m(P.debito.ibsmun-P.credito.ibsmun)})</div><div style="font-size:21px;font-weight:800;color:#0f766e">${m(P.saldo.ibs)}</div></div></div></div>
- <div class="c dark"><h3>Pontos de atenção</h3><div class="big" style="color:#fbbf24">${nd+nv}</div><div style="font-size:12.5px;color:#d6d3d1">${nd} itens divergentes · ${nv} para verificar · ${S.Confere||0} conferem</div><div style="margin-top:6px">${chips}</div></div>
+ <div class="c"><h3>Saldo por tributo</h3><div style="display:flex;align-items:center;gap:14px"><svg width="118" height="118" viewBox="0 0 42 42" class="anel"><circle cx="21" cy="21" r="15.9" fill="none" stroke="#f4f1ea" stroke-width="6"/><circle class="arco" data-a="${fc}" cx="21" cy="21" r="15.9" fill="none" stroke="#e2552d" stroke-width="6" stroke-dasharray="0 100" stroke-dashoffset="25"/><circle class="arco" data-a="${100-fc}" cx="21" cy="21" r="15.9" fill="none" stroke="#0f766e" stroke-width="6" stroke-dasharray="0 100" stroke-dashoffset="${25-fc}"/></svg>
+ <div><div class="lbl">CBS</div><div class="cnt" data-v="${P.saldo.cbs}" style="font-size:21px;font-weight:800;color:#e2552d">0,00</div><div class="lbl" style="margin-top:6px">IBS (UF ${m(P.debito.ibsuf-P.credito.ibsuf)} · município ${m(P.debito.ibsmun-P.credito.ibsmun)})</div><div class="cnt" data-v="${P.saldo.ibs}" style="font-size:21px;font-weight:800;color:#0f766e">0,00</div></div></div></div>
+ <div class="c dark"><h3>Pontos de atenção</h3><div class="big cnt" data-v="${nd+nv}" data-int="1" style="color:#fbbf24">0</div><div style="font-size:12.5px;color:#d6d3d1">${nd.toLocaleString('pt-BR')} itens divergentes · ${nv.toLocaleString('pt-BR')} para verificar · ${(S.Confere||0).toLocaleString('pt-BR')} conferem</div><div style="margin-top:6px">${chips}</div></div>
  <div class="c" style="grid-column:span 2"><h3>Transição até 2033 — simulação com a mesma movimentação</h3><svg width="100%" viewBox="0 0 620 175">${bars}</svg>
  <div class="legend"><span><i style="background:#e2552d"></i>CBS</span><span><i style="background:#0f766e"></i>IBS</span><span>alíquotas na aba Simulação · não são valores oficiais</span></div></div></div>`;
-})();
+ conta($('#pg-painel'));
+ requestAnimationFrame(()=>requestAnimationFrame(()=>document.querySelectorAll('#pg-painel .arco').forEach((c,i)=>{c.style.transitionDelay=(.3+i*.9)+'s';c.setAttribute('stroke-dasharray',`${c.dataset.a} ${100-c.dataset.a}`);})));
+}
+function conta(raiz){
+ const els=[...raiz.querySelectorAll('.cnt')],t0=performance.now(),dur=1300;
+ const passo=t=>{const k=Math.min(1,(t-t0)/dur),f=1-Math.pow(1-k,3);
+  els.forEach(el=>{const v=parseFloat(el.dataset.v)||0;el.textContent=el.dataset.int?Math.round(v*f).toLocaleString('pt-BR'):m(v*f);});
+  if(k<1)requestAnimationFrame(passo);};
+ requestAnimationFrame(passo);
+}
+painel();
 // ---------- Apuração
 (function(){
  const lin=D.por_cfop.map(x=>`<tr><td>${tp(x.papel)}</td><td class="code">${e(x.cfop)}</td><td class="n">${x.itens}</td><td class="n">${m(x.bc)}</td><td class="n">${m(x.ibs)}</td><td class="n">${m(x.cbs)}</td></tr>`).join('');
