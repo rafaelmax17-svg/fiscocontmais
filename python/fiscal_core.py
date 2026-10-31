@@ -1269,14 +1269,18 @@ def gerar_desoneracao_html(cf):
             f'<span class="pc">{(v/cf["qtd_total_entradas"]*100 if cf["qtd_total_entradas"] else 0):.1f}%</span></div>'
             for l, v, c in segs_cs)
         rows = ''.join(
-            f'<tr><td>{_esc(x["data"])}</td><td>{_esc(x["nnf"])}</td><td>{_esc(x["fornecedor"])[:40]}</td>'
-            f'<td class="chave">{_esc(x["chave"])}</td><td>R$ {_brl(x["vnf"])}</td>'
-            f'<td style="color:var(--pos);font-weight:700">R$ {_brl(x["vdeson"])}</td></tr>'
+            f'<tr data-v="{x["vdeson"]:.2f}"><td>{_esc(x["data"])}</td><td>{_esc(x["nnf"])}</td><td>{_esc(x["fornecedor"])[:40]}</td>'
+            f'<td class="chave">{_esc(x["chave"])}</td><td class="num nw">R$ {_brl(x["vnf"])}</td>'
+            f'<td class="num nw" style="color:var(--pos);font-weight:700">R$ {_brl(x["vdeson"])}</td></tr>'
             for x in cf['notas'])
         rows_sem = ''.join(
             f'<tr><td>{_esc(x["data"])}</td><td>{_esc(x["nnf"])}</td><td>{_esc(x["fornecedor"])[:40]}</td>'
-            f'<td class="chave">{_esc(x["chave"])}</td><td>R$ {_brl(x["vnf"])}</td></tr>'
+            f'<td class="chave">{_esc(x["chave"])}</td><td class="num nw">R$ {_brl(x["vnf"])}</td></tr>'
             for x in cf.get('notas_sem_deson', []))
+        busca = lambda alvo, total: (
+            f'<div class="nfbusca"><span class="nfb-ic">🔎</span><input type="search" data-alvo="{alvo}" '
+            f'placeholder="Pesquisar NF-e: número, fornecedor, chave, data ou valor" autocomplete="off">'
+            f'<span class="nfb-cont" id="{alvo}-cont">{total} nota(s)</span></div>')
         corpo = f"""
   <div class="cstats sec" style="animation-delay:.1s">
     <div class="cstat t"><div class="v cnt" data-t="{cf['qtd_total_entradas']}" data-int="1">0</div><div class="l">Entradas analisadas</div></div>
@@ -1300,13 +1304,15 @@ def gerar_desoneracao_html(cf):
     </div>
   </div>
   <div class="card sec docwrap" style="animation-delay:.25s"><h3><span class="dot"></span>Notas com ICMS desonerado</h3>
+    {busca('nfcom', cf['qtd_com_deson'])}
     <table><thead><tr><th>Data</th><th>NF-e</th><th>Fornecedor</th><th>Chave de acesso (44 dígitos)</th>
       <th class="num">Valor da nota</th><th class="num">ICMS desonerado</th></tr></thead>
-      <tbody>{rows}</tbody></table></div>
+      <tbody id="nfcom">{rows}</tbody></table><div class="nfb-vazio" id="nfcom-vazio" hidden>Nenhuma nota encontrada com essa pesquisa.</div></div>
   <div class="card sec docwrap" style="animation-delay:.3s;margin-top:14px"><h3><span class="dot"></span>Notas sem ICMS desonerado</h3>
+    {busca('nfsem', cf['qtd_sem_deson'])}
     <table><thead><tr><th>Data</th><th>NF-e</th><th>Fornecedor</th><th>Chave de acesso (44 dígitos)</th>
       <th class="num">Valor da nota</th></tr></thead>
-      <tbody>{rows_sem}</tbody></table></div>"""
+      <tbody id="nfsem">{rows_sem}</tbody></table><div class="nfb-vazio" id="nfsem-vazio" hidden>Nenhuma nota encontrada com essa pesquisa.</div></div>"""
 
     descarte = []
     if cf.get('ignorados_evento'):
@@ -1330,7 +1336,37 @@ def gerar_desoneracao_html(cf):
     (campos vICMSDeson/motDesICMS). Não compara com o SPED porque o registro C170 exportado atualmente pelo
     Domínio não traz esse campo — não há, hoje, com o que comparar ali.</div>
   <footer style="text-align:center;color:var(--ink2);font-size:11px;margin-top:16px">Gerado pelo FiscoCont+ · Liddera | Inteligência em Negócios Ltda</footer>
-</div>{_COUNT_JS}</body></html>"""
+</div>{_COUNT_JS}{_NFBUSCA}</body></html>"""
+
+
+# Pesquisa de NF-e nas listas da Conferência ICMS Desonerado: filtra na hora por número, fornecedor, chave, data ou valor
+# (ignora acentos, pontos e traços) e mostra quantas notas sobraram e o ICMS desonerado delas.
+_NFBUSCA = r"""<style>
+.nfbusca{display:flex;align-items:center;gap:10px;margin:4px 0 12px;padding:9px 14px;border:1px solid #dfe3ee;border-radius:12px;background:#f8fafc;
+ transition:border-color .2s,box-shadow .2s}
+.nfbusca:focus-within{border-color:#e8632b;box-shadow:0 0 0 4px rgba(232,99,43,.14);background:#fff}
+.nfbusca input{flex:1;border:0;outline:0;background:transparent;font-size:14px;color:inherit;min-width:120px}
+.nfb-ic{opacity:.6}.nfb-cont{font-size:12px;color:#64748b;white-space:nowrap;font-weight:600}
+.nfb-vazio{padding:18px;text-align:center;color:#64748b;font-size:13px}
+td.nw{white-space:nowrap}
+tr.nfb-hit td{background:rgba(232,99,43,.06)}
+</style><script>
+(function(){
+  const norm=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[.\-\/\s]/g,'');
+  const brl=v=>v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  document.querySelectorAll('.nfbusca input').forEach(inp=>{
+    const id=inp.dataset.alvo,tb=document.getElementById(id),cont=document.getElementById(id+'-cont'),vz=document.getElementById(id+'-vazio');
+    if(!tb)return;const linhas=[...tb.rows].map(r=>({r,t:norm(r.textContent)})),total=linhas.length;
+    inp.addEventListener('input',()=>{
+      const q=norm(inp.value);let n=0,soma=0,temV=false;
+      linhas.forEach(({r,t})=>{const ok=!q||t.includes(q);r.hidden=!ok;r.classList.toggle('nfb-hit',ok&&!!q);
+        if(ok){n++;if(r.dataset.v!==undefined){temV=true;soma+=parseFloat(r.dataset.v)||0;}}});
+      cont.textContent=q?`${n} de ${total} nota(s)`+(temV?` · ICMS desonerado R$ ${brl(soma)}`:''):`${total} nota(s)`;
+      vz.hidden=n>0;
+    });
+  });
+})();
+</script>"""
 
 
 _CLASSE_FRETE_LABEL = {
