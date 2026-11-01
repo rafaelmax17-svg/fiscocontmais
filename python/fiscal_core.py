@@ -4691,6 +4691,8 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     nsu = int(nsu_inicial or 0)
     ultimo_nsu_visto = nsu
     erro = None
+    aviso = None
+    rejeicoes_vazias = 0
 
     # Duas passagens: primeiro junta tudo (notas + eventos) na memória, só
     # grava em disco no final — necessário porque o evento de cancelamento
@@ -4754,6 +4756,29 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
             )
             if sem_documentos:
                 break
+            # achado real (Rafael, 01/11): o ADN às vezes devolve 400 "REJEICAO" sem nenhum erro e sem lote
+            # ({"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Erros":[]...}) — sem motivo,
+            # não dá para afirmar a causa. Tenta de novo duas vezes com pausa; se já tinha lido páginas, guarda o que
+            # veio e avisa; se foi logo na primeira consulta, explica o que conferir.
+            rejeicao_vazia = (resp.status_code == 400 and dados and dados.get('StatusProcessamento') == 'REJEICAO'
+                              and not dados.get('Erros') and not dados.get('LoteDFe'))
+            if rejeicao_vazia:
+                rejeicoes_vazias += 1
+                if rejeicoes_vazias <= 2:
+                    _time.sleep(6 * rejeicoes_vazias)
+                    continue
+                if paginas > 0:
+                    aviso = (f'A Receita parou de responder normalmente a partir do NSU {nsu} (respondeu "REJEICAO" sem informar '
+                             'o motivo, mesmo tentando de novo). As notas lidas até aqui foram salvas. Rode o download de novo '
+                             'mais tarde para conferir se não ficou nota para trás.')
+                else:
+                    erro = ('A Receita recusou a consulta de NFS-e (400 · REJEICAO) sem informar o motivo, mesmo tentando '
+                            'três vezes. Nada foi baixado. Confira: (1) se o certificado é desta empresa e está válido; '
+                            '(2) se o município da empresa usa a NFS-e Nacional ou compartilha as notas com o Ambiente Nacional — '
+                            'se não compartilha, as notas podem não estar no ADN; (3) tente de novo mais tarde, pode ser instabilidade do ADN. '
+                            f'Resposta da Receita: {resp.text[:300]}')
+                break
+            rejeicoes_vazias = 0
             if resp.status_code != 200:
                 erro = f'A Receita respondeu {resp.status_code}: {resp.text[:300]}'
                 break
@@ -4894,7 +4919,7 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                 pdfs_erros_det.append({'nnfse': nn.group(1) if nn else '', 'chave': chave, 'motivo': _motivo_erro_pdf(e)})
 
     return {
-        'erro': erro, 'salvos': salvos, 'ignorados_fora_periodo': ignorados_fora_periodo,
+        'erro': erro, 'aviso': aviso, 'salvos': salvos, 'ignorados_fora_periodo': ignorados_fora_periodo,
         'canceladas': canceladas_qtd, 'pdfs_gerados': pdfs_gerados, 'pdfs_erro': pdfs_erro, 'pdfs_erros': pdfs_erros_det,
         'outros_cnpj': outros_cnpj,
         'paginas_lidas': paginas, 'ultimo_nsu': ultimo_nsu_visto,
