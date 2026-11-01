@@ -53,17 +53,41 @@ function resultadoVazio(emp) {
 // baixarEmpresa(emp)  -> { error, tipo: 'pulada'|'erro' } | { ok, resultado: { salvos, pdfs_gerados, pdfs_erro } }
 // analisarEmpresa(emp)-> { error } | { ok, resumo, painelHtml }
 // salvarPainel(emp, html) -> { rel }
-async function executarLote({ empresas, baixarEmpresa, analisarEmpresa, salvarPainel, onProgresso = () => {}, cancelado = () => false }) {
+// Pausa entre uma empresa e outra: consultas seguidas ao ADN, sem intervalo, foram respondidas com 400 "REJEICAO"
+// sem motivo (achado real, Rafael, 01/11, no lote). Quem cair nessa recusa ganha uma segunda tentativa no fim do lote.
+const PAUSA_ENTRE_EMPRESAS_MS = 4000;
+const PAUSA_ANTES_DE_REPETIR_MS = 20000;
+const _espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
+const _ehRejeicaoSemMotivo = (r) => r.status === 'erro' && /REJEICAO/.test(r.motivo || '') && !r.salvos;
+
+async function executarLote(opcoes) {
+  const { empresas, onProgresso = () => {}, cancelado = () => false } = opcoes;
   const resultados = [];
-  const total = empresas.length;
-  for (let i = 0; i < total; i++) {
-    const emp = empresas[i];
+  for (let i = 0; i < empresas.length; i++) {
+    if (i > 0 && !cancelado()) await _espera(PAUSA_ENTRE_EMPRESAS_MS);
+    resultados.push(await _umaEmpresa(opcoes, empresas[i], i, empresas.length));
+  }
+  const repetir = resultados.map((r, k) => (_ehRejeicaoSemMotivo(r) ? k : -1)).filter((k) => k >= 0);
+  if (repetir.length && !cancelado()) {
+    await _espera(PAUSA_ANTES_DE_REPETIR_MS);
+    for (let j = 0; j < repetir.length && !cancelado(); j++) {
+      const k = repetir[j];
+      if (j > 0) await _espera(PAUSA_ENTRE_EMPRESAS_MS);
+      onProgresso({ fase: 'repetindo', i: j + 1, total: repetir.length, nome: empresas[k].razaoSocial });
+      const novo = await _umaEmpresa(opcoes, empresas[k], k, empresas.length);
+      if (!_ehRejeicaoSemMotivo(novo)) novo.aviso = [novo.aviso, 'Baixada na segunda tentativa: a Receita recusou a primeira consulta sem informar o motivo.'].filter(Boolean).join(' ');
+      resultados[k] = novo;
+    }
+  }
+  return resultados;
+}
+
+async function _umaEmpresa({ baixarEmpresa, analisarEmpresa, salvarPainel, onProgresso = () => {}, cancelado = () => false }, emp, i, total) {
     const r = resultadoVazio(emp);
     if (cancelado()) {
       r.status = 'nao_iniciada';
       r.motivo = 'O lote foi cancelado antes de chegar nesta empresa.';
-      resultados.push(r);
-      continue;
+      return r;
     }
     onProgresso({ fase: 'inicio', i: i + 1, total, nome: emp.razaoSocial });
     const t0 = Date.now();
@@ -78,6 +102,7 @@ async function executarLote({ empresas, baixarEmpresa, analisarEmpresa, salvarPa
         r.pdfs_gerados = dl.pdfs_gerados || 0;
         r.pdfs_erro = dl.pdfs_erro || 0;
         r.pdfs_erros = dl.pdfs_erros || [];
+        if (dl.aviso) r.aviso = dl.aviso;
         const a = await analisarEmpresa(emp);
         if (a.error) {
           r.status = 'erro';
@@ -100,7 +125,7 @@ async function executarLote({ empresas, baixarEmpresa, analisarEmpresa, salvarPa
             try {
               r.relatorio_rel = salvarPainel(emp, a.painelHtml).rel;
             } catch (e) {
-              r.aviso = `As notas foram baixadas, mas não consegui salvar o painel individual: ${String((e && e.message) || e)}`;
+              r.aviso = [r.aviso, `As notas foram baixadas, mas não consegui salvar o painel individual: ${String((e && e.message) || e)}`].filter(Boolean).join(' ');
             }
           }
         }
@@ -110,10 +135,8 @@ async function executarLote({ empresas, baixarEmpresa, analisarEmpresa, salvarPa
       r.motivo = String((e && e.message) || e);
     }
     r.duracao_s = Math.round((Date.now() - t0) / 1000);
-    resultados.push(r);
     onProgresso({ fase: 'fim', i: i + 1, total, nome: emp.razaoSocial, status: r.status, salvos: r.salvos, motivo: r.motivo });
-  }
-  return resultados;
+    return r;
 }
 
 module.exports = { executarLote, periodoSubpasta, salvarPainelIndividual, sanitizar };

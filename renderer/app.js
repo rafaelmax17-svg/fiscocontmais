@@ -5378,7 +5378,10 @@ function bindBaixaLote() {
     $('#nflAtual').textContent = 'Preparando…';
     const rotulo = { concluida: '✓', sem_notas: '·', pulada: '⚠', erro: '✗' };
     const off = window.fiscocont.fiscal.onNfseLoteProgresso((p) => {
-      if (p.fase === 'inicio') {
+      if (p.fase === 'repetindo') {
+        $('#nflAtual').textContent = `Segunda tentativa (${p.i} de ${p.total}): ${p.nome} — a Receita recusou a primeira consulta sem motivo…`;
+        $('#nflLog').insertAdjacentHTML('beforeend', `<div>↻ <b>${_esc(p.nome)}</b> — tentando de novo</div>`);
+      } else if (p.fase === 'inicio') {
         $('#nflAtual').textContent = `Empresa ${p.i} de ${p.total}: ${p.nome}…`;
         $('#nflBarra').style.width = `${Math.round(((p.i - 1) / p.total) * 100)}%`;
       } else {
