@@ -4660,13 +4660,13 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
 
     import requests
 
-    def _get_com_retry(url, cert_tupla, tentativas=4):
+    def _get_com_retry(url, cert_tupla, tentativas=4, accept='application/json'):
         ultimo_erro = None
         for tentativa in range(1, tentativas + 1):
             try:
                 return requests.get(
                     url, cert=cert_tupla,
-                    headers={'Accept': 'application/json', 'Connection': 'close'},
+                    headers={'Accept': accept, 'Connection': 'close', 'User-Agent': 'FiscoCont+'},
                     timeout=45,
                 )
             except requests.exceptions.RequestException as e:
@@ -4695,6 +4695,8 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     rejeicoes_vazias = 0
     nsus_vistos = set()
     tentou_cnpj_consulta = False
+    variante = {'accept': 'application/json', 'lote': True}
+    variantes = [{'accept': '*/*', 'lote': True}, {'accept': 'text/plain', 'lote': False}]
 
     # Duas passagens: primeiro junta tudo (notas + eventos) na memória, só
     # grava em disco no final — necessário porque o evento de cancelamento
@@ -4738,10 +4740,9 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                 # (mesma raiz de 8 dígitos do CNPJ do certificado) e devolve os documentos desse CNPJ
                 # lote=true: devolve os próximos documentos (até 50) a partir do NSU. Sem ele, o ADN trata a consulta
                 # como a de UM documento — e no NSU 0 responde 400 "REJEICAO" sem motivo (achado real, Rafael, 01/11).
-                url = f'{base_url}/contribuintes/DFe/{nsu}?lote=true'
-                if cnpj_consulta:
-                    url += f'&cnpjConsulta={cnpj_consulta}'
-                resp = _get_com_retry(url, (cert_path_pem, key_path_pem))
+                qs = (['lote=true'] if variante['lote'] else []) + ([f'cnpjConsulta={cnpj_consulta}'] if cnpj_consulta else [])
+                url = f'{base_url}/contribuintes/DFe/{nsu}' + ('?' + '&'.join(qs) if qs else '')
+                resp = _get_com_retry(url, (cert_path_pem, key_path_pem), accept=variante['accept'])
             except requests.exceptions.SSLError as e:
                 erro = ('Falha de conexão segura (TLS) com a Receita, mesmo tentando de novo várias vezes. '
                         'Costuma ser antivírus com "inspeção de HTTPS" ativada, VPN, ou instabilidade na rede — '
@@ -4775,6 +4776,11 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                     cnpj_consulta = re.sub(r'\D', '', cnpj_empresa)
                     tentou_cnpj_consulta = True
                     continue
+                # outras formas da mesma consulta, todas dentro da documentação da API (swagger de 01/11/2026):
+                # aceitar qualquer formato na resposta (a API declara text/plain) e omitir lote (o padrão já é true)
+                if paginas == 0 and variantes:
+                    variante = variantes.pop(0)
+                    continue
                 if rejeicoes_vazias <= 2:
                     _time.sleep(6 * rejeicoes_vazias)
                     continue
@@ -4784,7 +4790,9 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                              'mais tarde para conferir se não ficou nota para trás.')
                 else:
                     erro = ('A Receita recusou a consulta de NFS-e (400 · REJEICAO) sem informar o motivo, mesmo tentando '
-                            'três vezes. Nada foi baixado. Confira: (1) se o certificado é desta empresa e está válido; '
+                            'de várias formas (pelo certificado, pelo CNPJ da empresa e com outros formatos de resposta). '
+                            'Pela documentação da API publicada pela Receita em 01/11/2026, toda rejeição deveria trazer um código '
+                            'de erro — resposta sem código indica falha do próprio Ambiente Nacional. Nada foi baixado. Confira: (1) se o certificado é desta empresa e está válido; '
                             '(2) se o município da empresa usa a NFS-e Nacional ou compartilha as notas com o Ambiente Nacional — '
                             'se não compartilha, as notas podem não estar no ADN; (3) tente de novo mais tarde, pode ser instabilidade do ADN. '
                             f'Resposta da Receita: {resp.text[:300]}')
