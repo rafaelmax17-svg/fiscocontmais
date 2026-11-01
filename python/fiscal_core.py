@@ -4693,6 +4693,7 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     erro = None
     aviso = None
     rejeicoes_vazias = 0
+    nsus_vistos = set()
 
     # Duas passagens: primeiro junta tudo (notas + eventos) na memória, só
     # grava em disco no final — necessário porque o evento de cancelamento
@@ -4734,9 +4735,11 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
             try:
                 # filial com o certificado da matriz: o ADN aceita o parâmetro opcional cnpjConsulta
                 # (mesma raiz de 8 dígitos do CNPJ do certificado) e devolve os documentos desse CNPJ
-                url = f'{base_url}/contribuintes/DFe/{nsu}'
+                # lote=true: devolve os próximos documentos (até 50) a partir do NSU. Sem ele, o ADN trata a consulta
+                # como a de UM documento — e no NSU 0 responde 400 "REJEICAO" sem motivo (achado real, Rafael, 01/11).
+                url = f'{base_url}/contribuintes/DFe/{nsu}?lote=true'
                 if cnpj_consulta:
-                    url += f'?cnpjConsulta={cnpj_consulta}'
+                    url += f'&cnpjConsulta={cnpj_consulta}'
                 resp = _get_com_retry(url, (cert_path_pem, key_path_pem))
             except requests.exceptions.SSLError as e:
                 erro = ('Falha de conexão segura (TLS) com a Receita, mesmo tentando de novo várias vezes. '
@@ -4799,8 +4802,12 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
             if not lote:
                 break
 
+            nsu_antes = ultimo_nsu_visto
             for item in lote:
                 nsu_item = int(item.get('NSU', nsu))
+                if nsu_item in nsus_vistos:      # o NSU pedido pode voltar repetido no lote seguinte
+                    continue
+                nsus_vistos.add(nsu_item)
                 ultimo_nsu_visto = max(ultimo_nsu_visto, nsu_item)
 
                 xml_b64 = item.get('ArquivoXml')
@@ -4852,6 +4859,8 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                     outros_cnpj += 1
                 notas_brutas.append((chave, xml_texto, subpasta, competencia))
 
+            if ultimo_nsu_visto <= nsu_antes:   # nada novo neste lote: fim da fila (evita repetir a mesma página)
+                break
             nsu = ultimo_nsu_visto
     finally:
         for p in (cert_path_pem, key_path_pem):
