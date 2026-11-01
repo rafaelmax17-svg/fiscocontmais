@@ -4694,6 +4694,7 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
     aviso = None
     rejeicoes_vazias = 0
     nsus_vistos = set()
+    tentou_cnpj_consulta = False
 
     # Duas passagens: primeiro junta tudo (notas + eventos) na memória, só
     # grava em disco no final — necessário porque o evento de cancelamento
@@ -4767,6 +4768,13 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                               and not dados.get('Erros') and not dados.get('LoteDFe'))
             if rejeicao_vazia:
                 rejeicoes_vazias += 1
+                # Desde 01/11/2026 o Sistema Nacional aceita acesso às APIs por representação (em nome de terceiros).
+                # Consulta "pelo CNPJ do certificado" (TipoConsulta InscricaoCertificado) passou a voltar REJEICAO sem
+                # motivo: tenta informar o próprio CNPJ da empresa no cnpjConsulta (mesma raiz, aceito pelo ADN).
+                if not cnpj_consulta and cnpj_empresa and len(re.sub(r'\D', '', cnpj_empresa)) == 14 and paginas == 0:
+                    cnpj_consulta = re.sub(r'\D', '', cnpj_empresa)
+                    tentou_cnpj_consulta = True
+                    continue
                 if rejeicoes_vazias <= 2:
                     _time.sleep(6 * rejeicoes_vazias)
                     continue
@@ -4928,7 +4936,7 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                 pdfs_erros_det.append({'nnfse': nn.group(1) if nn else '', 'chave': chave, 'motivo': _motivo_erro_pdf(e)})
 
     return {
-        'erro': erro, 'aviso': aviso, 'salvos': salvos, 'ignorados_fora_periodo': ignorados_fora_periodo,
+        'erro': erro, 'aviso': aviso, 'consulta_com_cnpj': tentou_cnpj_consulta, 'salvos': salvos, 'ignorados_fora_periodo': ignorados_fora_periodo,
         'canceladas': canceladas_qtd, 'pdfs_gerados': pdfs_gerados, 'pdfs_erro': pdfs_erro, 'pdfs_erros': pdfs_erros_det,
         'outros_cnpj': outros_cnpj,
         'paginas_lidas': paginas, 'ultimo_nsu': ultimo_nsu_visto,
