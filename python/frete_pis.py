@@ -234,6 +234,7 @@ def analisar(caminhos, efd='', cnpj='', excluir_icms=True):
         'cats': {k: r2(v) for k, v in cats_tot.items()},
         'adicional_credito': r2(tot['adicional'] * (ALIQ_PIS + ALIQ_COFINS) / 100),
         'linhas': linhas, 'pendencias': pend, 'cif': cif, 'tem_efd': bool(ef),
+        'competencia': (Counter(l['data'][:7] for l in linhas if l.get('data')).most_common(1) or [('', 0)])[0][0],
     }
     res['totais']['credito'] = r2(tot['pis'] + tot['cofins'])
     if ef:

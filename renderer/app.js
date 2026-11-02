@@ -576,6 +576,7 @@ function switchView(name) {
   if (name === 'admin-radar') { $('#view-admin-radar').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-legal') { $('#view-admin-legal').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-frete-pis') { $('#view-admin-frete-pis').hidden = false; $('#empty').hidden = true; return; }
+  if (name === 'admin-bi') { $('#view-admin-bi').hidden = false; $('#empty').hidden = true; if (window._biEntrar) window._biEntrar(); return; }
   if (name === 'historico') { $('#view-historico').hidden = false; $('#empty').hidden = true; loadHistoricoEmpresas(); return; }
   if (name === 'lote-balancetes') { $('#view-lote-balancetes').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'conciliacao') { $('#view-conciliacao').hidden = false; $('#empty').hidden = true; return; }
@@ -6103,6 +6104,104 @@ function audSelecao() {
   el.innerHTML = AUDAM.sped.map((p) => `<span>SPED · ${audEsc(p.split(/[\\/]/).pop())}</span>`).join('');
   $('#btnAudRodar').disabled = !AUDAM.sped.length;
 }
+
+// ---- BI da Empresa (Admin · teste): resumo de todas as análises registradas neste computador
+(function biInit() {
+  const MOD = { analise: 'Análise Tributária', apuracao: 'Apuração IBS/CBS', frete: 'Frete FOB', deson: 'ICMS Desonerado', nfse: 'NFS-e' };
+  const KP = [['entradas', 'Entradas analisadas', '#1e3a8a', 'analise'], ['icms_cred', 'ICMS creditado', '#0ea472', 'analise'],
+    ['ibscbs_saldo', 'IBS + CBS (saldo)', '#e2552d', 'apuracao'], ['frete_credito', 'Crédito PIS/COFINS frete', '#7c3aed', 'frete'],
+    ['pontos', 'Pontos em aberto', '#f59e0b', ''], ['nfse_retido', 'NFS-e retido', '#0891b2', 'nfse']];
+  const B = { hist: [], cnpj: '', comps: new Set(), mod: '' };
+  const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const mes = (c) => (c && c.length === 7 ? `${c.slice(5)}/${c.slice(0, 4)}` : c);
+  const curto = (v) => { const a = Math.abs(v); return a >= 1e6 ? (v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' mi' : a >= 1e4 ? (v / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil' : brl(v); };
+  const val = (regs, k) => regs.reduce((a, r) => a + (k === 'pontos' ? ((r.pontos || {}).divergente || 0) + ((r.pontos || {}).verificar || 0) : Number((r.kpis || {})[k] || 0)), 0);
+  function desenhar() {
+    const raiz = $('#biRaiz');
+    const empresas = {}; B.hist.forEach((h) => { empresas[h.cnpj] = h.empresa || empresas[h.cnpj] || h.cnpj; });
+    if (!B.hist.length) {
+      raiz.innerHTML = `<div class="bi-top"><h1>BI da Empresa</h1><span class="bi-adm">ADMIN · TESTE</span></div><div class="bi-vazio"><b>Ainda não há análises registradas neste computador.</b><br>
+        O BI se forma a partir das próximas análises: Análise Tributária, Apuração Assistida, Frete FOB, ICMS Desonerado e o painel de NFS-e das Baixas DF-e. Cada análise concluída guarda um resumo (totais e contagens) por empresa e competência.</div>`;
+      return;
+    }
+    if (!B.cnpj || !empresas[B.cnpj]) B.cnpj = Object.keys(empresas)[0];
+    const doc = B.hist.filter((h) => h.cnpj === B.cnpj);
+    const comps = [...new Set(doc.map((h) => h.comp))].sort();
+    if (!B.comps.size || [...B.comps].some((c) => !comps.includes(c))) B.comps = new Set(comps.slice(-1));
+    const sel = [...B.comps].sort(), ult = sel[sel.length - 1], ant = comps[comps.indexOf(sel[0]) - 1];
+    const fil = (c) => doc.filter((h) => (Array.isArray(c) ? c.includes(h.comp) : h.comp === c) && (!B.mod || h.modulo === B.mod));
+    const atual = fil(sel), anterior = ant ? fil(ant) : [];
+    const kpis = KP.filter(([, , , m]) => !B.mod || !m || m === B.mod).map(([k, rot, cor], i) => {
+      const v = val(atual, k), va = val(anterior, k);
+      const varp = anterior.length && va ? ((v - va) / Math.abs(va)) * 100 : null;
+      const bom = k === 'pontos' ? (varp !== null && varp < 0) : (varp !== null && varp > 0);
+      return `<div class="bi-c bi-kp" style="--c:${cor};--d:${i * 0.06}s"><h3>${rot}</h3><div class="bi-v" data-cnt="${v}"${k === 'pontos' ? ' data-int="1"' : ''}>0</div>
+        <div class="bi-s">${varp === null ? (sel.length > 1 ? `soma de ${sel.length} meses` : 'sem mês anterior para comparar') : `<span class="${bom ? 'bi-up' : 'bi-dn'}">${varp >= 0 ? '▲' : '▼'} ${Math.abs(varp).toFixed(1).replace('.', ',')}%</span> vs. ${mes(ant)}`}</div></div>`;
+    }).join('');
+    // evolução
+    const ev = comps.map((c) => ({ c, e: val(fil(c), 'entradas'), i: val(fil(c), 'icms_cred'), p: val(fil(c), 'pontos') }));
+    const W = 760, H = 210, n = ev.length, bw = Math.min(60, (W - 60) / Math.max(n, 1) * 0.55);
+    const mxE = Math.max(...ev.map((x) => x.e), 1), mxI = Math.max(...ev.map((x) => x.i), 1), mxP = Math.max(...ev.map((x) => x.p), 1);
+    const xs = (k) => 40 + (k + 0.5) * ((W - 60) / Math.max(n, 1));
+    const barras = ev.map((x, k) => `<rect class="bi-bar" style="animation-delay:${0.4 + k * 0.08}s" x="${xs(k) - bw / 2}" y="${H - 20 - (x.e / mxE) * 150}" width="${bw}" height="${(x.e / mxE) * 150}" rx="5" fill="${sel.includes(x.c) ? '#1e3a8a' : '#bfdbfe'}"><title>${mes(x.c)} · entradas R$ ${brl(x.e)}</title></rect><text x="${xs(k)}" y="${H - 4}" text-anchor="middle" font-size="10" fill="#64748b">${mes(x.c)}</text>`).join('');
+    const linha = (key, mx, cor, tr) => `<polyline class="bi-ln" points="${ev.map((x, k) => `${xs(k)},${H - 20 - (x[key] / mx) * 150}`).join(' ')}" fill="none" stroke="${cor}" stroke-width="3"${tr ? ' stroke-dasharray="7 5"' : ''}/>` + ev.map((x, k) => `<circle cx="${xs(k)}" cy="${H - 20 - (x[key] / mx) * 150}" r="3.5" fill="${cor}"><title>${mes(x.c)} · ${key === 'p' ? x.p + ' pontos' : 'R$ ' + brl(x[key])}</title></circle>`).join('');
+    // mapa
+    const mapa = Object.entries(MOD).map(([m, nome]) => `<tr><td>${nome}</td>${comps.map((c) => { const r = doc.find((h) => h.modulo === m && h.comp === c);
+      if (!r) return '<td class="bi-h bi-na">—</td>'; const p = r.pontos || {}, t = (p.divergente || 0) + (p.verificar || 0);
+      return `<td class="bi-h" style="background:${(p.divergente || 0) >= 20 ? '#dc2626' : t ? '#f59e0b' : '#16a34a'}" title="${nome} · ${mes(c)}: ${p.divergente || 0} divergentes, ${p.verificar || 0} para verificar">${t}</td>`; }).join('')}</tr>`).join('');
+    // por tipo (Análise Tributária da última competência escolhida)
+    const an = doc.find((h) => h.modulo === 'analise' && h.comp === ult);
+    const tipos = (an && an.por_tipo) || [], tt = tipos.reduce((a, x) => a + x.valor, 0) || 1, cores = ['#1e3a8a', '#0ea472', '#f59e0b', '#7c3aed', '#e2552d', '#0891b2', '#94a3b8'];
+    let acc = 0;
+    const arcos = tipos.slice(0, 7).map((x, k) => { const f = (x.valor / tt) * 100, s = `<circle r="15.9" cx="21" cy="21" fill="none" stroke="${cores[k]}" stroke-width="6" stroke-dasharray="0 100" data-a="${f}" stroke-dashoffset="${25 - acc}" class="bi-arc"/>`; acc += f; return s; }).join('');
+    const legenda = tipos.slice(0, 7).map((x, k) => `<div><i style="background:${cores[k]}"></i>${esc(x.nome)} · ${((x.valor / tt) * 100).toFixed(1).replace('.', ',')}%</div>`).join('');
+    // temas
+    const temas = {}; atual.forEach((r) => (r.temas || []).forEach((t) => { const k = `${MOD[r.modulo] || r.modulo}|${t.tema}`; temas[k] = (temas[k] || 0) + (t.itens || 0); }));
+    const tl = Object.entries(temas).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, q]) => { const [m, t] = k.split('|'); return `<tr><td>${esc(t)}<div class="bi-sm">${esc(m)}</div></td><td class="n">${q.toLocaleString('pt-BR')}</td></tr>`; }).join('');
+    const ultimas = doc.slice().sort((a, b) => (b.quando || '').localeCompare(a.quando || '')).slice(0, 6).map((r) => { const p = r.pontos || {}, t = (p.divergente || 0) + (p.verificar || 0);
+      return `<tr><td>${(r.quando || '').slice(8, 10)}/${(r.quando || '').slice(5, 7)} ${(r.quando || '').slice(11, 16)}</td><td>${MOD[r.modulo] || r.modulo}<div class="bi-sm">${mes(r.comp)}</div></td><td><span class="bi-tg ${t ? 'bi-av' : 'bi-ok'}">${t ? t + ' em aberto' : 'em dia'}</span></td></tr>`; }).join('');
+    raiz.innerHTML = `<div class="bi-top"><h1>BI da Empresa</h1><span class="bi-adm">ADMIN · TESTE</span>
+        <select id="biEmp">${Object.entries(empresas).map(([c, nm]) => `<option value="${c}"${c === B.cnpj ? ' selected' : ''}>${esc(nm)} · ${c}</option>`).join('')}</select></div>
+      <div class="bi-fil"><b>Competência</b>${comps.map((c) => `<span class="bi-ch${B.comps.has(c) ? ' on' : ''}" data-c="${c}">${mes(c)}</span>`).join('')}
+        <b style="margin-left:12px">Módulo</b><span class="bi-ch${!B.mod ? ' on' : ''}" data-m="">Todos</span>${Object.entries(MOD).map(([m, nm]) => `<span class="bi-ch${B.mod === m ? ' on' : ''}" data-m="${m}">${nm}</span>`).join('')}
+        <button class="bi-xls" id="biXls">⬇ Exportar BI (Excel)</button></div>
+      <div class="bi-w">${kpis}
+        <div class="bi-c" style="grid-column:span 7;--d:.35s"><h3>Evolução mensal · entradas × ICMS creditado × pontos em aberto</h3><svg viewBox="0 0 ${W} ${H}" width="100%">${barras}${linha('i', mxI, '#0ea472')}${linha('p', mxP, '#f59e0b', 1)}</svg>
+          <div class="bi-lg"><span><i style="background:#1e3a8a"></i>entradas (barras · escolhidas em azul escuro)</span><span><i style="background:#0ea472"></i>ICMS creditado</span><span><i style="background:#f59e0b"></i>pontos em aberto</span></div></div>
+        <div class="bi-c" style="grid-column:span 5;--d:.4s"><h3>Situação por módulo · mês a mês</h3><div class="bi-sc"><table class="bi-t bi-hm"><tr><th>Módulo</th>${comps.map((c) => `<th>${c.slice(5)}</th>`).join('')}</tr>${mapa}</table></div>
+          <div class="bi-lg"><span><i style="background:#16a34a"></i>em dia</span><span><i style="background:#f59e0b"></i>pontos a verificar</span><span><i style="background:#dc2626"></i>20+ divergentes</span><span><i style="background:#e2e8f0"></i>não analisado</span></div></div>
+        <div class="bi-c" style="grid-column:span 4;--d:.5s"><h3>Entradas por tipo de operação · ${mes(ult)}</h3>${tipos.length ? `<div class="bi-donut"><svg viewBox="0 0 42 42" width="130" height="130"><circle r="15.9" cx="21" cy="21" fill="none" stroke="#f1f5f9" stroke-width="6"/>${arcos}</svg><div class="bi-lgv">${legenda}</div></div>` : '<div class="bi-sm">Sem Análise Tributária nesta competência.</div>'}</div>
+        <div class="bi-c" style="grid-column:span 4;--d:.55s"><h3>Onde estão os pontos em aberto</h3>${tl ? `<table class="bi-t"><tr><th>Tema</th><th class="n">Itens</th></tr>${tl}</table>` : '<div class="bi-sm">Nenhum ponto em aberto na seleção.</div>'}</div>
+        <div class="bi-c" style="grid-column:span 4;--d:.6s"><h3>Últimas análises</h3><table class="bi-t"><tr><th>Quando</th><th>Módulo</th><th>Resultado</th></tr>${ultimas}</table></div>
+      </div>
+      <div class="bi-nota">Resumo das análises feitas neste computador (totais e contagens, sem arquivos do cliente). A análise mais nova de cada módulo e competência substitui a anterior.</div>`;
+    // animações
+    const t0 = performance.now(), els = [...raiz.querySelectorAll('[data-cnt]')];
+    const passo = (t) => { const k = Math.min(1, (t - t0) / 1300), e = 1 - Math.pow(1 - k, 3);
+      els.forEach((el) => { const v = parseFloat(el.dataset.cnt) || 0; el.textContent = el.dataset.int ? Math.round(v * e).toLocaleString('pt-BR') : 'R$ ' + curto(v * e); });
+      if (k < 1) requestAnimationFrame(passo); };
+    requestAnimationFrame(passo);
+    requestAnimationFrame(() => requestAnimationFrame(() => raiz.querySelectorAll('.bi-arc').forEach((c, i) => { c.style.transitionDelay = (0.4 + i * 0.25) + 's'; c.setAttribute('stroke-dasharray', `${c.dataset.a} ${100 - c.dataset.a}`); })));
+    $('#biEmp').addEventListener('change', (e) => { B.cnpj = e.target.value; B.comps = new Set(); desenhar(); });
+    raiz.querySelectorAll('[data-c]').forEach((x) => x.addEventListener('click', () => { const c = x.dataset.c; if (B.comps.has(c) && B.comps.size > 1) B.comps.delete(c); else B.comps.add(c); desenhar(); }));
+    raiz.querySelectorAll('[data-m]').forEach((x) => x.addEventListener('click', () => { B.mod = x.dataset.m; desenhar(); }));
+    $('#biXls').addEventListener('click', async () => {
+      overlay(true, 'Montando o BI em Excel…');
+      const r = await window.fiscocont.admin.biExportar({ cnpj: B.cnpj, nome: empresas[B.cnpj] });
+      overlay(false);
+      if (!r || r.canceled) return; if (r.error) { toast(r.error, true); return; }
+      toast('BI salvo em Excel.');
+    });
+  }
+  window._biEntrar = async () => {
+    const adm = window.fiscocont && window.fiscocont.admin;
+    if (!adm || !adm.biDados) return;
+    const r = await adm.biDados();
+    if (!r || r.error) { toast((r && r.error) || 'Falha ao ler o BI.', true); return; }
+    B.hist = r.hist || [];
+    desenhar();
+  };
+})();
 
 // ---- Crédito de PIS/COFINS sobre frete FOB (Admin · teste)
 const FP = { xmls: [], efd: '' };

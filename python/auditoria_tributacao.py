@@ -1076,7 +1076,10 @@ def main_cli(argv):
                 gerar_xlsx(res, opt('--xlsx'))
             e = res['empresa']
             out = {'ok': True, 'empresa': e.get('nome', ''), 'cnpj': e.get('cnpj', ''), 'periodo': [e.get('dt_ini', ''), e.get('dt_fin', '')],
-                   'notas': len(res['notas']), 'itens': len(res['itens']), 'produtos': len(res['produtos']), 'situacao': res['situacao']}
+                   'notas': len(res['notas']), 'itens': len(res['itens']), 'produtos': len(res['produtos']), 'situacao': res['situacao'],
+                   # resumo para o BI da Empresa (Admin)
+                   'totais': res['totais'], 'temas': res['temas'],
+                   'por_tipo': [[n, g] for n, g in res['por_tipo'] if g.get('n')]}
     except ValueError as ex:
         out = {'erro': str(ex)}
     except Exception as ex:  # pragma: no cover

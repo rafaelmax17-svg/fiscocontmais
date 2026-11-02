@@ -797,8 +797,10 @@ def main_cli(argv):
                 os.replace(tmp, opt('--html'))
             if opt('--xlsx'):
                 gerar_xlsx(res, opt('--xlsx'))
+            temas_bi = Counter((p['sit'], re.split(r'[:—(]', p['texto'])[0].strip()[:60]) for p in res['pontos'])
             res = {k: v for k, v in res.items() if k not in ('itens', 'documentos', 'pontos', 'produtos')} | {
-                'n_pontos': len(res['pontos']), 'n_produtos': len(res['produtos'])}
+                'n_pontos': len(res['pontos']), 'n_produtos': len(res['produtos']),
+                'temas_bi': [{'sit': s, 'tema': t, 'itens': q} for (s, t), q in temas_bi.most_common(15)]}
     except Exception as e:  # pragma: no cover
         import traceback
         traceback.print_exc()

@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.50
+
+- **BI da Empresa** (Módulos Admin · teste): cada análise concluída grava um resumo (totais e contagens, sem arquivos do cliente) em userData/bi-historico.json, uma entrada por CNPJ + competência + módulo (a mais nova substitui): Análise Tributária, Apuração Assistida IBS/CBS, Frete FOB, ICMS Desonerado e painel de NFS-e das Baixas DF-e. Tela animada: empresa, competências (várias), módulo; 6 indicadores com variação vs. mês anterior; evolução mensal (barras + linhas); mapa módulo × mês; entradas por tipo de operação; temas dos pontos em aberto; últimas análises. Exporta Excel (Painel com competência em lista suspensa e cartões por fórmula, Evolução com gráfico nativo, Mapa, Pontos, uma aba por módulo e Dados). O BI começa a se formar a partir das análises feitas nesta versão.
+
 ## 2.1.49
 
 - **Corretor do SPED · Crédito maçã e pera** (botão novo, só Admin): entradas de outra UF (CFOP 2.xxx) de maçã (0808.10.00) e pera (0808.30.00) com CST x40 → crédito presumido = (VL_ITEM − VL_DESC) × alíquota interestadual da origem (7% Sul/Sudeste exceto ES; 12% demais). RICMS/RO, Anexo IV, Parte 2, item 19; Anexo I, Parte 2, item 15, Nota 4 e Parte 4, Tabela 1, item 5; Conv. ICM 44/75, cl. 1ª, § 2º. Origem estrangeira = Verificar. Status por nota: falta, valor diferente, confere. Ao aplicar: 0460 "Cred Presumido Maçãs[ e Peras] - Interestadual" (código 99; se o 99 já for de outra observação, 991, 992…), C195 + C197 RO10000038 por nota e alíquota (substitui o RO10000038 existente), E110 campo 07 e 11/13/14, E116 000. Painel com cartões animados.

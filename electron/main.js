@@ -1037,6 +1037,7 @@ async function _analisarNfseEmpresa(empresa, dataInicial, dataFinal, opcoes = {}
     const resumo = JSON.parse(fs.readFileSync(jsonTmp, 'utf-8'));
     const painelHtml = fs.readFileSync(painelTmp, 'utf-8');
     [painelTmp, jsonTmp].forEach((p) => fs.unlink(p, () => {}));
+    _biRegistrar('nfse', resumo, { cnpj: empresa.cnpj, empresa: empresa.razaoSocial, comp: String(dataInicial || '').slice(0, 7) });
     return { ok: true, resumo, painelHtml };
   } catch (e) { return { error: String(e.message || e) }; }
 }
@@ -1861,6 +1862,82 @@ ipcMain.handle('admin:radarAnalisar', async (_evt, { efdc, fiscal, xml }) => {
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+// ---------------------------------------------------------------- BI da Empresa (Admin · teste)
+// Cada análise concluída guarda um RESUMO (totais e contagens; nunca XML ou arquivo do cliente) neste computador:
+// userData/bi-historico.json. Uma entrada por empresa (CNPJ) + competência + módulo; a análise mais nova substitui.
+function _biPath() { return path.join(app.getPath('userData'), 'bi-historico.json'); }
+function _biLer() { try { const j = JSON.parse(fs.readFileSync(_biPath(), 'utf-8')); return Array.isArray(j) ? j : []; } catch (_) { return []; } }
+function _biComp(v) {
+  const t = String(v || '');
+  let m = t.match(/^(\d{4})-(\d{2})/); if (m) return `${m[1]}-${m[2]}`;
+  m = t.match(/^(\d{2})(\d{2})(\d{4})$/); if (m) return `${m[3]}-${m[2]}`;
+  m = t.match(/(\d{2})\/(\d{2})\/(\d{4})/); if (m) return `${m[3]}-${m[2]}`;
+  return '';
+}
+function _biRegistrar(modulo, r, extra = {}) {
+  try {
+    if (!r || r.erro) return;
+    const dig = (x) => String(x || '').replace(/\D/g, '');
+    let reg = null;
+    const n = (x) => Number(x) || 0;
+    if (modulo === 'analise') {
+      const st = r.situacao || {}, temas = [];
+      Object.entries(r.temas || {}).forEach(([t, q]) => { const k = n(q.Divergente) + n(q.Verificar); if (k) temas.push({ tema: t, itens: k, div: n(q.Divergente) }); });
+      reg = { cnpj: dig(r.cnpj), empresa: r.empresa, comp: _biComp((r.periodo || [])[0]),
+        kpis: { entradas: n((r.totais || {}).vl), icms_cred: n((r.totais || {}).icms), icms_st: n((r.totais || {}).st), notas: n(r.notas), produtos: n(r.produtos) },
+        pontos: { divergente: n((st.Divergente || [])[0]), verificar: n((st.Verificar || [])[0]) }, temas,
+        por_tipo: (r.por_tipo || []).map(([nome, g]) => ({ nome, valor: n(g.vl) })) };
+    } else if (modulo === 'apuracao') {
+      const p = r.painel || {}, st = r.situacao || {};
+      reg = { cnpj: dig(r.cnpj), empresa: r.empresa, comp: (r.meses || [])[0] || '',
+        kpis: { ibscbs_debito: n((p.debito || {}).total), ibscbs_credito: n((p.credito || {}).total), ibscbs_saldo: n((p.saldo || {}).total) },
+        pontos: { divergente: n(st.Divergente), verificar: n(st.Verificar) }, temas: (r.temas_bi || []).map((t) => ({ tema: t.tema, itens: t.itens, div: t.sit === 'Divergente' ? t.itens : 0 })) };
+    } else if (modulo === 'frete') {
+      reg = { cnpj: dig(r.cnpj), empresa: r.empresa, comp: r.competencia || '',
+        kpis: { frete_credito: n((r.totais || {}).credito), frete_total: n((r.totais || {}).frete), frete_adicional: n(r.adicional_credito) },
+        pontos: { divergente: 0, verificar: (r.pendencias || []).length }, temas: (r.pendencias || []).length ? [{ tema: 'Frete FOB · pendências', itens: r.pendencias.length, div: 0 }] : [] };
+    } else if (modulo === 'deson') {
+      const e = r.empresa || {};
+      reg = { cnpj: dig(e.cnpj), empresa: e.empresa, comp: _biComp(e.periodo),
+        kpis: { deson_total: n(r.total_deson), deson_notas: n(r.qtd_com_deson) }, pontos: { divergente: 0, verificar: 0 }, temas: [] };
+    } else if (modulo === 'nfse') {
+      const ret = (r.notas_com_retencao || []).reduce((a, x) => a + n(x.total_retido), 0);
+      const inc = (r.inconsistencias_piscofins || []).length;
+      reg = { cnpj: dig(extra.cnpj), empresa: extra.empresa, comp: extra.comp,
+        kpis: { nfse_retido: Math.round(ret * 100) / 100, nfse_com_ret: n(r.qtd_com_retencao), nfse_notas: n(r.total_notas), nfse_prestado: n(r.valor_emitidas), nfse_tomado: n(r.valor_recebidas) },
+        pontos: { divergente: 0, verificar: inc }, temas: inc ? [{ tema: 'NFS-e · retenção inconsistente', itens: inc, div: 0 }] : [] };
+    }
+    if (!reg || !reg.cnpj || !reg.comp) return;
+    reg.modulo = modulo; reg.quando = new Date().toISOString();
+    const hist = _biLer().filter((h) => !(h.cnpj === reg.cnpj && h.comp === reg.comp && h.modulo === modulo));
+    hist.push(reg);
+    fs.writeFileSync(_biPath(), JSON.stringify(hist.slice(-5000)), 'utf-8');
+  } catch (_) { /* o BI nunca pode atrapalhar a análise */ }
+}
+ipcMain.handle('admin:biDados', async () => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  return { ok: true, hist: _biLer() };
+});
+ipcMain.handle('admin:biExportar', async (_evt, { cnpj, nome }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  const hist = _biLer().filter((h) => h.cnpj === cnpj);
+  if (!hist.length) return { error: 'Nenhuma análise registrada para essa empresa.' };
+  const base = `BI-${String(nome || cnpj).replace(/[^\w-]+/g, '_')}`.replace(/_+$/, '');
+  const r = await dialog.showSaveDialog(mainWindow, { title: 'Salvar BI (Excel)', defaultPath: `${base}.xlsx`, filters: [{ name: 'Planilha Excel', extensions: ['xlsx'] }] });
+  if (r.canceled || !r.filePath) return { canceled: true };
+  const stamp = Date.now();
+  const inJson = path.join(os.tmpdir(), `fc_bi_${stamp}.json`);
+  const jsonOut = path.join(os.tmpdir(), `fc_bi_res_${stamp}.json`);
+  try {
+    fs.writeFileSync(inJson, JSON.stringify(hist), 'utf-8');
+    await runFiscal(['bi-excel', '--entrada', inJson, '--saida', r.filePath, '--json', jsonOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {}); fs.unlink(inJson, () => {});
+    if (res.erro) return { error: res.erro };
+    shell.openPath(r.filePath);
+    return { ok: true, path: r.filePath };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
 // ---------------------------------------------------------------- Crédito de PIS/COFINS sobre frete FOB (Admin · teste)
 let _fpUltimo = null;   // { args, html, nome }
 ipcMain.handle('admin:fpPickXmls', async () => {
@@ -1895,6 +1972,7 @@ ipcMain.handle('admin:fpAnalisar', async (_evt, { xmls, efd, cnpj, excluirIcms }
     const html = fs.readFileSync(htmlOut, 'utf-8');
     if (_fpUltimo && _fpUltimo.html && _fpUltimo.html !== htmlOut) fs.unlink(_fpUltimo.html, () => {});
     _fpUltimo = { args, html: htmlOut, nome: res.empresa || res.cnpj || '' };
+    _biRegistrar('frete', res);
     return { ok: true, res, html };
   } catch (e) { return { error: String(e.message || e) }; }
 });
@@ -1949,6 +2027,7 @@ ipcMain.handle('fiscal:rtcAnalisar', async (_evt, { xmls, sped, regime }) => {
     const html = fs.readFileSync(htmlOut, 'utf-8');
     if (_rtcUltimo && _rtcUltimo.html && _rtcUltimo.html !== htmlOut) fs.unlink(_rtcUltimo.html, () => {});
     _rtcUltimo = { args, html: htmlOut, nome: res.empresa || res.cnpj || '' };
+    _biRegistrar('apuracao', res);
     return { ok: true, res, html };
   } catch (e) { return { error: String(e.message || e) }; }
 });
@@ -2001,6 +2080,7 @@ ipcMain.handle('admin:atribAnalisar', async (_evt, { sped }) => {
     const html = fs.readFileSync(htmlOut, 'utf-8');
     if (_atribUltimo && _atribUltimo.html && _atribUltimo.html !== htmlOut) fs.unlink(_atribUltimo.html, () => {});
     _atribUltimo = { sped, html: htmlOut };
+    _biRegistrar('analise', res);
     return { ok: true, res, html };
   } catch (e) { return { error: String(e.message || e) }; }
 });
@@ -3133,6 +3213,7 @@ ipcMain.handle('fiscal:desoneracao', async (_evt, { xmlsPath }) => {
     try {
       const j = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
       resumo = { identificado: j.identificado, comDeson: j.qtd_com_deson, totalDeson: j.total_deson };
+      _biRegistrar('deson', j);
     } catch (_) {}
     fs.unlink(jsonOut, () => {}); fs.unlink(htmlOut, () => {});
     return { ok: true, html, resumo };
