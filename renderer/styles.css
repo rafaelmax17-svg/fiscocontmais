@@ -1083,7 +1083,7 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .fs-flash td{animation:fsFlash 1.2s ease-out}@keyframes fsFlash{from{background:#e9e7ff}}
 .fs-foot{padding:9px 12px;color:var(--ink2);font-size:12px;border-top:1px solid var(--line)}
 .fs-modal{position:fixed;inset:0;background:rgba(20,23,51,.45);z-index:900;display:flex;align-items:center;justify-content:center}
-.fs-mbox{background:var(--panel);border-radius:14px;padding:20px;width:400px;box-shadow:0 24px 60px rgba(20,30,60,.3)}
+.fs-mbox{background:var(--panel);border-radius:14px;padding:20px;width:420px;max-height:92vh;overflow:auto;box-shadow:0 24px 60px rgba(20,30,60,.3)}
 .fs-mbox h3{font-size:15px;margin:0 0 10px;color:var(--ink)}.fs-mbox label{display:block;font-size:11.5px;color:var(--ink2);margin:10px 0 4px}
 .fs-mbox .fs-in{width:100%}.fs-row{display:flex;gap:6px}.fs-row .fs-in{flex:1}.fs-hint{color:var(--ink2);font-size:11px}
 .fs-mact{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
@@ -1340,3 +1340,13 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .bi-vazio{margin:30px 22px;background:#fff;border:1px dashed #cbd5e1;border-radius:14px;padding:26px;text-align:center;color:#475569;line-height:1.6}
 .bi-nota{font-size:11px;color:#64748b;padding:0 22px 16px}
 @media (prefers-reduced-motion:reduce){.bi-c,.bi-bar,.bi-ln,.bi-hm td.bi-h{animation:none}.bi-ln{stroke-dashoffset:0}}
+
+/* Fechamento SN · analistas (2.1.51) */
+.fs-ansel{border:1px solid transparent;background:transparent;color:var(--ink);font:inherit;padding:4px 22px 4px 6px;border-radius:8px;cursor:pointer;max-width:150px;transition:all .2s}
+.fs-ansel:hover,.fs-ansel:focus{border-color:var(--line);background:var(--panel);outline:none;box-shadow:0 2px 8px rgba(20,30,60,.08)}
+.fs-ansel:disabled{opacity:.5}
+.fs-anl{display:flex;flex-direction:column;gap:6px;max-height:min(440px,52vh);overflow:auto;margin:4px 0 6px}
+.fs-anr{display:grid;grid-template-columns:30px 1fr auto;grid-template-rows:auto auto;column-gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;animation:fsAnIn .35s both}
+.fs-anr .fs-av{grid-row:span 2;width:30px;height:30px}.fs-anr b{font-size:13px;color:var(--ink)}.fs-anr small{grid-column:2;color:var(--ink2);font-size:11px}
+.fs-anr .fs-mini{grid-column:3;grid-row:1 / span 2}.fs-mini:disabled{opacity:.4;cursor:not-allowed}
+@keyframes fsAnIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}

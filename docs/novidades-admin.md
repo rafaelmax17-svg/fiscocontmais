@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.51
+
+- **Simples Nacional · Fechamento da equipe · analistas**: botão "Analistas" (só Admin) com a lista das analistas, quantas empresas cada uma tem no mês, cadastro de analista nova e remoção (só sem empresa ativa no cadastro). Na coluna "Analista responsável" o Admin troca a analista direto na linha; vale para o mês aberto e para os próximos (os anteriores ficam como estavam). No "Cadastrar empresa" e no ✎ a analista agora é escolhida da lista. A lista fica no Firestore (fechamento_sn/cadastro.analistas) e nasce, na primeira abertura do Admin, com as analistas já em uso + **Taynara**.
+
 ## 2.1.50
 
 - **BI da Empresa** (Módulos Admin · teste): cada análise concluída grava um resumo (totais e contagens, sem arquivos do cliente) em userData/bi-historico.json, uma entrada por CNPJ + competência + módulo (a mais nova substitui): Análise Tributária, Apuração Assistida IBS/CBS, Frete FOB, ICMS Desonerado e painel de NFS-e das Baixas DF-e. Tela animada: empresa, competências (várias), módulo; 6 indicadores com variação vs. mês anterior; evolução mensal (barras + linhas); mapa módulo × mês; entradas por tipo de operação; temas dos pontos em aberto; últimas análises. Exporta Excel (Painel com competência em lista suspensa e cartões por fórmula, Evolução com gráfico nativo, Mapa, Pontos, uma aba por módulo e Dados). O BI começa a se formar a partir das análises feitas nesta versão.

@@ -4,7 +4,7 @@
 (function () {
   const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   const INICIO = '2026-09';                       // primeira competência controlada no sistema (planilha da equipe)
-  const COR_FIXA = { 'heloisa': '#7c3aed', 'hemily': '#0ea5e9', 'thawani': '#14b8a6', 'cauane': '#f59e0b', 'hotoniel': '#0ea472', 'valéria': '#e23d4c', 'valeria': '#e23d4c' };
+  const COR_FIXA = { 'heloisa': '#7c3aed', 'hemily': '#0ea5e9', 'thawani': '#14b8a6', 'cauane': '#f59e0b', 'hotoniel': '#0ea472', 'valéria': '#e23d4c', 'valeria': '#e23d4c', 'taynara': '#d946ef' };
   const PALETA = ['#6366f1', '#ec4899', '#84cc16', '#06b6d4', '#f97316', '#8b5cf6', '#10b981', '#ef4444'];
   const ST = {
     concluida: { rot: 'Concluída', cor: '#0ea472' },
@@ -13,7 +13,7 @@
     alerta: { rot: 'Inconsistente', cor: '#b42318' },
     pendente: { rot: 'Pendente', cor: '#e23d4c' },
   };
-  const FS = { comp: '', linhas: [], admin: false, analista: '', busca: '', chip: 'todas', iniciado: false, aberto: false, anel: null, kpiAnt: {} };
+  const FS = { comp: '', linhas: [], listaAn: [], admin: false, analista: '', busca: '', chip: 'todas', iniciado: false, aberto: false, anel: null, kpiAnt: {} };
 
   const e = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ok = (v) => v === 'Sim' || v === 'N/A';
@@ -90,6 +90,7 @@
         <div class="fs-chips" id="fsChips"></div>
         <span style="flex:1"></span>
         <button class="act inv-export" id="fsHtml">Exportar HTML</button>
+        <button class="act inv-export" id="fsAnalistas" hidden>Analistas</button>
         <button class="act inv-export fs-prim" id="fsNova" hidden>+ Cadastrar empresa</button>
       </div>
       <div class="fs-card fs-tab-wrap"><table class="fs-tab"><thead><tr>
@@ -103,6 +104,7 @@
     $('#fsBusca').addEventListener('input', (ev) => { FS.busca = ev.target.value; desenhaTabela(true); });
     $('#fsHtml').addEventListener('click', exportar);
     $('#fsNova').addEventListener('click', () => modalEmpresa());
+    $('#fsAnalistas').addEventListener('click', modalAnalistas);
     $('#fsBody').addEventListener('change', onCelula);
     $('#fsBody').addEventListener('click', onAcao);
     $('#fsModal').addEventListener('click', (ev) => { if (ev.target.id === 'fsModal') fechaModal(); });
@@ -119,7 +121,8 @@
 
   function aoMudar(d) {
     if (!d || d.comp !== FS.comp) return;
-    FS.linhas = d.linhas || []; FS.admin = !!d.admin;
+    FS.linhas = d.linhas || []; FS.admin = !!d.admin; FS.listaAn = d.analistas || [];
+    if (!$('#fsModal').hidden && $('#fsMBox').dataset.tipo === 'an') modalAnalistas();
     const live = $('#fsLive'); if (live) { live.classList.remove('pulse'); void live.offsetWidth; live.classList.add('pulse'); }
     desenhaTudo();
   }
@@ -152,7 +155,7 @@
       ['semmov', 'Sem movimento', tot.semMov], ['concluida', 'Concluídas', tot.concluida]];
     $('#fsChips').innerHTML = chips.map(([id, rot, n]) => `<button class="fs-chip ${FS.chip === id ? 'on' : ''}" data-chip="${id}">${rot} <b>${n}</b></button>`).join('');
     $('#fsChips').querySelectorAll('.fs-chip').forEach((b) => b.addEventListener('click', () => { FS.chip = b.dataset.chip; desenhaTudo(); }));
-    $('#fsNova').hidden = !FS.admin;
+    $('#fsNova').hidden = !FS.admin; $('#fsAnalistas').hidden = !FS.admin;
     document.querySelectorAll('.fs-adm-col').forEach((x) => { x.hidden = !FS.admin; });
     desenhaTabela(false);
   }
@@ -218,11 +221,18 @@
     const cls = v === 'Sim' ? 'v-sim' : v === 'Não' ? 'v-nao' : v === 'N/A' ? 'v-na' : 'v-vz';
     return `<select class="fs-sel ${cls}" data-c="${campo}" data-id="${r.id}">${['', 'Sim', 'Não', 'N/A'].map((o) => `<option value="${o}" ${o === v ? 'selected' : ''}>${o || '—'}</option>`).join('')}</select>`;
   };
+  const chaveAn = (n) => String(n || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  // Admin: troca a analista direto na linha (vale para este mês e para os próximos; os meses anteriores ficam como estavam).
+  function selAnalista(r) {
+    const k = chaveAn(r.analista); const nomes = [...FS.listaAn];
+    if (r.analista && !nomes.some((n) => chaveAn(n) === k)) nomes.push(r.analista);
+    return `<select class="fs-ansel" data-an="${r.id}" title="Trocar a analista responsável">${r.analista ? '' : '<option value="">—</option>'}${nomes.map((n) => `<option value="${e(n)}" ${chaveAn(n) === k ? 'selected' : ''}>${e(n)}</option>`).join('')}</select>`;
+  }
   function linhaHtml(r, i) {
     const st = status(r);
     return `<td class="fs-n">${i + 1}</td>
       <td class="l"><span class="fs-dot" style="background:${ST[st].cor}" title="${ST[st].rot}"></span><b>${e(r.nome)}</b>${r.semMovimento ? '<span class="fs-tag">sem movimento</span>' : ''}${r.inativa && r.saida > FS.comp ? `<span class="fs-tag fs-tag-in">inativa a partir de ${e(compRot(r.saida))}</span>` : ''}${r.cnpj ? `<small>${e(r.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5'))}</small>` : ''}</td>
-      <td class="l">${e(r.analista || '—')}</td>
+      <td class="l">${FS.admin ? selAnalista(r) : e(r.analista || '—')}</td>
       <td>${selEtapa(r, 'esc')}</td><td>${selEtapa(r, 'pgdas')}</td><td>${selEtapa(r, 'das')}</td>
       <td class="fs-fin" title="Preenchida sozinha quando as três etapas ficam Sim ou N/A">${r.fin ? e(r.fin) : '—'}</td>
       <td class="l"><input class="fs-obs" data-c="obs" data-id="${r.id}" value="${e(r.obs)}" placeholder="—">${st === 'alerta' ? '<small class="neg">⚠ PGDAS transmitido sem escrituração concluída</small>' : ''}</td>
@@ -245,9 +255,10 @@
     }
     $('#fsFoot').textContent = `Mostrando ${lst.length} de ${FS.linhas.length} empresas · clique na célula para escolher Sim, Não ou N/A · a data de finalização é preenchida sozinha quando as três etapas ficam Sim ou N/A`;
   }
-  const sig = (r, i) => [i, r.nome, r.analista, r.esc, r.pgdas, r.das, r.fin, r.obs, r.cnpj, FS.admin, r.inativa, r.saida].join('¦');
+  const sig = (r, i) => [i, FS.listaAn.join(','), r.nome, r.analista, r.esc, r.pgdas, r.das, r.fin, r.obs, r.cnpj, FS.admin, r.inativa, r.saida].join('¦');
 
   async function onCelula(ev) {
+    if (ev.target.dataset.an) return trocaAnalista(ev.target);
     const el = ev.target; const campo = el.dataset.c, id = el.dataset.id;
     if (!campo || !id) return;
     const valor = el.value;
@@ -273,17 +284,64 @@
 
   }
 
+  async function trocaAnalista(el) {
+    const r = FS.linhas.find((x) => x.id === el.dataset.an); if (!r) return;
+    const nova = el.value, antes = r.analista;
+    if (!nova || nova === antes) return;
+    el.disabled = true;
+    const x = await window.fiscocont.fechamento.alterar(FS.comp, r.id, { analista: nova });
+    el.disabled = false;
+    if (x && x.error) { toast(x.error, true); el.value = antes; return; }
+    toast(`${r.nome}: analista ${antes ? `trocada de ${antes} para ${nova}` : `definida como ${nova}`} (de ${compRot(FS.comp)} em diante).`);
+  }
+
+  // ------------------------------------------------------------------ analistas (Admin)
+  function modalAnalistas() {
+    const box = $('#fsMBox'); box.dataset.tipo = 'an';
+    const { analistas } = resumo(FS.linhas);
+    const porNome = new Map(analistas.map((a) => [chaveAn(a.nome), a]));
+    const nomes = [...FS.listaAn].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const idx = nomes.map((n) => n).sort((x, y) => x.localeCompare(y));
+    box.innerHTML = `<h3>Analistas do fechamento</h3>
+      <div class="fs-anl">${nomes.map((n, i) => { const a = porNome.get(chaveAn(n)); const q = a ? a.n : 0;
+        const cor = a ? a.cor : corAnalista(n, idx.indexOf(n));
+        return `<div class="fs-anr" style="animation-delay:${(i * 0.04).toFixed(2)}s"><span class="fs-av" style="background:${cor}">${e(a ? a.ini : iniciais(n))}</span><b>${e(n)}</b>
+          <small>${q ? `${q} empresa${q > 1 ? 's' : ''} em ${compRot(FS.comp)}` : 'sem empresas ainda'}</small>
+          <button class="fs-mini del" data-rm="${e(n)}" ${q ? 'disabled title="Troque a analista das empresas dela antes de remover"' : 'title="Tirar da lista"'}>Remover</button></div>`; }).join('') || '<small class="fs-hint">Nenhuma analista cadastrada.</small>'}</div>
+      <label>Nova analista</label><div class="fs-row"><input id="fsANome" class="fs-in" maxlength="40" placeholder="Nome"><button class="act inv-export fs-prim" id="fsAOk">Cadastrar</button></div>
+      <small class="fs-hint">Para passar uma empresa para outra analista, escolha o nome na coluna "Analista responsável". A troca vale de ${compRot(FS.comp)} em diante; os meses anteriores ficam como estavam.</small>
+      <div class="fs-mact"><button class="act inv-export" id="fsMCanc">Fechar</button></div>`;
+    $('#fsModal').hidden = false;
+    $('#fsMCanc').onclick = fechaModal;
+    const cad = async () => {
+      const inp = $('#fsANome'); const bt = $('#fsAOk'); bt.disabled = true;
+      const x = await window.fiscocont.fechamento.analistaNova(inp.value);
+      bt.disabled = false;
+      if (x && x.error) { toast(x.error, true); return; }
+      toast(`${x.nome} cadastrada.`);
+    };
+    $('#fsAOk').onclick = cad;
+    $('#fsANome').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') cad(); });
+    box.querySelectorAll('[data-rm]').forEach((b) => { b.onclick = async () => {
+      if (!confirm(`Tirar ${b.dataset.rm} da lista de analistas?`)) return;
+      const x = await window.fiscocont.fechamento.analistaRemover(b.dataset.rm);
+      if (x && x.error) toast(x.error, true); else toast(`${b.dataset.rm} removida da lista.`);
+    }; });
+    setTimeout(() => $('#fsANome') && $('#fsANome').focus(), 30);
+  }
+
   // ------------------------------------------------------------------ cadastro / edição (Admin)
-  function fechaModal() { $('#fsModal').hidden = true; }
+  function fechaModal() { $('#fsModal').hidden = true; $('#fsMBox').dataset.tipo = ''; }
   function modalEmpresa(r) {
-    const nomes = [...new Set(FS.linhas.map((x) => x.analista).filter(Boolean))].sort();
+    const nomes = [...FS.listaAn];
+    if (r && r.analista && !nomes.some((n) => chaveAn(n) === chaveAn(r.analista))) nomes.push(r.analista);
     const comps = listaComps();
-    const box = $('#fsMBox');
+    const box = $('#fsMBox'); box.dataset.tipo = 'emp';
     box.innerHTML = `<h3>${r ? 'Alterar empresa' : 'Cadastrar empresa no fechamento'}</h3>
       ${r ? '' : `<label>CNPJ (opcional)</label><div class="fs-row"><input id="fsMCnpj" class="fs-in" placeholder="00.000.000/0000-00"><button class="act inv-export" id="fsMBusca">Buscar na Receita</button></div>`}
       <label>Razão social</label><input id="fsMNome" class="fs-in" value="${r ? e(r.nome) : ''}">
-      <label>Analista responsável</label><input id="fsMAn" class="fs-in" list="fsMAnList" value="${r ? e(r.analista) : ''}" placeholder="Escolha ou digite um nome">
-      <datalist id="fsMAnList">${nomes.map((n) => `<option value="${e(n)}">`).join('')}</datalist>
+      <label>Analista responsável</label><select id="fsMAn" class="fs-in">${r ? '' : '<option value="">Escolha…</option>'}${nomes.map((n) => `<option value="${e(n)}" ${r && chaveAn(n) === chaveAn(r.analista) ? 'selected' : ''}>${e(n)}</option>`).join('')}</select>
+      <small class="fs-hint">Analista nova: cadastre antes no botão "Analistas".</small>
       ${r ? '' : `<label>A partir de</label><select id="fsMDesde" class="fs-in">${comps.map((c) => `<option value="${c}" ${c === FS.comp ? 'selected' : ''}>${compRot(c)}</option>`).join('')}</select><small class="fs-hint">Entra nessa competência e nas próximas.</small>`}
       <div class="fs-mact"><button class="act inv-export" id="fsMCanc">Cancelar</button><button class="act inv-export fs-prim" id="fsMOk">${r ? 'Salvar' : 'Cadastrar'}</button></div>`;
     $('#fsModal').hidden = false;
