@@ -1281,3 +1281,29 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .rtc-tag{display:inline-block;font-size:11px;font-weight:800;letter-spacing:1.2px;padding:4px 10px;border-radius:5px;
   background:linear-gradient(90deg,#f59e0b,#ef4444);color:#fff;margin-bottom:10px}
 .rtc-empty .rtc-lei{font-size:12px;opacity:.75}
+
+/* Corretor · crédito presumido de maçã e pera (painel animado) */
+.cm{background:#f4f6fb;border-radius:14px;padding:16px 18px;color:#0f172a}
+.cm-hd{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.cm-hd h3{margin:0;font-size:17px}
+.cm-adm{font-size:10px;font-weight:800;letter-spacing:1px;background:#7c3aed;color:#fff;padding:3px 8px;border-radius:5px}
+.cm-sm{font-size:11px;color:#64748b}.cm-vt{color:#b45309}
+.cm-k{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:12px 0}
+.cm-c{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:11px 13px;border-left:4px solid var(--c);transition:transform .25s,box-shadow .25s}
+.cm-c:hover{transform:translateY(-3px);box-shadow:0 12px 26px rgba(15,23,42,.1)}
+.cm-anima .cm-c{animation:cmSobe .6s var(--d) cubic-bezier(.2,.8,.2,1) both}
+.cm-anima .cm-t tbody tr{animation:cmSobe .45s both}
+.cm-anima .cm-two{animation:cmSobe .6s .35s both}
+@keyframes cmSobe{from{opacity:0;transform:translateY(12px)}}
+.cm-c small{font-size:10.5px;color:#64748b;font-weight:700;text-transform:uppercase}.cm-c b{display:block;font-size:20px;margin-top:3px;font-variant-numeric:tabular-nums}.cm-c span{font-size:11px;color:#64748b}
+.cm-tw{max-height:420px;overflow:auto;border:1px solid #e2e8f0;border-radius:10px}
+.cm-t{width:100%;border-collapse:collapse;background:#fff;font-size:12.5px}
+.cm-t th{background:#eef2ff;color:#3730a3;text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;position:sticky;top:0}
+.cm-t td{padding:7px 10px;border-top:1px solid #eef2f7;vertical-align:top}.cm-t td.n,.cm-t th.n{text-align:right;white-space:nowrap}
+.cm-t tr.cm-sub td{border-top:1px dashed #eef2f7}
+.cm-tg{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap}
+.cm-f{background:#fee2e2;color:#b91c1c}.cm-d{background:#ffedd5;color:#c2410c}.cm-ok{background:#dcfce7;color:#15803d}.cm-v{background:#fef3c7;color:#b45309}
+.cm-two{display:grid;grid-template-columns:1.2fr 1fr;gap:12px;margin-top:12px}
+.cm-box{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:11px 13px}.cm-box h4{margin:0 0 8px;font-size:11.5px;color:#3730a3;text-transform:uppercase}
+.cm-box pre{background:#0f172a;color:#e2e8f0;border-radius:8px;padding:10px 12px;font-size:11.5px;margin:0;line-height:1.6;white-space:pre-wrap}
+.cm-lei{font-size:12px;color:#334155;line-height:1.55}
+@media (prefers-reduced-motion:reduce){.cm-anima .cm-c,.cm-anima .cm-t tbody tr,.cm-anima .cm-two{animation:none}}

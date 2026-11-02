@@ -188,6 +188,8 @@ contextBridge.exposeInMainWorld('fiscocont', {
     acum7000Analisar: (params) => ipcRenderer.invoke('admin:acum7000Analisar', params),
     acum7000Aplicar: (params) => ipcRenderer.invoke('admin:acum7000Aplicar', params),
     cad0200Analisar: (params) => ipcRenderer.invoke('admin:cad0200Analisar', params),
+    macaAnalisar: (params) => ipcRenderer.invoke('admin:macaAnalisar', params),
+    macaAplicar: (params) => ipcRenderer.invoke('admin:macaAplicar', params),
     tudoAnalisar: (params) => ipcRenderer.invoke('admin:tudoAnalisar', params),
     tudoAplicar: (params) => ipcRenderer.invoke('admin:tudoAplicar', params),
     descAnalisar: (params) => ipcRenderer.invoke('admin:descAnalisar', params),

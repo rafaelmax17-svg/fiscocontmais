@@ -2526,6 +2526,41 @@ ipcMain.handle('admin:cad0200Aplicar', async (_evt, { spedPath, usarCorrigido, s
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+// Crédito presumido de maçã e pera de outra UF (RICMS/RO, Anexo IV, Parte 2, item 19: C195 + C197 RO10000038) — só Admin
+ipcMain.handle('admin:macaAnalisar', async (_evt, { spedPath, usarCorrigido }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!spedPath) return { error: 'Selecione o SPED.' };
+  const base = _difalBase(spedPath, usarCorrigido);
+  const jsonOut = path.join(os.tmpdir(), `fc_maca_${Date.now()}.json`);
+  try {
+    await runFiscal(['credito-maca', '--sped', base.arq, '--json', jsonOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    return { ok: true, res, origem: base.origem };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('admin:macaAplicar', async (_evt, { spedPath, usarCorrigido, selecao }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!spedPath) return { error: 'Selecione o SPED.' };
+  const base = _difalBase(spedPath, usarCorrigido);
+  const stamp = Date.now();
+  const selJson = path.join(os.tmpdir(), `fc_maca_sel_${stamp}.json`);
+  const jsonOut = path.join(os.tmpdir(), `fc_maca_res_${stamp}.json`);
+  const saida = path.join(os.tmpdir(), `fc_maca_sped_${stamp}.txt`);
+  try {
+    fs.writeFileSync(selJson, JSON.stringify(selecao || {}), 'utf-8');
+    await runFiscal(['credito-maca', '--sped', base.arq, '--json', jsonOut, '--aplicar', selJson, '--saida', saida], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    fs.unlink(jsonOut, () => {}); fs.unlink(selJson, () => {});
+    if (res.erro) return { error: res.erro };
+    if (!fs.existsSync(saida)) return { error: 'O arquivo corrigido não foi gerado.' };
+    if (lastSpedCorrigidoPath && lastSpedCorrigidoPath !== base.arq) fs.unlink(lastSpedCorrigidoPath, () => {});
+    else if (lastSpedCorrigidoPath === base.arq && base.origem === 'corrigido') fs.unlink(base.arq, () => {});
+    lastSpedCorrigidoPath = saida;
+    return { ok: true, resumo: res, origem: base.origem };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
 // Crédito de fornecedor do Simples Nacional (RO: C195 + C197 RO00000001, campo 07 do E110) — só Admin
 ipcMain.handle('admin:simplesAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
   const bloq = _soAdmin(); if (bloq) return bloq;

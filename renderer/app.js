@@ -1380,7 +1380,8 @@ function bindFiscal() {
     // ⚡ Automatizar correção → "Abrir no modo manual" de um cliente: escolhe o SPED (e a pasta de XMLs) como se fosse à mão
     window.__corrAbrirManual = (sped, xmls) => {
       corrSpedPath = sped; FISCAL.corrSpedPath = sped;
-      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad', '#btnCorrTudo', '#btnCorrDesc'].forEach((id) => { $(id).disabled = false; });
+      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad', '#btnCorrMaca', '#btnCorrTudo', '#btnCorrDesc'].forEach((id) => { $(id).disabled = false; });
+      $('#corrMaca').hidden = true; $('#corrMaca').innerHTML = '';
       $('#corrTudo').hidden = true; $('#corrTudo').innerHTML = ''; $('#corrDesc').hidden = true; $('#corrDesc').innerHTML = '';
       $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = ''; $('#corrCad').hidden = true; $('#corrCad').innerHTML = '';
       corrFeito = false;
@@ -1404,6 +1405,7 @@ function bindFiscal() {
       $('#btnCorrSimples').disabled = false;
       $('#btnCorrAcum').disabled = false; $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = '';
       $('#btnCorrCad').disabled = false; $('#corrCad').hidden = true; $('#corrCad').innerHTML = '';
+      $('#btnCorrMaca').disabled = false; $('#corrMaca').hidden = true; $('#corrMaca').innerHTML = '';
       ['#btnCorrTudo', '#btnCorrDesc'].forEach((id) => { $(id).disabled = false; });
       $('#corrTudo').hidden = true; $('#corrTudo').innerHTML = ''; $('#corrDesc').hidden = true; $('#corrDesc').innerHTML = '';
       corrFeito = false;
@@ -1695,10 +1697,93 @@ function bindFiscal() {
       });
     }
     $('#btnCorrCad').addEventListener('click', cdAbrir);
+    // ---- Crédito presumido de maçã e pera de outra UF (RICMS/RO, Anexo IV, Parte 2, item 19) — Admin
+    const CM = { an: null, marc: new Set() };
+    const cmConta = (raiz) => {
+      const els = [...raiz.querySelectorAll('[data-cnt]')], t0 = performance.now();
+      const passo = (t) => { const k = Math.min(1, (t - t0) / 1100), e = 1 - Math.pow(1 - k, 3);
+        els.forEach((el) => { const v = parseFloat(el.dataset.cnt) || 0; el.textContent = el.dataset.int ? Math.round(v * e) : 'R$ ' + fmR(v * e); });
+        if (k < 1) requestAnimationFrame(passo); };
+      requestAnimationFrame(passo);
+    };
+    const CM_ST = { falta: ['Falta lançar', 'cm-f'], diferente: ['Valor diferente', 'cm-d'], confere: ['Lançado · confere', 'cm-ok'], verificar: ['Verificar', 'cm-v'] };
+    function cmDesenhar(primeira) {
+      const box = $('#corrMaca'), an = CM.an, rs = an.resumo;
+      const sel = an.docs.filter((d) => CM.marc.has(d.id));
+      const incluir = sel.reduce((a, d) => a + d.credito - d.lancado, 0);
+      const linhas = an.docs.map((d) => d.itens.map((it, k) => `<tr class="${k ? 'cm-sub' : ''}">
+          <td>${k ? '' : (d.grupos.length ? `<input type="checkbox" class="cm-m" data-i="${d.id}"${CM.marc.has(d.id) ? ' checked' : ''}>` : '')}</td>
+          <td>${k ? '' : esc(d.num)}</td><td>${k ? '' : esc(d.fornecedor)}</td><td>${k ? '' : esc(d.uf || '—')}</td>
+          <td>${esc(it.desc)}<div class="cm-sm">${it.fruta} · NCM ${esc(it.ncm)}</div></td><td>${esc(it.cst)}</td>
+          <td class="n">${fmR(it.valor)}</td><td class="n">${it.aliq == null ? '—' : fmR(it.aliq) + '%'}</td><td class="n">${it.aliq == null ? '—' : fmR(it.credito)}</td>
+          <td>${k ? '' : `<span class="cm-tg ${CM_ST[d.status][1]}">${CM_ST[d.status][0]}</span>${d.status === 'diferente' ? `<div class="cm-sm">lançado R$ ${fmR(d.lancado)}</div>` : ''}`}${it.verificar ? `<div class="cm-sm cm-vt">${esc(it.verificar)}</div>` : ''}</td></tr>`).join('')).join('');
+      const ex = sel[0];
+      const obs = rs.obs_existente && rs.obs_existente['99'] ? `código 99 já usado por "${esc(rs.obs_existente['99'])}" — será criado com o próximo código livre` : 'código 99, criado se ainda não existir';
+      box.innerHTML = `<div class="cm-hd"><div><h3>Crédito presumido · maçã e pera de outro estado</h3>
+          <div class="cm-sm">RICMS/RO, Anexo IV, Parte 2, item 19 · Anexo I, Parte 2, item 15, Nota 4 · Conv. ICM 44/75, cl. 1ª, § 2º · ${esc(an.empresa)}</div></div><span class="cm-adm">ADMIN</span></div>
+        <div class="cm-k">
+          <div class="cm-c" style="--c:#4f46e5;--d:0s"><small>Notas com maçã/pera</small><b data-cnt="${rs.notas}" data-int="1">0</b><span>CST x40 · CFOP 2.xxx</span></div>
+          <div class="cm-c" style="--c:#dc2626;--d:.07s"><small>Sem o crédito lançado</small><b data-cnt="${rs.falta}" data-int="1">0</b><span>C197 ${'RO10000038'} faltando</span></div>
+          <div class="cm-c" style="--c:#f59e0b;--d:.14s"><small>Valor diferente</small><b data-cnt="${rs.diferente}" data-int="1">0</b><span>lançado ≠ regra</span></div>
+          <div class="cm-c" style="--c:#16a34a;--d:.21s"><small>Já lançado e confere</small><b data-cnt="${rs.confere}" data-int="1">0</b><span>valor bate com a regra</span></div>
+          <div class="cm-c" style="--c:#0ea472;--d:.28s"><small>Crédito a incluir (marcadas)</small><b data-cnt="${incluir.toFixed(2)}">R$ 0,00</b><span>soma no campo 07 do E110</span></div>
+        </div>
+        <div class="cm-tw"><table class="cm-t"><thead><tr><th><input type="checkbox" id="cmTodos"></th><th>Nota</th><th>Fornecedor</th><th>UF</th><th>Item</th><th>CST</th><th class="n">Valor</th><th class="n">Alíq. inter.</th><th class="n">Crédito</th><th>Situação</th></tr></thead><tbody>${linhas}</tbody></table></div>
+        <div class="cm-two"><div class="cm-box"><h4>O que será incluído no SPED${ex ? ` (exemplo da NF ${esc(ex.num)})` : ''}</h4><pre>|0460|99|Cred Presumido Maçãs${rs.tem_pera ? ' e Peras' : ''} - Interestadual|   ← ${obs}
+|C195|99||
+${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toFixed(2).replace('.', ',')}|${(+g.aliq).toFixed(2).replace('.', ',')}|${(+g.credito).toFixed(2).replace('.', ',')}||`).join('\n') : '|C197|RO10000038|…|'}
+|E110| campo 07 (ajustes a crédito) recalculado · campos 11/13/14 · E116 obrigação 000</pre></div>
+        <div class="cm-box cm-lei"><h4>Regra conferida</h4>• <b>Anexo IV, Parte 2, item 19:</b> crédito igual à <b>alíquota interestadual</b> sobre o valor da operação do hortifrutigranjeiro que vem isento da origem e não é isento em RO.<br>• <b>Anexo I, item 15, Nota 4:</b> vale para <b>pera e maçã</b> (Tabela 1, item 5, exclui pera e maçã da isenção em RO).<br>• 7% Sul e Sudeste (exceto ES) · 12% demais UFs. Origem estrangeira fica "Verificar".<br>• C197 RO10000038 soma no campo 07 do E110. O C197 RO10000038 que já existir na nota marcada é substituído.<br>• Base = valor do item − desconto. Uma C197 por nota e alíquota.</div></div>
+        <div class="dif-acts"><button class="act inv-export sn-big" id="cmAplicar" style="background:#4f46e5;color:#fff;border-color:transparent"${CM.marc.size ? '' : ' disabled'}>Aplicar no SPED (${CM.marc.size} nota${CM.marc.size === 1 ? '' : 's'})</button></div>
+        <div id="cmRes"></div>`;
+      if (primeira) box.classList.add('cm-anima'); else box.classList.remove('cm-anima');
+      cmConta(box);
+      box.querySelectorAll('.cm-m').forEach((c) => c.addEventListener('change', () => { const i = +c.dataset.i; if (c.checked) CM.marc.add(i); else CM.marc.delete(i); cmDesenhar(false); }));
+      $('#cmTodos').addEventListener('change', (ev) => { an.docs.forEach((d) => { if (!d.grupos.length) return; if (ev.target.checked) CM.marc.add(d.id); else CM.marc.delete(d.id); }); cmDesenhar(false); });
+      $('#cmAplicar').addEventListener('click', cmAplicar);
+    }
+    async function cmAbrir() {
+      if (!corrSpedPath) return;
+      corrSoMostra('#corrMaca');
+      overlay(true, 'Procurando maçã e pera de outro estado nas entradas…');
+      const r = await window.fiscocont.admin.macaAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito });
+      overlay(false);
+      if (r.error) { toast(r.error, true); return; }
+      const box = $('#corrMaca'); box.hidden = false;
+      if (!r.res.docs.length) { CM.an = null; box.innerHTML = '<div class="dif-k">Nenhuma entrada de maçã ou pera de outro estado com CST x40 neste arquivo.</div>'; return; }
+      CM.an = r.res; CM.marc = new Set(r.res.docs.filter((d) => ['falta', 'diferente'].includes(d.status)).map((d) => d.id));
+      cmDesenhar(true);
+      box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    async function cmAplicar() {
+      if (!CM.marc.size) return;
+      overlay(true, 'Incluindo o crédito presumido (0460, C195, C197 e E110)…');
+      const res = await window.fiscocont.admin.macaAplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, selecao: { docs: [...CM.marc] } });
+      overlay(false);
+      if (res.error) { toast(res.error, true); return; }
+      corrFeito = true;
+      const r = res.resumo || {}, a = r.e110_antes || {}, d = r.e110_depois || {};
+      $('#cmRes').innerHTML = `<div class="dif-done sn-done">
+        <div class="dif-k">Crédito incluído: arquivo novo gerado (o original não foi alterado)</div>
+        <div class="dif-kpis"><div class="k-ok"><span>Notas</span><b>${r.notas || 0}</b><small>${r.c197_inseridos || 0} C197 · observação ${esc(r.cod_obs || '')}</small></div>
+          <div class="k-ok"><span>Crédito lançado</span><b>R$ ${fmR(r.credito)}</b><small>antes: R$ ${fmR(r.credito_antes)}</small></div>
+          <div class="k-ok"><span>E110 · campo 07</span><b>R$ ${fmR(d.aj_cred)}</b><small>antes: R$ ${fmR(a.aj_cred)}</small></div>
+          <div class="k-ok"><span>ICMS a recolher</span><b>R$ ${fmR(d.recolher)}</b><small>antes: R$ ${fmR(a.recolher)}</small></div></div>
+        ${(r.avisos || []).length || r.e116 ? `<div class="dif-av"><ul>${[r.e116, ...(r.avisos || [])].filter(Boolean).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+        <div class="dif-acts"><button class="act inv-export" id="cmReconf">Conferir de novo</button>
+          <button class="act inv-export sn-big" id="cmBaixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button></div></div>`;
+      $('#cmReconf').addEventListener('click', cmAbrir);
+      $('#cmBaixar').addEventListener('click', async () => {
+        const r3 = await window.fiscocont.fiscal.baixarSpedCorrigido();
+        if (r3 && r3.error) toast(r3.error, true); else if (r3 && !r3.canceled) toast('SPED corrigido salvo.');
+      });
+    }
+    $('#btnCorrMaca').addEventListener('click', cmAbrir);
+
 
     // ---- painéis do Corretor: esconde os outros ao abrir um
     const CORR_PAINEIS = ['#corrSpedEmpty', '#corrSpedFrame', '#corrSpedResumo', '#corrDifal', '#corrSimples', '#corrLote', '#corrIcmsXml',
-      '#corrValXml', '#corrEstST', '#corrAcum', '#corrCad', '#corrDesc', '#corrTudo'];
+      '#corrValXml', '#corrEstST', '#corrAcum', '#corrCad', '#corrMaca', '#corrDesc', '#corrTudo'];
     const corrSoMostra = (id) => CORR_PAINEIS.forEach((x) => { const el = $(x); if (el) el.hidden = x !== id; });
     const fmR = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     async function corrPedeXmls() {
