@@ -1861,6 +1861,64 @@ ipcMain.handle('admin:radarAnalisar', async (_evt, { efdc, fiscal, xml }) => {
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+// ---------------------------------------------------------------- Crédito de PIS/COFINS sobre frete FOB (Admin · teste)
+let _fpUltimo = null;   // { args, html, nome }
+ipcMain.handle('admin:fpPickXmls', async () => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'Selecione os .zip com os CT-e e as NF-e de compra',
+    properties: ['openFile', 'multiSelections'], filters: [{ name: 'ZIP', extensions: ['zip'] }] });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  return { paths: r.filePaths };
+});
+ipcMain.handle('admin:fpPickEfd', async () => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'EFD-Contribuições do período (opcional)',
+    properties: ['openFile'], filters: [{ name: 'EFD-Contribuições', extensions: ['txt'] }] });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  return { path: r.filePaths[0] };
+});
+ipcMain.handle('admin:fpAnalisar', async (_evt, { xmls, efd, cnpj, excluirIcms }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!Array.isArray(xmls) || !xmls.length) return { error: 'Selecione os .zip com os CT-e e as NF-e.' };
+  const stamp = Date.now();
+  const jsonOut = path.join(os.tmpdir(), `fc_fp_${stamp}.json`);
+  const htmlOut = path.join(os.tmpdir(), `fc_fp_${stamp}.html`);
+  const args = ['frete-pis', '--xmls', ...xmls];
+  if (efd) args.push('--efd', efd);
+  const c = String(cnpj || '').replace(/\D/g, '');
+  if (c) args.push('--cnpj', c);
+  if (excluirIcms === false) args.push('--manter-icms');
+  try {
+    await runFiscal([...args, '--json', jsonOut, '--html', htmlOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    const html = fs.readFileSync(htmlOut, 'utf-8');
+    if (_fpUltimo && _fpUltimo.html && _fpUltimo.html !== htmlOut) fs.unlink(_fpUltimo.html, () => {});
+    _fpUltimo = { args, html: htmlOut, nome: res.empresa || res.cnpj || '' };
+    return { ok: true, res, html };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('admin:fpExportar', async (_evt, { formato }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!_fpUltimo) return { error: 'Calcule o crédito primeiro.' };
+  const ext = formato === 'xlsx' ? 'xlsx' : 'html';
+  const base = `Credito-PIS-COFINS-Frete-${String(_fpUltimo.nome || '').replace(/[^\w-]+/g, '_')}`.replace(/_+$/, '');
+  const r = await dialog.showSaveDialog(mainWindow, { title: ext === 'xlsx' ? 'Salvar Excel' : 'Salvar HTML',
+    defaultPath: `${base}.${ext}`, filters: [{ name: ext === 'xlsx' ? 'Planilha Excel' : 'Página HTML', extensions: [ext] }] });
+  if (r.canceled || !r.filePath) return { canceled: true };
+  try {
+    if (ext === 'html') fs.copyFileSync(_fpUltimo.html, r.filePath);
+    else {
+      const jsonOut = path.join(os.tmpdir(), `fc_fpx_${Date.now()}.json`);
+      await runFiscal([..._fpUltimo.args, '--json', jsonOut, '--xlsx', r.filePath], jsonOut);
+      const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
+      if (res.erro) return { error: res.erro };
+    }
+    shell.openPath(r.filePath);
+    return { ok: true, path: r.filePath };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
 // ---------------------------------------------------------------- Apuração Assistida IBS/CBS (Reforma Tributária) — equipe
 // Lê os XMLs (.zip) de NF-e/NFC-e, apura débitos e créditos de IBS/CBS e confere CST/cClassTrib com a tabela oficial.
 let _rtcUltimo = null;   // { args, html, nome }

@@ -2974,6 +2974,9 @@ def main(argv):
     if modo == 'aud-tributacao':
         import auditoria_tributacao as _at
         return _at.main_cli(argv[1:])
+    if modo == 'frete-pis':
+        import frete_pis as _fp
+        return _fp.main_cli(argv[1:])
     if modo == 'apuracao-rtc':
         import apuracao_rtc as _rtc
         return _rtc.main_cli(argv[1:])

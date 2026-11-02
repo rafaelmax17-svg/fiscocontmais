@@ -337,6 +337,10 @@
         <svg viewBox="0 0 24 24" class="ic"><rect x="5" y="4" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9 4V3h6v1M8.5 11.5l2 2 3.5-4M9 17h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Levantamento Legalização</span>
       </button>
+      <button class="nav-item nav-item-adm" data-group="admin-only" data-view="admin-frete-pis">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M3 7h11v8H3zM14 10h4l3 3v2h-7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="7" cy="17" r="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="17.5" cy="17" r="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        <span>Crédito PIS/COFINS · Frete FOB</span>
+      </button>
     </nav>
 
     <div class="side-foot">
@@ -1281,6 +1285,30 @@
           <p class="rtc-lei">LC 214/2025 — art. 46 (apuração assistida), art. 47 (créditos), art. 57 (uso ou consumo pessoal) e art. 343 e seguintes (2026, ano de teste).</p>
         </div>
         <iframe id="rtcFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <!-- Admin (teste): Crédito de PIS/COFINS sobre frete FOB — CT-e × itens das NF-e transportadas -->
+      <div class="view adm-view" id="view-admin-frete-pis" hidden>
+        <div class="fiscal-bar adm-bar">
+          <button class="act inv-export adm-btn" id="btnFpXmls">CT-e e NF-e (.zip)</button>
+          <button class="act inv-export adm-btn" id="btnFpEfd" title="Opcional: compara com o crédito já tomado (D101/D105)">EFD-Contribuições (opcional)</button>
+          <input id="fpCnpj" class="rtc-sel" placeholder="CNPJ da empresa (opcional)" style="width:190px">
+          <label style="font-size:12.5px;display:flex;align-items:center;gap:6px"><input type="checkbox" id="fpExclIcms" checked> Excluir ICMS do CT-e da base</label>
+          <span class="adm-sel" id="fpSel" hidden></span>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnFpHtml" disabled>Exportar HTML</button>
+          <button class="act inv-export" id="btnFpXlsx" disabled>Exportar Excel</button>
+          <button class="act adm-go" id="btnFpRodar" disabled>Calcular crédito</button>
+        </div>
+        <div class="fiscal-empty adm-empty" id="fpVazio">
+          <h2>Crédito de PIS/COFINS sobre frete FOB</h2>
+          <p>Selecione os <b>.zip com os CT-e</b> e as <b>NF-e de compra</b> (podem estar no mesmo zip). Entram só os CT-e em que a
+          empresa é a <b>tomadora do serviço</b> (frete FOB). O frete de cada CT-e é rateado pelo valor dos itens <b>tributados</b> das NF-e
+          transportadas, pelo CST de PIS do fornecedor; monofásico, alíquota zero e isento não geram crédito (Lei 10.833/2003, art. 3º, I, "b",
+          e §2º, II). Item com CST tributado e NCM de monofásico fica <b>"Verificar"</b>, fora da base. Com a EFD-Contribuições, mostra o que já
+          foi tomado e a diferença. Só regime não cumulativo. Nenhum arquivo é alterado.</p>
+        </div>
+        <iframe id="fpFrame" class="fiscal-frame" hidden></iframe>
       </div>
 
       <div class="view adm-view" id="view-admin-audam" hidden>

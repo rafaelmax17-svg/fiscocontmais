@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.48
+
+- **Crédito de PIS/COFINS sobre frete FOB** (Módulos Admin · teste): lê os CT-e e as NF-e de compra (.zip), considera só o CT-e em que a empresa (raiz do CNPJ) é a tomadora e rateia o frete pelo valor dos itens tributados das NF-e transportadas, pelo CST de PIS do fornecedor (01 tributado; 02/03/04 monofásico; 05 ST; 06/07/08 alíquota zero/isento; fornecedor do Simples = tributado). CST tributado com NCM da lista de monofásicos (Tabela 4.3.10) e CST 09/49/99 ficam "Verificar", fora da base, com o crédito adicional possível à parte. ICMS do CT-e excluído da base por padrão (opção na tela). Crédito 1,65% + 7,6% (não cumulativo). Com a EFD-Contribuições, compara com D101/D105 do CT-e e mostra a diferença. Pendências: NF-e sem XML no lote, CT-e sem NF-e, CT-e CIF à parte. Exporta HTML e Excel. Base: Lei 10.833/2003 e Lei 10.637/2002, art. 3º, I, "b", e §2º, II.
+
 ## 2.1.37
 
 - Módulo renomeado para **Análise Tributária** (menu, tela, HTML e Excel).

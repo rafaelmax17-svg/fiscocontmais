@@ -575,6 +575,7 @@ function switchView(name) {
   if (name === 'admin-evo') { $('#view-admin-evo').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-radar') { $('#view-admin-radar').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-legal') { $('#view-admin-legal').hidden = false; $('#empty').hidden = true; return; }
+  if (name === 'admin-frete-pis') { $('#view-admin-frete-pis').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'historico') { $('#view-historico').hidden = false; $('#empty').hidden = true; loadHistoricoEmpresas(); return; }
   if (name === 'lote-balancetes') { $('#view-lote-balancetes').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'conciliacao') { $('#view-conciliacao').hidden = false; $('#empty').hidden = true; return; }
@@ -6018,6 +6019,48 @@ function audSelecao() {
   $('#btnAudRodar').disabled = !AUDAM.sped.length;
 }
 
+// ---- Crédito de PIS/COFINS sobre frete FOB (Admin · teste)
+const FP = { xmls: [], efd: '' };
+function fpInit() {
+  const adm = window.fiscocont && window.fiscocont.admin;
+  if (!adm || !adm.fpAnalisar || !$('#btnFpXmls')) return;
+  const sel = () => {
+    const p = [];
+    if (FP.xmls.length) p.push(`<span>${FP.xmls.length} zip · ${esc(FP.xmls.map((x) => x.split(/[\\/]/).pop()).join(', ')).slice(0, 90)}</span>`);
+    if (FP.efd) p.push(`<span>EFD · ${esc(FP.efd.split(/[\\/]/).pop())}</span>`);
+    $('#fpSel').hidden = !p.length; $('#fpSel').innerHTML = p.join(' ');
+    $('#btnFpRodar').disabled = !FP.xmls.length;
+  };
+  $('#btnFpXmls').addEventListener('click', async () => {
+    const r = await adm.fpPickXmls(); if (!r || r.canceled) return; if (r.error) { toast(r.error, true); return; }
+    FP.xmls = r.paths; $('#btnFpXmls').classList.add('ok'); sel();
+  });
+  $('#btnFpEfd').addEventListener('click', async () => {
+    const r = await adm.fpPickEfd(); if (!r || r.canceled) return; if (r.error) { toast(r.error, true); return; }
+    FP.efd = r.path; $('#btnFpEfd').classList.add('ok'); sel();
+  });
+  $('#btnFpRodar').addEventListener('click', async () => {
+    overlay(true, 'Lendo os CT-e e as NF-e e calculando o crédito…');
+    try {
+      const r = await adm.fpAnalisar({ xmls: FP.xmls, efd: FP.efd, cnpj: $('#fpCnpj').value, excluirIcms: $('#fpExclIcms').checked });
+      overlay(false);
+      if (!r || r.error) { toast((r && r.error) || 'Falha no cálculo.', true); return; }
+      $('#fpVazio').hidden = true; const fr = $('#fpFrame'); fr.hidden = false; fr.srcdoc = r.html;
+      $('#btnFpHtml').disabled = false; $('#btnFpXlsx').disabled = false;
+      const t = r.res.totais || {};
+      toast(`${r.res.qtd.fob} CT-e FOB · crédito R$ ${(t.credito || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+    } catch (e) { overlay(false); toast('Falha: ' + e.message, true); }
+  });
+  const exp = async (formato) => {
+    if (formato === 'xlsx') overlay(true, 'Montando o Excel…');
+    const r = await adm.fpExportar({ formato }); overlay(false);
+    if (!r || r.canceled) return; if (r.error) { toast(r.error, true); return; }
+    toast(formato === 'xlsx' ? 'Excel salvo.' : 'HTML salvo.');
+  };
+  $('#btnFpHtml').addEventListener('click', () => exp('html'));
+  $('#btnFpXlsx').addEventListener('click', () => exp('xlsx'));
+}
+
 // ---- Apuração Assistida IBS/CBS (Reforma Tributária) — equipe
 const RTC = { xmls: [], sped: '' };
 function rtcInit() {
@@ -6423,6 +6466,7 @@ function initAdminModulos() {
   audInit();
   atribInit();
   rtcInit();
+  fpInit();
   evoInit();
   const adm = window.fiscocont && window.fiscocont.admin;
   if (!adm) return;
