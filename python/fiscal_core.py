@@ -1342,6 +1342,12 @@ def gerar_desoneracao_html(cf):
 # Pesquisa de NF-e nas listas da Conferência ICMS Desonerado: filtra na hora por número, fornecedor, chave, data ou valor
 # (ignora acentos, pontos e traços) e mostra quantas notas sobraram e o ICMS desonerado delas.
 _NFBUSCA = r"""<style>
+.docwrap table{width:100%;border-collapse:collapse;font-size:12.5px}
+.docwrap thead th{text-align:left;color:var(--ink2,#64748b);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;padding:9px 10px;border-bottom:1px solid var(--line,#e5e9f1)}
+.docwrap thead th.num,.docwrap td.num{text-align:right}
+.docwrap td{padding:8px 10px;border-bottom:1px solid var(--line,#e5e9f1);font-variant-numeric:tabular-nums}
+.docwrap tbody tr:hover td{background:rgba(99,102,241,.05)}
+.docwrap td:nth-child(4){font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;color:#475069;word-break:break-all}
 .nfbusca{display:flex;align-items:center;gap:10px;margin:4px 0 12px;padding:9px 14px;border:1px solid #dfe3ee;border-radius:12px;background:#f8fafc;
  transition:border-color .2s,box-shadow .2s}
 .nfbusca:focus-within{border-color:#e8632b;box-shadow:0 0 0 4px rgba(232,99,43,.14);background:#fff}
