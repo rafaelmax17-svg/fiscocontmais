@@ -896,6 +896,15 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .dl-badge{display:inline-block;font-size:10px;font-weight:700;border-radius:6px;padding:1px 7px;margin-left:4px;vertical-align:1px}
 .dl-badge.mat{background:#eef0ff;color:#1f2a5a}
 .dl-badge.fil{background:#fff1e8;color:#c2410c}
+.dl-badge.pro{background:#efeafe;color:#5b3fd1}
+.dl-acesso{flex:1;display:flex;gap:8px;align-items:flex-start;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;font-size:12.5px;transition:border-color .2s,background .2s}
+.dl-acesso small{display:block;color:var(--ink2);font-size:11px;margin-top:3px;font-weight:400}.dl-acesso input{margin-top:3px}
+.dl-acesso:has(input:checked){border-color:#4f46e5;background:#f3f2ff}
+.dl-proc-st{border-radius:8px;padding:11px 13px;font-size:12.5px;margin-bottom:12px;line-height:1.45;animation:fsAnIn .3s both}
+.dl-proc-st b{display:block;font-size:13px;margin-bottom:2px}
+.dl-proc-st.ok{background:#e9f8f1;border:1px solid #b7e6cf;color:#0a6b47}.dl-proc-st.er{background:#fdecef;border:1px solid #f6c3cc;color:#a51c34}
+.dl-proc-st.vf{background:#fff7e6;border:1px solid #f5d69a;color:#8a5a00}
+.dl-proc-inf{background:var(--bg,#f4f6fb);border-radius:8px;padding:10px 12px;font-size:11.5px;color:var(--ink2);margin-bottom:14px;line-height:1.5}
 
 /* ⚡ Corrigir monofásico (EFD-Contribuições) e botões ⚡ pequenos */
 .act.inv-export.btn-auto{padding:6px 10px;font-size:12px;background:linear-gradient(90deg,#fff7e0,#fff);color:#8a5a06;border-color:#eda100}

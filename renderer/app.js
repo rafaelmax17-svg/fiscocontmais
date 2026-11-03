@@ -1003,14 +1003,14 @@ function bindFiscal() {
       let corBadge = 'background:#eaf3de;color:#27500a';
       if (diasRestantes < 0) corBadge = 'background:#fcebeb;color:#791f1f';
       else if (diasRestantes <= 30) corBadge = 'background:#faeeda;color:#854f0b';
-      const validadeTexto = diasRestantes < 0 ? `${e.validade} · vencido` : (diasRestantes <= 30 ? `${e.validade} · vence em ${diasRestantes} dias` : e.validade);
+      const validadeTexto = !e.validade ? '—' : diasRestantes < 0 ? `${e.validade} · vencido` : (diasRestantes <= 30 ? `${e.validade} · vence em ${diasRestantes} dias` : e.validade);
       const ultimoTexto = e.ultimoDownload ? new Date(e.ultimoDownload).toLocaleString('pt-BR') : 'nunca';
       return `<tr style="border-top:1px solid var(--line)">
-        <td style="padding:9px 8px">${_esc(e.razaoSocial)} <span class="dl-badge ${e.tipo === 'filial' ? 'fil' : 'mat'}">${e.tipo === 'filial' ? 'Filial' : 'Matriz'}</span>${e.tipo === 'filial' ? `<div style="font-size:10.5px;color:var(--ink2)">certificado da matriz ${_esc(_fmtCnpjJs(e.cnpjCert))}</div>` : ''}</td>
+        <td style="padding:9px 8px">${_esc(e.razaoSocial)} <span class="dl-badge ${e.tipo === 'filial' ? 'fil' : e.tipo === 'procuracao' ? 'pro' : 'mat'}">${e.tipo === 'filial' ? 'Filial' : e.tipo === 'procuracao' ? 'Procuração' : 'Matriz'}</span>${e.tipo === 'filial' ? `<div style="font-size:10.5px;color:var(--ink2)">certificado da matriz ${_esc(_fmtCnpjJs(e.cnpjCert))}</div>` : ''}${e.tipo === 'procuracao' ? `<div style="font-size:10.5px;color:var(--ink2)">${e.procuradorNome ? `certificado do escritório · ${_esc(e.procuradorNome)}` : '<span style="color:#a51c34">certificado do escritório não encontrado</span>'}</div>` : ''}</td>
         <td style="padding:9px 8px;color:var(--ink2)">${_esc(_fmtCnpjJs(e.cnpj))}</td>
         <td style="padding:9px 8px"><span style="${corBadge};font-size:11px;padding:2px 9px;border-radius:6px">${_esc(validadeTexto)}</span></td>
         <td style="padding:9px 8px;color:var(--ink2)">${_esc(ultimoTexto)}</td>
-        <td style="padding:9px 8px;text-align:right;white-space:nowrap">${e.tipo !== 'filial' ? `<button class="act inv-export" data-filial="${_esc(e.id)}" style="padding:3px 10px;font-size:11px" title="Cadastrar uma filial usando este mesmo certificado">+ Filial</button> ` : ''}<button class="act inv-export" data-remover="${_esc(e.id)}" style="padding:3px 10px;font-size:11px">Remover</button></td>
+        <td style="padding:9px 8px;text-align:right;white-space:nowrap">${e.tipo === 'matriz' || !e.tipo ? `<button class="act inv-export" data-filial="${_esc(e.id)}" style="padding:3px 10px;font-size:11px" title="Cadastrar uma filial usando este mesmo certificado">+ Filial</button> ` : ''}<button class="act inv-export" data-remover="${_esc(e.id)}" style="padding:3px 10px;font-size:11px">Remover</button></td>
       </tr>`;
     }).join('');
     corpo.querySelectorAll('button[data-filial]').forEach((btn) => {
@@ -1061,7 +1061,75 @@ function bindFiscal() {
       $('#dlCertCnpjFilial').value = '';
       document.querySelector('input[name="dlCertTipo"][value="matriz"]').checked = true;
       $('#btnDlCertSalvar').hidden = true;
+      document.querySelector('input[name="dlAcesso"][value="proprio"]').checked = true;
+      $('#dlProcCnpj').value = ''; $('#dlProcRazao').value = ''; $('#dlProcStatus').hidden = true;
+      dlAcessoMostra();
       $('#dlModalCert').hidden = false;
+    });
+
+    // ---- Por procuração: certificado do escritório + CNPJ do cliente (cnpjConsulta no ADN)
+    let dlProcOk = '';                  // CNPJ que passou no teste
+    function dlAcessoMostra() {
+      const proc = (document.querySelector('input[name="dlAcesso"]:checked') || {}).value === 'procuracao';
+      $('#dlProcBox').hidden = !proc; $('#dlCertProprioBox').hidden = proc;
+      $('#btnDlCertVerificar').hidden = proc; $('#btnDlCertSalvar').hidden = proc || !dlCertInfo;
+      $('#btnDlProcTestar').hidden = !proc; $('#btnDlProcSalvar').hidden = !proc || !dlProcOk;
+      if (proc) dlProcCarregar();
+    }
+    async function dlProcCarregar() {
+      const lst = await window.fiscocont.fiscal.procProcuradores();
+      const sel = $('#dlProcCert'); const atual = sel.value;
+      const liddera = (lst || []).find((x) => /LIDDERA/i.test(x.razaoSocial));
+      sel.innerHTML = (lst || []).map((x) => `<option value="${_esc(x.id)}">${_esc(x.razaoSocial)} · CNPJ ${_esc(_fmtCnpjJs(x.cnpj))} · válido até ${_esc(String(x.validade || '').split('-').reverse().join('/'))}</option>`).join('');
+      if (atual && (lst || []).some((x) => x.id === atual)) sel.value = atual; else if (liddera) sel.value = liddera.id;
+      $('#dlProcSemCert').hidden = !!(lst || []).length; $('#btnDlProcTestar').disabled = !(lst || []).length;
+    }
+    function dlProcStatus(cls, titulo, txt) {
+      const b = $('#dlProcStatus'); b.className = 'dl-proc-st ' + cls; b.hidden = false;
+      b.innerHTML = `<b>${_esc(titulo)}</b>${_esc(txt)}`;
+    }
+    const dlProcInvalida = () => { dlProcOk = ''; $('#btnDlProcSalvar').hidden = true; $('#dlProcStatus').hidden = true; };
+    document.querySelectorAll('input[name="dlAcesso"]').forEach((r) => r.addEventListener('change', dlAcessoMostra));
+    $('#dlProcCert').addEventListener('change', dlProcInvalida);
+    $('#dlProcCnpj').addEventListener('input', (ev) => {
+      const d = ev.target.value.replace(/\D/g, '').slice(0, 14);
+      ev.target.value = d.length === 14 ? _fmtCnpjJs(d) : d;
+      dlProcInvalida();
+    });
+    $('#btnDlProcBuscar').addEventListener('click', async () => {
+      const bt = $('#btnDlProcBuscar'); bt.disabled = true; bt.textContent = 'Buscando…';
+      const x = await window.fiscocont.fechamento.cnpj($('#dlProcCnpj').value);
+      bt.disabled = false; bt.textContent = 'Buscar na Receita';
+      if (!x || x.error) { toast((x && x.error) || 'Não consegui consultar o CNPJ.', true); return; }
+      $('#dlProcRazao').value = x.nome;
+    });
+    $('#btnDlProcTestar').addEventListener('click', async () => {
+      const cnpj = $('#dlProcCnpj').value.replace(/\D/g, '');
+      if (cnpj.length !== 14) { toast('Digite o CNPJ completo da empresa cliente.', true); return; }
+      overlay(true, 'Testando a procuração no Ambiente Nacional da NFS-e…');
+      const r = await window.fiscocont.fiscal.procTestar($('#dlProcCert').value, cnpj);
+      overlay(false);
+      if (r.error) {
+        dlProcOk = ''; $('#btnDlProcSalvar').hidden = true;
+        if (r.codigo === 'E2245') dlProcStatus('er', 'Procuração não encontrada (E2245)', r.error.replace(/^Procuração não encontrada \(E2245\)\.\s*/, '') + ' Peça ao cliente para cadastrar a procuração no Portal de Serviços da Receita Federal e teste de novo.');
+        else dlProcStatus(r.codigo === 'SEM_MOTIVO' ? 'vf' : 'er', r.codigo === 'SEM_MOTIVO' ? 'Verificar: a Receita não confirmou' : 'Teste recusado', r.error);
+        return;
+      }
+      dlProcOk = cnpj; $('#btnDlProcSalvar').hidden = false;
+      const nome = $('#dlProcRazao').value.trim() || 'esta empresa';
+      dlProcStatus('ok', '✓ Procuração confirmada pelo ADN', `Consulta de teste aceita${r.tipoConsulta ? ` (TipoConsulta = ${r.tipoConsulta})` : ''}. As notas de ${nome} podem ser baixadas com o certificado do escritório.${r.documentos ? '' : ' Ainda não há NFS-e no Ambiente Nacional para este CNPJ.'}`);
+    });
+    $('#btnDlProcSalvar').addEventListener('click', async () => {
+      const cnpj = $('#dlProcCnpj').value.replace(/\D/g, '');
+      if (!dlProcOk || dlProcOk !== cnpj) { toast('Teste a procuração antes de salvar.', true); return; }
+      if (!$('#dlProcRazao').value.trim()) { toast('Informe a razão social (use "Buscar na Receita").', true); return; }
+      overlay(true, 'Confirmando a procuração e salvando…');
+      const r = await window.fiscocont.fiscal.procSalvar($('#dlProcCert').value, cnpj, $('#dlProcRazao').value);
+      overlay(false);
+      if (r.error) { toast(r.error, true); return; }
+      toast('Empresa cadastrada por procuração.');
+      $('#dlModalCert').hidden = true;
+      dlCarregarEmpresas();
     });
     document.querySelectorAll('input[name="dlCertTipo"]').forEach((r) => r.addEventListener('change', () => {
       $('#dlCertFilialBox').hidden = r.value !== 'filial' || !r.checked;

@@ -806,9 +806,31 @@
 
       <!-- Modal: cadastrar certificado -->
       <div id="dlModalCert" hidden style="position:fixed;inset:0;background:rgba(20,23,51,.45);display:flex;align-items:center;justify-content:center;z-index:500">
-        <div style="background:var(--panel);border-radius:12px;padding:22px 24px;width:420px;max-width:90vw">
-          <div style="font-size:15px;font-weight:600;margin-bottom:4px">Cadastrar certificado digital</div>
-          <div style="font-size:12px;color:var(--ink2);margin-bottom:18px">O certificado fica guardado com segurança nesta máquina — a senha nunca é salva em texto puro.</div>
+        <div style="background:var(--panel);border-radius:12px;padding:22px 24px;width:470px;max-width:92vw;max-height:94vh;overflow:auto">
+          <div style="font-size:15px;font-weight:600;margin-bottom:4px">Cadastrar empresa nas Baixas DF-e</div>
+          <div style="font-size:12px;color:var(--ink2);margin-bottom:14px">Escolha como o sistema vai acessar as notas desta empresa no ADN da NFS-e.</div>
+          <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:6px">Acesso às notas</label>
+          <div style="display:flex;gap:8px;margin-bottom:16px">
+            <label class="dl-acesso"><input type="radio" name="dlAcesso" value="proprio" checked><span><b>Certificado da empresa</b><small>Matriz ou filial, com o .pfx do cliente</small></span></label>
+            <label class="dl-acesso"><input type="radio" name="dlAcesso" value="procuracao"><span><b>Por procuração</b><small>Usa o certificado do escritório, sem o .pfx do cliente</small></span></label>
+          </div>
+
+          <div id="dlProcBox" hidden>
+            <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:5px">Certificado do procurador (quem recebeu a procuração)</label>
+            <select id="dlProcCert" style="width:100%;margin-bottom:6px"></select>
+            <div id="dlProcSemCert" hidden style="font-size:11.5px;color:#a51c34;margin-bottom:10px">Nenhum certificado de escritório cadastrado. Cadastre primeiro o e-CNPJ da Liddera em "Certificado da empresa" (como Matriz) e volte aqui.</div>
+            <label style="font-size:11px;color:var(--ink2);display:block;margin:8px 0 5px">CNPJ da empresa cliente</label>
+            <div style="display:flex;gap:8px;margin-bottom:12px">
+              <input type="text" id="dlProcCnpj" placeholder="00.000.000/0000-00" maxlength="18" style="flex:1">
+              <button class="act inv-export" id="btnDlProcBuscar" style="padding:0 14px">Buscar na Receita</button>
+            </div>
+            <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:5px">Razão social</label>
+            <input type="text" id="dlProcRazao" style="width:100%;margin-bottom:12px">
+            <div id="dlProcStatus" hidden class="dl-proc-st"></div>
+            <div class="dl-proc-inf">A procuração é cadastrada pelo cliente (outorgante) no Portal de Serviços da Receita Federal, para o CNPJ do certificado do escritório. Sem ela, a Receita recusa a consulta (erro E2245). A empresa só é salva depois que o teste passa.</div>
+          </div>
+
+          <div id="dlCertProprioBox">
 
           <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:5px">Arquivo do certificado (.pfx)</label>
           <div style="display:flex;gap:8px;margin-bottom:14px">
@@ -838,10 +860,13 @@
               <div style="font-size:11px;color:var(--ink2);margin-top:5px">Usa o certificado da matriz para baixar só as notas da filial — precisa ter a mesma raiz (8 primeiros dígitos).</div>
             </div>
           </div>
+          </div>
 
           <div style="display:flex;justify-content:flex-end;gap:10px">
             <button class="act inv-export" id="btnDlCertCancelar">Cancelar</button>
             <button class="act inv-export" id="btnDlCertVerificar">Verificar</button>
+            <button class="act inv-export" id="btnDlProcTestar" hidden>Testar procuração</button>
+            <button class="act inv-export" id="btnDlProcSalvar" style="background:#1f2a5a;color:#fff;border-color:transparent" hidden>Salvar empresa</button>
             <button class="act inv-export" id="btnDlCertSalvar" style="background:#1f2a5a;color:#fff;border-color:transparent" hidden>Salvar empresa</button>
           </div>
         </div>

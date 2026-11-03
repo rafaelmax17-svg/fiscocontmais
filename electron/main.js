@@ -921,7 +921,9 @@ ipcMain.handle('fiscal:certSalvar', async (_evt, { pfxPath, senha, info, tipo, c
     } else {
       return { error: 'A criptografia segura do sistema operacional não está disponível nesta máquina — não vou salvar a senha sem ela.' };
     }
+    const antigos = indice.empresas.filter((e) => e.cnpj === cnpjAlvo && e.tipo !== 'procuracao').map((e) => e.id);
     indice.empresas = indice.empresas.filter((e) => e.cnpj !== cnpjAlvo); // recadastro substitui o antigo
+    for (const e of indice.empresas) if (e.tipo === 'procuracao' && antigos.includes(e.procuradorId)) e.procuradorId = id;  // certificado do escritório renovado
     indice.empresas.push({
       id, cnpj: cnpjAlvo, razaoSocial: fil ? fil.razaoSocial : info.razao_social, validade: info.validade,
       tipo: fil ? 'filial' : 'matriz', cnpjCert: info.cnpj,
@@ -934,10 +936,14 @@ ipcMain.handle('fiscal:certSalvar', async (_evt, { pfxPath, senha, info, tipo, c
 
 ipcMain.handle('fiscal:certListar', () => {
   const indice = _lerIndiceCert();
-  return indice.empresas.map((e) => ({
-    id: e.id, cnpj: e.cnpj, razaoSocial: e.razaoSocial, validade: e.validade,
-    ultimoDownload: e.ultimoDownload, tipo: e.tipo || 'matriz', cnpjCert: e.cnpjCert || e.cnpj,
-  }));
+  return indice.empresas.map((e) => {
+    const pr = e.tipo === 'procuracao' ? indice.empresas.find((x) => x.id === e.procuradorId) : null;
+    return {
+      id: e.id, cnpj: e.cnpj, razaoSocial: e.razaoSocial, validade: pr ? pr.validade : e.validade,
+      ultimoDownload: e.ultimoDownload, tipo: e.tipo || 'matriz', cnpjCert: pr ? (pr.cnpjCert || pr.cnpj) : (e.cnpjCert || e.cnpj),
+      procuradorNome: pr ? pr.razaoSocial : (e.tipo === 'procuracao' ? '' : undefined),
+    };
+  });
 });
 
 // "+ Filial" numa empresa já cadastrada: reaproveita o certificado e a senha (já cifrada) da matriz.
@@ -968,13 +974,76 @@ ipcMain.handle('fiscal:certRemover', (_evt, id) => {
     const indice = _lerIndiceCert();
     const alvo = indice.empresas.find((e) => e.id === id);
     if (!alvo) return { error: 'Empresa não encontrada.' };
-    for (const arq of [alvo.pfxArquivo, `${id}.senha`]) {
+    const dependem = indice.empresas.filter((e) => e.tipo === 'procuracao' && e.procuradorId === id);
+    if (dependem.length) return { error: `Este é o certificado do procurador de ${dependem.length} empresa(s) cadastrada(s) por procuração. Remova essas empresas antes, ou cadastre o certificado novo do escritório (as procurações passam para ele).` };
+    for (const arq of [alvo.pfxArquivo, `${id}.senha`].filter(Boolean)) {
       const p = path.join(_certDir(), arq);
       if (fs.existsSync(p)) fs.unlinkSync(p);
     }
     indice.empresas = indice.empresas.filter((e) => e.id !== id);
     _salvarIndiceCert(indice);
     return { ok: true };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
+// ---- Por procuração (desde 01/11/2026 o Sistema Nacional da NFS-e aceita acesso às APIs em nome de terceiros):
+// o certificado do escritório (e-CNPJ da Liddera, cadastrado como Matriz) consulta o ADN com cnpjConsulta = CNPJ do
+// cliente. A procuração é outorgada pelo cliente no Portal de Serviços da Receita Federal; sem ela o ADN responde E2245.
+function _credDe(indice, empresa) {
+  let dono = empresa;
+  if (empresa.tipo === 'procuracao') {
+    dono = indice.empresas.find((e) => e.id === empresa.procuradorId);
+    if (!dono) return { error: 'O certificado do escritório (procurador) desta empresa não está mais cadastrado. Cadastre o e-CNPJ do escritório e cadastre a procuração de novo.' };
+  }
+  if (dono.validade && new Date(dono.validade) < new Date()) {
+    return { error: `O certificado ${empresa.tipo === 'procuracao' ? 'do escritório (procurador)' : 'dessa empresa'} está VENCIDO desde ${dono.validade.split('-').reverse().join('/')} — cadastre um certificado válido antes de baixar.`, vencido: true };
+  }
+  const senhaPath = path.join(_certDir(), `${dono.id}.senha`);
+  if (!fs.existsSync(senhaPath)) return { error: 'Senha do certificado não encontrada — cadastre o certificado novamente.' };
+  try { return { pfxPath: path.join(_certDir(), dono.pfxArquivo), senha: safeStorage.decryptString(fs.readFileSync(senhaPath)), dono }; }
+  catch (_) { return { error: 'Não consegui ler a senha salva com segurança nesta máquina.' }; }
+}
+ipcMain.handle('fiscal:procProcuradores', () => {
+  const indice = _lerIndiceCert();
+  return indice.empresas.filter((e) => (e.tipo || 'matriz') === 'matriz')
+    .map((e) => ({ id: e.id, cnpj: e.cnpj, razaoSocial: e.razaoSocial, validade: e.validade }));
+});
+async function _procTestar(procuradorId, cnpj) {
+  const indice = _lerIndiceCert();
+  const pr = indice.empresas.find((e) => e.id === procuradorId && (e.tipo || 'matriz') === 'matriz');
+  if (!pr) return { error: 'Escolha o certificado do escritório (procurador).' };
+  const dig = String(cnpj || '').replace(/\D/g, '');
+  if (!_cnpjValido(dig)) return { error: 'CNPJ da empresa inválido — confira os 14 dígitos.' };
+  if (dig.slice(0, 8) === String(pr.cnpj).slice(0, 8)) return { error: 'Esse CNPJ tem a mesma raiz do certificado do escritório — cadastre como Matriz ou Filial, sem procuração.' };
+  const cred = _credDe(indice, pr);
+  if (cred.error) return { error: cred.error };
+  const jsonTmp = path.join(os.tmpdir(), `fc_proc_${Date.now()}.json`);
+  try {
+    await runFiscal(['testar-procuracao', cred.pfxPath, '--senha', cred.senha, '--cnpj-consulta', dig, '--json', jsonTmp], jsonTmp);
+    const r = JSON.parse(fs.readFileSync(jsonTmp, 'utf-8'));
+    fs.unlink(jsonTmp, () => {});
+    if (!r.ok) return { error: r.erro, codigo: r.codigo };
+    return { ok: true, tipoConsulta: r.tipo_consulta, documentos: r.documentos };
+  } catch (e) { return { error: String(e.message || e) }; }
+}
+ipcMain.handle('fiscal:procTestar', (_evt, { procuradorId, cnpj }) => _procTestar(procuradorId, cnpj));
+ipcMain.handle('fiscal:procSalvar', async (_evt, { procuradorId, cnpj, razaoSocial }) => {
+  try {
+    const nome = String(razaoSocial || '').trim().replace(/\s+/g, ' ').toUpperCase();
+    if (!nome) return { error: 'Informe a razão social da empresa.' };
+    const t = await _procTestar(procuradorId, cnpj);           // só salva com a procuração confirmada pelo ADN
+    if (t.error) return t;
+    const dig = String(cnpj).replace(/\D/g, '');
+    const indice = _lerIndiceCert();
+    const pr = indice.empresas.find((e) => e.id === procuradorId);
+    indice.empresas = indice.empresas.filter((e) => e.cnpj !== dig);
+    indice.empresas.push({
+      id: `${dig}_${Date.now()}`, cnpj: dig, razaoSocial: nome, tipo: 'procuracao', procuradorId,
+      cnpjCert: pr.cnpj, pfxArquivo: null, validade: null, ultimoNsu: 0, ultimoDownload: null,
+      procuracaoConfirmadaEm: new Date().toISOString(),
+    });
+    _salvarIndiceCert(indice);
+    return { ok: true, tipoConsulta: t.tipoConsulta };
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
@@ -1067,20 +1136,13 @@ ipcMain.handle('fiscal:nfseExportarHtml', async (_evt, { html, tipo, empresaNome
 // Baixa as NFS-e de UMA empresa no período. `tipo` distingue o que é motivo de PULAR a empresa
 // (certificado vencido, senha ausente, pasta não escolhida) de uma falha na baixa em si — o lote usa isso.
 async function _baixarNfseEmpresa(empresa, dataInicial, dataFinal, gerarPdf) {
-  if (empresa.validade && new Date(empresa.validade) < new Date()) {
-    return { error: `O certificado dessa empresa está VENCIDO desde ${empresa.validade.split('-').reverse().join('/')} — remova e cadastre um certificado válido antes de baixar.`, tipo: 'pulada' };
-  }
+  const cred = _credDe(_lerIndiceCert(), empresa);
+  if (cred.error) return { error: cred.error, tipo: 'pulada' };
   let pastaBase;
   try { pastaBase = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase; } catch (_) {}
   if (!pastaBase) return { error: 'Escolha a pasta onde salvar os documentos antes de baixar.', tipo: 'pulada' };
 
-  const senhaPath = path.join(_certDir(), `${empresa.id}.senha`);
-  if (!fs.existsSync(senhaPath)) return { error: 'Senha do certificado não encontrada — cadastre a empresa novamente.', tipo: 'pulada' };
-  let senha;
-  try { senha = safeStorage.decryptString(fs.readFileSync(senhaPath)); }
-  catch (e) { return { error: 'Não consegui ler a senha salva com segurança nesta máquina.', tipo: 'pulada' }; }
-
-  const pfxPath = path.join(_certDir(), empresa.pfxArquivo);
+  const { senha, pfxPath } = cred;
   const jsonTmp = path.join(os.tmpdir(), `fc_nfse_${Date.now()}.json`);
   try {
     // achado real (Rafael, 25/09): a tela hoje só tem o modo "por período"
@@ -1095,7 +1157,7 @@ async function _baixarNfseEmpresa(empresa, dataInicial, dataFinal, gerarPdf) {
       '--cnpj', empresa.cnpj, '--pasta', pastaBase, '--inicio', dataInicial, '--fim', dataFinal,
       '--nsu', '0', '--json', jsonTmp];
     if (gerarPdf === false) args.push('--sem-pdf');
-    if (empresa.tipo === 'filial') args.push('--cnpj-consulta', empresa.cnpj);
+    if (empresa.tipo === 'filial' || empresa.tipo === 'procuracao') args.push('--cnpj-consulta', empresa.cnpj);
     await runFiscal(args, jsonTmp);
     const resultado = JSON.parse(fs.readFileSync(jsonTmp, 'utf-8'));
     fs.unlink(jsonTmp, () => {});
@@ -1128,6 +1190,7 @@ function _manifCacheGravar(c) {
   try { fs.writeFileSync(_manifCachePath(), JSON.stringify(c)); } catch (_) {}
 }
 function _certDaEmpresa(empresa) {
+  if (empresa.tipo === 'procuracao') return { error: 'Esta empresa está cadastrada por procuração (só NFS-e). Para a Consulta Manifestação NF-e, cadastre o certificado da própria empresa.' };
   if (empresa.validade && new Date(empresa.validade) < new Date()) {
     return { error: `O certificado dessa empresa está VENCIDO desde ${empresa.validade.split('-').reverse().join('/')}. Cadastre um certificado válido nas Baixas DF-e.` };
   }

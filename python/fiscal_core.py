@@ -3147,6 +3147,15 @@ def main(argv):
         return 0
 
     # "baixar-nfse" — roda o download de NFS-e via ADN pra uma empresa/período.
+    if modo == 'testar-procuracao':
+        args = argv[2:]
+
+        def optp(name, default=None):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        r = testar_procuracao_adn(argv[1], optp('--senha', ''), optp('--cnpj-consulta', ''), homologacao=('--homologacao' in args))
+        _out(optp('--json', 'teste_procuracao.json'), json.dumps(r, ensure_ascii=False))
+        return 0
+
     if modo == 'baixar-nfse':
         if len(argv) < 2:
             print('uso: fiscal_core.py baixar-nfse CERTIFICADO.pfx --senha SENHA --empresa NOME --cnpj CNPJ --pasta PASTA_BASE --inicio AAAA-MM-DD --fim AAAA-MM-DD [--nsu N] [--homologacao] [--json saida.json]'); return 1
@@ -4661,6 +4670,54 @@ def garantir_pdf_nfse(pasta_empresa, chave, pasta_base=None):
     return pdf
 
 
+def testar_procuracao_adn(cert_path, senha, cnpj_consulta, homologacao=False):
+    """Consulta de teste ao ADN (só leitura, NSU 0) com cnpjConsulta de outra raiz: confirma se há procuração
+    da empresa para o titular do certificado. Swagger do ADN (01/11/2026): rejeição E2245 = não há procuração;
+    resposta aceita traz TipoConsulta = Procuracao; E2220 = autorizado, mas ainda sem documentos."""
+    import requests
+    cnpj = re.sub(r'\D', '', cnpj_consulta or '')
+    if len(cnpj) != 14:
+        return {'ok': False, 'erro': 'CNPJ da empresa inválido.'}
+    try:
+        cert_pem, key_pem, tmp_dir = _extrair_cert_chave_temp(cert_path, senha)
+    except Exception as e:
+        return {'ok': False, 'erro': f'Não consegui abrir o certificado do escritório: {e}'}
+    base_url = 'https://adn.producaorestrita.nfse.gov.br' if homologacao else 'https://adn.nfse.gov.br'
+    resp = None
+    try:
+        for accept in ('application/json', '*/*'):
+            try:
+                resp = requests.get(f'{base_url}/contribuintes/DFe/0?lote=true&cnpjConsulta={cnpj}', cert=(cert_pem, key_pem),
+                                    headers={'Accept': accept, 'Connection': 'close', 'User-Agent': 'FiscoCont+'}, timeout=45)
+            except requests.exceptions.RequestException as e:
+                return {'ok': False, 'erro': f'Não consegui conectar com a Receita: {e}'}
+            try:
+                dados = resp.json()
+            except ValueError:
+                dados = None
+            vazia = (resp.status_code == 400 and dados and dados.get('StatusProcessamento') == 'REJEICAO' and not dados.get('Erros'))
+            if not vazia:
+                break
+    finally:
+        try:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
+    erros = (dados or {}).get('Erros') or []
+    tipo = (dados or {}).get('TipoConsulta') or ''
+    cod = [e.get('Codigo') for e in erros]
+    if 'E2245' in cod:
+        e = next(x for x in erros if x.get('Codigo') == 'E2245')
+        return {'ok': False, 'codigo': 'E2245', 'erro': f'Procuração não encontrada (E2245). A Receita respondeu: "{e.get("Descricao", "")}"'}
+    if resp is not None and resp.status_code == 200 and (dados or {}).get('LoteDFe') is not None:
+        return {'ok': True, 'tipo_consulta': tipo, 'documentos': len(dados.get('LoteDFe') or [])}
+    if 'E2220' in cod:
+        return {'ok': True, 'tipo_consulta': tipo, 'documentos': 0}
+    if erros:
+        return {'ok': False, 'codigo': ','.join(c for c in cod if c), 'erro': 'A Receita recusou a consulta: ' + '; '.join(f'{e.get("Codigo")} {e.get("Descricao", "")}' for e in erros)}
+    return {'ok': False, 'codigo': 'SEM_MOTIVO', 'erro': f'A Receita respondeu {resp.status_code if resp is not None else "?"} sem informar o motivo. Tente de novo mais tarde. Resposta: {(resp.text if resp is not None else "")[:200]}'}
+
+
 def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome_empresa, cnpj_empresa,
                      nsu_inicial=0, homologacao=False, progresso=None, gerar_pdf=True, cnpj_consulta=None):
     """Baixa NFS-e (emitidas e recebidas) via ADN, filtrando pelo período
@@ -4820,7 +4877,13 @@ def baixar_nfse_adn(cert_path, senha, data_inicial, data_final, pasta_base, nome
                 erro = 'A Receita respondeu algo que não consegui interpretar (não é JSON válido).'
                 break
             if dados.get('Erros'):
-                erro = f'A Receita retornou erro: {dados["Erros"]}'
+                e2245 = next((e for e in dados['Erros'] if e.get('Codigo') == 'E2245'), None)
+                if e2245:
+                    erro = ('Sem procuração (E2245): a Receita informou que esta empresa não outorgou procuração ao titular '
+                            f'do certificado do escritório ("{e2245.get("Descricao", "")}"). A empresa precisa cadastrar a '
+                            'procuração no Portal de Serviços da Receita Federal (servicos.receitafederal.gov.br). Nada foi baixado.')
+                else:
+                    erro = f'A Receita retornou erro: {dados["Erros"]}'
                 break
 
             lote = dados.get('LoteDFe') or []
