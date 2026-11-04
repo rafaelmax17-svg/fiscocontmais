@@ -4141,12 +4141,15 @@ def ler_certificado_pfx(caminho, senha):
         raise ValueError('Certificado sem chave privada ou sem certificado válido — senha errada ou arquivo corrompido.')
 
     titular = certificado.subject.rfc4514_string()
-    m = _re.search(r':(\d{14})', titular)
-    cnpj = m.group(1) if m else ''
+    # e-CNPJ: "NOME:14 dígitos"; e-CPF: "NOME:11 dígitos" (ICP-Brasil). Achado real (Rafael, 04/11/2026): só o CNPJ
+    # era lido, o e-CPF ficava com documento vazio e o cadastro seguinte apagava o anterior (mesmo "documento" vazio).
+    m = _re.search(r':(\d{14})(?!\d)', titular)
+    m_cpf = None if m else _re.search(r':(\d{11})(?!\d)', titular)
+    cnpj = m.group(1) if m else (m_cpf.group(1) if m_cpf else '')
     m2 = _re.search(r'CN=([^:,]+)', titular)
     razao_social = m2.group(1).strip() if m2 else titular
     return {
-        'cnpj': cnpj, 'razao_social': razao_social,
+        'cnpj': cnpj, 'razao_social': razao_social, 'tipo_doc': 'CPF' if len(cnpj) == 11 else ('CNPJ' if cnpj else ''),
         'validade': certificado.not_valid_after_utc.strftime('%Y-%m-%d'),
         'titular_completo': titular,
     }
@@ -5054,6 +5057,12 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
 
     canc = {os.path.basename(p)[:-len('.CANCELADA.xml')] for p in caminhos if p.upper().endswith('.CANCELADA.XML')}
     caminhos = [p for p in caminhos if p.upper().endswith('.CANCELADA.XML') or os.path.basename(p)[:-4] not in canc]
+    # Achado real (Rafael, 04/11/2026 · Truck Center): a mesma nota aparecia 2 vezes no painel. O mesmo XML pode existir
+    # em mais de uma pasta do período (pasta do mês nos dois formatos, 10-2026 e 2026-10, ou a estrutura antiga): cada
+    # chave entra UMA vez só. A versão cancelada tem prioridade sobre a autorizada.
+    caminhos = sorted(caminhos, key=lambda p: (0 if p.upper().endswith('.CANCELADA.XML') else 1, p))
+    vistas = set()
+    duplicadas = 0
     notas = []
     outras = []
     for p in caminhos:
@@ -5064,6 +5073,11 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
             continue
         if not d['nnfse']:
             continue
+        chave_unica = d.get('chave') or ('n', d['nnfse'], d.get('prestador_cnpj'), (d.get('emissao') or '')[:10])
+        if chave_unica in vistas:
+            duplicadas += 1
+            continue
+        vistas.add(chave_unica)
         if dt_ini or dt_fim:
             try:
                 data_nota = _dt.strptime(d['emissao'][:10], '%Y-%m-%d').date()
@@ -5116,6 +5130,7 @@ def analisar_nfse(caminhos, cnpj_empresa, data_inicial=None, data_final=None):
         key=lambda n: n['emissao'], reverse=True)
 
     return {
+        'duplicadas_ignoradas': duplicadas,
         'total_notas': len(validas), 'total_valor': round(sum(n['vserv'] for n in validas), 2),
         'qtd_com_retencao': sum(1 for n in com_ret if not n['cancelada']),
         'valor_com_retencao': round(sum(n['vserv'] for n in com_ret if not n['cancelada']), 2),

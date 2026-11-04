@@ -898,6 +898,10 @@ function _dadosFilial(cnpjCert, razao, cnpjFilialBruto) {
 
 ipcMain.handle('fiscal:certSalvar', async (_evt, { pfxPath, senha, info, tipo, cnpjFilial }) => {
   try {
+    // achado real (Rafael, 04/11/2026): e-CPF ficava com documento vazio e o cadastro seguinte apagava o anterior
+    const doc = String((info && info.cnpj) || '').replace(/\D/g, '');
+    if (doc.length !== 14 && doc.length !== 11) return { error: 'Não consegui ler o CNPJ nem o CPF de dentro do certificado — confira se é um certificado A1 (e-CNPJ ou e-CPF) da ICP-Brasil.' };
+    if (doc.length === 11 && tipo === 'filial') return { error: 'Certificado de pessoa física (e-CPF) não tem filial — cadastre como Matriz.' };
     let fil = null;
     if (tipo === 'filial') {
       fil = _dadosFilial(info.cnpj, info.razao_social, cnpjFilial);
@@ -934,7 +938,46 @@ ipcMain.handle('fiscal:certSalvar', async (_evt, { pfxPath, senha, info, tipo, c
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
-ipcMain.handle('fiscal:certListar', () => {
+// Recupera certificados de pessoa física (e-CPF) que versões anteriores apagaram por engano: o e-CPF era gravado com
+// documento vazio, e o cadastro seguinte de outro e-CPF substituía o anterior. O arquivo .pfx e a senha cifrada do
+// anterior continuavam na pasta de certificados (id "_<data>"), só a linha da lista sumia. Roda uma vez por abertura.
+let _pfRecuperado = false;
+async function _recuperarCertificadosPF() {
+  if (_pfRecuperado) return; _pfRecuperado = true;
+  try {
+    const dir = _certDir(); const indice = _lerIndiceCert(); let mudou = false;
+    const ler = async (arqPfx, id) => {
+      const sp = path.join(dir, `${id}.senha`);
+      if (!fs.existsSync(path.join(dir, arqPfx)) || !fs.existsSync(sp)) return null;
+      let senha; try { senha = safeStorage.decryptString(fs.readFileSync(sp)); } catch (_) { return null; }
+      const jsonTmp = path.join(os.tmpdir(), `fc_cert_rec_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.json`);
+      try {
+        await runFiscal(['ler-certificado', path.join(dir, arqPfx), '--senha', senha, '--json', jsonTmp], jsonTmp);
+        const info = JSON.parse(fs.readFileSync(jsonTmp, 'utf-8')); fs.unlink(jsonTmp, () => {});
+        return info && !info.erro ? info : null;
+      } catch (_) { return null; }
+    };
+    for (const e of indice.empresas) {                      // linhas já gravadas sem documento
+      if (e.cnpj || !e.pfxArquivo) continue;
+      const info = await ler(e.pfxArquivo, e.id);
+      if (info && info.cnpj) { e.cnpj = info.cnpj; e.cnpjCert = info.cnpj; mudou = true; }
+    }
+    const usados = new Set(indice.empresas.map((e) => e.pfxArquivo).filter(Boolean));
+    for (const arq of fs.readdirSync(dir)) {                // e-CPF apagados da lista
+      if (!/^_\d+\.pfx$/.test(arq) || usados.has(arq)) continue;
+      const id = arq.slice(0, -4);
+      const info = await ler(arq, id);
+      if (!info || !info.cnpj || indice.empresas.some((e) => e.cnpj === info.cnpj)) continue;
+      indice.empresas.push({ id, cnpj: info.cnpj, razaoSocial: info.razao_social, validade: info.validade, tipo: 'matriz',
+        cnpjCert: info.cnpj, pfxArquivo: arq, ultimoNsu: 0, ultimoDownload: null, recuperadoEm: new Date().toISOString() });
+      mudou = true;
+    }
+    if (mudou) _salvarIndiceCert(indice);
+  } catch (_) {}
+}
+
+ipcMain.handle('fiscal:certListar', async () => {
+  await _recuperarCertificadosPF();
   const indice = _lerIndiceCert();
   return indice.empresas.map((e) => {
     const pr = e.tipo === 'procuracao' ? indice.empresas.find((x) => x.id === e.procuradorId) : null;

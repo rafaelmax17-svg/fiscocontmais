@@ -898,6 +898,7 @@ function bindFiscal() {
   let DL_BAIXADAS_SESSAO = 0;
 
   function _fmtCnpjJs(cnpj) {
+    if (cnpj && cnpj.length === 11) return `${cnpj.slice(0, 3)}.${cnpj.slice(3, 6)}.${cnpj.slice(6, 9)}-${cnpj.slice(9)}`;   // e-CPF
     if (!cnpj || cnpj.length !== 14) return cnpj || '';
     return `${cnpj.slice(0, 2)}.${cnpj.slice(2, 5)}.${cnpj.slice(5, 8)}/${cnpj.slice(8, 12)}-${cnpj.slice(12)}`;
   }
@@ -1006,11 +1007,11 @@ function bindFiscal() {
       const validadeTexto = !e.validade ? '—' : diasRestantes < 0 ? `${e.validade} · vencido` : (diasRestantes <= 30 ? `${e.validade} · vence em ${diasRestantes} dias` : e.validade);
       const ultimoTexto = e.ultimoDownload ? new Date(e.ultimoDownload).toLocaleString('pt-BR') : 'nunca';
       return `<tr style="border-top:1px solid var(--line)">
-        <td style="padding:9px 8px">${_esc(e.razaoSocial)} <span class="dl-badge ${e.tipo === 'filial' ? 'fil' : e.tipo === 'procuracao' ? 'pro' : 'mat'}">${e.tipo === 'filial' ? 'Filial' : e.tipo === 'procuracao' ? 'Procuração' : 'Matriz'}</span>${e.tipo === 'filial' ? `<div style="font-size:10.5px;color:var(--ink2)">certificado da matriz ${_esc(_fmtCnpjJs(e.cnpjCert))}</div>` : ''}${e.tipo === 'procuracao' ? `<div style="font-size:10.5px;color:var(--ink2)">${e.procuradorNome ? `certificado do escritório · ${_esc(e.procuradorNome)}` : '<span style="color:#a51c34">certificado do escritório não encontrado</span>'}</div>` : ''}</td>
+        <td style="padding:9px 8px">${_esc(e.razaoSocial)} <span class="dl-badge ${e.tipo === 'filial' ? 'fil' : e.tipo === 'procuracao' ? 'pro' : 'mat'}">${e.tipo === 'filial' ? 'Filial' : e.tipo === 'procuracao' ? 'Procuração' : (String(e.cnpj || '').length === 11 ? 'Pessoa física' : 'Matriz')}</span>${e.tipo === 'filial' ? `<div style="font-size:10.5px;color:var(--ink2)">certificado da matriz ${_esc(_fmtCnpjJs(e.cnpjCert))}</div>` : ''}${e.tipo === 'procuracao' ? `<div style="font-size:10.5px;color:var(--ink2)">${e.procuradorNome ? `certificado do escritório · ${_esc(e.procuradorNome)}` : '<span style="color:#a51c34">certificado do escritório não encontrado</span>'}</div>` : ''}</td>
         <td style="padding:9px 8px;color:var(--ink2)">${_esc(_fmtCnpjJs(e.cnpj))}</td>
         <td style="padding:9px 8px"><span style="${corBadge};font-size:11px;padding:2px 9px;border-radius:6px">${_esc(validadeTexto)}</span></td>
         <td style="padding:9px 8px;color:var(--ink2)">${_esc(ultimoTexto)}</td>
-        <td style="padding:9px 8px;text-align:right;white-space:nowrap">${e.tipo === 'matriz' || !e.tipo ? `<button class="act inv-export" data-filial="${_esc(e.id)}" style="padding:3px 10px;font-size:11px" title="Cadastrar uma filial usando este mesmo certificado">+ Filial</button> ` : ''}<button class="act inv-export" data-remover="${_esc(e.id)}" style="padding:3px 10px;font-size:11px">Remover</button></td>
+        <td style="padding:9px 8px;text-align:right;white-space:nowrap">${(e.tipo === 'matriz' || !e.tipo) && String(e.cnpj || '').length === 14 ? `<button class="act inv-export" data-filial="${_esc(e.id)}" style="padding:3px 10px;font-size:11px" title="Cadastrar uma filial usando este mesmo certificado">+ Filial</button> ` : ''}<button class="act inv-export" data-remover="${_esc(e.id)}" style="padding:3px 10px;font-size:11px">Remover</button></td>
       </tr>`;
     }).join('');
     corpo.querySelectorAll('button[data-filial]').forEach((btn) => {
@@ -1165,7 +1166,7 @@ function bindFiscal() {
       $('#dlCertErro').hidden = true;
       dlCertInfo = res.info;
       $('#dlCertPreviewNome').textContent = res.info.razao_social;
-      $('#dlCertPreviewDetalhe').textContent = `CNPJ ${_fmtCnpjJs(res.info.cnpj)} · válido até ${res.info.validade}`;
+      $('#dlCertPreviewDetalhe').textContent = `${String(res.info.cnpj || '').length === 11 ? 'CPF' : 'CNPJ'} ${_fmtCnpjJs(res.info.cnpj) || '(não identificado)'} · válido até ${res.info.validade}`;
       $('#dlCertPreview').hidden = false;
       $('#dlCertTipoBox').hidden = false;
       $('#btnDlCertSalvar').hidden = false;
@@ -1202,7 +1203,7 @@ function bindFiscal() {
         if (r.ok) {
           return `<tr>
             <td style="padding:7px 8px">${_esc(r.nomeArquivo)}</td>
-            <td style="padding:7px 8px">${_esc(r.info.razao_social)}<br><span style="font-size:10.5px;color:var(--ink2)">CNPJ ${_esc(_fmtCnpjJs(r.info.cnpj))}</span></td>
+            <td style="padding:7px 8px">${_esc(r.info.razao_social)}<br><span style="font-size:10.5px;color:var(--ink2)">${String(r.info.cnpj || '').length === 11 ? 'CPF' : 'CNPJ'} ${_esc(_fmtCnpjJs(r.info.cnpj)) || '<b style="color:#a51c34">não identificado</b>'}</span></td>
             <td style="padding:7px 8px;color:#0ea472;font-weight:600">✓ Identificada</td>
             <td></td></tr>`;
         }
