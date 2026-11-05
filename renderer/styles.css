@@ -1367,3 +1367,27 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .fs-anr .fs-av{grid-row:span 2;width:30px;height:30px}.fs-anr b{font-size:13px;color:var(--ink)}.fs-anr small{grid-column:2;color:var(--ink2);font-size:11px}
 .fs-anr .fs-mini{grid-column:3;grid-row:1 / span 2}.fs-mini:disabled{opacity:.4;cursor:not-allowed}
 @keyframes fsAnIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* Fechamento SN · painel de acompanhamento (2.1.59) */
+.fs-steps{display:flex;align-items:stretch;gap:10px;margin-bottom:14px}.fs-seta{align-self:center;font-size:30px;color:#c3c9de;font-weight:300}
+.fs-st{flex:1;position:relative;background:var(--panel);border-radius:18px;padding:16px 18px 14px;box-shadow:0 1px 0 var(--line),0 16px 36px -18px rgba(30,40,90,.25);overflow:hidden;animation:fsAnIn .55s both}
+.fs-st:before{content:"";position:absolute;inset:0 0 auto 0;height:4px;background:var(--c)}
+.fs-sti{position:absolute;right:14px;top:12px;width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-size:18px;background:color-mix(in srgb,var(--c) 14%,white)}
+.fs-st small{font-size:12.5px;color:var(--ink2);font-weight:600}.fs-stv{display:flex;align-items:baseline;gap:6px;margin:6px 0 11px}.fs-stv b{font-size:36px;line-height:1;color:var(--c)}.fs-stv span{color:#8a93ad;font-size:13px}
+.fs-pb{height:8px;border-radius:6px;background:#eef0f6;overflow:hidden}.fs-pb i{display:block;height:100%;width:0;border-radius:6px;background:linear-gradient(90deg,color-mix(in srgb,var(--c) 65%,white),var(--c));animation:fsW 1.3s cubic-bezier(.2,.8,.2,1) .25s forwards}
+.fs-st em{position:absolute;right:18px;bottom:26px;font-style:normal;font-weight:800;font-size:14px;color:var(--ink)}
+@keyframes fsW{to{width:var(--w)}}
+.fs-pgrid{display:grid;grid-template-columns:1.15fr 1fr;gap:14px;margin-bottom:14px}.fs-pcard{border-radius:18px;padding:18px 20px}
+.fs-ph{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}.fs-ph b{font-size:14.5px;color:var(--ink)}.fs-ph small{color:#8a93ad}
+.fs-ar{display:grid;grid-template-columns:40px 1fr 74px;gap:13px;align-items:center;padding:10px 0;border-bottom:1px solid #f0f2f7;animation:fsAnIn .45s both}.fs-ar:last-child{border:0}
+.fs-av2{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:12.5px;box-shadow:0 8px 16px -8px rgba(0,0,0,.45)}
+.fs-at{display:flex;justify-content:space-between;font-size:13.5px}.fs-at b{color:var(--ink)}.fs-at span{color:#8a93ad;font-size:12px}
+.fs-sb{display:flex;gap:3px;height:11px;margin:7px 0 6px;background:#eef0f6;border-radius:8px;overflow:hidden}.fs-sb i{display:block;height:100%;width:0;border-radius:6px;animation:fsW 1.3s cubic-bezier(.2,.8,.2,1) .35s forwards}
+.fs-ac{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--ink2)}.fs-ac i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+.fs-ap{text-align:right}.fs-ap b{display:block;font-size:21px}.fs-ap small{font-size:10.5px;color:#8a93ad}
+.fs-nctabs{display:flex;gap:8px;margin-bottom:10px}.fs-nct{flex:1;text-align:left;border-radius:14px;padding:9px 12px;background:#f5f7fc;border:1.5px solid transparent;font:inherit;font-size:12px;color:var(--ink2);font-weight:600;cursor:pointer;transition:all .2s}
+.fs-nct b{display:block;font-size:21px;color:var(--c)}.fs-nct.on{background:var(--panel);border-color:var(--c);box-shadow:0 10px 20px -12px var(--c)}.fs-nct:hover{border-color:var(--c)}
+.fs-nclist{max-height:430px;overflow:auto;padding-right:4px}.fs-li{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:11px;font-size:12.8px;animation:fsAnIn .3s both}.fs-li:nth-child(odd){background:#f8f9fd}.fs-li b{font-weight:600;color:var(--ink)}
+.fs-mini2{width:26px;height:24px;border-radius:8px;display:grid;place-items:center;color:#fff;font-size:9.5px;font-weight:800;flex:0 0 auto}
+.fs-vz{color:var(--ink2);font-size:12.5px;padding:12px}.fs-vz.ok{color:#0a7a52}
+@media (max-width:1250px){.fs-pgrid{grid-template-columns:1fr}}

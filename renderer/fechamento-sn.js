@@ -1,10 +1,10 @@
 'use strict';
-// Simples Nacional · Fechamento da equipe — planilha editável em tempo real (Firestore), com anéis de progresso
-// por analista e exportação em HTML. Usa os utilitários do app.js ($, toast, ROLE).
+// Simples Nacional · Fechamento da equipe — planilha editável em tempo real (Firestore), com o painel de
+// acompanhamento (etapas, por analista, não concluídas) e exportação em HTML. Usa os utilitários do app.js ($, toast, ROLE).
 (function () {
   const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   const INICIO = '2026-09';                       // primeira competência controlada no sistema (planilha da equipe)
-  const COR_FIXA = { 'heloisa': '#7c3aed', 'hemily': '#0ea5e9', 'thawani': '#14b8a6', 'cauane': '#f59e0b', 'hotoniel': '#0ea472', 'valéria': '#e23d4c', 'valeria': '#e23d4c', 'taynara': '#d946ef' };
+  const COR_FIXA = { 'heloisa': '#7c3aed', 'hemily': '#0ea5e9', 'thawani': '#14b8a6', 'cauane': '#f59e0b', 'hotoniel': '#db2777', 'valéria': '#e23d4c', 'valeria': '#e23d4c', 'taynara': '#d946ef' };
   const PALETA = ['#6366f1', '#ec4899', '#84cc16', '#06b6d4', '#f97316', '#8b5cf6', '#10b981', '#ef4444'];
   const ST = {
     concluida: { rot: 'Concluída', cor: '#0ea472' },
@@ -79,11 +79,13 @@
         <div><h2>Fechamento do Simples Nacional</h2><div class="fs-sub" id="fsSub"></div></div>
         <span class="fs-live" id="fsLive"><i></i>ao vivo</span>
       </div>
-      <div class="fs-kpis" id="fsKpis"></div>
+      <div class="fs-steps" id="fsSteps"></div>
       <div class="fs-alert" id="fsAlert" hidden></div>
-      <div class="fs-card fs-rings-card"><div class="fs-card-h"><b id="fsRingsTit">Por analista · escrituração e PGDAS</b>
-        <span class="fs-rkey"><i class="e"></i>escrituração concluída <i class="p"></i>PGDAS transmitido</span><small id="fsRingsSub"></small></div>
-        <div class="fs-rings"><svg id="fsRings" viewBox="0 0 300 300" width="300" height="300"></svg><div class="fs-rleg" id="fsRLeg"></div></div></div>
+      <div class="fs-pgrid">
+        <div class="fs-card fs-pcard"><div class="fs-ph"><b>Por analista</b><small>da maior carteira para a menor</small></div><div id="fsPAn"></div></div>
+        <div class="fs-card fs-pcard"><div class="fs-ph"><b>Ainda não concluídas</b><small id="fsNcTot"></small></div>
+          <div class="fs-nctabs" id="fsNcTabs"></div><div class="fs-nclist" id="fsNcList"></div></div>
+      </div>
       <div class="fs-bar">
         <select id="fsComp" class="fs-in">${comps.map((c) => `<option value="${c}" ${c === FS.comp ? 'selected' : ''}>${compRot(c)}</option>`).join('')}</select>
         <select id="fsAn" class="fs-in"><option value="">Todas as analistas</option></select>
@@ -113,7 +115,7 @@
 
   async function abrir() {
     FS.linhas = []; FS.anel = null; FS.kpiAnt = {};
-    $('#fsRings').innerHTML = ''; $('#fsRLeg').innerHTML = ''; $('#fsBody').innerHTML = '';
+    $('#fsSteps').innerHTML = ''; $('#fsPAn').innerHTML = ''; $('#fsNcList').innerHTML = ''; $('#fsBody').innerHTML = '';
     $('#fsBody').dataset.ordem = '';        // achado real: mesmas empresas no mês novo = mesma "ordem", e a tabela não era redesenhada
     $('#fsFoot').textContent = 'Carregando…';
     const r = await window.fiscocont.fechamento.abrir(FS.comp);
@@ -133,24 +135,12 @@
     const { tot, analistas } = resumo(FS.linhas);
     const pz = prazo(FS.comp), venc = Date.now() > pz.getTime(), falta = tot.n - tot.feitas;
     $('#fsSub').innerHTML = `Competência <b>${compRot(FS.comp)}</b> · prazo do PGDAS-D e do DAS: <b class="${venc && falta ? 'neg' : ''}">${fmtData(pz)}</b>${venc && falta ? ' · <span class="neg">vencido</span>' : ''}`;
-    const k = [
-      ['n', 'Empresas', tot.n, '', ''],
-      ['s', 'Escrituração concluída', tot.esc, '#0ea5e9', tot.n ? ` · ${Math.round(tot.esc / tot.n * 100)}%` : ''],
-      ['f', 'PGDAS transmitido', tot.feitas, '#4f46e5', tot.n ? ` · ${Math.round(tot.feitas / tot.n * 100)}%` : ''],
-      ['e', 'Falta transmitir', tot.escriturada, '#f59e0b', ''],
-      ['p', 'Pendentes', tot.pendente, '#e23d4c', ''],
-      ['a', 'Inconsistentes', tot.alerta, '#b42318', ''],
-      ['c', 'Concluídas (DAS enviado)', tot.concluida, '#0ea472', ''],
-    ];
-    $('#fsKpis').innerHTML = k.map(([id, rot, v, cor, extra]) => `<div class="fs-kpi"><small>${rot}</small><b style="color:${cor || 'var(--ink)'}"><span data-k="${id}">${FS.kpiAnt[id] ?? 0}</span><em>${extra}</em></b></div>`).join('');
-    k.forEach(([id, , v]) => conta($(`[data-k="${id}"]`), FS.kpiAnt[id] ?? 0, v));
-    k.forEach(([id, , v]) => { FS.kpiAnt[id] = v; });
     const al = FS.linhas.filter((r) => status(r) === 'alerta');
     const avisos = [];
     if (al.length) avisos.push(`<b>${al.length} inconsistência(s):</b> PGDAS transmitido sem a escrituração concluída — ${al.slice(0, 3).map((r) => e(r.nome)).join(', ')}${al.length > 3 ? '…' : ''}.`);
     if (venc && falta) avisos.push(`<b>Prazo vencido:</b> ${falta} empresa(s) ainda sem PGDAS transmitido.`);
     $('#fsAlert').hidden = !avisos.length; $('#fsAlert').innerHTML = avisos.join(' ');
-    desenhaAneis(tot, analistas);
+    desenhaPainel(tot, analistas);
     const sel = $('#fsAn'), atual = FS.analista;
     sel.innerHTML = '<option value="">Todas as analistas</option>' + analistas.map((a) => `<option ${a.nome === atual ? 'selected' : ''}>${e(a.nome)}</option>`).join('');
     const chips = [['todas', 'Todas', tot.n], ['pendente', 'Pendentes', tot.pendente + tot.escriturada], ['alerta', 'Inconsistentes', tot.alerta],
@@ -170,45 +160,46 @@
   }
 
   // Anéis de progresso: um por analista, de fora para dentro. Na primeira vez enchem do zero; depois, só avançam.
-  // Anéis: um por analista, de fora para dentro. Cada anel mostra as DUAS etapas ao mesmo tempo: o trecho claro é a
-  // escrituração concluída e o trecho forte por cima é o PGDAS transmitido. Na 1ª vez enchem do zero; depois, só avançam.
-  const conta2 = (el, de, ate, suf) => { if (!el) return; const t0 = performance.now();
-    const f = (t) => { const p = Math.min(1, (t - t0) / 1500), q = 1 - Math.pow(1 - p, 3); el.textContent = Math.round(de + (ate - de) * q) + (suf || ''); if (p < 1) requestAnimationFrame(f); }; requestAnimationFrame(f); };
-  function desenhaAneis(tot, analistas) {
-    const svg = $('#fsRings'), leg = $('#fsRLeg');
-    const n = analistas.length, passo = n > 1 ? Math.min(16, (138 - 58) / (n - 1)) : 16, larg = Math.max(6, passo - 4);
-    const chave = analistas.map((a) => a.nome).join('|');
-    const novo = !FS.anel || FS.anel.chave !== chave;
-    if (novo) {
-      svg.innerHTML = analistas.map((a, i) => {
-        const r = 138 - i * passo, L = 2 * Math.PI * r, atraso = (i * 0.12).toFixed(2);
-        return `<circle cx="150" cy="150" r="${r}" fill="none" stroke="${a.cor}" stroke-opacity=".12" stroke-width="${larg}"/>
-          <circle class="fs-ring" data-i="${i}" data-k="esc" cx="150" cy="150" r="${r}" fill="none" stroke="${a.cor}" stroke-opacity=".38" stroke-width="${larg}" stroke-linecap="round"
-            stroke-dasharray="0 ${L.toFixed(1)}" transform="rotate(-90 150 150)" style="transition-delay:${atraso}s"><title>${e(a.nome)} · escrituração</title></circle>
-          <circle class="fs-ring" data-i="${i}" data-k="pg" cx="150" cy="150" r="${r}" fill="none" stroke="${a.cor}" stroke-width="${larg}" stroke-linecap="round"
-            stroke-dasharray="0 ${L.toFixed(1)}" transform="rotate(-90 150 150)" style="transition-delay:${(i * 0.12 + 0.25).toFixed(2)}s"><title>${e(a.nome)} · PGDAS</title></circle>`;
-      }).join('') + `<text id="fsRTotE" x="150" y="138" text-anchor="middle" class="fs-rtot fs-rtot-e">0%</text><text x="150" y="156" text-anchor="middle" class="fs-rtot-s">escrituração</text>
-        <text id="fsRTot" x="150" y="186" text-anchor="middle" class="fs-rtot2">0%</text><text x="150" y="202" text-anchor="middle" class="fs-rtot-s">PGDAS</text>`;
-      FS.anel = { chave, pct: analistas.map(() => 0), esc: analistas.map(() => 0), tot: 0, totE: 0 };
-    }
-    const pctTot = tot.n ? Math.round(tot.feitas / tot.n * 100) : 0;
-    const pctTotE = tot.n ? Math.round(tot.esc / tot.n * 100) : 0;
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      svg.querySelectorAll('.fs-ring').forEach((c) => {
-        const a = analistas[+c.dataset.i], L = 2 * Math.PI * +c.getAttribute('r');
-        const v = c.dataset.k === 'esc' ? Math.max(a.esc, a.feitas) : a.feitas;     // o trecho claro nunca fica menor que o forte
-        c.setAttribute('stroke-dasharray', `${(L * (a.n ? v / a.n : 0)).toFixed(1)} ${L.toFixed(1)}`);
-      });
-    }));
-    conta2($('#fsRTotE'), FS.anel.totE, pctTotE, '%'); conta2($('#fsRTot'), FS.anel.tot, pctTot, '%');
-    leg.innerHTML = analistas.map((a, i) => `<div class="fs-rl ${novo ? 'in' : 'on'}" style="animation-delay:${(0.25 + i * 0.1).toFixed(2)}s">
-      <span class="fs-av" style="background:${a.cor}">${e(a.ini)}</span><b class="fs-rn">${e(a.nome)}</b>
-      <span class="fs-rp2"><em style="color:${a.cor};opacity:.62" data-re="${i}">${FS.anel.esc[i] || 0}%</em><small>escrit.</small></span>
-      <span class="fs-rp2"><em style="color:${a.cor}" data-rp="${i}">${FS.anel.pct[i] || 0}%</em><small>PGDAS</small></span>
-      <small class="fs-rdet">${a.esc}/${a.n} escrituradas · ${a.feitas}/${a.n} transmitidas${a.alerta ? ` · <span class="neg">${a.alerta} ⚠</span>` : ''}</small></div>`).join('');
-    analistas.forEach((a, i) => { conta2(leg.querySelector(`[data-re="${i}"]`), FS.anel.esc[i] || 0, a.pctEsc, '%'); conta2(leg.querySelector(`[data-rp="${i}"]`), FS.anel.pct[i] || 0, a.pct, '%'); });
-    FS.anel.pct = analistas.map((a) => a.pct); FS.anel.esc = analistas.map((a) => a.pctEsc); FS.anel.tot = pctTot; FS.anel.totE = pctTotE;
-    $('#fsRingsSub').textContent = `${tot.esc} escrituradas · ${tot.feitas} transmitidas · ${tot.n} empresas`;
+  // Painel de acompanhamento: etapas em sequência, barra por analista e as empresas que ainda não foram concluídas,
+  // separadas pelo que falta. Os números contam do valor anterior até o novo (entrar de novo na tela anima de novo).
+  const NC = [['esc', 'falta escrituração', '#0ea5e9'], ['pgdas', 'falta PGDAS', '#6366f1'], ['das', 'falta enviar o DAS', '#10b981']];
+  function faltaDe(r) {
+    if (status(r) === 'concluida') return null;
+    if (!ok(r.esc)) return 'esc';                 // inclui a inconsistente (PGDAS transmitido sem a escrituração)
+    if (!ok(r.pgdas)) return 'pgdas';
+    return 'das';
+  }
+  function desenhaPainel(tot, analistas) {
+    const N = tot.n || 0;
+    const pg = FS.linhas.filter((r) => ok(r.pgdas)).length, dasOk = FS.linhas.filter((r) => ok(r.das)).length;
+    const etapas = [['s', 'Escrituração concluída', tot.esc, '#0ea5e9', '📒'], ['f', 'PGDAS transmitido', pg, '#6366f1', '📤'], ['d', 'DAS enviado ao cliente', dasOk, '#10b981', '✅']];
+    $('#fsSteps').innerHTML = etapas.map(([id, t, v, cor, ic], i) => `${i ? '<div class="fs-seta">›</div>' : ''}<div class="fs-st" style="--c:${cor};animation-delay:${(i * 0.1).toFixed(2)}s">
+      <div class="fs-sti">${ic}</div><small>${t}</small><div class="fs-stv"><b data-k="${id}">${FS.kpiAnt[id] ?? 0}</b><span>de ${N}</span></div>
+      <div class="fs-pb"><i style="--w:${N ? (v / N * 100).toFixed(1) : 0}%"></i></div><em>${N ? Math.round(v / N * 100) : 0}%</em></div>`).join('');
+    etapas.forEach(([id, , v]) => { conta($(`[data-k="${id}"]`), FS.kpiAnt[id] ?? 0, v); FS.kpiAnt[id] = v; });
+    // por analista: barra dividida em concluída (DAS enviado), PGDAS transmitido e só escriturada
+    $('#fsPAn').innerHTML = analistas.map((a, i) => {
+      const n = a.n || 1, seg = [['concluida', '#10b981'], ['transmitida', a.cor], ['escriturada', a.cor + '55']].filter(([k]) => a[k]);
+      const pgA = FS.linhas.filter((r) => (r.analista || '(sem analista)') === a.nome && ok(r.pgdas)).length;
+      return `<div class="fs-ar" style="animation-delay:${(0.15 + i * 0.06).toFixed(2)}s"><span class="fs-av2" style="background:linear-gradient(135deg,${a.cor},${a.cor}cc)">${e(a.ini)}</span>
+        <div class="fs-am"><div class="fs-at"><b>${e(a.nome)}</b><span>${a.n} empresa${a.n > 1 ? 's' : ''}</span></div>
+          <div class="fs-sb">${seg.map(([k, c]) => `<i style="--w:${(a[k] / n * 100).toFixed(2)}%;background:${c}"></i>`).join('')}</div>
+          <div class="fs-ac"><span><i style="background:${a.cor}55"></i>${a.esc} escrit.</span><span><i style="background:${a.cor}"></i>${pgA} PGDAS</span><span><i style="background:#10b981"></i>${a.concluida} DAS</span>${a.alerta ? `<span class="neg">⚠ ${a.alerta} inconsistente${a.alerta > 1 ? 's' : ''}</span>` : ''}</div></div>
+        <div class="fs-ap" style="color:${a.cor}"><b>${a.n ? Math.round(a.concluida / a.n * 100) : 0}%</b><small>concluídas</small></div></div>`;
+    }).join('') || '<div class="fs-vz">Nenhuma empresa nesta competência.</div>';
+    // ainda não concluídas, pelo que falta
+    const grupos = { esc: [], pgdas: [], das: [] };
+    FS.linhas.forEach((r) => { const f = faltaDe(r); if (f) grupos[f].push(r); });
+    if (!FS.ncTab || (!grupos[FS.ncTab].length && NC.some(([k]) => grupos[k].length))) FS.ncTab = (NC.find(([k]) => grupos[k].length) || NC[0])[0];
+    const totNc = grupos.esc.length + grupos.pgdas.length + grupos.das.length;
+    $('#fsNcTot').textContent = `${totNc} empresa${totNc === 1 ? '' : 's'}`;
+    $('#fsNcTabs').innerHTML = NC.map(([k, t, c]) => `<button class="fs-nct ${FS.ncTab === k ? 'on' : ''}" data-nc="${k}" style="--c:${c}"><b>${grupos[k].length}</b>${t}</button>`).join('');
+    $('#fsNcTabs').querySelectorAll('[data-nc]').forEach((b) => b.addEventListener('click', () => { FS.ncTab = b.dataset.nc; desenhaPainel(tot, analistas); }));
+    const corDe = new Map(analistas.map((a) => [a.nome, a]));
+    const lista = grupos[FS.ncTab].slice().sort((x, y) => (x.analista || '').localeCompare(y.analista || '') || x.nome.localeCompare(y.nome));
+    $('#fsNcList').innerHTML = lista.map((r) => { const a = corDe.get(r.analista || '(sem analista)') || { cor: '#6366f1', ini: '?' };
+      return `<div class="fs-li"><span class="fs-mini2" style="background:${a.cor}" title="${e(r.analista || '')}">${e(a.ini)}</span><b>${e(r.nome)}</b>${status(r) === 'alerta' ? '<span class="neg" title="PGDAS transmitido sem a escrituração concluída">⚠</span>' : ''}</div>`; }).join('')
+      || '<div class="fs-vz ok">✓ Nenhuma empresa nesta etapa.</div>';
   }
 
   function filtradas() {
