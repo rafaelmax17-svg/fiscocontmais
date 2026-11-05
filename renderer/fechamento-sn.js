@@ -369,43 +369,65 @@
   function exportar() {
     if (!FS.linhas.length) { toast('Nada para exportar nessa competência.', true); return; }
     const { tot, analistas } = resumo(FS.linhas);
-    const n = analistas.length, passo = n > 1 ? Math.min(16, (138 - 58) / (n - 1)) : 16, larg = Math.max(6, passo - 4);
-    const aneis = analistas.map((a, i) => { const r = 138 - i * passo, L = 2 * Math.PI * r;
-      return `<circle cx="150" cy="150" r="${r}" fill="none" stroke="${a.cor}" stroke-opacity=".14" stroke-width="${larg}"/><circle class="rg" data-v="${(L * (a.n ? a.feitas / a.n : 0)).toFixed(1)}" data-l="${L.toFixed(1)}" cx="150" cy="150" r="${r}" fill="none" stroke="${a.cor}" stroke-width="${larg}" stroke-linecap="round" stroke-dasharray="0 ${L.toFixed(1)}" transform="rotate(-90 150 150)" style="transition:stroke-dasharray 1.6s cubic-bezier(.2,.8,.2,1) ${(i * 0.12).toFixed(2)}s"/>`; }).join('');
-    const pctTot = tot.n ? Math.round(tot.feitas / tot.n * 100) : 0;
-    const leg = analistas.map((a) => `<div class="rl"><span class="av" style="background:${a.cor}">${e(a.ini)}</span><b>${e(a.nome)}</b><span class="rp cnt" data-v="${a.pct}" data-s="%" style="color:${a.cor}">0%</span><small>${a.feitas} de ${a.n} transmitidas</small></div>`).join('');
+    const N = tot.n, pct = (v) => (N ? Math.round(v / N * 100) : 0);
+    const pg = FS.linhas.filter((r) => ok(r.pgdas)).length, dasOk = FS.linhas.filter((r) => ok(r.das)).length;
+    const etapas = [['Escrituração concluída', tot.esc, '#0ea5e9', '📒'], ['PGDAS transmitido', pg, '#6366f1', '📤'], ['DAS enviado ao cliente', dasOk, '#10b981', '✅']];
+    const steps = etapas.map(([t, v, c, ic], i) => `${i ? '<div class="seta">›</div>' : ''}<div class="st" style="--c:${c};animation-delay:${(i * 0.1).toFixed(2)}s"><div class="sti">${ic}</div><small>${t}</small>
+      <div class="stv"><b class="cnt" data-v="${v}">0</b><span>de ${N}</span></div><div class="pb"><i style="--w:${N ? (v / N * 100).toFixed(1) : 0}%"></i></div><em>${pct(v)}%</em></div>`).join('');
+    const anHtml = analistas.map((a, i) => {
+      const n = a.n || 1, seg = [['concluida', '#10b981'], ['transmitida', a.cor], ['escriturada', a.cor + '55']].filter(([k]) => a[k]);
+      const pgA = FS.linhas.filter((r) => (r.analista || '(sem analista)') === a.nome && ok(r.pgdas)).length;
+      return `<div class="ar" style="animation-delay:${(0.15 + i * 0.06).toFixed(2)}s"><span class="av2" style="background:linear-gradient(135deg,${a.cor},${a.cor}cc)">${e(a.ini)}</span>
+        <div><div class="at"><b>${e(a.nome)}</b><span>${a.n} empresa${a.n > 1 ? 's' : ''}</span></div><div class="sb">${seg.map(([k, c]) => `<i style="--w:${(a[k] / n * 100).toFixed(2)}%;background:${c}"></i>`).join('')}</div>
+        <div class="ac"><span><i style="background:${a.cor}55"></i>${a.esc} escrit.</span><span><i style="background:${a.cor}"></i>${pgA} PGDAS</span><span><i style="background:#10b981"></i>${a.concluida} DAS</span>${a.alerta ? `<span class="neg">⚠ ${a.alerta} inconsistente${a.alerta > 1 ? 's' : ''}</span>` : ''}</div></div>
+        <div class="ap" style="color:${a.cor}"><b>${a.n ? Math.round(a.concluida / a.n * 100) : 0}%</b><small>concluídas</small></div></div>`;
+    }).join('');
+    const grupos = { esc: [], pgdas: [], das: [] };
+    FS.linhas.forEach((r) => { const f = faltaDe(r); if (f) grupos[f].push(r); });
+    const totNc = grupos.esc.length + grupos.pgdas.length + grupos.das.length;
+    const corDe = new Map(analistas.map((a) => [a.nome, a]));
+    const tab1 = (NC.find(([k]) => grupos[k].length) || NC[0])[0];
+    const tabs = NC.map(([k, t, c]) => `<button class="nct ${k === tab1 ? 'on' : ''}" data-nc="${k}" style="--c:${c}"><b>${grupos[k].length}</b>${t}</button>`).join('');
+    const listas = NC.map(([k]) => `<div class="ncl" data-l="${k}" ${k === tab1 ? '' : 'hidden'}>${grupos[k].slice().sort((x, y) => (x.analista || '').localeCompare(y.analista || '') || x.nome.localeCompare(y.nome)).map((r) => {
+      const a = corDe.get(r.analista || '(sem analista)') || { cor: '#6366f1', ini: '?' };
+      return `<div class="li"><span class="mini" style="background:${a.cor}" title="${e(r.analista || '')}">${e(a.ini)}</span><b>${e(r.nome)}</b>${status(r) === 'alerta' ? ' <span class="neg">⚠</span>' : ''}</div>`; }).join('') || '<div class="vz">✓ Nenhuma empresa nesta etapa.</div>'}</div>`).join('');
     const pill = (v) => `<span class="pl ${v === 'Sim' ? 's' : v === 'Não' ? 'x' : v === 'N/A' ? 'na' : 'vz'}">${e(v || '—')}</span>`;
     const linhas = [...FS.linhas].map((r, i) => { const st = status(r);
       return `<tr><td>${i + 1}</td><td class="l"><i class="dot" style="background:${ST[st].cor}"></i><b>${e(r.nome)}</b></td><td class="l">${e(r.analista)}</td><td>${pill(r.esc)}</td><td>${pill(r.pgdas)}</td><td>${pill(r.das)}</td><td>${e(r.fin || '—')}</td><td class="l">${e(r.obs)}${st === 'alerta' ? ' <span class="neg">⚠ PGDAS sem escrituração</span>' : ''}</td></tr>`; }).join('');
-    const kp = [['Empresas', tot.n, '#141b2d'], ['PGDAS transmitido', tot.feitas, '#4f46e5'], ['Escrituradas, falta transmitir', tot.escriturada, '#f59e0b'], ['Pendentes', tot.pendente, '#e23d4c'], ['Inconsistentes', tot.alerta, '#b42318'], ['Concluídas', tot.concluida, '#0ea472']]
-      .map(([t, v, c]) => `<div class="k"><small>${t}</small><b class="cnt" data-v="${v}" style="color:${c}">0</b></div>`).join('');
     const quem = (typeof SESSAO !== 'undefined' && SESSAO.info && SESSAO.info.nome) || '';
     const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fechamento do Simples Nacional · ${compRot(FS.comp)}</title><style>
-*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Inter,Arial,sans-serif;background:#f4f6fb;color:#141b2d;padding:28px;font-size:13px}
-.wrap{max-width:1240px;margin:0 auto}.hd{background:linear-gradient(90deg,#141733,#1c2148);color:#fff;border-radius:16px;padding:22px 26px;margin-bottom:18px}
-.hd h1{font-size:22px}.hd p{color:#c7cbe6;margin-top:4px}.card{background:#fff;border:1px solid #e5e9f1;border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:0 10px 30px rgba(20,30,60,.06)}
-.card h2{font-size:14px;margin-bottom:10px}.ks{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px}.k{background:#fff;border:1px solid #e5e9f1;border-radius:12px;padding:12px 14px}
-.k small{color:#5a6785;font-size:11.5px}.k b{display:block;font-size:24px;margin-top:3px}.rings{display:flex;align-items:center;gap:30px;flex-wrap:wrap}
-.rl{display:flex;align-items:center;gap:10px;margin:8px 0;opacity:0;transform:translateX(14px);transition:all .5s}.go .rl{opacity:1;transform:none}
-.av{width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:11.5px;flex:0 0 auto}
-.rl b{width:90px}.rp{font-size:20px;font-weight:800;width:62px}.rl small,.cr small{color:#5a6785}
-.cr{display:flex;align-items:center;gap:12px;margin:10px 0}.cr>b{width:90px}.cr .p{width:46px;text-align:right}.bar{flex:1;height:20px;border-radius:7px;background:#eef0f6;overflow:hidden;display:flex}
-.bar i{display:block;height:100%;width:0;transition:width 1.4s cubic-bezier(.2,.8,.2,1)}
+*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Inter,Arial,sans-serif;background:#f3f5fb;color:#141b2d;padding:28px;font-size:13px}
+.wrap{max-width:1280px;margin:0 auto}.hd{background:linear-gradient(90deg,#141733,#1c2148);color:#fff;border-radius:18px;padding:22px 26px;margin-bottom:16px}.hd h1{font-size:22px}.hd p{color:#c7cbe6;margin-top:4px}
+@keyframes up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}@keyframes w{to{width:var(--w)}}
+.steps{display:flex;gap:10px;margin-bottom:16px}.seta{align-self:center;font-size:32px;color:#c3c9de;font-weight:300}
+.st{flex:1;position:relative;background:#fff;border-radius:18px;padding:16px 18px 14px;box-shadow:0 1px 0 #e9ecf4,0 16px 36px -18px rgba(30,40,90,.25);overflow:hidden;animation:up .55s both}
+.st:before{content:"";position:absolute;inset:0 0 auto 0;height:4px;background:var(--c)}.sti{position:absolute;right:14px;top:12px;width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-size:18px;background:color-mix(in srgb,var(--c) 14%,white)}
+.st small{font-size:12.5px;color:#5a6785;font-weight:600}.stv{display:flex;align-items:baseline;gap:6px;margin:6px 0 11px}.stv b{font-size:36px;line-height:1;color:var(--c)}.stv span{color:#8a93ad}
+.pb{height:8px;border-radius:6px;background:#eef0f6;overflow:hidden}.pb i{display:block;height:100%;width:0;border-radius:6px;background:linear-gradient(90deg,color-mix(in srgb,var(--c) 65%,white),var(--c));animation:w 1.3s cubic-bezier(.2,.8,.2,1) .25s forwards}
+.st em{position:absolute;right:18px;bottom:26px;font-style:normal;font-weight:800;font-size:14px}
+.g{display:grid;grid-template-columns:1.15fr 1fr;gap:14px;margin-bottom:16px}.card{background:#fff;border-radius:18px;padding:18px 20px;box-shadow:0 1px 0 #e9ecf4,0 16px 36px -18px rgba(30,40,90,.25);animation:up .55s both}
+.ph{display:flex;justify-content:space-between;margin-bottom:10px}.ph b{font-size:14.5px}.ph small{color:#8a93ad}
+.ar{display:grid;grid-template-columns:40px 1fr 74px;gap:13px;align-items:center;padding:10px 0;border-bottom:1px solid #f0f2f7;animation:up .45s both}.ar:last-child{border:0}
+.av2{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:12.5px}.at{display:flex;justify-content:space-between;font-size:13.5px}.at span{color:#8a93ad;font-size:12px}
+.sb{display:flex;gap:3px;height:11px;margin:7px 0 6px;background:#eef0f6;border-radius:8px;overflow:hidden}.sb i{display:block;height:100%;width:0;border-radius:6px;animation:w 1.3s cubic-bezier(.2,.8,.2,1) .35s forwards}
+.ac{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:#5a6785}.ac i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}.ap{text-align:right}.ap b{display:block;font-size:21px}.ap small{font-size:10.5px;color:#8a93ad}
+.nctabs{display:flex;gap:8px;margin-bottom:10px}.nct{flex:1;text-align:left;border-radius:14px;padding:9px 12px;background:#f5f7fc;border:1.5px solid transparent;font:inherit;font-size:12px;color:#5a6785;font-weight:600;cursor:pointer}
+.nct b{display:block;font-size:21px;color:var(--c)}.nct.on{background:#fff;border-color:var(--c);box-shadow:0 10px 20px -12px var(--c)}
+.ncl{max-height:430px;overflow:auto}.li{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:11px;font-size:12.8px}.li:nth-child(odd){background:#f8f9fd}.li b{font-weight:600}
+.mini{width:26px;height:24px;border-radius:8px;display:grid;place-items:center;color:#fff;font-size:9.5px;font-weight:800;flex:0 0 auto}.vz{color:#0a7a52;padding:12px}
 table{width:100%;border-collapse:collapse}th{font-size:10.5px;color:#5a6785;text-transform:uppercase;letter-spacing:.04em;padding:8px;border-bottom:1px solid #e5e9f1;text-align:center}
 td{padding:8px;border-bottom:1px solid #f0f2f7;text-align:center}.l{text-align:left}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px}
-.pl{display:inline-block;min-width:44px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700}.s{background:#e6f7ef;color:#0a7a52}.x{background:#fdecf0;color:#c22b45}.na{background:#eef0f6;color:#5a6785}.vz{color:#b7bdcc}
-.neg{color:#c22b45;font-weight:600}.leg{display:flex;gap:16px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#5a6785}.leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px}
-@media(max-width:800px){.ks{grid-template-columns:repeat(2,1fr)}}
+.pl{display:inline-block;min-width:44px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700}.s{background:#e6f7ef;color:#0a7a52}.x{background:#fdecf0;color:#c22b45}.na{background:#eef0f6;color:#5a6785}.pl.vz{color:#b7bdcc;padding:3px 9px}
+.neg{color:#c22b45;font-weight:600}@media(max-width:900px){.g,.steps{grid-template-columns:1fr;flex-direction:column}}
 </style></head><body><div class="wrap">
-<div class="hd"><h1>Fechamento do Simples Nacional · ${compRot(FS.comp)}</h1><p>Prazo do PGDAS-D e do DAS: ${fmtData(prazo(FS.comp))} · gerado em ${fmtData(new Date())}${quem ? ' por ' + e(quem) : ''} · FiscoCont+</p></div>
-<div class="ks">${kp}</div>
-<div class="card"><h2>Por analista · % com PGDAS transmitido</h2><div class="rings"><svg viewBox="0 0 300 300" width="300" height="300">${aneis}<text x="150" y="148" text-anchor="middle" font-size="28" font-weight="800" fill="#141b2d" class="cnt" data-v="${pctTot}" data-s="%">0%</text><text x="150" y="171" text-anchor="middle" font-size="12" fill="#5a6785">equipe</text></svg><div>${leg}</div></div></div>
-<div class="card"><h2>Empresas</h2><table><thead><tr><th>#</th><th class="l">Empresa</th><th class="l">Analista</th><th>Escrituração</th><th>PGDAS</th><th>DAS/DARE ao cliente</th><th>Finalização</th><th class="l">Observações</th></tr></thead><tbody>${linhas}</tbody></table></div>
+<div class="hd"><h1>Fechamento do Simples Nacional · ${compRot(FS.comp)}</h1><p>Prazo do PGDAS-D e do DAS: ${fmtData(prazo(FS.comp))} · ${N} empresas · gerado em ${fmtData(new Date())}${quem ? ' por ' + e(quem) : ''} · FiscoCont+</p></div>
+<div class="steps">${steps}</div>
+<div class="g"><div class="card" style="animation-delay:.2s"><div class="ph"><b>Por analista</b><small>da maior carteira para a menor</small></div>${anHtml}</div>
+<div class="card" style="animation-delay:.3s"><div class="ph"><b>Ainda não concluídas</b><small>${totNc} empresa${totNc === 1 ? '' : 's'}</small></div><div class="nctabs">${tabs}</div>${listas}</div></div>
+<div class="card"><div class="ph"><b>Empresas</b></div><table><thead><tr><th>#</th><th class="l">Empresa</th><th class="l">Analista</th><th>Escrituração</th><th>PGDAS</th><th>DAS/DARE ao cliente</th><th>Finalização</th><th class="l">Observações</th></tr></thead><tbody>${linhas}</tbody></table></div>
 </div><script>
-setTimeout(function(){document.body.classList.add('go');
-document.querySelectorAll('.rg').forEach(function(c){c.setAttribute('stroke-dasharray',c.dataset.v+' '+c.dataset.l)});
-var t0=performance.now();document.querySelectorAll('.cnt').forEach(function(el){var v=+el.dataset.v,s=el.dataset.s||'';(function f(t){var p=Math.min(1,(t-t0)/1500),q=1-Math.pow(1-p,3);el.textContent=Math.round(v*q)+s;if(p<1)requestAnimationFrame(f)})(t0)});
-},250);
+document.querySelectorAll('.nct').forEach(function(b){b.addEventListener('click',function(){document.querySelectorAll('.nct').forEach(function(x){x.classList.toggle('on',x===b)});document.querySelectorAll('.ncl').forEach(function(l){l.hidden=l.dataset.l!==b.dataset.nc})})});
+var t0=performance.now();document.querySelectorAll('.cnt').forEach(function(el){var v=+el.dataset.v;(function f(t){var p=Math.min(1,(t-t0)/1300),q=1-Math.pow(1-p,3);el.textContent=Math.round(v*q);if(p<1)requestAnimationFrame(f)})(t0)});
 </script></body></html>`;
     window.fiscocont.fiscal.nfseExportarHtml(html, 'fech-sn', compRot(FS.comp).replace('/', '-')).then((r) => {
       if (!r || r.canceled) return; if (r.error) { toast(r.error, true); return; }
