@@ -3015,6 +3015,9 @@ def main(argv):
     if modo == 'aud-tributacao':
         import auditoria_tributacao as _at
         return _at.main_cli(argv[1:])
+    if modo == 'conf-xlsx':
+        import conf_xlsx as _cx
+        return _cx.main_cli(argv[1:])
     if modo == 'bi-excel':
         import bi_excel as _bi
         return _bi.main_cli(argv[1:])

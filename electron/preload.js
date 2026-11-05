@@ -117,6 +117,7 @@ contextBridge.exposeInMainWorld('fiscocont', {
     certAddFilial: (id, cnpjFilial) => ipcRenderer.invoke('fiscal:certAddFilial', { id, cnpjFilial }),
     certListar: () => ipcRenderer.invoke('fiscal:certListar'),
     certRemover: (id) => ipcRenderer.invoke('fiscal:certRemover', id),
+    confExportarXlsx: () => ipcRenderer.invoke('fiscal:confExportarXlsx'),
     procProcuradores: () => ipcRenderer.invoke('fiscal:procProcuradores'),
     procTestar: (procuradorId, cnpj) => ipcRenderer.invoke('fiscal:procTestar', { procuradorId, cnpj }),
     procSalvar: (procuradorId, cnpj, razaoSocial) => ipcRenderer.invoke('fiscal:procSalvar', { procuradorId, cnpj, razaoSocial }),

@@ -695,7 +695,7 @@ function resetSpedGlobal() {
     if (el2) el2.disabled = true;
   }
   const twoStep = [
-    ['#confFrame', '#confEmpty', ['#btnConfHtml', '#btnConfPdf', '#btnConfCliente']],
+    ['#confFrame', '#confEmpty', ['#btnConfHtml', '#btnConfPdf', '#btnConfCliente', '#btnConfXlsx']],
     ['#confSFrame', '#confSEmpty', ['#btnConfSHtml', '#btnConfSPdf', '#btnConfSCliente']],
     ['#freteFrame', '#freteEmpty', ['#btnFreteHtml', '#btnFretePdf']],
   ];
@@ -781,7 +781,7 @@ function bindFiscal() {
     const fr = $('#confFrame');
     fr.srcdoc = res.html;
     fr.hidden = false; $('#confEmpty').hidden = true;
-    $('#btnConfHtml').disabled = false; $('#btnConfPdf').disabled = false; $('#btnConfCliente').disabled = false;
+    $('#btnConfHtml').disabled = false; $('#btnConfPdf').disabled = false; $('#btnConfCliente').disabled = false; $('#btnConfXlsx').disabled = false;
     const r = res.resumo || {};
     toast(`Conferência: ${r.importadas || 0} notas · ${r.faltantes || 0} faltante(s) · ${r.divergencias || 0} divergência(s)`);
     const btnFalt = $('#btnConfNotasFaltantes');
@@ -791,6 +791,14 @@ function bindFiscal() {
   $('#btnConfHtml').addEventListener('click', () => exportFiscal('conf', 'html'));
   $('#btnConfPdf').addEventListener('click', () => exportFiscal('conf', 'pdf'));
   $('#btnConfCliente').addEventListener('click', () => exportFiscal('conf', 'html', true));
+  $('#btnConfXlsx').addEventListener('click', async () => {
+    overlay(true, 'Montando o Excel…');
+    const r = await window.fiscocont.fiscal.confExportarXlsx();
+    overlay(false);
+    if (!r || r.canceled) return;
+    if (r.error) { toast(r.error, true); return; }
+    toast('Excel salvo.');
+  });
 
   // ---- Conferência de Saídas ----
   const bConfS = $('#btnConfSSped');

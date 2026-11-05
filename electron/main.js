@@ -3256,9 +3256,29 @@ ipcMain.handle('fiscal:conferencia', async (_evt, { spedPath, xmlsPath }) => {
     try {
       const j = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
       resumo = { importadas: j.importadas, conciliadas: j.qtd_conciliadas, faltantes: j.qtd_faltantes, divergencias: j.qtd_divergencias };
+      empresaConf = (j.empresa && j.empresa.empresa) || '';
     } catch (_) {}
-    fs.unlink(jsonOut, () => {}); fs.unlink(htmlOut, () => {});
+    if (lastConfJson && lastConfJson !== jsonOut) fs.unlink(lastConfJson, () => {});
+    lastConfJson = fs.existsSync(jsonOut) ? jsonOut : null;     // guardado para o "Exportar Excel"
+    fs.unlink(htmlOut, () => {});
     return { ok: true, html, resumo };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
+// Conferência NF-e × SPED em Excel (para o cliente): abas "Faltantes no SPED" e "Divergência de valor"
+let lastConfJson = null; let empresaConf = '';
+ipcMain.handle('fiscal:confExportarXlsx', async () => {
+  if (!lastConfJson || !fs.existsSync(lastConfJson)) return { error: 'Rode a conferência primeiro.' };
+  const nome = `Conferencia-Entradas-SPED-x-XML-${(empresaConf || 'empresa').replace(/[^\w-]+/g, '_')}.xlsx`;
+  const save = await dialog.showSaveDialog(mainWindow, { title: 'Salvar Excel', defaultPath: nome, filters: [{ name: 'Excel', extensions: ['xlsx'] }] });
+  if (save.canceled || !save.filePath) return { canceled: true };
+  const jsonRes = path.join(os.tmpdir(), `fc_confx_${Date.now()}.json`);
+  try {
+    await runFiscal(['conf-xlsx', '--entrada', lastConfJson, '--saida', save.filePath, '--json', jsonRes], jsonRes);
+    const r = JSON.parse(fs.readFileSync(jsonRes, 'utf-8')); fs.unlink(jsonRes, () => {});
+    if (r.erro) return { error: r.erro };
+    shell.openPath(save.filePath);
+    return { ok: true, path: save.filePath };
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
