@@ -45,18 +45,18 @@
 
   // ------------------------------------------------------------------ números
   function resumo(linhas) {
-    const tot = { n: linhas.length, concluida: 0, transmitida: 0, escriturada: 0, alerta: 0, pendente: 0, semMov: 0 };
+    const tot = { n: linhas.length, concluida: 0, transmitida: 0, escriturada: 0, alerta: 0, pendente: 0, semMov: 0, esc: 0 };
     const por = new Map();
     for (const r of linhas) {
-      const st = status(r); tot[st]++; if (r.semMovimento) tot.semMov++;
+      const st = status(r); tot[st]++; if (r.semMovimento) tot.semMov++; if (ok(r.esc)) tot.esc++;
       const k = r.analista || '(sem analista)';
-      if (!por.has(k)) por.set(k, { nome: k, n: 0, feitas: 0, concluida: 0, transmitida: 0, escriturada: 0, alerta: 0, pendente: 0 });
-      const a = por.get(k); a.n++; a[st]++; if (feito(st)) a.feitas++;
+      if (!por.has(k)) por.set(k, { nome: k, n: 0, feitas: 0, esc: 0, concluida: 0, transmitida: 0, escriturada: 0, alerta: 0, pendente: 0 });
+      const a = por.get(k); a.n++; a[st]++; if (feito(st)) a.feitas++; if (ok(r.esc)) a.esc++;
     }
     tot.feitas = tot.transmitida + tot.concluida;
     const nomes = [...por.keys()].sort((x, y) => x.localeCompare(y));
     const analistas = [...por.values()].sort((x, y) => y.n - x.n || x.nome.localeCompare(y.nome))
-      .map((a) => ({ ...a, cor: corAnalista(a.nome, nomes.indexOf(a.nome)), pct: a.n ? Math.round(a.feitas / a.n * 100) : 0 }));
+      .map((a) => ({ ...a, cor: corAnalista(a.nome, nomes.indexOf(a.nome)), pct: a.n ? Math.round(a.feitas / a.n * 100) : 0, pctEsc: a.n ? Math.round(a.esc / a.n * 100) : 0 }));
     const usadas = new Set();                       // iniciais sem repetir (Heloisa e Hemily não podem ser "HE" as duas)
     for (const a of analistas) {
       let ini = iniciais(a.nome);
@@ -81,7 +81,8 @@
       </div>
       <div class="fs-kpis" id="fsKpis"></div>
       <div class="fs-alert" id="fsAlert" hidden></div>
-      <div class="fs-card fs-rings-card"><div class="fs-card-h"><b>Por analista · % com PGDAS transmitido</b><small id="fsRingsSub"></small></div>
+      <div class="fs-card fs-rings-card"><div class="fs-card-h"><b id="fsRingsTit">Por analista · escrituração e PGDAS</b>
+        <span class="fs-rkey"><i class="e"></i>escrituração concluída <i class="p"></i>PGDAS transmitido</span><small id="fsRingsSub"></small></div>
         <div class="fs-rings"><svg id="fsRings" viewBox="0 0 300 300" width="300" height="300"></svg><div class="fs-rleg" id="fsRLeg"></div></div></div>
       <div class="fs-bar">
         <select id="fsComp" class="fs-in">${comps.map((c) => `<option value="${c}" ${c === FS.comp ? 'selected' : ''}>${compRot(c)}</option>`).join('')}</select>
@@ -134,6 +135,7 @@
     $('#fsSub').innerHTML = `Competência <b>${compRot(FS.comp)}</b> · prazo do PGDAS-D e do DAS: <b class="${venc && falta ? 'neg' : ''}">${fmtData(pz)}</b>${venc && falta ? ' · <span class="neg">vencido</span>' : ''}`;
     const k = [
       ['n', 'Empresas', tot.n, '', ''],
+      ['s', 'Escrituração concluída', tot.esc, '#0ea5e9', tot.n ? ` · ${Math.round(tot.esc / tot.n * 100)}%` : ''],
       ['f', 'PGDAS transmitido', tot.feitas, '#4f46e5', tot.n ? ` · ${Math.round(tot.feitas / tot.n * 100)}%` : ''],
       ['e', 'Falta transmitir', tot.escriturada, '#f59e0b', ''],
       ['p', 'Pendentes', tot.pendente, '#e23d4c', ''],
@@ -168,6 +170,10 @@
   }
 
   // Anéis de progresso: um por analista, de fora para dentro. Na primeira vez enchem do zero; depois, só avançam.
+  // Anéis: um por analista, de fora para dentro. Cada anel mostra as DUAS etapas ao mesmo tempo: o trecho claro é a
+  // escrituração concluída e o trecho forte por cima é o PGDAS transmitido. Na 1ª vez enchem do zero; depois, só avançam.
+  const conta2 = (el, de, ate, suf) => { if (!el) return; const t0 = performance.now();
+    const f = (t) => { const p = Math.min(1, (t - t0) / 1500), q = 1 - Math.pow(1 - p, 3); el.textContent = Math.round(de + (ate - de) * q) + (suf || ''); if (p < 1) requestAnimationFrame(f); }; requestAnimationFrame(f); };
   function desenhaAneis(tot, analistas) {
     const svg = $('#fsRings'), leg = $('#fsRLeg');
     const n = analistas.length, passo = n > 1 ? Math.min(16, (138 - 58) / (n - 1)) : 16, larg = Math.max(6, passo - 4);
@@ -175,31 +181,34 @@
     const novo = !FS.anel || FS.anel.chave !== chave;
     if (novo) {
       svg.innerHTML = analistas.map((a, i) => {
-        const r = 138 - i * passo, L = 2 * Math.PI * r;
-        return `<circle cx="150" cy="150" r="${r}" fill="none" stroke="${a.cor}" stroke-opacity=".14" stroke-width="${larg}"/>
-          <circle class="fs-ring" data-i="${i}" cx="150" cy="150" r="${r}" fill="none" stroke="${a.cor}" stroke-width="${larg}" stroke-linecap="round"
-            stroke-dasharray="0 ${L.toFixed(1)}" transform="rotate(-90 150 150)" style="transition-delay:${(i * 0.12).toFixed(2)}s"><title>${e(a.nome)}</title></circle>`;
-      }).join('') + '<text id="fsRTot" x="150" y="148" text-anchor="middle" class="fs-rtot">0%</text><text x="150" y="171" text-anchor="middle" class="fs-rtot-s">equipe</text>';
-      FS.anel = { chave, pct: analistas.map(() => 0), tot: 0 };
+        const r = 138 - i * passo, L = 2 * Math.PI * r, atraso = (i * 0.12).toFixed(2);
+        return `<circle cx="150" cy="150" r="${r}" fill="none" stroke="${a.cor}" stroke-opacity=".12" stroke-width="${larg}"/>
+          <circle class="fs-ring" data-i="${i}" data-k="esc" cx="150" cy="150" r="${r}" fill="none" stroke="${a.cor}" stroke-opacity=".38" stroke-width="${larg}" stroke-linecap="round"
+            stroke-dasharray="0 ${L.toFixed(1)}" transform="rotate(-90 150 150)" style="transition-delay:${atraso}s"><title>${e(a.nome)} · escrituração</title></circle>
+          <circle class="fs-ring" data-i="${i}" data-k="pg" cx="150" cy="150" r="${r}" fill="none" stroke="${a.cor}" stroke-width="${larg}" stroke-linecap="round"
+            stroke-dasharray="0 ${L.toFixed(1)}" transform="rotate(-90 150 150)" style="transition-delay:${(i * 0.12 + 0.25).toFixed(2)}s"><title>${e(a.nome)} · PGDAS</title></circle>`;
+      }).join('') + `<text id="fsRTotE" x="150" y="138" text-anchor="middle" class="fs-rtot fs-rtot-e">0%</text><text x="150" y="156" text-anchor="middle" class="fs-rtot-s">escrituração</text>
+        <text id="fsRTot" x="150" y="186" text-anchor="middle" class="fs-rtot2">0%</text><text x="150" y="202" text-anchor="middle" class="fs-rtot-s">PGDAS</text>`;
+      FS.anel = { chave, pct: analistas.map(() => 0), esc: analistas.map(() => 0), tot: 0, totE: 0 };
     }
     const pctTot = tot.n ? Math.round(tot.feitas / tot.n * 100) : 0;
+    const pctTotE = tot.n ? Math.round(tot.esc / tot.n * 100) : 0;
     requestAnimationFrame(() => requestAnimationFrame(() => {
       svg.querySelectorAll('.fs-ring').forEach((c) => {
         const a = analistas[+c.dataset.i], L = 2 * Math.PI * +c.getAttribute('r');
-        c.setAttribute('stroke-dasharray', `${(L * (a.n ? a.feitas / a.n : 0)).toFixed(1)} ${L.toFixed(1)}`);
+        const v = c.dataset.k === 'esc' ? Math.max(a.esc, a.feitas) : a.feitas;     // o trecho claro nunca fica menor que o forte
+        c.setAttribute('stroke-dasharray', `${(L * (a.n ? v / a.n : 0)).toFixed(1)} ${L.toFixed(1)}`);
       });
     }));
-    const tEl = $('#fsRTot'); const de = FS.anel.tot;
-    const t0 = performance.now(); const anima = (t) => { const p = Math.min(1, (t - t0) / 1500), f = 1 - Math.pow(1 - p, 3); tEl.textContent = Math.round(de + (pctTot - de) * f) + '%'; if (p < 1) requestAnimationFrame(anima); };
-    requestAnimationFrame(anima);
+    conta2($('#fsRTotE'), FS.anel.totE, pctTotE, '%'); conta2($('#fsRTot'), FS.anel.tot, pctTot, '%');
     leg.innerHTML = analistas.map((a, i) => `<div class="fs-rl ${novo ? 'in' : 'on'}" style="animation-delay:${(0.25 + i * 0.1).toFixed(2)}s">
       <span class="fs-av" style="background:${a.cor}">${e(a.ini)}</span><b class="fs-rn">${e(a.nome)}</b>
-      <span class="fs-rp" style="color:${a.cor}" data-rp="${i}">${FS.anel.pct[i] || 0}%</span>
-      <small>${a.feitas}/${a.n} transmitidas${a.pendente + a.escriturada ? ` · ${a.pendente + a.escriturada} faltam` : ''}${a.alerta ? ` · <span class="neg">${a.alerta} ⚠</span>` : ''}</small></div>`).join('');
-    analistas.forEach((a, i) => { const el = leg.querySelector(`[data-rp="${i}"]`); const de2 = FS.anel.pct[i] || 0; const t1 = performance.now();
-      const an = (t) => { const p = Math.min(1, (t - t1) / 1500), f = 1 - Math.pow(1 - p, 3); el.textContent = Math.round(de2 + (a.pct - de2) * f) + '%'; if (p < 1) requestAnimationFrame(an); }; requestAnimationFrame(an); });
-    FS.anel.pct = analistas.map((a) => a.pct); FS.anel.tot = pctTot;
-    $('#fsRingsSub').textContent = `${tot.feitas} de ${tot.n} empresas`;
+      <span class="fs-rp2"><em style="color:${a.cor};opacity:.62" data-re="${i}">${FS.anel.esc[i] || 0}%</em><small>escrit.</small></span>
+      <span class="fs-rp2"><em style="color:${a.cor}" data-rp="${i}">${FS.anel.pct[i] || 0}%</em><small>PGDAS</small></span>
+      <small class="fs-rdet">${a.esc}/${a.n} escrituradas · ${a.feitas}/${a.n} transmitidas${a.alerta ? ` · <span class="neg">${a.alerta} ⚠</span>` : ''}</small></div>`).join('');
+    analistas.forEach((a, i) => { conta2(leg.querySelector(`[data-re="${i}"]`), FS.anel.esc[i] || 0, a.pctEsc, '%'); conta2(leg.querySelector(`[data-rp="${i}"]`), FS.anel.pct[i] || 0, a.pct, '%'); });
+    FS.anel.pct = analistas.map((a) => a.pct); FS.anel.esc = analistas.map((a) => a.pctEsc); FS.anel.tot = pctTot; FS.anel.totE = pctTotE;
+    $('#fsRingsSub').textContent = `${tot.esc} escrituradas · ${tot.feitas} transmitidas · ${tot.n} empresas`;
   }
 
   function filtradas() {
