@@ -309,6 +309,11 @@
         <svg viewBox="0 0 24 24" class="ic"><rect x="4" y="11" width="16" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 11V7a5 5 0 0110 0v4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
         <span>Licenças de acesso</span>
       </button>
+      <button class="nav-item" data-group="admin-only" data-view="admin-integra">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Integra Contador · Serpro</span>
+        <em class="nav-new" id="integraNewBadge" hidden>NOVO</em>
+      </button>
       <button class="nav-item nav-item-danger" data-group="admin-only" data-view="admin-corrigir-sped">
         <svg viewBox="0 0 24 24" class="ic"><path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M10.3 4.2L2.9 17a1.8 1.8 0 001.55 2.7h15.1A1.8 1.8 0 0021.1 17L13.7 4.2a1.8 1.8 0 00-3.4 0z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
         <span>Correção do SPED Fiscal</span>
@@ -1187,6 +1192,8 @@
         </div>
       </div>
 
+      <div class="view" id="view-admin-integra" hidden><div id="igRaiz" class="ig"></div></div>
+
       <div class="view" id="view-admin-lic" hidden>
         <div class="fiscal-bar">
           <span style="font-weight:700;color:var(--ink)">Licenças de acesso (bloqueio remoto por máquina)</span>
@@ -1507,5 +1514,6 @@
 <script src="evolucao_dash.js"></script>
 <script src="app.js"></script>
 <script src="fechamento-sn.js"></script>
+<script src="integra-admin.js"></script>
 </body>
 </html>

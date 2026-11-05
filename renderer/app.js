@@ -564,6 +564,7 @@ function switchView(name) {
     const fr = $('#efdFrame'); if (fr && fr.srcdoc) fr.srcdoc = fr.srcdoc;   // recarrega: a animação do painel toca de novo
     return;
   }
+  if (name === 'admin-integra') { $('#view-admin-integra').hidden = false; $('#empty').hidden = true; if (window._integraEntrar) window._integraEntrar(); return; }
   if (name === 'admin-lic') { $('#view-admin-lic').hidden = false; $('#empty').hidden = true; loadLicensePanel(); return; }
   if (name === 'admin-usuarios') { $('#view-admin-usuarios').hidden = false; $('#empty').hidden = true; loadUsuarios(); return; }
   if (name === 'admin-corrigir-sped') { $('#view-admin-corrigir-sped').hidden = false; $('#empty').hidden = true; return; }
@@ -3904,7 +3905,7 @@ function applyRole(role, modulos) {
   if (role !== 'admin' && MODULOS) {
     const ok = new Set(MODULOS);
     $$('.nav .nav-item[data-view]').forEach((b) => {
-      const exclusivo = ['admin-usuarios', 'admin-lic'].includes(b.dataset.view);
+      const exclusivo = ['admin-usuarios', 'admin-lic', 'admin-integra'].includes(b.dataset.view);
       const sempre = b.dataset.view === 'manual-fiscal' && !hideFiscal;     // o manual vale para todo o Fiscal
       b.classList.toggle('role-hidden', exclusivo || (!sempre && !ok.has(b.dataset.view)));
     });
@@ -4626,7 +4627,7 @@ function usrMostraSenha(nome, email, senha, novo) {
   $('#usrOkSenha').addEventListener('click', () => { m.hidden = true; });
 }
 function usrModulos(u) {
-  const cat = catalogoModulos().filter((x) => !['admin-usuarios', 'admin-lic'].includes(x.view));
+  const cat = catalogoModulos().filter((x) => !['admin-usuarios', 'admin-lic', 'admin-integra'].includes(x.view));
   const marcados = new Set(u.modulos || modulosPadrao(u.perfil));
   const grupos = [...new Set(cat.map((x) => x.grupoNome))];
   const m = usrModal(`
@@ -5881,7 +5882,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Selos com data fixa de validade (7 dias a partir do lançamento): EFD-Contribuições (07/10/2026)
   // e Manual do Fiscal (26/10/2026, selo "NOVIDADE" em destaque).
-  [['#efdNewBadge', '2026-10-14T23:59:59'], ['#manualNewBadge', '2026-11-02T23:59:59'], ['#atribNewBadge', '2026-11-06T23:59:59']].forEach(([sel, ate]) => {
+  [['#efdNewBadge', '2026-10-14T23:59:59'], ['#manualNewBadge', '2026-11-02T23:59:59'], ['#atribNewBadge', '2026-11-06T23:59:59'], ['#integraNewBadge', '2026-11-12T23:59:59']].forEach(([sel, ate]) => {
     const b = $(sel); if (b && new Date() <= new Date(ate)) b.hidden = false;
   });
   await checkLicenseGate();

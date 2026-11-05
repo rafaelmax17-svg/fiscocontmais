@@ -115,7 +115,7 @@ function parar() { _unsubs.forEach((u) => { try { u(); } catch (_) {} }); _unsub
 function ouvir(comp, cb) {
   parar();
   const { db, f } = _fs();
-  let mes = null, cad = null, lista = [];
+  let mes = null, cad = null, lista = [], ig = {};
   const manda = () => {
     if (!mes || !cad) return;
     const analistas = _uneNomes(lista, Object.values(cad).filter((c) => c.ativa !== false).map((c) => c.analista), Object.values(mes).map((r) => r.analista));
@@ -124,14 +124,27 @@ function ouvir(comp, cb) {
       return {
         id, nome: c.nome || r.nome || '', cnpj: c.cnpj || '', analista: r.analista || c.analista || '', ordem: c.ordem ?? 9999,
         esc: r.esc || '', pgdas: r.pgdas || '', das: r.das || '', obs: r.obs || '', fin: r.fin || '',
-        alteradoPor: r.alteradoPor || '', semMovimento: _semMovimento(r.obs),
+        alteradoPor: r.alteradoPor || '', semMovimento: _semMovimento(r.obs), receita: r.receita || null, pgdasRobo: !!r.pgdasRobo,
         inativa: c.ativa === false, saida: c.saida || '',
       };
     }).sort((a, b) => a.ordem - b.ordem || a.nome.localeCompare(b.nome));
-    cb({ comp, linhas, analistas, admin: _ehAdmin() });
+    cb({ comp, linhas, analistas, admin: _ehAdmin(), integra: _integraPublico(ig) });
   };
   _unsubs.push(f.onSnapshot(f.doc(db, COL, comp), (s) => { mes = s.exists() ? (s.data().empresas || {}) : {}; manda(); }, () => {}));
+  _unsubs.push(f.onSnapshot(f.doc(db, COL, 'integra'), (s) => { ig = s.exists() ? s.data() : {}; manda(); }, () => {}));
   _unsubs.push(f.onSnapshot(f.doc(db, COL, 'cadastro'), (s) => { const d = s.exists() ? s.data() : {}; cad = d.empresas || {}; lista = Array.isArray(d.analistas) ? d.analistas : []; manda(); }, () => {}));
+}
+
+// Situação do robô do Integra Contador para a tela (sem nada de chave: ela nunca vai para a nuvem).
+function _integraPublico(d) {
+  if (!d || !d.ativo) return { ativo: false };
+  const hb = d.heartbeat && d.heartbeat.toMillis ? d.heartbeat.toMillis() : 0;
+  const u = d.ultimo || null;
+  return {
+    ativo: true, online: !!hb && Date.now() - hb < 12 * 60 * 1000, roboNome: d.roboNome || '',
+    rodando: d.rodando || null, pendente: !!(d.pedido && d.pedido.n > (d.atendido || 0)),
+    ultimo: u ? { comp: u.comp, emBr: u.emBr || '', por: u.por || '', erro: u.erro || '', resumo: u.resumo || {}, total: u.total || 0 } : null,
+  };
 }
 
 // Marca uma etapa ou a observação. A data de finalização é refeita na mesma gravação.
@@ -185,7 +198,7 @@ async function cadastrar(comp, { nome, cnpj, analista, desde }) {
   return { ok: true, id };
 }
 
-async function alterar(comp, id, { nome, analista }) {
+async function alterar(comp, id, { nome, analista, cnpj }) {
   _exigeAdmin();
   const { db, f } = _fs();
   const updC = {}, updM = {};
@@ -202,9 +215,14 @@ async function alterar(comp, id, { nome, analista }) {
     if (!conhecidas.some((x) => _chaveAn(x) === _chaveAn(a))) updC.analistas = _uneNomes(conhecidas, [a]);
     updC[`empresas.${id}.analista`] = a; updM[`empresas.${id}.analista`] = a;
   }
+  if (cnpj !== undefined) {
+    const c = String(cnpj || '').replace(/\D/g, '');
+    if (c && c.length !== 14) throw new Error('CNPJ inválido.');
+    updC[`empresas.${id}.cnpj`] = c;
+  }
   if (!Object.keys(updC).length) return { ok: true };
   await f.updateDoc(f.doc(db, COL, 'cadastro'), updC);
-  if (RE_COMP.test(comp || '')) await f.updateDoc(f.doc(db, COL, comp), updM);
+  if (RE_COMP.test(comp || '') && Object.keys(updM).length) await f.updateDoc(f.doc(db, COL, comp), updM);
   return { ok: true };
 }
 

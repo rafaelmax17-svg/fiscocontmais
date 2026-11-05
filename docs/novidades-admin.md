@@ -3,6 +3,17 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.61
+
+- **Robô do Fechamento do Simples · Integra Contador (Serpro)** — contrato 598158 da Liddera (CNPJ 36.714.399/0001-10). Fica desligado até o Admin cadastrar a chave: enquanto isso nada muda para a equipe.
+  - **Admin › Integra Contador · Serpro:** Consumer Key e Consumer Secret (Área do Cliente do Serpro) colados uma vez; o sistema testa a autenticação no Serpro com o e-CNPJ da Liddera (o mesmo das Baixas DF-e) e só salva se passar. A chave fica só neste computador, cifrada pelo Windows (safeStorage, userData/integra.json) — nunca na nuvem, no código ou no instalador. "Trocar chave" e "Remover". Mostra consumo do mês (consultas e emissões, com o valor estimado pela 1ª faixa do contrato).
+  - **Computador do robô:** o que tem a chave. Ele recebe os pedidos da equipe pela nuvem (fechamento_sn/integra, que só guarda andamento e pedido — regra nova: a equipe só altera o campo "pedido"), avisa que está online a cada 4 min e faz 1 conferência automática por dia a partir das 08:00 (competência anterior, só empresas já escrituradas ou com PGDAS marcado e ainda não confirmadas).
+  - **Fechamento · "Conferir na Receita" (toda a equipe):** consulta a última declaração do PGDAS-D do período (CONSULTIMADECREC14); transmitida → marca "PGDAS transmitido = Sim" (selo "robô") e salva Declaração e Recibo; até o vencimento (dia 20) também gera o DAS (GERARDAS12, não gera se a etapa DAS for N/A) e o Extrato do DAS (CONSEXTRATO16). Com filtro ativo (analista, busca ou chip), só as empresas do filtro. A mesma empresa pendente não é consultada de novo antes de 6 h; confirmada não é consultada de novo.
+  - **Nunca desmarca a analista:** marcado "Sim" sem declaração na Receita, ou "N/A" com declaração → **Verificar** (chip e cartão próprios). Sem procuração no e-CAC, sem CNPJ no cadastro e falha da consulta aparecem na coluna "Receita Federal".
+  - **Pastas:** "Pasta das empresas" + "Subpasta" com {AAAA} {MM} {MES} {AA}. A pasta de cada empresa é achada pelos primeiros nomes da razão social (sem LTDA/ME/EPP/EIRELI, código ou CNPJ no nome da pasta); nome igual ganha das parecidas. Nenhuma ou mais de uma pasta parecida → não escolhe: a empresa vai para "Empresas com pasta a verificar" e o Admin aponta uma vez (fica gravado). Sem pasta das empresas configurada, salva em <pasta das Baixas DF-e>/MM-AAAA/<empresa>/Simples Nacional. Nunca sobrescreve: arquivo igual é reaproveitado, diferente vira "(2)".
+  - **CNPJ no Fechamento:** o ✎ (Admin) agora também altera o CNPJ, com "Buscar na Receita".
+  - Os nomes dos campos de resposta do Serpro são lidos de forma tolerante; o primeiro teste real (chave e uma empresa com procuração) confirma o formato.
+
 ## 2.1.51
 
 - **Simples Nacional · Fechamento da equipe · analistas**: botão "Analistas" (só Admin) com a lista das analistas, quantas empresas cada uma tem no mês, cadastro de analista nova e remoção (só sem empresa ativa no cadastro). Na coluna "Analista responsável" o Admin troca a analista direto na linha; vale para o mês aberto e para os próximos (os anteriores ficam como estavam). No "Cadastrar empresa" e no ✎ a analista agora é escolhida da lista. A lista fica no Firestore (fechamento_sn/cadastro.analistas) e nasce, na primeira abertura do Admin, com as analistas já em uso + **Taynara**.

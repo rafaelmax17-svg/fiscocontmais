@@ -13,7 +13,7 @@
     alerta: { rot: 'Inconsistente', cor: '#b42318' },
     pendente: { rot: 'Pendente', cor: '#e23d4c' },
   };
-  const FS = { comp: '', linhas: [], listaAn: [], admin: false, analista: '', busca: '', chip: 'todas', iniciado: false, aberto: false, anel: null, kpiAnt: {} };
+  const FS = { ig: { ativo: false }, comp: '', linhas: [], listaAn: [], admin: false, analista: '', busca: '', chip: 'todas', iniciado: false, aberto: false, anel: null, kpiAnt: {} };
 
   const e = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ok = (v) => v === 'Sim' || v === 'N/A';
@@ -92,12 +92,15 @@
         <input id="fsBusca" class="fs-in fs-busca" placeholder="Buscar empresa…">
         <div class="fs-chips" id="fsChips"></div>
         <span style="flex:1"></span>
+        <span class="fs-robo" id="fsRobo" hidden></span>
+        <button class="act inv-export fs-rec" id="fsReceita" hidden title="O robô consulta na Receita Federal (Integra Contador) as empresas ainda não confirmadas">🔎 Conferir na Receita</button>
         <button class="act inv-export" id="fsHtml">Exportar HTML</button>
         <button class="act inv-export" id="fsAnalistas" hidden>Analistas</button>
         <button class="act inv-export fs-prim" id="fsNova" hidden>+ Cadastrar empresa</button>
       </div>
+      <div class="fs-recbox" id="fsRecBox" hidden></div>
       <div class="fs-card fs-tab-wrap"><table class="fs-tab"><thead><tr>
-        <th>#</th><th class="l">Empresa</th><th class="l">Analista responsável</th><th>Escrituração concluída</th><th>PGDAS transmitido</th>
+        <th>#</th><th class="l">Empresa</th><th class="l">Analista responsável</th><th>Escrituração concluída</th><th>PGDAS transmitido</th><th class="l fs-rf-col" hidden>Receita Federal</th>
         <th>DAS/DARE enviado ao cliente</th><th>Data finalização</th><th class="l">Observações</th><th class="fs-adm-col" hidden></th></tr></thead>
         <tbody id="fsBody"></tbody></table>
         <div class="fs-foot" id="fsFoot"></div></div>
@@ -106,6 +109,7 @@
     $('#fsAn').addEventListener('change', (ev) => { FS.analista = ev.target.value; desenhaTabela(true); });
     $('#fsBusca').addEventListener('input', (ev) => { FS.busca = ev.target.value; desenhaTabela(true); });
     $('#fsHtml').addEventListener('click', exportar);
+    $('#fsReceita').addEventListener('click', conferirReceita);
     $('#fsNova').addEventListener('click', () => modalEmpresa());
     $('#fsAnalistas').addEventListener('click', modalAnalistas);
     $('#fsBody').addEventListener('change', onCelula);
@@ -124,7 +128,7 @@
 
   function aoMudar(d) {
     if (!d || d.comp !== FS.comp) return;
-    FS.linhas = d.linhas || []; FS.admin = !!d.admin; FS.listaAn = d.analistas || [];
+    FS.linhas = d.linhas || []; FS.admin = !!d.admin; FS.listaAn = d.analistas || []; FS.ig = d.integra || { ativo: false };
     if (!$('#fsModal').hidden && $('#fsMBox').dataset.tipo === 'an') modalAnalistas();
     const live = $('#fsLive'); if (live) { live.classList.remove('pulse'); void live.offsetWidth; live.classList.add('pulse'); }
     desenhaTudo();
@@ -145,9 +149,11 @@
     sel.innerHTML = '<option value="">Todas as analistas</option>' + analistas.map((a) => `<option ${a.nome === atual ? 'selected' : ''}>${e(a.nome)}</option>`).join('');
     const chips = [['todas', 'Todas', tot.n], ['pendente', 'Pendentes', tot.pendente + tot.escriturada], ['alerta', 'Inconsistentes', tot.alerta],
       ['semmov', 'Sem movimento', tot.semMov], ['concluida', 'Concluídas', tot.concluida]];
+    if (FS.ig.ativo) chips.splice(3, 0, ['verificar', 'Verificar (Receita)', FS.linhas.filter((r) => recSit(r).k === 'verificar').length]);
     $('#fsChips').innerHTML = chips.map(([id, rot, n]) => `<button class="fs-chip ${FS.chip === id ? 'on' : ''}" data-chip="${id}">${rot} <b>${n}</b></button>`).join('');
     $('#fsChips').querySelectorAll('.fs-chip').forEach((b) => b.addEventListener('click', () => { FS.chip = b.dataset.chip; desenhaTudo(); }));
     $('#fsNova').hidden = !FS.admin; $('#fsAnalistas').hidden = !FS.admin;
+    desenhaReceita();
     document.querySelectorAll('.fs-adm-col').forEach((x) => { x.hidden = !FS.admin; });
     desenhaTabela(false);
   }
@@ -202,6 +208,73 @@
       || '<div class="fs-vz ok">✓ Nenhuma empresa nesta etapa.</div>';
   }
 
+  // ------------------------------------------------------------------ Receita Federal (robô do Integra Contador)
+  // Só aparece depois que o Admin cadastrar a chave do Serpro. O robô nunca desmarca o que a analista marcou:
+  // quando a Receita discorda da marcação, a linha mostra "Verificar".
+  function recSit(r) {
+    const rc = r.receita;
+    if (!rc || !rc.st) return { k: '', rot: '' };
+    if (rc.st === 'ok' && r.pgdas === 'N/A') return { k: 'verificar', rot: 'marcado “N/A”, mas a Receita tem declaração do período' };
+    if (rc.st === 'ok') return { k: 'ok', rot: rc.msg || 'Transmitido' };
+    if (rc.st === 'nao' && r.pgdas === 'Sim') return { k: 'verificar', rot: 'marcado “Sim”, mas a Receita não tem declaração do período' };
+    if (rc.st === 'nao') return { k: 'nao', rot: 'Ainda não transmitido' };
+    if (rc.st === 'semproc') return { k: 'semproc', rot: 'cliente precisa autorizar a Liddera no e-CAC' };
+    if (rc.st === 'semcnpj') return { k: 'semcnpj', rot: 'cadastre o CNPJ da empresa' };
+    return { k: 'erro', rot: rc.msg || 'falha na consulta' };
+  }
+  const ROT_DOC = { Declaracao: 'Declaração', Recibo: 'Recibo', DAS: 'DAS', Extrato: 'Extrato' };
+  function celReceita(r) {
+    if (!FS.ig.ativo) return '';
+    const s = recSit(r), rc = r.receita || {};
+    if (!s.k) return '<span class="fs-rf-vz">—</span>';
+    const tt = rc.em ? ` title="Conferido na Receita Federal em ${e(rc.em)}"` : '';
+    const docs = Object.keys(rc.arquivos || {});
+    const docsHtml = docs.length ? `<button class="fs-rf-docs" data-a="pasta" data-id="${r.id}" title="${e(rc.pasta || '')}">📄 ${docs.map((d) => ROT_DOC[d] || d).join(' · ')}${rc.dasValor ? ` · R$ ${Number(rc.dasValor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''}</button>` : '';
+    const av = [rc.pastaAviso, rc.dasAviso].filter(Boolean).map((x) => `<small class="fs-rf-av">⚠ ${e(x)}</small>`).join('');
+    if (s.k === 'ok') return `<div class="fs-rf ok"${tt}>✓ ${e(s.rot)}${docsHtml}${av}</div>`;
+    if (s.k === 'verificar') return `<div class="fs-rf"${tt}><span class="fs-rf-b vf">⚠ Verificar</span><small class="fs-rf-t vf">${e(s.rot)}</small></div>`;
+    if (s.k === 'semproc') return `<div class="fs-rf"><span class="fs-rf-b sp">Sem procuração</span><small class="fs-rf-t sp">${e(s.rot)}</small></div>`;
+    if (s.k === 'semcnpj') return `<div class="fs-rf"><span class="fs-rf-b sc">Sem CNPJ</span><small class="fs-rf-t">${e(s.rot)}</small></div>`;
+    if (s.k === 'nao') return `<div class="fs-rf nao"${tt}>${e(s.rot)}</div>`;
+    return `<div class="fs-rf"><span class="fs-rf-b er">Falha</span><small class="fs-rf-t" title="${e(s.rot)}">${e(String(s.rot).slice(0, 110))}</small></div>`;
+  }
+  function desenhaReceita() {
+    const ig = FS.ig || {};
+    document.querySelectorAll('.fs-rf-col').forEach((x) => { x.hidden = !ig.ativo; });
+    $('#fsRobo').hidden = !ig.ativo; $('#fsReceita').hidden = !ig.ativo;
+    const box = $('#fsRecBox');
+    if (!ig.ativo) { box.hidden = true; return; }
+    const u = ig.ultimo;
+    $('#fsRobo').className = 'fs-robo ' + (ig.online ? 'on' : 'off');
+    $('#fsRobo').textContent = ig.online ? `Robô online${u && u.emBr ? ' · última conferência ' + u.emBr.replace(',', '').slice(0, 16) : ''}` : 'Robô offline';
+    $('#fsRobo').title = ig.online ? `Computador do robô: ${ig.roboNome}` : `O computador do robô (${ig.roboNome || '—'}) está desligado ou com o FiscoCont+ fechado. O pedido fica guardado e roda quando ele ligar.`;
+    const rd = ig.rodando && ig.rodando.comp === FS.comp ? ig.rodando : null;
+    $('#fsReceita').disabled = !!rd || ig.pendente;
+    $('#fsReceita').textContent = rd ? 'Conferindo…' : ig.pendente ? 'Pedido na fila…' : '🔎 Conferir na Receita';
+    const c = { ok: 0, nao: 0, verificar: 0, semproc: 0, semcnpj: 0, erro: 0 };
+    FS.linhas.forEach((r) => { const k = recSit(r).k; if (k) c[k]++; });
+    const algum = Object.values(c).some(Boolean);
+    let prog = '';
+    if (rd) prog = `<div class="fs-rprog"><span>Conferindo na Receita · ${rd.feito} de ${rd.total} empresas</span><div class="fs-rbar"><i style="width:${rd.total ? Math.round(rd.feito / rd.total * 100) : 0}%"></i></div></div>`;
+    else if (ig.pendente) prog = `<div class="fs-rprog"><span>${ig.online ? 'Pedido enviado ao robô…' : 'Pedido guardado: roda quando o computador do robô ligar.'}</span></div>`;
+    else if (u && u.comp === FS.comp) prog = `<div class="fs-rprog ${u.erro ? 'er' : ''}"><span>${u.erro ? '⚠ ' + e(u.erro) : `✓ Conferência concluída · ${u.total} empresa(s) consultada(s)${u.resumo && u.resumo.arquivos ? ` · ${u.resumo.arquivos} documento(s) salvo(s)` : ''}`}</span><small>${e(u.emBr || '')}${u.por ? ' · ' + e(u.por) : ''}</small></div>`;
+    if (!algum && !prog) { box.hidden = true; return; }
+    const t = [['ok', 'PGDAS confirmados na Receita', '#059669'], ['nao', 'Ainda não transmitidos', '#6366f1'], ['verificar', 'Verificar (divergência)', '#d97706'],
+      ['semproc', 'Sem procuração no e-CAC', '#dc2626'], ['semcnpj', 'Sem CNPJ no cadastro', '#64748b'], ['erro', 'Falha na consulta', '#9f1239']].filter(([k], i) => i < 4 || c[k]);
+    box.hidden = false;
+    box.innerHTML = prog + (algum ? `<div class="fs-rtiles">${t.map(([k, rot, cor]) => `<button class="fs-rt" style="--c:${cor}" data-rk="${k}"><b>${c[k]}</b>${rot}</button>`).join('')}</div>` : '');
+    box.querySelectorAll('[data-rk="verificar"]').forEach((b) => b.addEventListener('click', () => { FS.chip = 'verificar'; desenhaTudo(); }));
+  }
+  async function conferirReceita() {
+    const filtro = FS.analista || FS.busca.trim() || FS.chip !== 'todas';
+    const ids = filtro ? filtradas().map((r) => r.id) : null;
+    if (ids && !ids.length) { toast('Nenhuma empresa no filtro atual.', true); return; }
+    const bt = $('#fsReceita'); bt.disabled = true;
+    const x = await window.fiscocont.fechamento.conferirReceita(FS.comp, ids);
+    if (x && x.error) { bt.disabled = false; toast(x.error, true); return; }
+    toast(`Pedido enviado ao robô${ids ? ` (${ids.length} empresa${ids.length > 1 ? 's' : ''} do filtro)` : ''}. Só são consultadas as que ainda não foram confirmadas.`);
+  }
+
   function filtradas() {
     const b = FS.busca.trim().toUpperCase();
     return FS.linhas.filter((r) => {
@@ -212,6 +285,7 @@
       if (FS.chip === 'alerta') return st === 'alerta';
       if (FS.chip === 'semmov') return r.semMovimento;
       if (FS.chip === 'concluida') return st === 'concluida';
+      if (FS.chip === 'verificar') return recSit(r).k === 'verificar';
       return true;
     });
   }
@@ -233,10 +307,11 @@
     return `<td class="fs-n">${i + 1}</td>
       <td class="l"><span class="fs-dot" style="background:${ST[st].cor}" title="${ST[st].rot}"></span><b>${e(r.nome)}</b>${r.semMovimento ? '<span class="fs-tag">sem movimento</span>' : ''}${r.inativa && r.saida > FS.comp ? `<span class="fs-tag fs-tag-in">inativa a partir de ${e(compRot(r.saida))}</span>` : ''}${r.cnpj ? `<small>${e(r.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5'))}</small>` : ''}</td>
       <td class="l">${FS.admin ? selAnalista(r) : e(r.analista || '—')}</td>
-      <td>${selEtapa(r, 'esc')}</td><td>${selEtapa(r, 'pgdas')}</td><td>${selEtapa(r, 'das')}</td>
+      <td>${selEtapa(r, 'esc')}</td><td>${selEtapa(r, 'pgdas')}${r.pgdasRobo && r.pgdas === 'Sim' ? '<small class="fs-robotag" title="Marcado pelo robô depois de confirmar na Receita Federal">robô</small>' : ''}</td>
+      <td class="l fs-rf-col" ${FS.ig.ativo ? '' : 'hidden'}>${celReceita(r)}</td><td>${selEtapa(r, 'das')}</td>
       <td class="fs-fin" title="Preenchida sozinha quando as três etapas ficam Sim ou N/A">${r.fin ? e(r.fin) : '—'}</td>
       <td class="l"><input class="fs-obs" data-c="obs" data-id="${r.id}" value="${e(r.obs)}" placeholder="—">${st === 'alerta' ? '<small class="neg">⚠ PGDAS transmitido sem escrituração concluída</small>' : ''}</td>
-      <td class="fs-adm-col" ${FS.admin ? '' : 'hidden'}><button class="fs-ic" data-a="editar" data-id="${r.id}" title="Alterar nome ou analista">✎</button>${r.inativa ? `<button class="fs-mini" data-a="reativar" data-id="${r.id}" title="Volta a aparecer nos próximos meses">Reativar</button>` : `<button class="fs-mini del" data-a="inativar" data-id="${r.id}" title="Continua neste mês e some a partir do próximo">Inativar</button>`}</td>`;
+      <td class="fs-adm-col" ${FS.admin ? '' : 'hidden'}><button class="fs-ic" data-a="editar" data-id="${r.id}" title="Alterar nome, CNPJ ou analista">✎</button>${r.inativa ? `<button class="fs-mini" data-a="reativar" data-id="${r.id}" title="Volta a aparecer nos próximos meses">Reativar</button>` : `<button class="fs-mini del" data-a="inativar" data-id="${r.id}" title="Continua neste mês e some a partir do próximo">Inativar</button>`}</td>`;
   }
   function desenhaTabela(forcar) {
     const body = $('#fsBody'); if (!body) return;
@@ -255,7 +330,7 @@
     }
     $('#fsFoot').textContent = `Mostrando ${lst.length} de ${FS.linhas.length} empresas · clique na célula para escolher Sim, Não ou N/A · a data de finalização é preenchida sozinha quando as três etapas ficam Sim ou N/A`;
   }
-  const sig = (r, i) => [i, FS.listaAn.join(','), r.nome, r.analista, r.esc, r.pgdas, r.das, r.fin, r.obs, r.cnpj, FS.admin, r.inativa, r.saida].join('¦');
+  const sig = (r, i) => [i, FS.ig.ativo, JSON.stringify(r.receita || ''), r.pgdasRobo, FS.listaAn.join(','), r.nome, r.analista, r.esc, r.pgdas, r.das, r.fin, r.obs, r.cnpj, FS.admin, r.inativa, r.saida].join('¦');
 
   async function onCelula(ev) {
     if (ev.target.dataset.an) return trocaAnalista(ev.target);
@@ -271,6 +346,10 @@
     const b = ev.target.closest('[data-a]'); if (!b) return;
     const r = FS.linhas.find((x) => x.id === b.dataset.id); if (!r) return;
     if (b.dataset.a === 'editar') modalEmpresa(r);
+    if (b.dataset.a === 'pasta') {
+      const x = await window.fiscocont.fechamento.abrirPasta(r.receita && r.receita.pasta);
+      if (x && x.error) toast(x.error, true);
+    }
     if (b.dataset.a === 'inativar') {
       const prox = compProx(FS.comp);
       if (!confirm(`Inativar "${r.nome}"?\n\nEla continua em ${compRot(FS.comp)} para terminar o fechamento e não aparece mais a partir de ${compRot(prox)}.`)) return;
@@ -338,7 +417,8 @@
     const comps = listaComps();
     const box = $('#fsMBox'); box.dataset.tipo = 'emp';
     box.innerHTML = `<h3>${r ? 'Alterar empresa' : 'Cadastrar empresa no fechamento'}</h3>
-      ${r ? '' : `<label>CNPJ (opcional)</label><div class="fs-row"><input id="fsMCnpj" class="fs-in" placeholder="00.000.000/0000-00"><button class="act inv-export" id="fsMBusca">Buscar na Receita</button></div>`}
+      <label>CNPJ${r ? '' : ' (opcional)'}</label><div class="fs-row"><input id="fsMCnpj" class="fs-in" placeholder="00.000.000/0000-00" value="${r && r.cnpj ? e(r.cnpj) : ''}"><button class="act inv-export" id="fsMBusca">Buscar na Receita</button></div>
+      ${r ? '<small class="fs-hint">O robô da Receita (Integra Contador) usa o CNPJ para conferir o PGDAS-D.</small>' : ''}
       <label>Razão social</label><input id="fsMNome" class="fs-in" value="${r ? e(r.nome) : ''}">
       <label>Analista responsável</label><select id="fsMAn" class="fs-in">${r ? '' : '<option value="">Escolha…</option>'}${nomes.map((n) => `<option value="${e(n)}" ${r && chaveAn(n) === chaveAn(r.analista) ? 'selected' : ''}>${e(n)}</option>`).join('')}</select>
       <small class="fs-hint">Analista nova: cadastre antes no botão "Analistas".</small>
@@ -346,7 +426,7 @@
       <div class="fs-mact"><button class="act inv-export" id="fsMCanc">Cancelar</button><button class="act inv-export fs-prim" id="fsMOk">${r ? 'Salvar' : 'Cadastrar'}</button></div>`;
     $('#fsModal').hidden = false;
     $('#fsMCanc').onclick = fechaModal;
-    if (!r) $('#fsMBusca').onclick = async () => {
+    $('#fsMBusca').onclick = async () => {
       const bt = $('#fsMBusca'); bt.disabled = true; bt.textContent = 'Buscando…';
       const x = await window.fiscocont.fechamento.cnpj($('#fsMCnpj').value);
       bt.disabled = false; bt.textContent = 'Buscar na Receita';
@@ -356,7 +436,7 @@
     $('#fsMOk').onclick = async () => {
       const bt = $('#fsMOk'); bt.disabled = true;
       const x = r
-        ? await window.fiscocont.fechamento.alterar(FS.comp, r.id, { nome: $('#fsMNome').value, analista: $('#fsMAn').value })
+        ? await window.fiscocont.fechamento.alterar(FS.comp, r.id, { nome: $('#fsMNome').value, analista: $('#fsMAn').value, cnpj: $('#fsMCnpj').value })
         : await window.fiscocont.fechamento.cadastrar(FS.comp, { nome: $('#fsMNome').value, cnpj: $('#fsMCnpj').value, analista: $('#fsMAn').value, desde: $('#fsMDesde').value });
       bt.disabled = false;
       if (x && x.error) { toast(x.error, true); return; }

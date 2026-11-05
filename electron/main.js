@@ -451,9 +451,10 @@ ipcMain.handle('auth:login', async (_evt, { email, senha, salvar, usarSalva } = 
   sessionModulos = r.modulos || null;
   sessionLocked = !!r.trocarSenha;     // senha provisória: nada funciona até a pessoa criar a própria senha
   license.marcarUsuario(r.email);
+  if (r.perfil === 'admin' && !r.trocarSenha) integra.iniciarRobo().catch(() => {});   // só liga se a chave estiver neste computador
   return { ok: true, role: r.perfil, aviso: r.aviso || '', sessao: _sessaoPublica() };
 });
-ipcMain.handle('auth:logout', () => { fechamento.parar(); auth.logout(); sessionRole = null; sessionLocked = false; return { ok: true }; });
+ipcMain.handle('auth:logout', () => { fechamento.parar(); integra.pararRobo(); auth.logout(); sessionRole = null; sessionLocked = false; return { ok: true }; });
 ipcMain.handle('auth:sessao', () => _sessaoPublica());
 ipcMain.handle('auth:travar', () => { if (sessionRole) sessionLocked = true; return { ok: true }; });
 ipcMain.handle('auth:destravar', async (_evt, senha) => {
@@ -526,6 +527,41 @@ ipcMain.handle('fech:inativar', (_evt, { comp, id }) => _fech(() => fechamento.i
 ipcMain.handle('fech:analistaNova', (_evt, nome) => _fech(() => fechamento.analistaNova(nome)));
 ipcMain.handle('fech:analistaRemover', (_evt, nome) => _fech(() => fechamento.analistaRemover(nome)));
 ipcMain.handle('fech:reativar', (_evt, { comp, id }) => _fech(() => fechamento.reativar(comp, id)));
+// ---- Robô do Fechamento · Integra Contador (Serpro) — chave só neste computador, cifrada (electron/integra.js)
+const integra = require('./integra');
+integra.init({
+  userData: () => app.getPath('userData'),
+  runFiscal: (args, pronto) => runFiscal(args, pronto),
+  maquina: () => license.getMachineCode(),
+  credEscritorio: (certId) => {
+    const indice = _lerIndiceCert();
+    const c = indice.empresas.find((x) => x.id === certId && (x.tipo || 'matriz') === 'matriz');
+    if (!c) return { error: 'O e-CNPJ da Liddera não está mais cadastrado nas Baixas DF-e deste computador.' };
+    return _credDe(indice, c);
+  },
+  pastaFallback: () => {
+    try { const p = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase; if (p) return p; } catch (_) {}
+    try { if (fs.existsSync(PASTA_PADRAO_NFSE)) return PASTA_PADRAO_NFSE; } catch (_) {}
+    return '';
+  },
+});
+ipcMain.handle('integra:estado', () => _adm(async () => ({ local: integra.estadoLocal(), nuvem: await integra.estadoNuvem().catch(() => null) })));
+ipcMain.handle('integra:salvarChave', (_evt, dados) => _adm(() => integra.salvarChave(dados || {})));
+ipcMain.handle('integra:testar', () => _adm(() => integra.testar()));
+ipcMain.handle('integra:remover', () => _adm(() => integra.remover()));
+ipcMain.handle('integra:salvarPastas', (_evt, dados) => _adm(() => integra.salvarPastas(dados || {})));
+ipcMain.handle('integra:definirPasta', (_evt, { id, pasta }) => _adm(() => integra.definirPasta(id, pasta)));
+ipcMain.handle('integra:escolherPasta', async (_evt, titulo) => {
+  if (sessionRole !== 'admin') return { error: 'Acesso restrito ao Admin.' };
+  const r = await dialog.showOpenDialog(mainWindow, { title: titulo || 'Escolher pasta', properties: ['openDirectory'] });
+  return r.canceled || !r.filePaths.length ? { cancelado: true } : { ok: true, pasta: r.filePaths[0] };
+});
+ipcMain.handle('integra:pedir', (_evt, { comp, ids }) => _fech(() => integra.pedir(comp, ids)));
+ipcMain.handle('integra:abrirPasta', (_evt, pasta) => {
+  if (!pasta || !fs.existsSync(pasta)) return { error: 'Essa pasta não está acessível neste computador.' };
+  shell.openPath(pasta); return { ok: true };
+});
+
 ipcMain.handle('fech:cnpj', (_evt, cnpj) => _fech(async () => {
   const dig = String(cnpj || '').replace(/\D/g, '');
   if (dig.length !== 14) return { error: 'CNPJ inválido.' };
