@@ -3941,7 +3941,7 @@ function _loginMsg(txt, ok) {
   if (!ok) { const card = document.querySelector('.login-card'); card.classList.remove('login-shake'); void card.offsetWidth; card.classList.add('login-shake'); }
 }
 function _mostraLogin() {
-  ROLE = null; SESSAO.info = null; SESSAO.travada = false;
+  ROLE = null; SESSAO.info = null; SESSAO.travada = false; clearInterval(_saudTimer); { const sd = $('#saudacao'); if (sd) sd.hidden = true; }
   if (window.fechSair) window.fechSair();
   if (window._manualSair) window._manualSair();
   $('#lockCard').hidden = true;
@@ -3968,6 +3968,20 @@ function _senhaRegras() {
   $$('#senhaRegras span').forEach((sp) => sp.classList.toggle('ok', !!ok[sp.dataset.r]));
   return Object.values(ok).every(Boolean);
 }
+// Saudação no menu, embaixo da versão: "Bom dia" 5h–11h59, "Boa tarde" 12h–17h59, "Boa noite" 18h–4h59 (horário do
+// computador), com o primeiro nome de quem entrou. Muda sozinha quando o horário passa.
+let _saudTimer = null;
+function _saudacao() {
+  const el = $('#saudacao'); if (!el) return;
+  const nome = String((SESSAO.info && SESSAO.info.nome) || '').trim().split(/\s+/)[0] || '';
+  if (!ROLE || !nome) { el.hidden = true; return; }
+  const h = new Date().getHours();
+  const [ic, txt] = h >= 5 && h < 12 ? ['☀️', 'Bom dia'] : h >= 12 && h < 18 ? ['🌤️', 'Boa tarde'] : ['🌙', 'Boa noite'];
+  const nomeFmt = nome.charAt(0).toUpperCase() + nome.slice(1).toLowerCase();
+  const novo = `${ic} ${txt}, <b>${_esc(nomeFmt)}</b>!`;
+  if (el.innerHTML !== novo || el.hidden) { el.innerHTML = novo; el.hidden = false; el.style.animation = 'none'; void el.offsetWidth; el.style.animation = ''; }
+}
+function _saudacaoLiga() { _saudacao(); clearInterval(_saudTimer); _saudTimer = setInterval(_saudacao, 60000); }
 function _entrou(res) {
   if (res.sessao && res.sessao.trocarSenha) { _pedeSenhaNova(res); return; }
   $('#senhaCard').hidden = true; document.querySelector('.login-card').hidden = false;
@@ -3980,6 +3994,7 @@ function _entrou(res) {
   if (ut && SESSAO.info) ut.textContent = `${SESSAO.info.nome} · ${({ admin: 'Admin', fiscal: 'Fiscal', contabil: 'Contábil' })[SESSAO.info.perfil] || ''}${SESSAO.info.offline ? ' · sem internet' : ''}`;
   applyRole(res.role, (res.sessao || {}).modulos || null);
   if (res.aviso) toast(res.aviso);
+  _saudacaoLiga();
   verificarNovidades();
 }
 // trava por inatividade: 40 min (Admin) / 60 min (demais) sem mexer no sistema

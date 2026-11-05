@@ -37,6 +37,9 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .brand-name{font-size:19px;font-weight:800;color:#fff;letter-spacing:.2px;line-height:1}
 .brand-name span{color:#a5b4fc}
 .brand-ver{font-size:11px;color:var(--side-mut);margin-top:3px}
+.brand-saud{font-size:12.5px;color:#c7cbe6;padding:0 10px 12px;margin-top:-4px;animation:saudIn .6s cubic-bezier(.2,.8,.2,1) both}
+.brand-saud b{color:#fff;font-weight:600}
+@keyframes saudIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 .side-actions{display:flex;flex-direction:column;gap:8px;margin:4px 0 12px}
 .act{display:flex;align-items:center;gap:9px;border:0;border-radius:11px;padding:11px 13px;font-size:13.5px;
   font-weight:600;cursor:pointer;transition:.15s}
