@@ -384,6 +384,8 @@ def parse_sped(path):
                 'aj_debitos': _num(f[4]),
                 'creditos': _num(f[6]),
                 'aj_creditos': _num(f[8]),
+                'estornos_cred': _num(f[5]), 'estornos_deb': _num(f[9]),
+                'saldo_credor_ant': _num(f[10]),
                 'saldo_apurado': _num(f[11]),
                 'deducoes': _num(f[12]),
                 'icms_recolher': _num(f[13]),
@@ -462,6 +464,8 @@ def parse_sped(path):
             'ajuste_debitos': apur.get('aj_debitos', 0.0),
             'icms_recolher': icms_rec,
             'saldo_credor_transp': apur.get('saldo_credor_transp', 0.0),
+            'saldo_credor_ant': apur.get('saldo_credor_ant', 0.0),
+            'estornos_cred': apur.get('estornos_cred', 0.0), 'estornos_deb': apur.get('estornos_deb', 0.0),
         },
         'aliquota_efetiva': aliq_efetiva,
         'ajustes_e111': ajustes,
@@ -1096,11 +1100,41 @@ def gerar_dashboard_sped_html(d):
         ajustes_html += (f'<div class="row"><span class="k">{_esc(a["codigo"])} · {_esc(a["descricao"])[:70]}</span>'
                          f'<span class="val" style="color:var(--pos)">R$ {_brl(a["valor"])}</span></div>')
     if not ajustes_html:
-        ajustes_html = '<div style="color:var(--ink2);font-size:12.5px">Sem ajustes E111.</div>'
+        ajustes_html = '<div style="color:var(--ink2);font-size:12.5px">Sem ajustes na apuração.</div>'
+
+    # Saldo credor (E110, numeração do Guia Prático da EFD ICMS/IPI, REG = campo 01): campo 10 VL_SLD_CREDOR_ANT =
+    # saldo credor do período anterior; campo 14 VL_SLD_CREDOR_TRANSPORTAR = saldo credor a transportar para o seguinte. Quando o período fecha credor, a barra mostra
+    # quanto dos créditos foi usado para abater os débitos e quanto sobra para o próximo mês.
+    sc_ant = ap.get('saldo_credor_ant', 0.0) or 0.0
+    sc_transp = ap.get('saldo_credor_transp', 0.0) or 0.0
+    sc_ant_row = (f'<div class="row"><span class="k">Saldo credor do período anterior</span>'
+                  f'<span class="val" style="color:var(--pos)">R$ {_brl(sc_ant)}</span></div>') if sc_ant > 0 else ''
+    sc_box = ''
+    if sc_transp > 0:
+        deb_tot = (ap.get('debitos', 0.0) or 0.0) + (ap.get('ajuste_debitos', 0.0) or 0.0) + (ap.get('estornos_cred', 0.0) or 0.0)
+        disp = deb_tot + sc_transp
+        p_deb = max(0.0, min(100.0, deb_tot / disp * 100)) if disp else 0.0
+        p_sobra = 100.0 - p_deb
+        sc_box = f"""<div class="scbox">
+        <div class="sc-top"><span><b>Saldo credor a transportar</b><small>vai para o próximo período</small></span><span class="sc-v cnt" data-t="{sc_transp}">R$ {_brl(sc_transp)}</span></div>
+        <div class="sc-bar"><i class="u" style="--w:{p_deb:.1f}%"></i><i class="s" style="--w:{p_sobra:.1f}%"></i></div>
+        <div class="sc-leg"><span><i class="u"></i>Usado para abater os débitos · R$ {_brl(deb_tot)}</span><span><i class="s"></i>Sobra para o próximo mês · R$ {_brl(sc_transp)}</span></div>
+        <div class="sc-nota">Os créditos do mês{', os ajustes' if (ap.get('ajuste_creditos') or 0) > 0 else ''}{' e o saldo credor anterior' if sc_ant > 0 else ''} superaram os débitos: não há ICMS a recolher neste mês. A sobra é aproveitada na apuração do próximo mês.</div>
+      </div>"""
 
     return f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Apuração ICMS · {_esc(emp.get('empresa',''))}</title>
-<style>{_CSS}</style></head><body><div class="wrap">
+<style>{_CSS}
+.scbox{{margin-top:12px;border-radius:14px;padding:14px 16px;background:linear-gradient(135deg,#e9f8f1,#f3fbf7);border:1px solid #b7e6cf;animation:fadeUp .6s .3s both}}
+.sc-top{{display:flex;justify-content:space-between;align-items:center;gap:10px}}.sc-top b{{display:block;color:#0a6b47;font-size:13.5px}}.sc-top small{{color:#3f8f6c;font-size:11.5px}}
+.sc-v{{font-size:20px;font-weight:800;color:#0a7a52}}
+.sc-bar{{display:flex;height:12px;border-radius:8px;background:#d7efe3;overflow:hidden;margin:12px 0 8px}}
+.sc-bar i{{display:block;height:100%;width:0;animation:scW 1.3s cubic-bezier(.2,.8,.2,1) .5s forwards}}.sc-bar i.u{{background:#9fb3d9}}.sc-bar i.s{{background:linear-gradient(90deg,#10b981,#0ea472)}}
+@keyframes scW{{to{{width:var(--w)}}}}
+.sc-leg{{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:11.5px;color:#4a5a73}}.sc-leg i{{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:-1px}}.sc-leg i.u{{background:#9fb3d9}}.sc-leg i.s{{background:#10b981}}
+.sc-nota{{font-size:11px;color:#5a6b80;margin-top:8px;line-height:1.45}}
+@keyframes fadeUp{{from{{opacity:0;transform:translateY(6px)}}to{{opacity:1;transform:none}}}}
+</style></head><body><div class="wrap">
   <header class="sec">{logo_html}
     <div class="h-txt"><b>Liddera | Inteligência em Negócios</b><div>Apuração ICMS · EFD-ICMS/IPI</div></div>
     <div class="h-right"><div>Período: <b>{_esc(emp.get('periodo',''))}</b></div><div>{_esc(emp.get('uf',''))}</div></div>
@@ -1120,8 +1154,9 @@ def gerar_dashboard_sped_html(d):
     <div class="card sec" style="animation-delay:.15s"><h3><span class="dot"></span>Apuração do ICMS</h3>
       <div class="row"><span class="k">Débitos (ICMS s/ saídas)</span><span class="val">R$ {_brl(ap['debitos'])}</span></div>
       <div class="row"><span class="k">Créditos (ICMS s/ compras)</span><span class="val">R$ {_brl(ap['creditos'])}</span></div>
-      <div class="row"><span class="k">Ajuste de créditos (E110/E111)</span><span class="val" style="color:var(--pos)">R$ {_brl(ap['ajuste_creditos'])}</span></div>
-      <div class="row tot"><span class="k">ICMS a recolher</span><span class="val">R$ {_brl(ap['icms_recolher'])}</span></div>
+      <div class="row"><span class="k">Ajustes de créditos</span><span class="val" style="color:var(--pos)">R$ {_brl(ap['ajuste_creditos'])}</span></div>
+      {sc_ant_row}<div class="row tot"><span class="k">ICMS a recolher</span><span class="val">R$ {_brl(ap['icms_recolher'])}</span></div>
+      {sc_box}
     </div>
     <div class="card sec" style="animation-delay:.2s"><h3><span class="dot"></span>VAF Fiscal</h3>
       <div class="row"><span class="k">+ Vendas (CFOP de venda)</span><span class="val" style="color:var(--pos)">R$ {_brl(d['faturamento_bruto'])}</span></div>
@@ -1140,7 +1175,7 @@ def gerar_dashboard_sped_html(d):
     <div class="card sec" style="animation-delay:.35s"><h3><span class="dot"></span>Top fornecedores</h3>{_rank(d['top_fornecedores'],'var(--navy)')}</div>
     <div class="card sec" style="animation-delay:.4s"><h3><span class="dot"></span>Top produtos em compras</h3>{_rank(d['top_produtos'],'var(--orange)')}</div>
   </div>
-  <div class="card sec" style="animation-delay:.45s"><h3><span class="dot"></span>Ajustes da apuração (E111)</h3>{ajustes_html}</div>
+  <div class="card sec" style="animation-delay:.45s"><h3><span class="dot"></span>Ajustes da apuração</h3>{ajustes_html}</div>
   <footer>Gerado pelo FiscoCont+ · Liddera | Inteligência em Negócios Ltda · www.lidderacont.com.br</footer>
 </div>{_COUNT_JS}</body></html>"""
 
