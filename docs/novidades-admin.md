@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.3
+
+- **Corretor da EFD-Contribuições · NFC-e sem item:** com a opção "Notas sem item" ligada, o corretor incluía C170 também em NFC-e (modelo 65) sem C175 — e ainda escolhia CFOP 5929 porque achava a própria NFC-e como "par". O PVA recusa C170 em modelo 65 ("O registro não deve ser informado para o modelo de documento do Registro Pai" e "…para esse perfil e/ou tipo de operação"). Agora NFC-e sem C175 nunca recebe item: vira pendência (o detalhe dela é o C175 com o CFOP e o CST reais da venda — a receita precisa entrar na apuração, não dá para inventar CST 49). O par de NFC-e para o CFOP 5929 nunca é a própria nota. NF-e (modelo 55) sem C170 continua como antes.
+
 ## 2.2.2
 
 - **Fechamento do Simples · "Importar CNPJs" (só Admin):** lê o relatório "Cadastro de Empresas" do Domínio em PDF (ou planilha .xlsx, CSV ou TXT com razão social e CNPJ; CPF, CAEPF e CEI ficam de fora; CNPJ com dígito inválido é ignorado) e mostra a prévia antes de gravar. Só preenche o CNPJ das empresas **já cadastradas** no Fechamento que estão **sem CNPJ**, quando a razão social bate exatamente (sem acento, pontuação e LTDA/ME/EPP/EIRELI no fim). Não cadastra empresa nova e não troca CNPJ já informado (diferença aparece para conferir). Mesmo nome com matriz e filiais da mesma raiz → matriz (/0001, que é o CNPJ do PGDAS-D); raízes diferentes, CNPJ já usado em outra empresa ou nome com número de filial ("(02)", "- FL 1") → Verificar, com os CNPJs da lista. Teste com o relatório de 06/11/2026: 213 CNPJs lidos; das 97 empresas da planilha original, 75 casaram, 10 ficaram em Verificar e 12 com nome abreviado diferente do Domínio.

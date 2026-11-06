@@ -39,7 +39,7 @@ TITULOS = {
     'cta': ('Conta contábil em branco no detalhamento de ajuste (M115/M225/M515/M625)', '#7c3aed'),
     'cta_item': ('Conta contábil em branco nos itens de entrada (C170)', '#a855f7'),
     'cta_m400': ('Conta sintética na receita não tributada (M400/M800)', '#9333ea'),
-    'c100sem': ('Documento sem item (C100 sem C170)', '#b45309'),
+    'c100sem': ('Documento sem item (C100 sem C170 · NFC-e sem C175)', '#b45309'),
     'contadores': ('Contadores do arquivo (9900, x990, 9999)', '#6b7392'),
 }
 
@@ -752,8 +752,16 @@ def _fix_c100sem(L, acoes, pend, ctx):
     incluidos = []
     for f in sorted(achados, key=lambda x: -x['i']):        # de baixo para cima: incluir linhas não desloca as próximas
         k = (f['part'], f['data'], round(f['valor'], 2))
-        par = nfce.get(k, [])
         tipo = 'saída' if f['oper'] == '1' else 'entrada'
+        if f['mod'] == '65':
+            # NFC-e (modelo 65) não aceita C170 — o PVA recusa ("não deve ser informado para o modelo de documento do
+            # Registro Pai"). O detalhe da NFC-e é o C175, com o CST real da venda: não dá para inventar, só apontar.
+            pend.append({'cat': 'c100sem', 'linha': L[f['i']]['n'],
+                         'titulo': f"NFC-e {f['num']} (R$ {_brl(f['valor'])}, {f['data'][:2]}/{f['data'][2:4]}) sem registro analítico (C175)",
+                         'detalhe': 'NFC-e não aceita item (C170): o detalhe dela é o C175, com o CFOP e o CST de PIS/COFINS reais da venda. '
+                                    'Confira o XML e gere o C175 no sistema de origem — a receita dessa venda precisa entrar na apuração.'})
+            continue
+        par = [n for n in nfce.get(k, []) if n != f['num']]   # outra NFC-e do mesmo cliente, dia e valor (nunca a própria nota)
         if not gerar:
             if par and f['oper'] == '1':
                 det = (f"Mesmo cliente, mesmo dia e mesmo valor da NFC-e nº {', '.join(par)}: parece NF-e emitida para acobertar a NFC-e (CFOP 5929/6929). "
