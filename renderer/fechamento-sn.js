@@ -96,6 +96,7 @@
         <button class="act inv-export fs-rec" id="fsReceita" hidden title="Só o Admin: o robô consulta na Receita Federal (Integra Contador) as empresas com Escrituração concluída = Sim ainda não confirmadas e salva os documentos na pasta de cada uma">▶ Iniciar robô</button>
         <button class="act inv-export" id="fsHtml">Exportar HTML</button>
         <button class="act inv-export" id="fsAnalistas" hidden>Analistas</button>
+        <button class="act inv-export" id="fsImpCnpj" hidden title="Preenche o CNPJ das empresas já cadastradas a partir do relatório Cadastro de Empresas do Domínio (PDF), planilha ou CSV">Importar CNPJs</button>
         <button class="act inv-export fs-prim" id="fsNova" hidden>+ Cadastrar empresa</button>
       </div>
       <div class="fs-recbox" id="fsRecBox" hidden></div>
@@ -112,6 +113,7 @@
     $('#fsReceita').addEventListener('click', conferirReceita);
     $('#fsNova').addEventListener('click', () => modalEmpresa());
     $('#fsAnalistas').addEventListener('click', modalAnalistas);
+    $('#fsImpCnpj').addEventListener('click', importarCnpjs);
     $('#fsBody').addEventListener('change', onCelula);
     $('#fsBody').addEventListener('click', onAcao);
     $('#fsModal').addEventListener('click', (ev) => { if (ev.target.id === 'fsModal') fechaModal(); });
@@ -152,7 +154,7 @@
     if (FS.ig.ativo) chips.splice(3, 0, ['verificar', 'Verificar (Receita)', FS.linhas.filter((r) => recSit(r).k === 'verificar').length]);
     $('#fsChips').innerHTML = chips.map(([id, rot, n]) => `<button class="fs-chip ${FS.chip === id ? 'on' : ''}" data-chip="${id}">${rot} <b>${n}</b></button>`).join('');
     $('#fsChips').querySelectorAll('.fs-chip').forEach((b) => b.addEventListener('click', () => { FS.chip = b.dataset.chip; desenhaTudo(); }));
-    $('#fsNova').hidden = !FS.admin; $('#fsAnalistas').hidden = !FS.admin;
+    $('#fsNova').hidden = !FS.admin; $('#fsAnalistas').hidden = !FS.admin; $('#fsImpCnpj').hidden = !FS.admin;
     desenhaReceita();
     document.querySelectorAll('.fs-adm-col').forEach((x) => { x.hidden = !FS.admin; });
     desenhaTabela(false);
@@ -408,6 +410,39 @@
       if (x && x.error) toast(x.error, true); else toast(`${b.dataset.rm} removida da lista.`);
     }; });
     setTimeout(() => $('#fsANome') && $('#fsANome').focus(), 30);
+  }
+
+  // ------------------------------------------------------------------ importar CNPJs (Admin)
+  const fmtCnpj = (c) => String(c || '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+  async function importarCnpjs() {
+    const bt = $('#fsImpCnpj'); bt.disabled = true; bt.textContent = 'Lendo a lista…';
+    const r = await window.fiscocont.fechamento.importarCnpjs();
+    bt.disabled = false; bt.textContent = 'Importar CNPJs';
+    if (!r || r.cancelado) return;
+    if (r.error) { toast(r.error, true); return; }
+    const box = $('#fsMBox'); box.dataset.tipo = 'cnpj';
+    const lin = (x, extra) => `<div class="fs-cj-r"><b>${e(x.nome)}</b>${extra}</div>`;
+    const sec = (tit, cls, arr, fn, aberto) => arr.length ? `<details class="fs-cj-s ${cls}" ${aberto ? 'open' : ''}><summary><span>${tit}</span><em>${arr.length}</em></summary><div class="fs-cj-l">${arr.map(fn).join('')}</div></details>` : '';
+    box.innerHTML = `<h3>Importar CNPJs · ${e(r.arquivo)}</h3>
+      <small class="fs-hint">${r.totalLista} empresa(s) com CNPJ na lista. Só preenche o CNPJ das empresas já cadastradas no Fechamento que estão sem CNPJ e cujo nome bate exatamente. Não cadastra empresa nova e não troca CNPJ já informado.</small>
+      <div class="fs-cj-k"><div style="--c:#059669"><b>${r.preencher.length}</b>vão receber o CNPJ</div><div style="--c:#64748b"><b>${r.jaIgual}</b>já estavam com o CNPJ certo</div>
+        <div style="--c:#d97706"><b>${r.verificar.length + r.diferente.length}</b>verificar</div><div style="--c:#dc2626"><b>${r.naoAchou.length}</b>sem CNPJ e fora da lista</div></div>
+      <div class="fs-cj-w">
+      ${sec('Vão receber o CNPJ', 'ok', r.preencher, (x) => lin(x, `<span>${fmtCnpj(x.cnpj)}${x.filiais ? ` <small>matriz · a lista tem ${x.filiais} filial(is) com o mesmo nome</small>` : ''}</span>`), true)}
+      ${sec('Verificar — não preenchidas', 'vf', r.verificar, (x) => lin(x, `<span>${x.opcoes.map(fmtCnpj).join(' · ')}<small>${e(x.motivo)}</small></span>`), true)}
+      ${sec('CNPJ do cadastro diferente da lista — não alterado', 'vf', r.diferente, (x) => lin(x, `<span>cadastro ${fmtCnpj(x.atual)} · lista ${x.lista.map(fmtCnpj).join(' · ')}</span>`), true)}
+      ${sec('Sem CNPJ e não encontradas na lista', 'na', r.naoAchou, (x) => lin(x, '<span><small>informe pelo ✎ da empresa</small></span>'), false)}
+      </div>
+      <div class="fs-mact"><button class="act inv-export" id="fsMCanc">Cancelar</button>
+        <button class="act inv-export fs-prim" id="fsCjOk" ${r.preencher.length ? '' : 'disabled'}>Preencher ${r.preencher.length} CNPJ(s)</button></div>`;
+    $('#fsModal').hidden = false;
+    $('#fsMCanc').onclick = fechaModal;
+    $('#fsCjOk').onclick = async () => {
+      const b = $('#fsCjOk'); b.disabled = true; b.textContent = 'Gravando…';
+      const x = await window.fiscocont.fechamento.aplicarCnpjs(r.preencher.map((p) => ({ id: p.id, cnpj: p.cnpj })));
+      if (x && x.error) { b.disabled = false; b.textContent = `Preencher ${r.preencher.length} CNPJ(s)`; toast(x.error, true); return; }
+      fechaModal(); toast(`${x.gravados} CNPJ(s) preenchido(s).`);
+    };
   }
 
   // ------------------------------------------------------------------ cadastro / edição (Admin)

@@ -3018,6 +3018,9 @@ def main(argv):
     if modo == 'conf-xlsx':
         import conf_xlsx as _cx
         return _cx.main_cli(argv[1:])
+    if modo == 'lista-cnpjs':
+        import lista_cnpjs as _lc
+        return _lc.main_cli(argv[1:])
     if modo == 'integra':
         import integra_sn as _ig
         return _ig.main_cli(argv[1:])

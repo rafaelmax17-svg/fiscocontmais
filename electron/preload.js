@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('fiscocont', {
     analistaRemover: (nome) => ipcRenderer.invoke('fech:analistaRemover', nome),
     cnpj: (cnpj) => ipcRenderer.invoke('fech:cnpj', cnpj),
     conferirReceita: (comp, ids) => ipcRenderer.invoke('integra:pedir', { comp, ids }),
+    importarCnpjs: () => ipcRenderer.invoke('fech:importarCnpjs'),
+    aplicarCnpjs: (pares) => ipcRenderer.invoke('fech:aplicarCnpjs', pares),
     abrirPasta: (pasta) => ipcRenderer.invoke('integra:abrirPasta', pasta),
     onMudou: (cb) => { ipcRenderer.removeAllListeners('fech:mudou'); ipcRenderer.on('fech:mudou', (_e, d) => cb(d)); },
   },

@@ -565,6 +565,24 @@ ipcMain.handle('integra:abrirPasta', (_evt, pasta) => {
   shell.openPath(pasta); return { ok: true };
 });
 
+// Importar CNPJs (só Admin): escolhe o arquivo, o Python lê a lista e o fechamento.js casa com as empresas cadastradas.
+ipcMain.handle('fech:importarCnpjs', async () => {
+  if (sessionRole !== 'admin') return { error: 'Só o Admin importa CNPJs.' };
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'Lista de empresas com CNPJ', properties: ['openFile'],
+    filters: [{ name: 'Relatório do Domínio, planilha ou texto', extensions: ['pdf', 'xlsx', 'xlsm', 'csv', 'txt'] }] });
+  if (r.canceled || !r.filePaths.length) return { cancelado: true };
+  const out = path.join(os.tmpdir(), `fc_lista_${Date.now()}.json`);
+  try {
+    await runFiscal(['lista-cnpjs', '--entrada', r.filePaths[0], '--json', out], out);
+    const lido = JSON.parse(fs.readFileSync(out, 'utf-8'));
+    if (!lido.ok) return { error: lido.erro };
+    const previa = await fechamento.previaCnpjs(lido.empresas);
+    return { ok: true, arquivo: path.basename(r.filePaths[0]), ...previa };
+  } catch (e) { return { error: String(e.message || e) }; }
+  finally { fs.rm(out, { force: true }, () => {}); }
+});
+ipcMain.handle('fech:aplicarCnpjs', (_evt, pares) => _fech(() => fechamento.aplicarCnpjs(pares)));
+
 ipcMain.handle('fech:cnpj', (_evt, cnpj) => _fech(async () => {
   const dig = String(cnpj || '').replace(/\D/g, '');
   if (dig.length !== 14) return { error: 'CNPJ inválido.' };

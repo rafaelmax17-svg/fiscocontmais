@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.2
+
+- **Fechamento do Simples · "Importar CNPJs" (só Admin):** lê o relatório "Cadastro de Empresas" do Domínio em PDF (ou planilha .xlsx, CSV ou TXT com razão social e CNPJ; CPF, CAEPF e CEI ficam de fora; CNPJ com dígito inválido é ignorado) e mostra a prévia antes de gravar. Só preenche o CNPJ das empresas **já cadastradas** no Fechamento que estão **sem CNPJ**, quando a razão social bate exatamente (sem acento, pontuação e LTDA/ME/EPP/EIRELI no fim). Não cadastra empresa nova e não troca CNPJ já informado (diferença aparece para conferir). Mesmo nome com matriz e filiais da mesma raiz → matriz (/0001, que é o CNPJ do PGDAS-D); raízes diferentes, CNPJ já usado em outra empresa ou nome com número de filial ("(02)", "- FL 1") → Verificar, com os CNPJs da lista. Teste com o relatório de 06/11/2026: 213 CNPJs lidos; das 97 empresas da planilha original, 75 casaram, 10 ficaram em Verificar e 12 com nome abreviado diferente do Domínio.
+
 ## 2.2.1
 
 - **Corretor da EFD-Contribuições · "Incluir a conta no 0500 se não existir (55 · 359)":** opção nova (desmarcada por padrão) ao lado das contas. Quando os itens de entrada (C170) sem conta vão receber a conta 55 (demais entradas) ou 359 (uso e consumo) e ela não existe no 0500 do arquivo, inclui o 0500 com os dados do plano do escritório, iguais aos que o Domínio gera: 55 = |0500|<DT_INI>|01|A|5|55|MERCADORIAS PARA REVENDA|1.01.03.01.01|| e 359 = |0500|<DT_INI>|04|A|5|359|MATERIAL DE ESCRITÓRIO|3.01.01.09.01.99||, depois do último 0500, e refaz 0990/9900/9999. Depois preenche os C170 normalmente. Outra conta digitada na tela não é inventada: continua pendência. Conta que já existe como sintética continua pendência. Sem a opção, a pendência agora diz para marcar a opção.

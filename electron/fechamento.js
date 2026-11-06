@@ -226,6 +226,75 @@ async function alterar(comp, id, { nome, analista, cnpj }) {
   return { ok: true };
 }
 
+// ---- Importar CNPJs de uma lista (relatório "Cadastro de Empresas" do Domínio, planilha ou CSV) — só o Admin.
+// Preenche apenas o CNPJ das empresas JÁ cadastradas no Fechamento e que estão sem CNPJ, quando a razão social bate
+// exatamente (sem acento, pontuação e LTDA/ME/EPP/EIRELI…). Não cadastra empresa nova e não troca CNPJ já informado.
+// Mesmo nome com vários CNPJs: usa a matriz (/0001) só se todos forem da mesma raiz; raízes diferentes → Verificar.
+const _FORA = new Set(['LTDA', 'ME', 'EPP', 'EIRELI', 'SLU', 'SA', 'MEI', 'EI', 'LTDAME', 'LTDAEPP']);
+function _nomeChave(n, tira) {
+  let t = String(n || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/&/g, ' E ')
+    .replace(/\bS\s*\/\s*A\b/g, 'SA').replace(/[^A-Z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  if (tira) { while (t.length > 1 && _FORA.has(t[t.length - 1])) t.pop(); }
+  return t.join(' ');
+}
+async function previaCnpjs(lista) {
+  _exigeAdmin();
+  const { db, f } = _fs();
+  const s = await f.getDoc(f.doc(db, COL, 'cadastro'));
+  const cad = s.exists() ? (s.data().empresas || {}) : {};
+  const porNome = new Map(), porNome2 = new Map();
+  for (const e of lista || []) {
+    const c = String(e.cnpj || '').replace(/\D/g, ''); if (c.length !== 14) continue;
+    for (const [m, k] of [[porNome, _nomeChave(e.nome, false)], [porNome2, _nomeChave(e.nome, true)]]) {
+      if (!m.has(k)) m.set(k, new Map()); m.get(k).set(c, e.nome);
+    }
+  }
+  const usados = new Set(Object.values(cad).map((c) => c.cnpj).filter(Boolean));
+  const out = { preencher: [], diferente: [], verificar: [], naoAchou: [], jaIgual: 0, totalLista: (lista || []).length };
+  for (const [id, c] of Object.entries(cad)) {
+    if (c.ativa === false) continue;
+    const opc = porNome.get(_nomeChave(c.nome, false)) || porNome2.get(_nomeChave(c.nome, true));
+    if (!opc) {
+      // "EMPRESA LTDA (02)" / "EMPRESA - FL 1": a lista tem o nome sem o número — mostra os CNPJs, mas não escolhe
+      const base = String(c.nome || '').replace(/\s*(\(\s*\d+\s*\)|[-–]\s*(FL|FILIAL)\s*\d+)\s*$/i, '');
+      const quase = base !== c.nome && (porNome.get(_nomeChave(base, false)) || porNome2.get(_nomeChave(base, true)));
+      if (!c.cnpj && quase) out.verificar.push({ id, nome: c.nome, opcoes: [...quase.keys()].sort(), motivo: 'O nome tem número de filial; escolha o CNPJ pelo ✎ da empresa.' });
+      else if (!c.cnpj) out.naoAchou.push({ id, nome: c.nome });
+      continue;
+    }
+    const cnpjs = [...opc.keys()];
+    let esc = null;
+    if (cnpjs.length === 1) esc = cnpjs[0];
+    else if (new Set(cnpjs.map((x) => x.slice(0, 8))).size === 1) esc = cnpjs.find((x) => x.slice(8, 12) === '0001') || null;
+    if (c.cnpj) {
+      if (cnpjs.includes(c.cnpj)) out.jaIgual++;
+      else out.diferente.push({ id, nome: c.nome, atual: c.cnpj, lista: cnpjs });
+      continue;
+    }
+    if (!esc) { out.verificar.push({ id, nome: c.nome, opcoes: cnpjs, motivo: 'Mesmo nome com CNPJs de raízes diferentes na lista.' }); continue; }
+    if (usados.has(esc)) { out.verificar.push({ id, nome: c.nome, opcoes: [esc], motivo: 'Esse CNPJ já está em outra empresa do Fechamento.' }); continue; }
+    out.preencher.push({ id, nome: c.nome, cnpj: esc, nomeLista: opc.get(esc), filiais: cnpjs.length - 1 });
+  }
+  const ord = (a, b) => a.nome.localeCompare(b.nome, 'pt-BR');
+  out.preencher.sort(ord); out.verificar.sort(ord); out.naoAchou.sort(ord); out.diferente.sort(ord);
+  return out;
+}
+async function aplicarCnpjs(pares) {
+  _exigeAdmin();
+  const { db, f } = _fs();
+  const ref = f.doc(db, COL, 'cadastro');
+  const s = await f.getDoc(ref);
+  const cad = s.exists() ? (s.data().empresas || {}) : {};
+  const upd = {};
+  for (const { id, cnpj } of pares || []) {
+    const c = String(cnpj || '').replace(/\D/g, '');
+    if (!cad[id] || cad[id].cnpj || c.length !== 14) continue;          // nunca troca CNPJ já informado
+    upd[`empresas.${id}.cnpj`] = c;
+  }
+  if (Object.keys(upd).length) await f.updateDoc(ref, upd);
+  return { ok: true, gravados: Object.keys(upd).length };
+}
+
 // Inativa a empresa NO mês aberto: ela continua nesse mês (para terminar o fechamento) e some a partir do próximo.
 async function inativar(comp, id) {
   _exigeAdmin();
@@ -283,4 +352,4 @@ async function analistaRemover(nome) {
   return { ok: true };
 }
 
-module.exports = { analistaNova, analistaRemover, abrir, ouvir, parar, salvar, cadastrar, alterar, inativar, reativar };
+module.exports = { previaCnpjs, aplicarCnpjs, analistaNova, analistaRemover, abrir, ouvir, parar, salvar, cadastrar, alterar, inativar, reativar };
