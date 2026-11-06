@@ -559,7 +559,7 @@ ipcMain.handle('integra:escolherPasta', async (_evt, titulo) => {
   const r = await dialog.showOpenDialog(mainWindow, { title: titulo || 'Escolher pasta', properties: ['openDirectory'] });
   return r.canceled || !r.filePaths.length ? { cancelado: true } : { ok: true, pasta: r.filePaths[0] };
 });
-ipcMain.handle('integra:pedir', (_evt, { comp, ids }) => _fech(() => integra.pedir(comp, ids)));
+ipcMain.handle('integra:pedir', (_evt, { comp, ids }) => _adm(() => integra.pedir(comp, ids)));
 ipcMain.handle('integra:abrirPasta', (_evt, pasta) => {
   if (!pasta || !fs.existsSync(pasta)) return { error: 'Essa pasta não está acessível neste computador.' };
   shell.openPath(pasta); return { ok: true };

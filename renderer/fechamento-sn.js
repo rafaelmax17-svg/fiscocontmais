@@ -93,7 +93,7 @@
         <div class="fs-chips" id="fsChips"></div>
         <span style="flex:1"></span>
         <span class="fs-robo" id="fsRobo" hidden></span>
-        <button class="act inv-export fs-rec" id="fsReceita" hidden title="O robô consulta na Receita Federal (Integra Contador) as empresas com Escrituração concluída = Sim ainda não confirmadas, e salva os documentos na pasta de cada uma">🔎 Conferir na Receita</button>
+        <button class="act inv-export fs-rec" id="fsReceita" hidden title="Só o Admin: o robô consulta na Receita Federal (Integra Contador) as empresas com Escrituração concluída = Sim ainda não confirmadas e salva os documentos na pasta de cada uma">▶ Iniciar robô</button>
         <button class="act inv-export" id="fsHtml">Exportar HTML</button>
         <button class="act inv-export" id="fsAnalistas" hidden>Analistas</button>
         <button class="act inv-export fs-prim" id="fsNova" hidden>+ Cadastrar empresa</button>
@@ -250,7 +250,7 @@
     $('#fsRobo').title = ig.online ? `Computador do robô: ${ig.roboNome}` : `O computador do robô (${ig.roboNome || '—'}) está desligado ou com o FiscoCont+ fechado. O pedido fica guardado e roda quando ele ligar.`;
     const rd = ig.rodando && ig.rodando.comp === FS.comp ? ig.rodando : null;
     $('#fsReceita').disabled = !!rd || ig.pendente;
-    $('#fsReceita').textContent = rd ? 'Conferindo…' : ig.pendente ? 'Pedido na fila…' : '🔎 Conferir na Receita';
+    $('#fsReceita').textContent = rd ? 'Robô rodando…' : ig.pendente ? 'Aguardando o robô…' : '▶ Iniciar robô';
     const c = { ok: 0, nao: 0, verificar: 0, semproc: 0, semcnpj: 0, erro: 0 };
     FS.linhas.forEach((r) => { const k = recSit(r).k; if (k) c[k]++; });
     const algum = Object.values(c).some(Boolean);
@@ -273,7 +273,7 @@
     const bt = $('#fsReceita'); bt.disabled = true;
     const x = await window.fiscocont.fechamento.conferirReceita(FS.comp, ids);
     if (x && x.error) { bt.disabled = false; toast(x.error, true); return; }
-    toast(`Pedido enviado ao robô${ids ? ` (${ids.length} empresa${ids.length > 1 ? 's' : ''} do filtro)` : ''}. Só entram as empresas com Escrituração concluída = Sim e ainda não confirmadas.`);
+    toast(`Robô iniciado${ids ? ` (${ids.length} empresa${ids.length > 1 ? 's' : ''} do filtro)` : ''}. Só entram as empresas com Escrituração concluída = Sim e ainda não confirmadas.`);
   }
 
   function filtradas() {
@@ -308,7 +308,7 @@
     return `<td class="fs-n">${i + 1}</td>
       <td class="l"><span class="fs-dot" style="background:${ST[st].cor}" title="${ST[st].rot}"></span><b>${e(r.nome)}</b>${r.semMovimento ? '<span class="fs-tag">sem movimento</span>' : ''}${r.inativa && r.saida > FS.comp ? `<span class="fs-tag fs-tag-in">inativa a partir de ${e(compRot(r.saida))}</span>` : ''}${r.cnpj ? `<small>${e(r.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5'))}</small>` : ''}</td>
       <td class="l">${FS.admin ? selAnalista(r) : e(r.analista || '—')}</td>
-      <td>${selEtapa(r, 'esc')}</td><td>${selEtapa(r, 'pgdas')}${r.pgdasRobo && r.pgdas === 'Sim' ? '<small class="fs-robotag" title="Marcado pelo robô depois de confirmar na Receita Federal">robô</small>' : ''}</td>
+      <td>${selEtapa(r, 'esc')}</td><td>${selEtapa(r, 'pgdas')}${FS.ig.ativo && r.pgdasRobo && r.pgdas === 'Sim' ? '<small class="fs-robotag" title="Marcado pelo robô depois de confirmar na Receita Federal">robô</small>' : ''}</td>
       <td class="l fs-rf-col" ${FS.ig.ativo ? '' : 'hidden'}>${celReceita(r)}</td><td>${selEtapa(r, 'das')}</td>
       <td class="fs-fin" title="Preenchida sozinha quando as três etapas ficam Sim ou N/A">${r.fin ? e(r.fin) : '—'}</td>
       <td class="l"><input class="fs-obs" data-c="obs" data-id="${r.id}" value="${e(r.obs)}" placeholder="—">${st === 'alerta' ? '<small class="neg">⚠ PGDAS transmitido sem escrituração concluída</small>' : ''}</td>

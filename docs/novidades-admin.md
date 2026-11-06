@@ -3,6 +3,12 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.0
+
+- **Integra Contador só do Admin:** a equipe não vê mais nada do Integra Contador no Fechamento (botão, selo do robô, coluna "Receita Federal", cartões, chip "Verificar (Receita)" e o selo "robô" no PGDAS). Regra do Firestore: fechamento_sn/integra agora só o Admin grava (a equipe não pode mais pedir conferência).
+- **Sem conferência automática:** o robô roda só quando o Admin clica em **"▶ Iniciar robô"** no Fechamento do Simples (com filtro ativo, só as empresas do filtro; sempre só Escrituração concluída = Sim e ainda não confirmadas). O pedido vai para o computador robô pela nuvem.
+- **Numeração das versões:** a partir desta, 2.2.0; quando chegar em x.y.30, a próxima é x.(y+1).0 (ex.: 2.2.30 → 2.3.0).
+
 ## 2.1.64
 
 - **Integra Contador · quem é consultado:** o robô (botão "Conferir na Receita" e conferência automática) só consulta e salva documentos das empresas com **Escrituração concluída = Sim** (Não, N/A e em branco ficam de fora) e ainda não confirmadas na Receita. Antes, a automática também pegava empresa com PGDAS marcado e o botão pegava todas.

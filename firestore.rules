@@ -1,5 +1,5 @@
 rules_version = '2';
-// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.1.63.
+// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.2.0.
 // Publicadas automaticamente pelo GitHub (workflow "Publicar funções e regras no Firebase").
 // Publicar em: Console do Firebase > Firestore Database > Regras > colar este arquivo inteiro > Publicar.
 //
@@ -96,11 +96,9 @@ service cloud.firestore {
       allow read: if ativo();
       allow write: if (doc == 'cadastro' && admin())
         || (doc != 'cadastro' && ativo() && doc.matches('^[0-9]{4}-(0[1-9]|1[0-2])$'))
-        // Robô do Integra Contador: só o Admin configura e grava o andamento; a equipe só pede a conferência.
-        // A chave do Serpro nunca vem para cá (fica em segredos_admin, que só o Admin lê).
-        || (doc == 'integra' && admin())
-        || (doc == 'integra' && ativo() && resource != null
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pedido']));
+        // Robô do Integra Contador: só o Admin (configura, inicia e grava o andamento). A chave do Serpro nunca vem
+        // para cá (fica em segredos_admin, que só o Admin lê).
+        || (doc == 'integra' && admin());
     }
 
     // ------------------------------------------------------------ Manual do Fiscal (leitura protegida no sistema)

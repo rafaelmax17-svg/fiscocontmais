@@ -124,14 +124,14 @@ function ouvir(comp, cb) {
       return {
         id, nome: c.nome || r.nome || '', cnpj: c.cnpj || '', analista: r.analista || c.analista || '', ordem: c.ordem ?? 9999,
         esc: r.esc || '', pgdas: r.pgdas || '', das: r.das || '', obs: r.obs || '', fin: r.fin || '',
-        alteradoPor: r.alteradoPor || '', semMovimento: _semMovimento(r.obs), receita: r.receita || null, pgdasRobo: !!r.pgdasRobo,
+        alteradoPor: r.alteradoPor || '', semMovimento: _semMovimento(r.obs), receita: _ehAdmin() ? (r.receita || null) : null, pgdasRobo: _ehAdmin() && !!r.pgdasRobo,
         inativa: c.ativa === false, saida: c.saida || '',
       };
     }).sort((a, b) => a.ordem - b.ordem || a.nome.localeCompare(b.nome));
-    cb({ comp, linhas, analistas, admin: _ehAdmin(), integra: _integraPublico(ig) });
+    cb({ comp, linhas, analistas, admin: _ehAdmin(), integra: _ehAdmin() ? _integraPublico(ig) : { ativo: false } });   // Integra Contador: só o Admin
   };
   _unsubs.push(f.onSnapshot(f.doc(db, COL, comp), (s) => { mes = s.exists() ? (s.data().empresas || {}) : {}; manda(); }, () => {}));
-  _unsubs.push(f.onSnapshot(f.doc(db, COL, 'integra'), (s) => { ig = s.exists() ? s.data() : {}; manda(); }, () => {}));
+  if (_ehAdmin()) _unsubs.push(f.onSnapshot(f.doc(db, COL, 'integra'), (s) => { ig = s.exists() ? s.data() : {}; manda(); }, () => {}));
   _unsubs.push(f.onSnapshot(f.doc(db, COL, 'cadastro'), (s) => { const d = s.exists() ? s.data() : {}; cad = d.empresas || {}; lista = Array.isArray(d.analistas) ? d.analistas : []; manda(); }, () => {}));
 }
 

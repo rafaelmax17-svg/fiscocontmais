@@ -54,8 +54,8 @@
           ${L.configurado ? `<div class="ig-ok"><b>✓ Chave cadastrada · vale para todos os computadores do Admin</b>${L.testadoEm ? `Último teste: ${e(new Date(L.testadoEm).toLocaleString('pt-BR'))}` : ''}${L.configuradoPor ? ` · por ${e(L.configuradoPor)}` : ''}</div>` : '<div class="ig-off">Ainda sem chave. Enquanto ela não for cadastrada, o Fechamento do Simples continua igual para a equipe.</div>'}
           <div class="ig-inf">
             <div><b>Robô do Fechamento:</b> ${N.ativo ? (N.esteComputador ? 'este computador' : e(N.roboNome || 'outro computador')) : '—'} <span class="ig-hint" style="display:inline">(qualquer computador do Admin com o e-CNPJ da Liddera e o FiscoCont+ aberto; se o robô desligar, outro assume sozinho)</span></div>
-            <div><b>Conferência automática:</b> 1× por dia, a partir das 08:00</div>
-            <div><b>Botão “Conferir na Receita”:</b> disponível para toda a equipe</div>
+            <div><b>Quando roda:</b> só quando você clica em <b>“▶ Iniciar robô”</b> no Fechamento do Simples (sem conferência automática)</div>
+            <div><b>Quem vê:</b> só o Admin — a equipe não vê o botão, a coluna “Receita Federal” nem esta tela</div>
             <div><b>Quem é consultado:</b> só empresas com <b>Escrituração concluída = Sim</b> e ainda não confirmadas na Receita</div>
             <div><b>Consumo neste mês:</b> ${N.consumo ? `${N.consumo.consulta} consulta(s) · ${N.consumo.emissao} emissão(ões) de DAS · ≈ ${fmtR(custo)}` : '—'}</div>
             ${u ? `<div><b>Última conferência:</b> ${e(u.emBr || '')} · ${e(u.comp || '')} · ${e(u.por || '')}${u.erro ? ` · <span class="neg">${e(u.erro)}</span>` : ` · ${u.total || 0} empresa(s)`}</div>` : ''}
@@ -77,7 +77,7 @@
         <div class="ig-pend">${L.pendPastas.map((p) => `<div class="ig-pr"><div><b>${e(p.nome)}</b><small>${e(p.aviso)}</small>
           ${(p.candidatos || []).length ? `<div class="ig-cands">${p.candidatos.map((c) => `<button class="ig-cand" data-id="${e(p.chave || p.id)}" data-p="${e(c)}">${e(c.split(/[\\/]/).pop())}</button>`).join('')}</div>` : ''}</div>
           <button class="act inv-export" data-esc="${e(p.chave || p.id)}" data-nome="${e(p.nome)}">Escolher pasta…</button></div>`).join('')}</div>
-        <small class="ig-hint">Depois de apontar, clique em “Conferir na Receita” no Fechamento: os documentos dessas empresas são salvos.</small>` : ''}
+        <small class="ig-hint">Depois de apontar, clique em “▶ Iniciar robô” no Fechamento: os documentos dessas empresas são salvos.</small>` : ''}
       </div>`;
     ligar();
   }
@@ -100,7 +100,7 @@
       msg('✓ Conexão com o Serpro funcionando.');
     };
     if ($('#igRemover')) $('#igRemover').onclick = async () => {
-      if (!confirm('Remover a chave do Serpro?\n\nEla é apagada da nuvem (vale para todos os computadores). O robô para e o botão "Conferir na Receita" some para a equipe. O que já foi conferido continua no Fechamento.')) return;
+      if (!confirm('Remover a chave do Serpro?\n\nEla é apagada da nuvem (vale para todos os computadores) e o robô para. O que já foi conferido continua no Fechamento.')) return;
       const r = await window.fiscocont.integra.remover();
       if (r && r.error) { toast(r.error, true); return; }
       toast('Chave removida.'); carregar();

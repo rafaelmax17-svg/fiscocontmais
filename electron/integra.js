@@ -7,9 +7,9 @@
 //   código ou para o instalador. As pastas (onde salvar os documentos) ficam no mesmo documento.
 // • O "robô" é um computador de Admin com o e-CNPJ da Liddera nas Baixas DF-e e o FiscoCont+ aberto: só ele fala com o
 //   Serpro (TLS mútuo com o certificado). Se o robô ficar offline, outro computador de Admin com o e-CNPJ assume sozinho.
-// • A equipe pede a conferência pelo botão "Conferir na Receita" no Fechamento; o pedido vai pela nuvem
-//   (fechamento_sn/integra, sem nada de chave), o robô consulta e grava o resultado na competência.
-// • Enquanto ninguém cadastrar a chave, nada muda para a equipe.
+// • Só o Admin usa o Integra Contador: o robô roda quando o Admin clica em "Iniciar robô" no Fechamento (não há
+//   conferência automática). O pedido vai pela nuvem (fechamento_sn/integra, sem nada de chave) para o computador robô.
+// • A equipe não vê nada do Integra Contador (botão, coluna e resultados ficam só para o Admin).
 // • O robô nunca desmarca o que a analista marcou: quando a Receita discorda, a empresa aparece como "Verificar".
 //
 // Firestore fechamento_sn/integra (equipe lê): { ativo, roboMaquina, roboNome, heartbeat, pedido{n,comp,ids,por,em},
@@ -29,12 +29,11 @@ const COL_SEG = 'segredos_admin';
 const CONTRATANTE = '36714399000110';           // LIDDERA CONTABILIDADE LTDA — contrato Integra Contador nº 598158
 const LOTE = 8;                                  // empresas por chamada ao núcleo Python (atualiza o progresso entre lotes)
 const INTERVALO_REPETIR = 6 * 3600 * 1000;       // a mesma empresa pendente não é consultada de novo antes de 6 h
-const HORA_AUTO = 8;                             // conferência automática: 1× por dia, a partir das 08:00
 const OFFLINE_MS = 12 * 60 * 1000;               // sem sinal do robô há 12 min = offline (outro Admin pode assumir)
 
 let D = null;                                    // dependências do main.js
 let _tok = null;                                 // acesso temporário do Serpro (só em memória)
-let _unsub = null, _hb = null, _auto = null, _rodando = false, _ultimoPedido = 0;
+let _unsub = null, _hb = null, _rodando = false, _ultimoPedido = 0;
 
 function init(deps) { D = deps; }
 function _ehAdmin() { const s = auth.sessao(); return !!(s && s.perfil === 'admin'); }
@@ -188,6 +187,7 @@ async function definirPasta(id, pasta) {
 
 // ------------------------------------------------------------------ equipe: pedir conferência
 async function pedir(comp, ids) {
+  if (!_ehAdmin()) throw new Error('Só o Admin inicia o robô do Integra Contador.');
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(comp || '')) throw new Error('Competência inválida.');
   const { f } = _fs();
   const s = await f.getDoc(_ref());
@@ -235,21 +235,10 @@ async function iniciarRobo() {
     } catch (_) {}
   };
   _hb = setInterval(bate, 4 * 60 * 1000);
-  const auto = async () => {
-    try {
-      if (new Date().getHours() < HORA_AUTO || _rodando) return;
-      const s = await f.getDoc(_ref()); const d = s.exists() ? s.data() : {};
-      if (d.roboMaquina !== maq || d.autoDia === _hojeIso()) return;
-      await f.updateDoc(_ref(), { autoDia: _hojeIso() });
-      await _executar(_compAnterior(), null, 'automática', 0, true);
-    } catch (_) {}
-  };
-  setTimeout(auto, 60 * 1000); _auto = setInterval(auto, 30 * 60 * 1000);
 }
 function pararRobo() {
   if (_unsub) { try { _unsub(); } catch (_) {} _unsub = null; }
   if (_hb) { clearInterval(_hb); _hb = null; }
-  if (_auto) { clearInterval(_auto); _auto = null; }
 }
 
 // Quem entra na conferência (botão e automática): só empresas com "Escrituração concluída = Sim" e ainda não
