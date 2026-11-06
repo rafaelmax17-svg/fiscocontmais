@@ -3,6 +3,11 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.63
+
+- **Integra Contador · chave gravada para todos os computadores do Admin:** Consumer Key/Secret, pastas e escolhas de pasta saem do computador e vão para a nuvem, no documento segredos_admin/integra — regra nova do Firestore: só perfil Admin lê e grava (a equipe não lê, não vê a tela e não recebe a chave; nada no código nem no instalador). Cadastrada uma vez, a chave não é pedida de novo em outro computador do Admin. A chave salva só no computador (2.1.61/2.1.62) sobe sozinha para a nuvem na primeira vez que o Admin abrir o sistema nesse computador.
+- **Robô:** qualquer computador do Admin com o e-CNPJ da Liddera nas Baixas DF-e (escolhido sozinho pela raiz do CNPJ, o de validade mais longa) e o FiscoCont+ aberto. Se o robô atual ficar 12 min sem sinal, outro computador do Admin com o certificado assume sozinho. Computador sem o e-CNPJ: a tela avisa que ele não consulta o Serpro.
+
 ## 2.1.62
 
 - **Integra Contador · pastas:** subpasta padrão "Simples Nacional\{AAAA}\{PERIODO}" (pasta da empresa › Simples Nacional › ano › competência). {PERIODO} reconhece a pasta da competência em qualquer formato usual — 09, 9, 092026, 09-2026, 09.2026, 09_2026, 0926, 2026-09, 202609, Setembro, SET-2026, "09 - Setembro" (ano diferente da competência não serve). Pasta do ano ou da competência que não existir é criada no mesmo formato das irmãs (ou, num ano novo, no formato do ano anterior; sem referência, "09"). "Simples Nacional" é achada sem diferenciar maiúsculas. Duas pastas da mesma competência (ex.: "10" e "10-2026") → não escolhe: vai para "pasta a verificar" e o Admin aponta a pasta daquela competência. Pasta das empresas sugerida: G:\Drives compartilhados\Fiscal - Simples Nacional, quando existir no computador.

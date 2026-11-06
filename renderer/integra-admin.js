@@ -28,19 +28,15 @@
     const subVal = L.subpasta || SUB_PADRAO;
     const exemplo = baseVal ? `${baseVal}\\<pasta da empresa>\\${subVal.replace(/\{AAAA\}/g, '2026').replace(/\{PERIODO\}/g, '10 (ou 102026, 10-2026… a que já existir)').replace(/\{MM\}/g, '10').replace(/\{MES\}/g, 'Outubro').replace(/\{AA\}/g, '26')}`
       : '— escolha a pasta das empresas —';
-    const outroRobo = !L.configurado && N.ativo && !N.esteComputador;
     $('#igRaiz').innerHTML = `
       <div class="ig-hd"><div><h2>🔐 Integra Contador · Serpro</h2><p>Contrato 598158 · LIDDERA CONTABILIDADE LTDA · ${e(fmtCnpj(L.contratante))}</p></div>
         <span class="ig-pill ${N.ativo && N.online ? 'on' : 'off'}">${N.ativo ? (N.online ? 'Robô online' : 'Robô offline') : 'Não configurado'}</span></div>
       <div class="ig-g">
         <div class="ig-card">
           <h3>Chave de acesso do Serpro</h3>
-          ${outroRobo ? `<div class="ig-ok"><b>✓ Chave já cadastrada no computador do robô</b>${e(N.roboNome || 'outro computador')}${N.online ? ' · online' : ' · offline agora'}</div>
-          <p class="ig-hint">Não precisa cadastrar de novo aqui: a chave fica guardada só no computador do robô (o Windows cifra a chave para aquele computador e usuário, ela não pode ser copiada para outra máquina). Daqui você e a equipe usam o botão “Conferir na Receita” normalmente; quem consulta o Serpro é o robô.</p>
-          <div class="ig-act"><button class="act inv-export" id="igVirarRobo">Tornar este computador o robô…</button></div>` : ''}
-          <div id="igForm" ${outroRobo ? 'hidden' : ''}>
-          ${outroRobo ? '<p class="ig-hint"><b>Atenção:</b> salvando a chave aqui, este computador passa a ser o robô e o outro para de consultar. Este computador precisa ter o e-CNPJ da Liddera nas Baixas DF-e e ficar ligado com o FiscoCont+ aberto.</p>' : ''}
-          <p class="ig-hint">Gerada na Área do Cliente do Serpro (cliente.serpro.gov.br). Fica guardada <b>só neste computador</b>, cifrada pelo Windows — não vai para a nuvem nem para o código. Só é pedida de novo se a chave for trocada no Serpro.</p>
+          ${L.configurado && !L.temCert ? '<p class="ig-hint"><b>Este computador não tem o e-CNPJ da Liddera nas Baixas DF-e</b>, então ele não consulta o Serpro (não pode ser o robô). A chave continua valendo nos computadores que têm o certificado.</p>' : ''}
+          <div id="igForm">
+          <p class="ig-hint">Gerada na Área do Cliente do Serpro (cliente.serpro.gov.br). Fica gravada na nuvem, num cadastro que <b>só o Admin enxerga</b> — a equipe não vê nem recebe a chave, e ela não vai para o código nem para o instalador. Vale para todos os computadores em que o Admin entrar: só é pedida de novo se a chave for trocada no Serpro.</p>
           <label>Consumer Key</label><input id="igKey" class="fs-in" type="password" autocomplete="off" spellcheck="false" placeholder="${L.configurado ? '••••••••••••••••' + e(L.finalKey) + '  (cadastrada — cole outra só para trocar)' : 'Cole aqui o Consumer Key'}">
           <label>Consumer Secret</label><input id="igSecret" class="fs-in" type="password" autocomplete="off" spellcheck="false" placeholder="${L.configurado ? '••••••••••••••••' + e(L.finalSecret) + '  (cadastrado)' : 'Cole aqui o Consumer Secret'}">
           <label>Certificado do procurador (e-CNPJ da Liddera)</label>
@@ -55,9 +51,9 @@
         </div>
         <div class="ig-card">
           <h3>Situação</h3>
-          ${L.configurado ? `<div class="ig-ok"><b>✓ Chave cadastrada neste computador</b>${L.testadoEm ? `Último teste: ${e(new Date(L.testadoEm).toLocaleString('pt-BR'))}` : ''}</div>` : outroRobo ? '' : '<div class="ig-off">Ainda sem chave. Enquanto ela não for cadastrada, o Fechamento do Simples continua igual para a equipe.</div>'}
+          ${L.configurado ? `<div class="ig-ok"><b>✓ Chave cadastrada · vale para todos os computadores do Admin</b>${L.testadoEm ? `Último teste: ${e(new Date(L.testadoEm).toLocaleString('pt-BR'))}` : ''}${L.configuradoPor ? ` · por ${e(L.configuradoPor)}` : ''}</div>` : '<div class="ig-off">Ainda sem chave. Enquanto ela não for cadastrada, o Fechamento do Simples continua igual para a equipe.</div>'}
           <div class="ig-inf">
-            <div><b>Robô do Fechamento:</b> ${N.ativo ? (N.esteComputador ? 'este computador' : e(N.roboNome || 'outro computador')) : '—'}</div>
+            <div><b>Robô do Fechamento:</b> ${N.ativo ? (N.esteComputador ? 'este computador' : e(N.roboNome || 'outro computador')) : '—'} <span class="ig-hint" style="display:inline">(qualquer computador do Admin com o e-CNPJ da Liddera e o FiscoCont+ aberto; se o robô desligar, outro assume sozinho)</span></div>
             <div><b>Conferência automática:</b> 1× por dia, a partir das 08:00, só das empresas já escrituradas e ainda não confirmadas</div>
             <div><b>Botão “Conferir na Receita”:</b> disponível para toda a equipe</div>
             <div><b>Consumo neste mês:</b> ${N.consumo ? `${N.consumo.consulta} consulta(s) · ${N.consumo.emissao} emissão(ões) de DAS · ≈ ${fmtR(custo)}` : '—'}</div>
@@ -88,7 +84,6 @@
   function msg(t, erro) { const m = $('#igMsg'); if (m) m.innerHTML = t ? `<div class="${erro ? 'ig-er' : 'ig-ok2'}">${e(t)}</div>` : ''; }
 
   function ligar() {
-    if ($('#igVirarRobo')) $('#igVirarRobo').onclick = () => { $('#igForm').hidden = false; $('#igVirarRobo').hidden = true; };
     $('#igSalvar').onclick = async () => {
       const bt = $('#igSalvar'); bt.disabled = true; bt.textContent = 'Testando no Serpro…'; msg('');
       const r = await window.fiscocont.integra.salvarChave({ key: $('#igKey').value, secret: $('#igSecret').value, certId: $('#igCert').value });
@@ -104,7 +99,7 @@
       msg('✓ Conexão com o Serpro funcionando.');
     };
     if ($('#igRemover')) $('#igRemover').onclick = async () => {
-      if (!confirm('Remover a chave do Serpro deste computador?\n\nO robô para e o botão "Conferir na Receita" some para a equipe. O que já foi conferido continua no Fechamento.')) return;
+      if (!confirm('Remover a chave do Serpro?\n\nEla é apagada da nuvem (vale para todos os computadores). O robô para e o botão "Conferir na Receita" some para a equipe. O que já foi conferido continua no Fechamento.')) return;
       const r = await window.fiscocont.integra.remover();
       if (r && r.error) { toast(r.error, true); return; }
       toast('Chave removida.'); carregar();

@@ -533,10 +533,13 @@ integra.init({
   userData: () => app.getPath('userData'),
   runFiscal: (args, pronto) => runFiscal(args, pronto),
   maquina: () => license.getMachineCode(),
-  credEscritorio: (certId) => {
+  // certId escolhido neste computador; sem ele (ou se sumiu), o e-CNPJ do contratante com a validade mais longa
+  credEscritorio: (certId, raiz) => {
     const indice = _lerIndiceCert();
-    const c = indice.empresas.find((x) => x.id === certId && (x.tipo || 'matriz') === 'matriz');
-    if (!c) return { error: 'O e-CNPJ da Liddera não está mais cadastrado nas Baixas DF-e deste computador.' };
+    const mat = indice.empresas.filter((x) => (x.tipo || 'matriz') === 'matriz');
+    const c = mat.find((x) => x.id === certId)
+      || mat.filter((x) => String(x.cnpj || '').slice(0, 8) === raiz).sort((a, b) => String(b.validade || '').localeCompare(String(a.validade || '')))[0];
+    if (!c) return { error: 'O e-CNPJ da Liddera não está cadastrado nas Baixas DF-e deste computador.' };
     return _credDe(indice, c);
   },
   pastaFallback: () => {
@@ -545,7 +548,7 @@ integra.init({
     return '';
   },
 });
-ipcMain.handle('integra:estado', () => _adm(async () => ({ local: integra.estadoLocal(), nuvem: await integra.estadoNuvem().catch(() => null) })));
+ipcMain.handle('integra:estado', () => _adm(async () => ({ local: await integra.estadoLocal(), nuvem: await integra.estadoNuvem().catch(() => null) })));
 ipcMain.handle('integra:salvarChave', (_evt, dados) => _adm(() => integra.salvarChave(dados || {})));
 ipcMain.handle('integra:testar', () => _adm(() => integra.testar()));
 ipcMain.handle('integra:remover', () => _adm(() => integra.remover()));

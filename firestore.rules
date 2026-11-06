@@ -1,5 +1,5 @@
 rules_version = '2';
-// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.1.61.
+// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.1.63.
 // Publicadas automaticamente pelo GitHub (workflow "Publicar funções e regras no Firebase").
 // Publicar em: Console do Firebase > Firestore Database > Regras > colar este arquivo inteiro > Publicar.
 //
@@ -97,7 +97,7 @@ service cloud.firestore {
       allow write: if (doc == 'cadastro' && admin())
         || (doc != 'cadastro' && ativo() && doc.matches('^[0-9]{4}-(0[1-9]|1[0-2])$'))
         // Robô do Integra Contador: só o Admin configura e grava o andamento; a equipe só pede a conferência.
-        // A chave do Serpro nunca vem para cá (fica cifrada no computador do robô).
+        // A chave do Serpro nunca vem para cá (fica em segredos_admin, que só o Admin lê).
         || (doc == 'integra' && admin())
         || (doc == 'integra' && ativo() && resource != null
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pedido']));
@@ -116,6 +116,12 @@ service cloud.firestore {
       allow update: if ativo() && resource.data.uid == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fim', 'segundos']);
       allow read, delete: if admin();
+    }
+
+    // ------------------------------------------------------------ segredos do Admin (chave do Serpro / Integra Contador)
+    // Só quem tem perfil Admin lê e grava; a equipe não lê nem sabe que existe. A chave vale para qualquer computador do Admin.
+    match /segredos_admin/{doc} {
+      allow read, write: if admin();
     }
 
     // qualquer outra coleção: fechada
