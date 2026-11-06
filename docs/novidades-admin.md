@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.4
+
+- **Corretor da EFD-Contribuições · nota de serviço sem item (A100 sem A170):** erro do PVA "Registro filho obrigatório não foi informado" (A170). Agora, automático, para serviço **tomado** (IND_OPER 0, não cancelada): inclui o padrão do escritório igual ao lançado no PVA — 0200 |SERV|SERVIÇOS| tipo 09 (se não existir), 0500 |01012005|04|A|5|362|SERVIÇOS PRESTADOS POR TERCEIROS| (se não existir) e, em cada A100, o A170 |1|SERV||<valor do documento>|<desconto, se houver>||0|73||||73||||362|| (origem 0 – mercado interno, CST 73 – aquisição a alíquota zero). Refaz A990/0990/9900/9999. Serviço **prestado** (IND_OPER 1) sem A170 vira pendência (é receita: CST e base dependem da nota). Conta 362 que já existe como sintética → pendência. Teste com o SPED de set/2026 da Sudário e Batista: 8 A100 sem item → 8 A170 incluídos, 0200 SERV e 0500 362 criados.
+
 ## 2.2.3
 
 - **Corretor da EFD-Contribuições · NFC-e sem item:** com a opção "Notas sem item" ligada, o corretor incluía C170 também em NFC-e (modelo 65) sem C175 — e ainda escolhia CFOP 5929 porque achava a própria NFC-e como "par". O PVA recusa C170 em modelo 65 ("O registro não deve ser informado para o modelo de documento do Registro Pai" e "…para esse perfil e/ou tipo de operação"). Agora NFC-e sem C175 nunca recebe item: vira pendência (o detalhe dela é o C175 com o CFOP e o CST reais da venda — a receita precisa entrar na apuração, não dá para inventar CST 49). O par de NFC-e para o CFOP 5929 nunca é a própria nota. NF-e (modelo 55) sem C170 continua como antes.

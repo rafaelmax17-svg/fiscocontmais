@@ -40,6 +40,7 @@ TITULOS = {
     'cta_item': ('Conta contábil em branco nos itens de entrada (C170)', '#a855f7'),
     'cta_m400': ('Conta sintética na receita não tributada (M400/M800)', '#9333ea'),
     'c100sem': ('Documento sem item (C100 sem C170 · NFC-e sem C175)', '#b45309'),
+    'a100sem': ('Nota de serviço tomado sem item (A100 sem A170)', '#0e7490'),
     'contadores': ('Contadores do arquivo (9900, x990, 9999)', '#6b7392'),
 }
 
@@ -718,6 +719,83 @@ def det_c100sem(L):
 
 COD_ITEM_SEM = 'DOCSEMITEM'
 
+# Serviço tomado (bloco A) — padrão do escritório, igual ao lançado no PVA (decisão do Rafael, 06/11/2026):
+#   0200 |0200|SERV|SERVIÇOS|||||09||||| (tipo 09 = serviços)
+#   0500 |0500|01012005|04|A|5|362|SERVIÇOS PRESTADOS POR TERCEIROS||| (resultado, analítica, nível 5)
+#   A170 item 1 · SERV · valor do documento · origem 0 (mercado interno) · CST PIS/COFINS 73 (aquisição a alíquota zero) · conta 362
+COD_ITEM_SERV = 'SERV'
+REG_0200_SERV = ['0200', 'SERV', 'SERVIÇOS', '', '', '', '09', '', '', '', '', '']
+CONTA_SERV = '362'
+REG_0500_SERV = ['0500', '01012005', '04', 'A', '5', '362', 'SERVIÇOS PRESTADOS POR TERCEIROS', '', '']
+CST_SERV_TOMADO = '73'
+
+
+def det_a100sem(L):
+    out = []
+    for i, l in enumerate(L):
+        if _reg(l) != 'A100':
+            continue
+        p = _partes(l['txt'])
+        if len(p) < 13 or p[4] in ('02', '03', '04', '05'):            # cancelada etc.
+            continue
+        tem = False
+        for l2 in L[i + 1:]:
+            r = _reg(l2)
+            if r == 'A170':
+                tem = True
+                break
+            if r in ('A100', 'A010', 'A990') or r[0] != 'A':
+                break
+        if not tem:
+            out.append({'i': i, 'oper': p[1], 'num': p[7], 'data': p[9], 'valor': _num(p[11]), 'desc': _num(p[13]) if len(p) > 13 else 0})
+    return out
+
+
+def _fix_a100sem(L, acoes, pend, ctx):
+    """A100 de serviço TOMADO (IND_OPER 0) sem A170: inclui 0200 SERV e 0500 362 (se faltarem) e o A170 padrão do escritório.
+    Serviço PRESTADO (IND_OPER 1) sem A170 só vira pendência: é receita, o CST e a base dependem da nota."""
+    achados = det_a100sem(L)
+    if not achados:
+        return L
+    contas = _contas_0500(L)
+    c = contas.get(CONTA_SERV)
+    if c and not c['analitica']:
+        for f in achados:
+            pend.append({'cat': 'a100sem', 'linha': L[f['i']]['n'], 'titulo': f"NFS-e {f['num']} sem item (A170)",
+                         'detalhe': f'A conta {CONTA_SERV} existe no 0500 como sintética; o item precisa de conta analítica.'})
+        return L
+    tomados = [f for f in achados if f['oper'] == '0']
+    for f in achados:
+        if f['oper'] != '0':
+            pend.append({'cat': 'a100sem', 'linha': L[f['i']]['n'], 'titulo': f"NFS-e {f['num']} (serviço prestado, R$ {_brl(f['valor'])}) sem item (A170)",
+                         'detalhe': 'Serviço prestado é receita: o CST e a base de PIS/COFINS dependem da nota. Confira e lance o item no sistema de origem.'})
+    if not tomados:
+        return L
+    for f in sorted(tomados, key=lambda x: -x['i']):                  # de baixo para cima: não desloca as próximas
+        vl = round(f['valor'], 2)
+        item = ['A170', '1', COD_ITEM_SERV, '', _fmt(vl), _fmt(f['desc']) if f['desc'] else '', '', '0',
+                CST_SERV_TOMADO, '', '', '', CST_SERV_TOMADO, '', '', '', CONTA_SERV, '']
+        novo = {'n': L[f['i']]['n'], 'txt': _monta(item), 'novo': True}
+        L.insert(f['i'] + 1, novo)
+        acoes.append({'cat': 'a100sem', 'tipo': 'incluido', 'linha': L[f['i']]['n'], 'registro': 'A170', 'antes': '', 'depois': novo['txt'],
+                      'motivo': f"NFS-e {f['num']} ({f['data'][:2]}/{f['data'][2:4]}) sem item: incluído o item SERV de R$ {_brl(vl)}, CST {CST_SERV_TOMADO} (aquisição a alíquota zero), conta {CONTA_SERV}.",
+                      'num': f['num'], 'valor': vl})
+    if not any(_reg(l) == '0200' and _partes(l['txt'])[1] == COD_ITEM_SERV for l in L):
+        ult = max(i for i, l in enumerate(L) if _reg(l) in ('0150', '0190', '0200'))
+        r0200 = {'n': None, 'txt': _monta(REG_0200_SERV), 'novo': True}
+        L.insert(ult + 1, r0200)
+        acoes.append({'cat': 'a100sem', 'tipo': 'incluido', 'linha': None, 'registro': '0200', 'antes': '(não existia)', 'depois': r0200['txt'],
+                      'motivo': 'Cadastro do item SERV (tipo 09 – serviços) usado nas notas de serviço tomado sem item.', 'num': '', 'valor': 0})
+    if not c:
+        ult = [i for i, l in enumerate(L) if _reg(l) == '0500']
+        j = ult[-1] + 1 if ult else next((i for i, l in enumerate(L) if _reg(l) in ('0600', '0900', '0990')), None)
+        if j is not None:
+            r0500 = {'n': None, 'txt': _monta(REG_0500_SERV), 'novo': True}
+            L.insert(j, r0500)
+            acoes.append({'cat': 'a100sem', 'tipo': 'incluido', 'linha': None, 'registro': '0500', 'antes': '(não existia)', 'depois': r0500['txt'],
+                          'motivo': f'Conta {CONTA_SERV} (SERVIÇOS PRESTADOS POR TERCEIROS) incluída no 0500 para os itens de serviço tomado.', 'num': '', 'valor': 0})
+    return L
+
 
 def _fix_c100sem(L, acoes, pend, ctx):
     """Por padrão só aponta. Com a opção "Notas sem item" ligada na tela (decisão do Rafael, 26/10/2026), inclui um
@@ -1001,22 +1079,22 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
     antes = {
         'cpf': det_cpf(L), 'c100': det_c100(L), 'c175dup': det_c175dup(L), 'mdup': det_mdup(L), 'msoma': det_msoma(L),
         'natureza': det_natureza(L), 'm410': det_m410(L), 'cta': det_cta(L), 'contadores': det_contadores(L),
-        'cta_item': det_cta_item(L), 'cta_m400': det_cta_m400(L), 'c100sem': det_c100sem(L),
+        'cta_item': det_cta_item(L), 'cta_m400': det_cta_m400(L), 'c100sem': det_c100sem(L), 'a100sem': det_a100sem(L),
     }
     atencao = det_atencao_aliquota(L)
     n_antes = len(L)
     acoes, pend = [], []
     for fix in (_fix_cpf, _fix_c100, _fix_c175dup, _fix_mdup, _fix_msoma, _fix_natureza, _fix_m105, _fix_m410, _fix_cta,
-                _fix_0500, _fix_cta_itens, _fix_cta_m400, _fix_c100sem):
+                _fix_0500, _fix_cta_itens, _fix_cta_m400, _fix_c100sem, _fix_a100sem):
         L = fix(L, acoes, pend, ctx)
     L = _recontar(L, acoes)
     depois = {'cpf': det_cpf(L), 'c100': det_c100(L), 'c175dup': det_c175dup(L), 'mdup': det_mdup(L), 'msoma': det_msoma(L),
               'natureza': det_natureza(L), 'm410': det_m410(L), 'cta': det_cta(L), 'contadores': det_contadores(L),
-              'cta_item': det_cta_item(L), 'cta_m400': det_cta_m400(L), 'c100sem': det_c100sem(L)}
+              'cta_item': det_cta_item(L), 'cta_m400': det_cta_m400(L), 'c100sem': det_c100sem(L), 'a100sem': det_a100sem(L)}
     pva_cat = (pva or {}).get('por_cat', {})
     dup_total = pva_cat.get('dup')
     cats = []
-    for cid in ('cpf', 'c100', 'c175dup', 'mdup', 'msoma', 'natureza', 'm105', 'm410', 'cta', 'cta_item', 'cta_m400', 'c100sem', 'contadores'):
+    for cid in ('cpf', 'c100', 'c175dup', 'mdup', 'msoma', 'natureza', 'm105', 'm410', 'cta', 'cta_item', 'cta_m400', 'c100sem', 'a100sem', 'contadores'):
         titulo, cor = TITULOS[cid]
         a_cat = [a for a in acoes if a['cat'] == cid]
         pendentes = sum(x.get('qtd', 1) for x in pend if x['cat'] == cid)
@@ -1043,6 +1121,8 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
             achados, corrigidos = len(antes[cid]), len([x for x in a_cat if x['registro'] == 'C170'])
         elif cid == 'cta_item':
             achados, corrigidos = len(antes[cid]), len([x for x in a_cat if x['registro'] == 'C170'])
+        elif cid == 'a100sem':
+            achados, corrigidos = len(antes[cid]), len([x for x in a_cat if x['registro'] == 'A170'])
         else:
             achados, corrigidos = len(antes[cid]), len(a_cat)
         if not achados and not a_cat and not pendentes:
@@ -1061,6 +1141,7 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
         ('Conta contábil em branco nos itens de entrada (C170)', len(antes['cta_item']), len(depois['cta_item'])),
         ('Conta sintética no M400/M800', len(antes['cta_m400']), len(depois['cta_m400'])),
         ('C100 sem item', len(antes['c100sem']), len(depois['c100sem'])),
+        ('A100 (serviço) sem item', len(antes['a100sem']), len(depois['a100sem'])),
         ('Contadores (9900/x990/9999) divergentes', len(antes['contadores']), len(depois['contadores'])),
     ]
     resumo = {
@@ -1152,10 +1233,12 @@ _EXPLICA = {
                  'A conta sintética foi trocada pela conta analítica usada nos detalhamentos M410/M810 do mesmo CST.'),
     'c100sem': ('Todo C100 precisa de pelo menos um C170 (exceto nota cancelada, denegada ou inutilizada).',
                 'Com a opção "Notas sem item" desligada, só aponta. Ligada, inclui um item único sem PIS/COFINS: entrada com CST 70 e saída com CST 49 (CST de entrada não é aceito em saída). CFOP 5929 quando há NFC-e do mesmo cliente, dia e valor; senão CFOP genérico (5949/1949), a conferir no XML.'),
+    'a100sem': ('Toda nota de serviço (A100) precisa de pelo menos um item (A170): "Registro filho obrigatório não foi informado".',
+                'Serviço tomado: incluído o item padrão do escritório — 0200 SERV (tipo 09), conta 362 SERVIÇOS PRESTADOS POR TERCEIROS no 0500 (se faltar) e A170 com o valor do documento, origem 0 e CST 73 de PIS/COFINS. Serviço prestado fica como pendência.'),
     'contadores': ('Depois das correções o número de linhas muda, então os contadores do arquivo ficam errados.',
                    'Os contadores 9900, x990 e 9999 foram refeitos. Não é um erro do PVA: é consequência das correções.'),
 }
-_CURTO = {'cpf': 'CPF', 'c100': 'C100', 'c175dup': 'C175 duplic.', 'mdup': 'M210/M610', 'msoma': 'M205/M605', 'natureza': 'Natureza 0400', 'm105': 'M105/M505', 'm410': 'M410/M810', 'cta': 'COD_CTA ajustes', 'cta_item': 'COD_CTA itens', 'cta_m400': 'Conta M400', 'c100sem': 'C100 s/ item'}
+_CURTO = {'cpf': 'CPF', 'c100': 'C100', 'c175dup': 'C175 duplic.', 'mdup': 'M210/M610', 'msoma': 'M205/M605', 'natureza': 'Natureza 0400', 'm105': 'M105/M505', 'm410': 'M410/M810', 'cta': 'COD_CTA ajustes', 'cta_item': 'COD_CTA itens', 'cta_m400': 'Conta M400', 'c100sem': 'C100 s/ item', 'a100sem': 'A100 s/ item'}
 
 
 def _mix(hexc, alvo, f):
@@ -1266,6 +1349,10 @@ def _tab_cat(c, res):
                                 [[str(x['linha']), _esc(x['num']), x['tipo_op'], _brl(x['valor']), _esc(x['cfop']), f'<b>{x["cst"]}</b>', _esc(x['conta'] or '—'), _esc(x['motivo'])] for x in inc],
                                 ['l', 'l', 'l', 'r', 'l', 'l', 'l', 'l'])
         return t
+    if cid == 'a100sem':
+        p = [x for x in res['pendencias'] if x['cat'] == 'a100sem']
+        return _linhas_tabela(['Linha', 'Registro', 'O que foi feito'], [[str(x['linha'] or '—'), x['registro'], _esc(x['motivo'])] for x in a] +
+                              [[str(x['linha']), '—', '<span class="st dif">Pendente</span> ' + _esc(x['titulo'] + ' — ' + x['detalhe'])] for x in p], ['l', 'l', 'l'])
     if cid == 'contadores':
         return _linhas_tabela(['Contador', 'Antes', 'Depois'], [[_esc(x['registro']), '—' if x['antes'] is None else str(x['antes']), f'<b>{x["depois"]}</b>'] for x in a], ['l', 'r', 'r'])
     return ''
