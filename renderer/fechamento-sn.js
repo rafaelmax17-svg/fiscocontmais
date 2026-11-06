@@ -93,7 +93,7 @@
         <div class="fs-chips" id="fsChips"></div>
         <span style="flex:1"></span>
         <span class="fs-robo" id="fsRobo" hidden></span>
-        <button class="act inv-export fs-rec" id="fsReceita" hidden title="O robô consulta na Receita Federal (Integra Contador) as empresas ainda não confirmadas">🔎 Conferir na Receita</button>
+        <button class="act inv-export fs-rec" id="fsReceita" hidden title="O robô consulta na Receita Federal (Integra Contador) as empresas com Escrituração concluída = Sim ainda não confirmadas, e salva os documentos na pasta de cada uma">🔎 Conferir na Receita</button>
         <button class="act inv-export" id="fsHtml">Exportar HTML</button>
         <button class="act inv-export" id="fsAnalistas" hidden>Analistas</button>
         <button class="act inv-export fs-prim" id="fsNova" hidden>+ Cadastrar empresa</button>
@@ -269,10 +269,11 @@
     const filtro = FS.analista || FS.busca.trim() || FS.chip !== 'todas';
     const ids = filtro ? filtradas().map((r) => r.id) : null;
     if (ids && !ids.length) { toast('Nenhuma empresa no filtro atual.', true); return; }
+    if (!(ids ? filtradas() : FS.linhas).some((r) => r.esc === 'Sim')) { toast('Nenhuma empresa com Escrituração concluída = Sim para conferir.', true); return; }
     const bt = $('#fsReceita'); bt.disabled = true;
     const x = await window.fiscocont.fechamento.conferirReceita(FS.comp, ids);
     if (x && x.error) { bt.disabled = false; toast(x.error, true); return; }
-    toast(`Pedido enviado ao robô${ids ? ` (${ids.length} empresa${ids.length > 1 ? 's' : ''} do filtro)` : ''}. Só são consultadas as que ainda não foram confirmadas.`);
+    toast(`Pedido enviado ao robô${ids ? ` (${ids.length} empresa${ids.length > 1 ? 's' : ''} do filtro)` : ''}. Só entram as empresas com Escrituração concluída = Sim e ainda não confirmadas.`);
   }
 
   function filtradas() {

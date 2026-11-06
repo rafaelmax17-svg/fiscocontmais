@@ -54,8 +54,9 @@
           ${L.configurado ? `<div class="ig-ok"><b>✓ Chave cadastrada · vale para todos os computadores do Admin</b>${L.testadoEm ? `Último teste: ${e(new Date(L.testadoEm).toLocaleString('pt-BR'))}` : ''}${L.configuradoPor ? ` · por ${e(L.configuradoPor)}` : ''}</div>` : '<div class="ig-off">Ainda sem chave. Enquanto ela não for cadastrada, o Fechamento do Simples continua igual para a equipe.</div>'}
           <div class="ig-inf">
             <div><b>Robô do Fechamento:</b> ${N.ativo ? (N.esteComputador ? 'este computador' : e(N.roboNome || 'outro computador')) : '—'} <span class="ig-hint" style="display:inline">(qualquer computador do Admin com o e-CNPJ da Liddera e o FiscoCont+ aberto; se o robô desligar, outro assume sozinho)</span></div>
-            <div><b>Conferência automática:</b> 1× por dia, a partir das 08:00, só das empresas já escrituradas e ainda não confirmadas</div>
+            <div><b>Conferência automática:</b> 1× por dia, a partir das 08:00</div>
             <div><b>Botão “Conferir na Receita”:</b> disponível para toda a equipe</div>
+            <div><b>Quem é consultado:</b> só empresas com <b>Escrituração concluída = Sim</b> e ainda não confirmadas na Receita</div>
             <div><b>Consumo neste mês:</b> ${N.consumo ? `${N.consumo.consulta} consulta(s) · ${N.consumo.emissao} emissão(ões) de DAS · ≈ ${fmtR(custo)}` : '—'}</div>
             ${u ? `<div><b>Última conferência:</b> ${e(u.emBr || '')} · ${e(u.comp || '')} · ${e(u.por || '')}${u.erro ? ` · <span class="neg">${e(u.erro)}</span>` : ` · ${u.total || 0} empresa(s)`}</div>` : ''}
           </div>

@@ -252,20 +252,20 @@ function pararRobo() {
   if (_auto) { clearInterval(_auto); _auto = null; }
 }
 
-// Quem entra na conferência: empresas ainda não confirmadas pela Receita. A automática só olha as que já têm a
-// escrituração concluída (ou PGDAS marcado), para não pagar consulta de empresa que nem foi escriturada.
+// Quem entra na conferência (botão e automática): só empresas com "Escrituração concluída = Sim" e ainda não
+// confirmadas pela Receita — não paga consulta nem salva documento de empresa que ainda não foi escriturada.
 function _alvos(mes, cad, ids, automatica, cfg) {
   const agora = Date.now(), out = [];
   for (const [id, r] of Object.entries(mes)) {
     if (ids && !ids.includes(id)) continue;
     const c = cad[id] || {};
     const rc = r.receita || {};
+    if (r.esc !== 'Sim') continue;                                 // só empresas com a Escrituração concluída = Sim
     if (rc.st === 'ok') {
       // confirmada; só volta (para salvar os documentos) se o Admin apontou a pasta ou mudou a pasta das empresas
       if (rc.pastaAviso && (Object.keys(cfg.mapa || {}).some((k) => k === id || k.startsWith(id + '|')) || (cfg.pastaEmpresas || '') !== (rc.pastaBase || ''))) out.push({ id, r, c });
       continue;
     }
-    if (automatica && !_ok(r.esc) && r.pgdas !== 'Sim') continue;
     if (rc.st && rc.st !== 'ok' && rc.emMs && agora - rc.emMs < INTERVALO_REPETIR && rc.st !== 'semcnpj') continue;
     out.push({ id, r, c });
   }
