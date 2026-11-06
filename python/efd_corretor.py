@@ -569,6 +569,53 @@ def det_cta_item(L):
     return out
 
 
+# Plano de contas do escritório (Domínio) para as contas que o Corretor usa nos itens de entrada. Quando a opção
+# "Incluir a conta no 0500" está marcada e a conta não existe no 0500 do arquivo, o 0500 é incluído com estes dados
+# (iguais aos 0500 que o Domínio gera — ex.: |0500|...|01|A|5|55|MERCADORIAS PARA REVENDA|1.01.03.01.01||).
+# Conta fora desta lista não é inventada: continua pendência.
+PLANO_CONTAS_ENTRADA = {
+    '55': {'nat': '01', 'nivel': '5', 'nome': 'MERCADORIAS PARA REVENDA', 'ref': '1.01.03.01.01'},
+    '359': {'nat': '04', 'nivel': '5', 'nome': 'MATERIAL DE ESCRITÓRIO', 'ref': '3.01.01.09.01.99'},
+}
+
+
+def _fix_0500(L, acoes, pend, ctx):
+    """Inclui no 0500 a conta de entradas / uso e consumo que vai ser usada nos C170 sem conta e ainda não existe."""
+    if not ctx.get('incluir_0500'):
+        return L
+    achados = det_cta_item(L)
+    if not achados:
+        return L
+    contas = _contas_0500(L)
+    usadas = []
+    if any(f['cfop'] in CFOP_USO_CONSUMO for f in achados):
+        usadas.append((ctx.get('conta_uso') or '').strip())
+    if any(f['cfop'] not in CFOP_USO_CONSUMO for f in achados):
+        usadas.append((ctx.get('conta_entrada') or '').strip())
+    p0 = _partes(L[0]['txt']) if L and _reg(L[0]) == '0000' else []
+    dt = p0[5] if len(p0) > 5 and len(p0[5]) == 8 else ''
+    for conta in [c for c in dict.fromkeys(usadas) if c]:
+        if conta in contas:
+            continue                                   # já existe (se for sintética, a pendência sai no _fix_cta_itens)
+        pl = PLANO_CONTAS_ENTRADA.get(conta)
+        if not pl or not dt:
+            continue
+        rec = _monta(['0500', dt, pl['nat'], 'A', pl['nivel'], conta, pl['nome'], pl['ref'], ''])
+        # posição: depois do último 0500; sem 0500, antes do 0600/0900/0990 (ordem do bloco 0 do leiaute)
+        ult = [i for i, l in enumerate(L) if _reg(l) == '0500']
+        if ult:
+            j = ult[-1] + 1
+        else:
+            j = next((i for i, l in enumerate(L) if _reg(l) in ('0600', '0900', '0990')), None)
+            if j is None:
+                continue
+        L.insert(j, {'n': None, 'txt': rec, 'novo': True})
+        acoes.append({'cat': 'cta_item', 'tipo': 'incluido', 'linha': None, 'registro': '0500', 'antes': '(não existia)', 'depois': rec,
+                      'motivo': f'Conta {conta} ({pl["nome"]}) incluída no 0500 (plano de contas do escritório), para os itens de entrada sem conta.',
+                      'cfop': '', 'valor': 0, 'conta': conta, 'nome_conta': pl['nome'], 'regra': 'inclusão no 0500'})
+    return L
+
+
 def _fix_cta_itens(L, acoes, pend, ctx):
     achados = det_cta_item(L)
     if not achados:
@@ -597,7 +644,8 @@ def _fix_cta_itens(L, acoes, pend, ctx):
         pend.append({'cat': 'cta_item', 'qtd': qtd, 'linha': L[achados[0]['i']]['n'],
                      'titulo': f'{qtd} item(ns) de {tipo} sem conta contábil',
                      'detalhe': (f'A conta {conta} não está cadastrada como analítica no 0500 deste arquivo.' if conta else 'Nenhuma conta informada na tela.')
-                     + ' Informe a conta certa na tela do Corretor e corrija de novo.'})
+                     + (' Marque “Incluir a conta no 0500” na tela (vale para as contas 55 e 359 do plano do escritório) ou informe a conta certa e corrija de novo.'
+                            if conta in PLANO_CONTAS_ENTRADA and not ctx.get('incluir_0500') else ' Informe a conta certa na tela do Corretor e corrija de novo.')})
     return L
 
 
@@ -932,10 +980,11 @@ def ler_erros_pva(caminho):
 
 
 # ------------------------------------------------------------------ orquestração
-def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste='', conta_uso='359', conta_entrada='55', itens_genericos=False):
+def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste='', conta_uso='359', conta_entrada='55', itens_genericos=False, incluir_0500=False):
     L, eol, termina = _ler(texto)
     ctx = {'pva': pva or {}, 'hoje': hoje or '', 'ajustes': [], 'mapa_n': {}, 'conta_ajuste': conta_ajuste or '',
-           'conta_uso': conta_uso or '', 'conta_entrada': conta_entrada or '', 'itens_genericos': itens_genericos}
+           'conta_uso': conta_uso or '', 'conta_entrada': conta_entrada or '', 'itens_genericos': itens_genericos,
+           'incluir_0500': incluir_0500}
     p0 = _partes(L[0]['txt']) if L and _reg(L[0]) == '0000' else []
     empresa = {'nome': p0[7] if len(p0) > 7 else '', 'cnpj': p0[8] if len(p0) > 8 else '', 'ini': p0[5] if len(p0) > 5 else '', 'fim': p0[6] if len(p0) > 6 else ''}
     avisos = []
@@ -950,7 +999,7 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
     n_antes = len(L)
     acoes, pend = [], []
     for fix in (_fix_cpf, _fix_c100, _fix_c175dup, _fix_mdup, _fix_msoma, _fix_natureza, _fix_m105, _fix_m410, _fix_cta,
-                _fix_cta_itens, _fix_cta_m400, _fix_c100sem):
+                _fix_0500, _fix_cta_itens, _fix_cta_m400, _fix_c100sem):
         L = fix(L, acoes, pend, ctx)
     L = _recontar(L, acoes)
     depois = {'cpf': det_cpf(L), 'c100': det_c100(L), 'c175dup': det_c175dup(L), 'mdup': det_mdup(L), 'msoma': det_msoma(L),
@@ -983,6 +1032,8 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
         elif cid == 'm410':
             achados, corrigidos = len(antes[cid]), 0
         elif cid == 'c100sem':
+            achados, corrigidos = len(antes[cid]), len([x for x in a_cat if x['registro'] == 'C170'])
+        elif cid == 'cta_item':
             achados, corrigidos = len(antes[cid]), len([x for x in a_cat if x['registro'] == 'C170'])
         else:
             achados, corrigidos = len(antes[cid]), len(a_cat)
@@ -1185,12 +1236,15 @@ def _tab_cat(c, res):
                               ['l', 'l', 'l', 'r', 'l', 'l'])
     if cid == 'cta_item':
         p = [x for x in res['pendencias'] if x['cat'] == 'cta_item']
+        inc0500 = [x for x in a if x['registro'] == '0500']
+        a = [x for x in a if x['registro'] == 'C170']
         grupos = Counter((x['cfop'], x['conta'], x['nome_conta']) for x in a)
         t1 = _linhas_tabela(['CFOP', 'Itens', 'Conta preenchida'], [[_esc(k[0]), str(q), f'<b>{_esc(k[1])}</b> {_esc(k[2])}'] for k, q in sorted(grupos.items())] +
                             [['—', str(x.get('qtd', 1)), '<span class="st dif">Pendente</span> ' + _esc(x['titulo'] + ' — ' + x['detalhe'])] for x in p], ['l', 'r', 'l'])
         t2 = _linhas_tabela(['Linha', 'Item', 'CFOP', 'Valor', 'Conta'], [[str(x['linha']), _esc(_partes(x['depois'])[2]), _esc(x['cfop']), _brl(x['valor']), f'<b>{_esc(x["conta"])}</b>'] for x in a],
                             ['l', 'l', 'l', 'r', 'l'])
-        return t1 + ('<h3 style="margin-top:14px">Todos os itens alterados</h3>' + t2 if a else '')
+        t0 = _linhas_tabela(['Registro incluído', 'Conta', 'Motivo'], [[f'<code>{_esc(x["depois"])}</code>', f'<b>{_esc(x["conta"])}</b> {_esc(x["nome_conta"])}', _esc(x['motivo'])] for x in inc0500], ['l', 'l', 'l']) if inc0500 else ''
+        return t0 + t1 + ('<h3 style="margin-top:14px">Todos os itens alterados</h3>' + t2 if a else '')
     if cid == 'cta_m400':
         p = [x for x in res['pendencias'] if x['cat'] == 'cta_m400']
         return _linhas_tabela(['Linha', 'Registro', 'O que foi feito'], [[str(x['linha']), x['registro'], _esc(x['motivo'])] for x in a] +
@@ -1308,7 +1362,7 @@ def resumo_leve(res):
             'pendencias': len(res['pendencias']), 'avisos': res['avisos']}
 
 
-def corrigir_arquivo(sped_path, pva_path=None, saida_path=None, html_path=None, json_path=None, conta_ajuste='', conta_uso='359', conta_entrada='55', itens_genericos=False):
+def corrigir_arquivo(sped_path, pva_path=None, saida_path=None, html_path=None, json_path=None, conta_ajuste='', conta_uso='359', conta_entrada='55', itens_genericos=False, incluir_0500=False):
     import datetime
     import json
     import os
@@ -1320,7 +1374,7 @@ def corrigir_arquivo(sped_path, pva_path=None, saida_path=None, html_path=None, 
             pva = ler_erros_pva(pva_path)
         except Exception as ex:
             aviso_pva = f'Não consegui ler o relatório do PVA ({ex}); a correção seguiu só com o SPED.'
-    novo, res = corrigir_efd(texto, pva, os.path.basename(sped_path), datetime.date.today().strftime('%d/%m/%Y'), conta_ajuste, conta_uso, conta_entrada, itens_genericos)
+    novo, res = corrigir_efd(texto, pva, os.path.basename(sped_path), datetime.date.today().strftime('%d/%m/%Y'), conta_ajuste, conta_uso, conta_entrada, itens_genericos, incluir_0500)
     if aviso_pva:
         res['avisos'].append(aviso_pva)
     if saida_path:

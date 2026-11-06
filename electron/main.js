@@ -3134,7 +3134,7 @@ ipcMain.handle('fiscal:pickPvaPdf', async () => {
   return { path: r.filePaths[0] };
 });
 
-ipcMain.handle('fiscal:efdCorrigir', async (_evt, spedPath, pvaPath, contaAjuste, contaUso, contaEntrada, itensSem) => {
+ipcMain.handle('fiscal:efdCorrigir', async (_evt, spedPath, pvaPath, contaAjuste, contaUso, contaEntrada, itensSem, incluir0500) => {
   if (!spedPath) return { error: 'Selecione o arquivo da EFD-Contribuições.' };
   const stamp = Date.now();
   const htmlOut = path.join(os.tmpdir(), `fc_efdcorr_${stamp}.html`);
@@ -3147,6 +3147,7 @@ ipcMain.handle('fiscal:efdCorrigir', async (_evt, spedPath, pvaPath, contaAjuste
     const okConta = (c) => /^[\w.\-]{1,60}$/.test(String(c || '').trim());
     args.push('--conta-uso', okConta(contaUso) ? String(contaUso).trim() : '', '--conta-entrada', okConta(contaEntrada) ? String(contaEntrada).trim() : '');
     if (itensSem) args.push('--itens-genericos');
+    if (incluir0500) args.push('--incluir-0500');
     await runFiscal(args, jsonOut);
     const resumo = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
     if (resumo.erro) return { error: resumo.erro };
