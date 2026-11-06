@@ -207,6 +207,114 @@ def _sub(modelo, comp):
     return (modelo or '').replace('{AAAA}', a).replace('{MM}', m).replace('{MES}', MESES[int(m) - 1]).replace('{AA}', a[2:])
 
 
+SUBPASTA_PADRAO = r'Simples Nacional\{AAAA}\{PERIODO}'
+_ABREV = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
+
+
+def _norm(n):
+    return unicodedata.normalize('NFD', str(n or '')).encode('ascii', 'ignore').decode().upper().strip()
+
+
+def _estilo_periodo(nome, a, m):
+    """Formato de uma pasta de competência ('MM', 'MMAAAA', 'MM-AAAA'…) se ela for do mês m (ano a), senão None.
+    Aceita 09 · 9 · 092026 · 09-2026 · 09.2026 · 09_2026 · 09 2026 · 0926 · 09-26 · 2026-09 · 202609 · Setembro · SET-2026,
+    com ou sem texto depois ("09 - Setembro")."""
+    n = _norm(nome)
+    mi = int(m)
+    # mês numérico, com o ano junto (o ano tem que ser o da competência)
+    r = re.match(r'^(\d{1,2})' + r'([\s._\-/]*)' + r'(\d{4}|\d{2})?(?!\d)(.*)$', n)
+    if r and 1 <= int(r.group(1)) <= 12:
+        ano = r.group(3)
+        resto = r.group(4).strip(' -._')
+        if resto and not re.match(r'^[A-Z]', resto):
+            return None
+        if ano and ano not in (a, a[2:]):
+            return None
+        if int(r.group(1)) != mi:
+            return None
+        sep = r.group(2) if ano else ''
+        return ('MM' if len(r.group(1)) == 2 else 'M') + (sep + ('AAAA' if ano and len(ano) == 4 else 'AA') if ano else '')
+    r = re.match(r'^(\d{4})([\s._\-/]*)(\d{2})(?!\d)', n)                        # 2026-09 / 202609
+    if r:
+        return (f'AAAA{r.group(2)}MM' if r.group(1) == a and int(r.group(3)) == mi else None)
+    for i, (cheio, abv) in enumerate(zip(MESES, _ABREV)):                         # Setembro / SET-2026
+        if re.match(rf'^({_norm(cheio)}|{abv})(?![A-Z])', n):
+            ano = re.search(r'(\d{4}|\d{2})(?!\d)', n)
+            if ano and ano.group(1) not in (a, a[2:]):
+                return None
+            return 'NOME' if i + 1 == mi else None
+    return None
+
+
+def _cria_periodo(pai, a, m):
+    """Nome da pasta nova da competência, no mesmo formato das irmãs (o mais usado); sem irmãs, '09'."""
+    estilos = {}
+    try:
+        for d in os.listdir(pai):
+            if not os.path.isdir(os.path.join(pai, d)):
+                continue
+            for mm in range(1, 13):
+                e = _estilo_periodo(d, a, f'{mm:02d}')
+                if e:
+                    estilos[e] = estilos.get(e, 0) + 1
+                    break
+    except OSError:
+        pass
+    if not estilos:                       # ano novo, ainda sem competências: segue o formato dos anos anteriores
+        try:
+            avo = os.path.dirname(pai)
+            for ano in sorted(os.listdir(avo), reverse=True):
+                ap = os.path.join(avo, ano)
+                if not (re.fullmatch(r'\D*\d{4}\D*', _norm(ano)) and os.path.isdir(ap)) or ap == pai:
+                    continue
+                aa = re.search(r'\d{4}', ano).group()
+                for d in os.listdir(ap):
+                    for mm in range(1, 13):
+                        e = _estilo_periodo(d, aa, f'{mm:02d}')
+                        if e:
+                            estilos[e] = estilos.get(e, 0) + 1
+                            break
+                if estilos:
+                    break
+        except OSError:
+            pass
+    e = max(estilos, key=estilos.get) if estilos else 'MM'
+    if e == 'NOME':
+        return MESES[int(m) - 1]
+    troca = {'AAAA': a, 'AA': a[2:], 'MM': m, 'M': str(int(m))}
+    return re.sub(r'AAAA|AA|MM|M', lambda t: troca[t.group()], e)
+
+
+def _resolve_sub(raiz, modelo, comp):
+    """Percorre a subpasta a partir da pasta da empresa, achando as pastas que já existem (sem diferenciar maiúsculas)
+    e criando só as que faltam. {AAAA} = pasta do ano; {PERIODO} = pasta da competência em qualquer formato usual.
+    Retorna (caminho | None, aviso, candidatos)."""
+    a, m = comp.split('-')
+    atual = raiz
+    for seg in [x for x in re.split(r'[\\/]+', modelo or SUBPASTA_PADRAO) if x.strip()]:
+        try:
+            filhas = [d for d in os.listdir(atual) if os.path.isdir(os.path.join(atual, d))]
+        except OSError:
+            filhas = []
+        if seg == '{PERIODO}':
+            ach = [d for d in filhas if _estilo_periodo(d, a, m)]
+            if len(ach) > 1:
+                return None, f'Mais de uma pasta da competência {m}/{a} em {atual} — escolha a pasta da empresa no Admin.', [os.path.join(atual, d) for d in ach]
+            atual = os.path.join(atual, ach[0] if ach else _cria_periodo(atual, a, m))
+            continue
+        alvo = seg.replace('{AAAA}', a).replace('{MM}', m).replace('{MES}', MESES[int(m) - 1]).replace('{AA}', a[2:])
+        if seg == '{AAAA}':
+            ach = [d for d in filhas if re.fullmatch(rf'\D*{a}\D*', _norm(d))]
+        else:
+            ach = [d for d in filhas if _norm(d) == _norm(alvo)]
+        if len(ach) > 1 and alvo in ach:
+            ach = [alvo]
+        if len(ach) > 1:
+            return None, f'Mais de uma pasta "{alvo}" em {atual} — escolha a pasta da empresa no Admin.', [os.path.join(atual, d) for d in ach]
+        atual = os.path.join(atual, ach[0] if ach else alvo)
+    return atual, '', []
+
+
 def _nome_arq(nome):
     s = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', ' ', str(nome or '')).strip()
     return re.sub(r'\s+', ' ', s)[:90].rstrip(' .')
@@ -217,6 +325,9 @@ def destino_empresa(cfg, emp, comp):
     a, m = comp.split('-')
     mapa = cfg.get('mapa') or {}
     base = cfg.get('base') or ''
+    fixa = mapa.get(f"{emp['id']}|{comp}")                 # pasta da competência apontada pelo Admin
+    if fixa and os.path.isdir(fixa):
+        return fixa, '', []
     raiz = mapa.get(emp['id'])
     cand = []
     if raiz and not os.path.isdir(raiz):
@@ -229,8 +340,8 @@ def destino_empresa(cfg, emp, comp):
             return None, ('Mais de uma pasta parecida com o nome da empresa — escolha a pasta certa no Admin.' if cand
                           else 'Não achei a pasta da empresa pelo nome — escolha a pasta no Admin.'), cand
     if raiz:
-        sub = _sub(cfg.get('subpasta') or '', comp)
-        return (os.path.join(raiz, sub) if sub else raiz), '', []
+        cam, aviso, cand = _resolve_sub(raiz, cfg.get('subpasta') or SUBPASTA_PADRAO, comp)
+        return cam, aviso, cand, 'periodo'
     # sem pasta das empresas configurada: mesma estrutura das Baixas DF-e (<base>/MM-AAAA/<empresa>/Simples Nacional)
     fb = cfg.get('fallback') or ''
     if not fb:
@@ -289,9 +400,10 @@ def conferir_empresa(tok, cert, contratante, emp, comp, opc, consumo):
     r['msg'] = 'Transmitido' + (f" · Decl. {r['decl']}" if r['decl'] else '')
     if not opc.get('baixar'):
         return r
-    pasta, aviso, cand = destino_empresa(opc.get('pastas') or {}, emp, comp)
+    pasta, aviso, cand, nivel = (list(destino_empresa(opc.get('pastas') or {}, emp, comp)) + ['empresa'])[:4]
     if not pasta:
         r['pastaAviso'], r['candidatos'] = aviso, cand
+        r['pastaChave'] = f"{emp['id']}|{comp}" if nivel == 'periodo' else emp['id']
         return r
     r['pasta'] = pasta
     nome = _nome_arq(emp['nome'])

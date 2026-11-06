@@ -75,8 +75,14 @@ function estadoLocal() {
     finalKey: c ? c.finalKey : '', finalSecret: c ? c.finalSecret : '',
     pastaEmpresas: c ? (c.pastaEmpresas || '') : '', subpasta: c ? (c.subpasta || '') : '',
     fallback: D.pastaFallback() || '', mapa: c ? (c.mapa || {}) : {}, pendPastas: c ? (c.pendPastas || []) : [],
-    contratante: CONTRATANTE,
+    contratante: CONTRATANTE, sugestaoBase: _sugestaoBase(),
   };
+}
+
+// Pasta das empresas do Simples no Drive compartilhado da Liddera, quando existir neste computador (só sugestão).
+function _sugestaoBase() {
+  for (const p of ['G:\\Drives compartilhados\\Fiscal - Simples Nacional']) { try { if (fs.existsSync(p)) return p; } catch (_) {} }
+  return '';
 }
 
 async function salvarChave({ key, secret, certId }) {
@@ -142,8 +148,9 @@ function definirPasta(id, pasta) {
   if (!_ehAdmin()) throw new Error('Acesso restrito ao Admin.');
   const c = _lerCfg(); if (!c) throw new Error('Cadastre a chave do Serpro primeiro.');
   c.mapa = c.mapa || {};
-  if (pasta) c.mapa[id] = pasta; else delete c.mapa[id];
-  c.pendPastas = (c.pendPastas || []).filter((p) => p.id !== id);
+  if (pasta) c.mapa[id] = pasta; else delete c.mapa[id];      // id = empresa, ou empresa|AAAA-MM (pasta da competência)
+  const emp = String(id).split('|')[0];
+  c.pendPastas = (c.pendPastas || []).filter((p) => p.id !== emp);
   _gravaCfg(c);
   return { ok: true };
 }
@@ -212,7 +219,7 @@ function _alvos(mes, cad, ids, automatica) {
     if (rc.st === 'ok') {
       // confirmada; só volta (para salvar os documentos) se o Admin apontou a pasta ou mudou a pasta das empresas
       const cfg = _lerCfg() || {};
-      if (rc.pastaAviso && ((cfg.mapa || {})[id] || (cfg.pastaEmpresas || '') !== (rc.pastaBase || ''))) out.push({ id, r, c });
+      if (rc.pastaAviso && (Object.keys(cfg.mapa || {}).some((k) => k === id || k.startsWith(id + '|')) || (cfg.pastaEmpresas || '') !== (rc.pastaBase || ''))) out.push({ id, r, c });
       continue;
     }
     if (automatica && !_ok(r.esc) && r.pgdas !== 'Sim') continue;
@@ -304,7 +311,7 @@ async function _gravaResultados(comp, res, resumo) {
         }
         if (r.pgdas === 'N/A') resumo.verificar++;
         resumo.arquivos += Object.keys(rc.arquivos).length;
-        if (x.pastaAviso) pend.push({ id: x.id, nome: r.nome, aviso: x.pastaAviso, candidatos: x.candidatos || [] });
+        if (x.pastaAviso) pend.push({ id: x.id, chave: x.pastaChave || x.id, nome: r.nome, aviso: x.pastaAviso, candidatos: x.candidatos || [] });
       } else if (x.st === 'nao') { if (r.pgdas === 'Sim') resumo.verificar++; else resumo.nao++; }
       else resumo[x.st] = (resumo[x.st] || 0) + 1;
     }
@@ -313,7 +320,7 @@ async function _gravaResultados(comp, res, resumo) {
   if (pend.length) {
     const c = _lerCfg();
     const m = new Map((c.pendPastas || []).map((p) => [p.id, p]));
-    for (const p of pend) m.set(p.id, { ...p, comp });
+    for (const p of pend) m.set(p.id, { ...p, comp });   // uma pendência por empresa (a mais recente)
     c.pendPastas = [...m.values()]; _gravaCfg(c);
   }
 }

@@ -3,6 +3,11 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.1.62
+
+- **Integra Contador · pastas:** subpasta padrão "Simples Nacional\{AAAA}\{PERIODO}" (pasta da empresa › Simples Nacional › ano › competência). {PERIODO} reconhece a pasta da competência em qualquer formato usual — 09, 9, 092026, 09-2026, 09.2026, 09_2026, 0926, 2026-09, 202609, Setembro, SET-2026, "09 - Setembro" (ano diferente da competência não serve). Pasta do ano ou da competência que não existir é criada no mesmo formato das irmãs (ou, num ano novo, no formato do ano anterior; sem referência, "09"). "Simples Nacional" é achada sem diferenciar maiúsculas. Duas pastas da mesma competência (ex.: "10" e "10-2026") → não escolhe: vai para "pasta a verificar" e o Admin aponta a pasta daquela competência. Pasta das empresas sugerida: G:\Drives compartilhados\Fiscal - Simples Nacional, quando existir no computador.
+- **Integra Contador · outro computador do Admin:** a chave é cifrada pelo Windows para o computador e o usuário onde foi salva (não pode ser copiada). Nos outros computadores a tela agora mostra "Chave já cadastrada no computador do robô" em vez de pedir a chave; "Tornar este computador o robô…" abre o cadastro, avisando que o outro para de consultar.
+
 ## 2.1.61
 
 - **Robô do Fechamento do Simples · Integra Contador (Serpro)** — contrato 598158 da Liddera (CNPJ 36.714.399/0001-10). Fica desligado até o Admin cadastrar a chave: enquanto isso nada muda para a equipe.

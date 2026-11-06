@@ -23,14 +23,23 @@
     const opts = certs.map((c) => `<option value="${e(c.id)}" ${c.id === certSel ? 'selected' : ''}>${e(c.razaoSocial)} · ${e(fmtCnpj(c.cnpj))}${c.validade ? ' · válido até ' + e(c.validade.split('-').reverse().join('/')) : ''}</option>`).join('');
     const custo = (N.consumo ? N.consumo.consulta * PRECO.consulta + N.consumo.emissao * PRECO.emissao : 0);
     const u = N.ultimo;
-    const exemplo = L.pastaEmpresas ? `${L.pastaEmpresas}\\<pasta da empresa>${L.subpasta ? '\\' + L.subpasta.replace(/\{AAAA\}/g, '2026').replace(/\{MM\}/g, '10').replace(/\{MES\}/g, 'Outubro').replace(/\{AA\}/g, '26') : ''}`
-      : (L.fallback ? `${L.fallback}\\10-2026\\<empresa>\\Simples Nacional` : '— escolha a pasta das empresas —');
+    const SUB_PADRAO = 'Simples Nacional\\{AAAA}\\{PERIODO}';
+    const baseVal = L.pastaEmpresas || L.sugestaoBase || '';
+    const subVal = L.subpasta || SUB_PADRAO;
+    const exemplo = baseVal ? `${baseVal}\\<pasta da empresa>\\${subVal.replace(/\{AAAA\}/g, '2026').replace(/\{PERIODO\}/g, '10 (ou 102026, 10-2026… a que já existir)').replace(/\{MM\}/g, '10').replace(/\{MES\}/g, 'Outubro').replace(/\{AA\}/g, '26')}`
+      : '— escolha a pasta das empresas —';
+    const outroRobo = !L.configurado && N.ativo && !N.esteComputador;
     $('#igRaiz').innerHTML = `
       <div class="ig-hd"><div><h2>🔐 Integra Contador · Serpro</h2><p>Contrato 598158 · LIDDERA CONTABILIDADE LTDA · ${e(fmtCnpj(L.contratante))}</p></div>
         <span class="ig-pill ${N.ativo && N.online ? 'on' : 'off'}">${N.ativo ? (N.online ? 'Robô online' : 'Robô offline') : 'Não configurado'}</span></div>
       <div class="ig-g">
         <div class="ig-card">
           <h3>Chave de acesso do Serpro</h3>
+          ${outroRobo ? `<div class="ig-ok"><b>✓ Chave já cadastrada no computador do robô</b>${e(N.roboNome || 'outro computador')}${N.online ? ' · online' : ' · offline agora'}</div>
+          <p class="ig-hint">Não precisa cadastrar de novo aqui: a chave fica guardada só no computador do robô (o Windows cifra a chave para aquele computador e usuário, ela não pode ser copiada para outra máquina). Daqui você e a equipe usam o botão “Conferir na Receita” normalmente; quem consulta o Serpro é o robô.</p>
+          <div class="ig-act"><button class="act inv-export" id="igVirarRobo">Tornar este computador o robô…</button></div>` : ''}
+          <div id="igForm" ${outroRobo ? 'hidden' : ''}>
+          ${outroRobo ? '<p class="ig-hint"><b>Atenção:</b> salvando a chave aqui, este computador passa a ser o robô e o outro para de consultar. Este computador precisa ter o e-CNPJ da Liddera nas Baixas DF-e e ficar ligado com o FiscoCont+ aberto.</p>' : ''}
           <p class="ig-hint">Gerada na Área do Cliente do Serpro (cliente.serpro.gov.br). Fica guardada <b>só neste computador</b>, cifrada pelo Windows — não vai para a nuvem nem para o código. Só é pedida de novo se a chave for trocada no Serpro.</p>
           <label>Consumer Key</label><input id="igKey" class="fs-in" type="password" autocomplete="off" spellcheck="false" placeholder="${L.configurado ? '••••••••••••••••' + e(L.finalKey) + '  (cadastrada — cole outra só para trocar)' : 'Cole aqui o Consumer Key'}">
           <label>Consumer Secret</label><input id="igSecret" class="fs-in" type="password" autocomplete="off" spellcheck="false" placeholder="${L.configurado ? '••••••••••••••••' + e(L.finalSecret) + '  (cadastrado)' : 'Cole aqui o Consumer Secret'}">
@@ -41,11 +50,12 @@
             <button class="act inv-export fs-prim" id="igSalvar">${L.configurado ? 'Testar e salvar' : 'Testar conexão e salvar'}</button>
             ${L.configurado ? '<button class="act inv-export" id="igTestar">Testar conexão</button><button class="act inv-export ig-del" id="igRemover">Remover</button>' : ''}
           </div>
+          </div>
           <div id="igMsg"></div>
         </div>
         <div class="ig-card">
           <h3>Situação</h3>
-          ${L.configurado ? `<div class="ig-ok"><b>✓ Chave cadastrada neste computador</b>${L.testadoEm ? `Último teste: ${e(new Date(L.testadoEm).toLocaleString('pt-BR'))}` : ''}</div>` : '<div class="ig-off">Ainda sem chave. Enquanto ela não for cadastrada, o Fechamento do Simples continua igual para a equipe.</div>'}
+          ${L.configurado ? `<div class="ig-ok"><b>✓ Chave cadastrada neste computador</b>${L.testadoEm ? `Último teste: ${e(new Date(L.testadoEm).toLocaleString('pt-BR'))}` : ''}</div>` : outroRobo ? '' : '<div class="ig-off">Ainda sem chave. Enquanto ela não for cadastrada, o Fechamento do Simples continua igual para a equipe.</div>'}
           <div class="ig-inf">
             <div><b>Robô do Fechamento:</b> ${N.ativo ? (N.esteComputador ? 'este computador' : e(N.roboNome || 'outro computador')) : '—'}</div>
             <div><b>Conferência automática:</b> 1× por dia, a partir das 08:00, só das empresas já escrituradas e ainda não confirmadas</div>
@@ -58,18 +68,18 @@
       </div>
       <div class="ig-card" ${L.configurado ? '' : 'hidden'}>
         <h3>Onde salvar Declaração, Recibo, DAS e Extrato</h3>
-        <p class="ig-hint">O robô procura a pasta de cada empresa pelos primeiros nomes da razão social. Se achar nenhuma ou mais de uma parecida, ele não escolhe: a empresa entra na lista abaixo para você apontar a pasta uma vez. Nenhum arquivo existente é sobrescrito.</p>
+        <p class="ig-hint">O robô procura a pasta de cada empresa pelos primeiros nomes da razão social e, dentro dela, a pasta do Simples Nacional, do ano e da competência — a da competência é reconhecida em qualquer formato usual (09, 092026, 09-2026, 09.2026, 2026-09, Setembro…). Se a pasta do ano ou da competência ainda não existir, ele cria no mesmo formato das que já existem. Se achar nenhuma ou mais de uma parecida, ele não escolhe: a empresa entra na lista abaixo para você apontar a pasta uma vez. Nenhum arquivo existente é sobrescrito.</p>
         <label>Pasta das empresas</label>
-        <div class="fs-row"><input id="igBase" class="fs-in" value="${e(L.pastaEmpresas)}" placeholder="Ex.: G:\\Drives compartilhados\\Clientes"><button class="act inv-export" id="igBaseEsc">Escolher…</button></div>
+        <div class="fs-row"><input id="igBase" class="fs-in" value="${e(baseVal)}" placeholder="Ex.: G:\\Drives compartilhados\\Fiscal - Simples Nacional"><button class="act inv-export" id="igBaseEsc">Escolher…</button></div>
         <label>Subpasta dentro da pasta da empresa</label>
-        <input id="igSub" class="fs-in" value="${e(L.subpasta)}" placeholder="Ex.: Fiscal\\{AAAA}\\{MM}-{AAAA}">
-        <small class="ig-hint">Use {AAAA} para o ano, {MM} para o mês com 2 dígitos, {MES} para o nome do mês e {AA} para o ano com 2 dígitos. As subpastas que faltarem são criadas.</small>
+        <input id="igSub" class="fs-in" value="${e(subVal)}" placeholder="${e(SUB_PADRAO)}">
+        <small class="ig-hint">{AAAA} = pasta do ano · {PERIODO} = pasta da competência (acha a que existir, em qualquer formato; se não houver, cria). O padrão “Simples Nacional\\{AAAA}\\{PERIODO}” serve para a estrutura atual das pastas.</small>${L.pastaEmpresas ? '' : '<small class="ig-hint"><b>Ainda não salvo</b> — confira e clique em “Salvar pastas”.</small>'}
         <div class="ig-ex">Exemplo para Outubro/2026: <code>${e(exemplo)}</code></div>
         <div class="ig-act"><button class="act inv-export fs-prim" id="igPastas">Salvar pastas</button></div>
         ${L.pendPastas.length ? `<h3 class="ig-h3b">Empresas com pasta a verificar <small>${L.pendPastas.length}</small></h3>
         <div class="ig-pend">${L.pendPastas.map((p) => `<div class="ig-pr"><div><b>${e(p.nome)}</b><small>${e(p.aviso)}</small>
-          ${(p.candidatos || []).length ? `<div class="ig-cands">${p.candidatos.map((c) => `<button class="ig-cand" data-id="${e(p.id)}" data-p="${e(c)}">${e(c.split(/[\\/]/).pop())}</button>`).join('')}</div>` : ''}</div>
-          <button class="act inv-export" data-esc="${e(p.id)}" data-nome="${e(p.nome)}">Escolher pasta…</button></div>`).join('')}</div>
+          ${(p.candidatos || []).length ? `<div class="ig-cands">${p.candidatos.map((c) => `<button class="ig-cand" data-id="${e(p.chave || p.id)}" data-p="${e(c)}">${e(c.split(/[\\/]/).pop())}</button>`).join('')}</div>` : ''}</div>
+          <button class="act inv-export" data-esc="${e(p.chave || p.id)}" data-nome="${e(p.nome)}">Escolher pasta…</button></div>`).join('')}</div>
         <small class="ig-hint">Depois de apontar, clique em “Conferir na Receita” no Fechamento: os documentos dessas empresas são salvos.</small>` : ''}
       </div>`;
     ligar();
@@ -78,6 +88,7 @@
   function msg(t, erro) { const m = $('#igMsg'); if (m) m.innerHTML = t ? `<div class="${erro ? 'ig-er' : 'ig-ok2'}">${e(t)}</div>` : ''; }
 
   function ligar() {
+    if ($('#igVirarRobo')) $('#igVirarRobo').onclick = () => { $('#igForm').hidden = false; $('#igVirarRobo').hidden = true; };
     $('#igSalvar').onclick = async () => {
       const bt = $('#igSalvar'); bt.disabled = true; bt.textContent = 'Testando no Serpro…'; msg('');
       const r = await window.fiscocont.integra.salvarChave({ key: $('#igKey').value, secret: $('#igSecret').value, certId: $('#igCert').value });
