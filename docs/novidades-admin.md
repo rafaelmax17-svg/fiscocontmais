@@ -3,6 +3,12 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.7
+
+- **Corretor da EFD-Contribuições · 0900 do jeito que o PVA confere:** a receita de cada bloco agora é o valor **bruto** (sem tirar desconto) dos registros com **CST de receita 01 a 09** — A170 de serviço prestado, C170 de saída, C175 e F100 de receita; CST 49/99 não entra (antes era por CFOP e líquido de desconto, e o PVA acusou C e F). Um 0900 que já existe no arquivo é recalculado. Conferido com o PVA 6.2.0: Espaço do Espeto jul/2026 → C R$ 342.032,80 e F R$ 26.324,86 (total R$ 368.357,66 = apuração M210 + M400).
+- **Conta da receita sem duplicar o M400/M800:** se, ao preencher a conta em branco, dois M400 (ou M800) ficam com a mesma chave CST + conta + descrição ("Duplicidade de ocorrência da chave"), eles são juntados (receita somada), e os M410/M810 repetidos (mesma natureza + conta) também.
+- M105/M505 com o relatório detalhado do PVA: conferido no mesmo arquivo (natureza 01 → R$ 3.795,98; 02 → R$ 9.675,87).
+
 ## 2.2.6
 
 - **Corretor da EFD-Contribuições · NF-e avulsa (série 890–899, CNPJ do Fisco na chave):** regra do escritório — o C100 passa para a **situação 08** (documento emitido com base em regime especial ou norma específica) e os itens ficam com **CST 70** de PIS/COFINS (aquisição sem direito a crédito), sem base nem crédito. Antes só apontava. Teste com o Espaço do Espeto (jul/2026): 11 notas para situação 08; itens já estavam com CST 70.

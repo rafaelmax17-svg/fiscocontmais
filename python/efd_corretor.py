@@ -872,7 +872,64 @@ def _fix_cta_rec(L, acoes, pend, ctx):
         L[f['i']]['txt'] = _monta(f['p'])
         acoes.append({'cat': 'cta_rec', 'tipo': 'alterado', 'linha': L[f['i']]['n'], 'registro': f['reg'], 'antes': antes, 'depois': L[f['i']]['txt'],
                       'motivo': f"Conta {conta} ({_contas_0500(L)[conta]['nome']}) — a única conta de receita usada no arquivo."})
+    L = _junta_m400(L, 'M400', 'M410', acoes)
+    L = _junta_m400(L, 'M800', 'M810', acoes)
     return L
+
+
+def _junta_m400(L, pai, filho, acoes):
+    """Depois de preencher a conta, dois M400 (ou M800) podem ficar com a mesma chave CST + conta + descrição — o PVA
+    acusa "Duplicidade de ocorrência da chave". Junta os dois (soma a receita) e junta também os M410/M810 repetidos
+    (mesma natureza + conta + descrição)."""
+    idx = [i for i, l in enumerate(L) if _reg(l) in (pai, filho)]
+    if not idx:
+        return L
+    ini, fim = idx[0], idx[-1]
+    if any(_reg(L[k]) not in (pai, filho) for k in range(ini, fim + 1)):
+        return L                                            # bloco não contíguo: não mexe
+    grupos = []
+    for k in range(ini, fim + 1):
+        p = _partes(L[k]['txt'])
+        if p[0] == pai:
+            grupos.append({'l': L[k], 'p': p, 'f': []})
+        elif grupos:
+            grupos[-1]['f'].append({'l': L[k], 'p': p})
+    chave = lambda p: (p[1], p[3].strip(), (p[4] if len(p) > 4 else '').strip())
+    vistos, novos, juntou = {}, [], False
+    for g in grupos:
+        k = chave(g['p'])
+        if k in vistos:
+            alvo = vistos[k]
+            antes = alvo['l']['txt']
+            alvo['p'][2] = _fmt(_num(alvo['p'][2]) + _num(g['p'][2]))
+            alvo['f'] += g['f']
+            acoes.append({'cat': 'cta_rec', 'tipo': 'agrupado', 'linha': [alvo['l']['n'], g['l']['n']], 'registro': pai, 'antes': antes + ' + ' + g['l']['txt'],
+                          'depois': '', 'motivo': f"{pai} CST {k[0]} com a conta {k[1]} repetido: juntado em um só (receita somada)."})
+            juntou = True
+        else:
+            vistos[k] = g
+            novos.append(g)
+    if not juntou:
+        return L
+    linhas = []
+    for g in novos:
+        g['l']['txt'] = _monta(g['p'])
+        linhas.append(g['l'])
+        fv = {}
+        for c in g['f']:
+            kk = chave(c['p'])
+            if kk in fv:
+                fv[kk]['p'][2] = _fmt(_num(fv[kk]['p'][2]) + _num(c['p'][2]))
+            else:
+                fv[kk] = c
+        for c in fv.values():
+            c['l']['txt'] = _monta(c['p'])
+            linhas.append(c['l'])
+    for a in acoes:
+        if a.get('registro') == pai and a.get('tipo') == 'agrupado' and not a['depois']:
+            k0 = a['antes'].split(' + ')[0]
+            a['depois'] = next((g['l']['txt'] for g in novos if _partes(k0)[1] == g['p'][1] and _partes(k0)[3] == g['p'][3]), '')
+    return L[:ini] + linhas + L[fim + 1:]
 
 
 def det_part_mun(L):
@@ -961,40 +1018,53 @@ def _fix_avulsa(L, acoes, pend, ctx):
     return L
 
 
-# 0900 (escrituração entregue depois do prazo): receita por bloco. Receita = vendas (CFOP x1xx, x4xx) e serviços (x933)
-# de saída nos blocos A e C, e F100 de receita (IND_OPER 1 e 2). Parcela "não receita bruta" = 0. Confira antes de transmitir.
-def _eh_cfop_receita(c):
-    c = str(c or '')
-    return len(c) == 4 and c[0] in '567' and (c[1] in '14' or c[1:] == '933')
+# 0900 (escrituração entregue depois do prazo): receita por bloco, do jeito que o PVA confere ("somatório dos registros
+# geradores de receita"): valor BRUTO da operação (sem tirar desconto) dos registros com CST de receita (01 a 09) —
+# bloco A: A170 de serviço prestado · bloco C: C170 de saída e C175 · bloco F: F100 de receita. CST 49/99 não entra.
+# Conferido com o PVA 6.2.0 (Espaço do Espeto, jul/2026). Parcela "não receita bruta" = 0.
+CST_RECEITA = {f'{n:02d}' for n in range(1, 10)}
 
 
 def calc_0900(L):
     tot = {'A': 0.0, 'C': 0.0, 'D': 0.0, 'F': 0.0, 'I': 0.0, '1': 0.0}
-    saida = False
+    saida_c = saida_a = False
     for l in L:
         r = _reg(l)
-        p = _partes(l['txt']) if r in ('A100', 'C100', 'C170', 'C175', 'F100') else None
+        if r not in ('A100', 'A170', 'C100', 'C170', 'C175', 'F100'):
+            continue
+        p = _partes(l['txt'])
         if r == 'A100':
-            if p[1] == '1' and p[4] not in ('02', '03', '04', '05'):
-                tot['A'] += _num(p[11]) - (_num(p[13]) if len(p) > 13 else 0)
+            saida_a = p[1] == '1' and p[4] not in ('02', '03', '04', '05')
+        elif r == 'A170' and saida_a and len(p) > 8 and p[8] in CST_RECEITA:
+            tot['A'] += _num(p[4])
         elif r == 'C100':
-            saida = p[1] == '1' and p[5] not in ('02', '03', '04', '05')
-        elif r == 'C170' and saida and _eh_cfop_receita(p[10]):
-            tot['C'] += _num(p[6]) - _num(p[7])
-        elif r == 'C175' and saida and _eh_cfop_receita(p[1]):
-            tot['C'] += _num(p[2]) - _num(p[3])
-        elif r == 'F100' and p[1] in ('1', '2'):
+            saida_c = p[1] == '1' and p[5] not in ('02', '03', '04', '05')
+        elif r == 'C170' and saida_c and len(p) > 24 and p[24] in CST_RECEITA:
+            tot['C'] += _num(p[6])
+        elif r == 'C175' and saida_c and len(p) > 4 and p[4] in CST_RECEITA:
+            tot['C'] += _num(p[2])
+        elif r == 'F100' and p[1] in ('1', '2') and len(p) > 6 and p[6] in CST_RECEITA:
             tot['F'] += _num(p[5])
     return {k: round(v, 2) for k, v in tot.items()}
 
 
 def _fix_0900(L, acoes, pend, ctx):
-    if not ctx.get('incluir_0900') or any(_reg(l) == '0900' for l in L):
+    if not ctx.get('incluir_0900'):
         return L
+    existente = next((i for i, l in enumerate(L) if _reg(l) == '0900'), None)
     t = calc_0900(L)
     total = round(sum(t.values()), 2)
     rec = _monta(['0900', _fmt(t['A']), '0,00', _fmt(t['C']), '0,00', _fmt(t['D']), '0,00', _fmt(t['F']), '0,00',
                   _fmt(t['I']), '0,00', _fmt(t['1']), '0,00', _fmt(total), '0,00'])
+    if existente is not None:
+        if L[existente]['txt'] == rec:
+            return L
+        antes = L[existente]['txt']
+        L[existente]['txt'] = rec
+        acoes.append({'cat': 'r0900', 'tipo': 'alterado', 'linha': L[existente]['n'], 'registro': '0900', 'antes': antes, 'depois': rec,
+                      'motivo': f"0900 recalculado — A: R$ {_brl(t['A'])} · C: R$ {_brl(t['C'])} · F: R$ {_brl(t['F'])} · total R$ {_brl(total)} "
+                                '(valor bruto das operações com CST de receita 01 a 09, como o PVA confere).'})
+        return L
     j = next((i for i, l in enumerate(L) if _reg(l) == '0990'), None)
     if j is None:
         return L
@@ -1005,7 +1075,7 @@ def _fix_0900(L, acoes, pend, ctx):
     acoes.append({'cat': 'r0900', 'tipo': 'incluido', 'linha': None, 'registro': '0900', 'antes': '(não existia)', 'depois': rec,
                   'motivo': f"Receita por bloco — A: R$ {_brl(t['A'])} · C: R$ {_brl(t['C'])} · F: R$ {_brl(t['F'])} · total R$ {_brl(total)}. "
                             + (f"Apuração do PIS (M210 + M400): R$ {_brl(apur)} — diferença de R$ {_brl(dif)}. " if apur else '')
-                            + ('Vendas (CFOP x1xx/x4xx) e serviços (x933) de saída, e F100 de receita; parcela não classificada como receita bruta = 0. Confira com a apuração antes de transmitir.')})
+                            + ('Valor bruto das operações com CST de receita (01 a 09): A170 de serviço prestado, C170 de saída, C175 e F100 de receita — como o PVA confere. Parcela não classificada como receita bruta = 0.')})
     return L
 
 
@@ -1538,7 +1608,7 @@ _EXPLICA = {
     'avulsa': ('NF-e avulsa (série 890 a 899) é emitida pelo Fisco: a chave traz o CNPJ da SEFAZ, e o PVA acusa diferença com o participante.',
                'Regra do escritório: a nota passa para a situação 08 (documento emitido com base em regime especial ou norma específica) e os itens ficam com CST 70 de PIS/COFINS (aquisição sem direito a crédito), sem base nem crédito.'),
     'r0900': ('Escrituração entregue depois do prazo precisa do 0900 (composição das receitas do período).',
-              'Com a opção marcada, o 0900 é gerado com a receita de cada bloco. Confira com a apuração antes de transmitir.'),
+              'Com a opção marcada, o 0900 é gerado com a receita de cada bloco: valor bruto das operações com CST de receita (01 a 09), como o PVA confere. Um 0900 já existente é recalculado.'),
     'contadores': ('Depois das correções o número de linhas muda, então os contadores do arquivo ficam errados.',
                    'Os contadores 9900, x990 e 9999 foram refeitos. Não é um erro do PVA: é consequência das correções.'),
 }
