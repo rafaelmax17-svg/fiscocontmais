@@ -3,6 +3,11 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.8
+
+- **Robô do Integra Contador · consulta de novo as não transmitidas:** ao clicar em "▶ Iniciar robô", toda empresa com Escrituração concluída = Sim que ainda não foi confirmada na Receita é consultada de novo — inclusive as que deram "Ainda não transmitido" pouco antes. Antes havia um intervalo de 6 h (resto da conferência automática, que não existe mais) e o robô pulava essas empresas ("0 empresa(s) consultada(s)").
+- A linha da conferência mostra também quantas já estavam confirmadas antes e quantas ficaram de fora por não ter a Escrituração concluída = Sim.
+
 ## 2.2.7
 
 - **Corretor da EFD-Contribuições · 0900 do jeito que o PVA confere:** a receita de cada bloco agora é o valor **bruto** (sem tirar desconto) dos registros com **CST de receita 01 a 09** — A170 de serviço prestado, C170 de saída, C175 e F100 de receita; CST 49/99 não entra (antes era por CFOP e líquido de desconto, e o PVA acusou C e F). Um 0900 que já existe no arquivo é recalculado. Conferido com o PVA 6.2.0: Espaço do Espeto jul/2026 → C R$ 342.032,80 e F R$ 26.324,86 (total R$ 368.357,66 = apuração M210 + M400).

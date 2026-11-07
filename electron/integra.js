@@ -28,7 +28,6 @@ const DOC = 'integra';
 const COL_SEG = 'segredos_admin';
 const CONTRATANTE = '36714399000110';           // LIDDERA CONTABILIDADE LTDA — contrato Integra Contador nº 598158
 const LOTE = 8;                                  // empresas por chamada ao núcleo Python (atualiza o progresso entre lotes)
-const INTERVALO_REPETIR = 6 * 3600 * 1000;       // a mesma empresa pendente não é consultada de novo antes de 6 h
 const OFFLINE_MS = 12 * 60 * 1000;               // sem sinal do robô há 12 min = offline (outro Admin pode assumir)
 
 let D = null;                                    // dependências do main.js
@@ -243,19 +242,22 @@ function pararRobo() {
 
 // Quem entra na conferência (botão e automática): só empresas com "Escrituração concluída = Sim" e ainda não
 // confirmadas pela Receita — não paga consulta nem salva documento de empresa que ainda não foi escriturada.
-function _alvos(mes, cad, ids, automatica, cfg) {
-  const agora = Date.now(), out = [];
+// Quem entra quando o Admin clica em "Iniciar robô": empresas com Escrituração concluída = Sim que ainda não foram
+// confirmadas na Receita — inclusive as já consultadas antes como "ainda não transmitido" (são consultadas de novo a
+// cada clique; antes havia um intervalo de 6 h que fazia o robô pular essas empresas).
+function _alvos(mes, cad, ids, automatica, cfg, cont) {
+  const out = [];
   for (const [id, r] of Object.entries(mes)) {
     if (ids && !ids.includes(id)) continue;
     const c = cad[id] || {};
     const rc = r.receita || {};
-    if (r.esc !== 'Sim') continue;                                 // só empresas com a Escrituração concluída = Sim
+    if (r.esc !== 'Sim') { cont.semEsc++; continue; }               // só empresas com a Escrituração concluída = Sim
     if (rc.st === 'ok') {
       // confirmada; só volta (para salvar os documentos) se o Admin apontou a pasta ou mudou a pasta das empresas
       if (rc.pastaAviso && (Object.keys(cfg.mapa || {}).some((k) => k === id || k.startsWith(id + '|')) || (cfg.pastaEmpresas || '') !== (rc.pastaBase || ''))) out.push({ id, r, c });
+      else cont.confirmadas++;
       continue;
     }
-    if (rc.st && rc.st !== 'ok' && rc.emMs && agora - rc.emMs < INTERVALO_REPETIR && rc.st !== 'semcnpj') continue;
     out.push({ id, r, c });
   }
   return out;
@@ -274,8 +276,10 @@ async function _executar(comp, ids, por, n, automatica) {
     const cad = sc.exists() ? (sc.data().empresas || {}) : {};
     const cfg = (await _cfg()) || {};
     if (!cfg.key) throw new Error('Chave do Serpro não cadastrada.');
-    const alvos = _alvos(mes, cad, ids, automatica, cfg);
+    const cont = { semEsc: 0, confirmadas: 0 };
+    const alvos = _alvos(mes, cad, ids, automatica, cfg, cont);
     resumo.pulou = Object.keys(mes).length - alvos.length;
+    resumo.semEsc = cont.semEsc; resumo.confirmadas = cont.confirmadas;
     await f.updateDoc(ref, { rodando: { comp, feito: 0, total: alvos.length, por }, ...(n ? { atendido: n } : {}) });
     const emitirDas = Date.now() <= _vencimento(comp).getTime();
     let feito = 0;

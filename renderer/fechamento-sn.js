@@ -259,7 +259,7 @@
     let prog = '';
     if (rd) prog = `<div class="fs-rprog"><span>Conferindo na Receita · ${rd.feito} de ${rd.total} empresas</span><div class="fs-rbar"><i style="width:${rd.total ? Math.round(rd.feito / rd.total * 100) : 0}%"></i></div></div>`;
     else if (ig.pendente) prog = `<div class="fs-rprog"><span>${ig.online ? 'Pedido enviado ao robô…' : 'Pedido guardado: roda quando o computador do robô ligar.'}</span></div>`;
-    else if (u && u.comp === FS.comp) prog = `<div class="fs-rprog ${u.erro ? 'er' : ''}"><span>${u.erro ? '⚠ ' + e(u.erro) : `✓ Conferência concluída · ${u.total} empresa(s) consultada(s)${u.resumo && u.resumo.arquivos ? ` · ${u.resumo.arquivos} documento(s) salvo(s)` : ''}`}</span><small>${e(u.emBr || '')}${u.por ? ' · ' + e(u.por) : ''}</small></div>`;
+    else if (u && u.comp === FS.comp) prog = `<div class="fs-rprog ${u.erro ? 'er' : ''}"><span>${u.erro ? '⚠ ' + e(u.erro) : `✓ Conferência concluída · ${u.total} empresa(s) consultada(s)${u.resumo && u.resumo.arquivos ? ` · ${u.resumo.arquivos} documento(s) salvo(s)` : ''}${u.resumo && u.resumo.confirmadas ? ` · ${u.resumo.confirmadas} já confirmada(s) antes` : ''}${u.resumo && u.resumo.semEsc ? ` · ${u.resumo.semEsc} sem Escrituração concluída (não entram)` : ''}`}</span><small>${e(u.emBr || '')}${u.por ? ' · ' + e(u.por) : ''}</small></div>`;
     if (!algum && !prog) { box.hidden = true; return; }
     const t = [['ok', 'PGDAS confirmados na Receita', '#059669'], ['nao', 'Ainda não transmitidos', '#6366f1'], ['verificar', 'Verificar (divergência)', '#d97706'],
       ['semproc', 'Sem procuração no e-CAC', '#dc2626'], ['semcnpj', 'Sem CNPJ no cadastro', '#64748b'], ['erro', 'Falha na consulta', '#9f1239']].filter(([k], i) => i < 4 || c[k]);
