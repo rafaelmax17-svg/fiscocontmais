@@ -45,7 +45,7 @@ TITULOS = {
     'cst_ent': ('CST inválido em item de entrada (C170)', '#dc2626'),
     'cta_rec': ('Conta contábil em branco na receita (C175 · M400/M410 · M800/M810)', '#6d28d9'),
     'part_mun': ('Participante sem código do município (0150)', '#0891b2'),
-    'avulsa': ('NF-e avulsa: CNPJ da chave diferente do participante', '#be123c'),
+    'avulsa': ('NF-e avulsa: CNPJ da chave diferente do participante (situação 08)', '#be123c'),
     'r0900': ('Composição das receitas do período (0900)', '#047857'),
     'contadores': ('Contadores do arquivo (9900, x990, 9999)', '#6b7392'),
 }
@@ -911,21 +911,53 @@ def det_avulsa(L):
     out = []
     for i, pc, _its in _blocos_c100(L):
         ch = pc[8] if len(pc) > 8 else ''
-        if len(ch) == 44 and pc[2] == '1' and pc[4] == '55' and '890' <= ch[22:25] <= '899':
+        if len(ch) == 44 and pc[2] == '1' and pc[4] == '55' and pc[5] != '08' and '890' <= ch[22:25] <= '899':
             doc, nome = part.get(pc[3], ('', ''))
             if doc and ch[6:20] != doc.zfill(14):
                 out.append({'i': i, 'num': pc[7], 'serie': ch[22:25], 'cnpj_chave': ch[6:20], 'part': nome, 'cst': ''})
     return out
 
 
+def _zera_pis_cofins(q, cst):
+    """C170 (partes): CST de PIS e COFINS = cst, sem base, alíquota nem valor."""
+    q[24] = q[30] = cst
+    for k in (25, 29, 31, 35):
+        q[k] = '0,00'
+    for k in (26, 32):
+        q[k] = '0,0000'
+    for k in (27, 28, 33, 34):
+        q[k] = ''
+
+
 def _fix_avulsa(L, acoes, pend, ctx):
-    """NF-e avulsa (série 890–899, emitida pelo Fisco): na chave vai o CNPJ da SEFAZ, não o do fornecedor (PF/MEI).
-    Só aponta — tirar do arquivo ou manter é decisão do escritório."""
+    """NF-e avulsa (série 890–899, emitida pelo Fisco): a chave traz o CNPJ da SEFAZ, não o do fornecedor (PF/MEI), e o
+    PVA acusa "O CNPJ da chave do documento eletrônico não confere com o CNPJ ou CPF do participante".
+    Regra do escritório (Rafael, 06/11/2026): situação do documento 08 (emitido com base em regime especial ou norma
+    específica) e itens com CST 70 de PIS/COFINS (aquisição sem direito a crédito), sem base nem crédito."""
+    blocos = {i: its for i, _pc, its in _blocos_c100(L)}
     for f in det_avulsa(L):
+        pc = _partes(L[f['i']]['txt'])
+        antes = L[f['i']]['txt']
+        pc[5] = '08'
+        L[f['i']]['txt'] = _monta(pc)
+        itens_mudados = 0
+        for j in blocos.get(f['i'], []):
+            q = _partes(L[j]['txt'])
+            if len(q) <= 35:
+                continue
+            ja = q[24] == '70' and q[30] == '70' and _num(q[29]) == 0 and _num(q[35]) == 0
+            if not ja:
+                antes_it = L[j]['txt']
+                _zera_pis_cofins(q, '70')
+                L[j]['txt'] = _monta(q)
+                itens_mudados += 1
+                acoes.append({'cat': 'avulsa', 'tipo': 'alterado', 'linha': L[j]['n'], 'registro': 'C170', 'antes': antes_it, 'depois': L[j]['txt'],
+                              'motivo': f"NF-e avulsa {f['num']}: item {q[1]} com CST 70 (aquisição sem direito a crédito), sem base nem crédito."})
         c = f['cnpj_chave']
-        pend.append({'cat': 'avulsa', 'linha': L[f['i']]['n'],
-                     'titulo': f"NF-e avulsa {f['num']} (série {f['serie']}) · {f['part']}",
-                     'detalhe': f"A chave traz o CNPJ do Fisco ({c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}), não o do participante — o PVA aponta erro. Decisão do escritório: retirar a nota do arquivo (se for aquisição sem crédito) ou manter."})
+        acoes.append({'cat': 'avulsa', 'tipo': 'alterado', 'linha': L[f['i']]['n'], 'registro': 'C100', 'antes': antes, 'depois': L[f['i']]['txt'],
+                      'motivo': f"NF-e avulsa {f['num']} (série {f['serie']}) · {f['part']}: a chave traz o CNPJ do Fisco "
+                                f"({c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}) → situação 08 (regime especial ou norma específica)."
+                                + (f' {itens_mudados} item(ns) passaram para CST 70.' if itens_mudados else ' Itens já estavam com CST 70.')})
     return L
 
 
@@ -1374,6 +1406,8 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
             achados, corrigidos = len(antes[cid]), len([x for x in a_cat if x['registro'] == 'C170'])
         elif cid == 'a100sem':
             achados, corrigidos = len(antes[cid]), len([x for x in a_cat if x['registro'] == 'A170'])
+        elif cid == 'avulsa':
+            achados, corrigidos = len(antes[cid]), len([x for x in a_cat if x['registro'] == 'C100'])
         elif cid == 'r0900':
             achados, corrigidos = len(a_cat), len(a_cat)
         else:
@@ -1399,7 +1433,7 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
         ('CST inválido em item de entrada', len(antes['cst_ent']), len(depois['cst_ent'])),
         ('Conta em branco na receita (C175/M400/M410/M800/M810)', len(antes['cta_rec']), len(depois['cta_rec'])),
         ('Participante sem código do município', len(antes['part_mun']), len(depois['part_mun'])),
-        ('NF-e avulsa com CNPJ da chave ≠ participante (decisão do escritório)', len(antes['avulsa']), len(depois['avulsa'])),
+        ('NF-e avulsa com CNPJ da chave ≠ participante', len(antes['avulsa']), len(depois['avulsa'])),
         ('Contadores (9900/x990/9999) divergentes', len(antes['contadores']), len(depois['contadores'])),
     ]
     resumo = {
@@ -1502,7 +1536,7 @@ _EXPLICA = {
     'part_mun': ('Participante do Brasil precisa do código do município (IBGE).',
                  'Participante genérico ("diversos") recebe o município da empresa. Os demais ficam como pendência para corrigir o cadastro.'),
     'avulsa': ('NF-e avulsa (série 890 a 899) é emitida pelo Fisco: a chave traz o CNPJ da SEFAZ, e o PVA acusa diferença com o participante.',
-               'Só aponta. Retirar a nota do arquivo (aquisição sem crédito) ou manter é decisão do escritório.'),
+               'Regra do escritório: a nota passa para a situação 08 (documento emitido com base em regime especial ou norma específica) e os itens ficam com CST 70 de PIS/COFINS (aquisição sem direito a crédito), sem base nem crédito.'),
     'r0900': ('Escrituração entregue depois do prazo precisa do 0900 (composição das receitas do período).',
               'Com a opção marcada, o 0900 é gerado com a receita de cada bloco. Confira com a apuração antes de transmitir.'),
     'contadores': ('Depois das correções o número de linhas muda, então os contadores do arquivo ficam errados.',

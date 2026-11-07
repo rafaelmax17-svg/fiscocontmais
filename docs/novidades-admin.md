@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.6
+
+- **Corretor da EFD-Contribuições · NF-e avulsa (série 890–899, CNPJ do Fisco na chave):** regra do escritório — o C100 passa para a **situação 08** (documento emitido com base em regime especial ou norma específica) e os itens ficam com **CST 70** de PIS/COFINS (aquisição sem direito a crédito), sem base nem crédito. Antes só apontava. Teste com o Espaço do Espeto (jul/2026): 11 notas para situação 08; itens já estavam com CST 70.
+
 ## 2.2.5
 
 Corretor da EFD-Contribuições — erros do PVA do Espaço do Espeto (jul/2026):
