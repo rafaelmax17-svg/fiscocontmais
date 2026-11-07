@@ -3,6 +3,17 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.5
+
+Corretor da EFD-Contribuições — erros do PVA do Espaço do Espeto (jul/2026):
+- **VL_MERC menor que a soma dos itens (NF-e de saída):** VL_MERC passa a ser a soma dos C170; o total do documento não muda. Causa principal: as notas de saída sem item que vêm do Domínio com mercadoria zerada e recebem o item DOCSEMITEM.
+- **CST inválido em item de entrada:** CFOP de outras entradas (x9xx — comodato, remessa, retorno…) com CST fora de 50–66/70–75/98/99 (ex.: "00") → CST 98, bases/alíquotas/valores zerados. Outros CFOPs → pendência (podem ter crédito).
+- **Conta em branco na receita (C175, M400/M410, M800/M810):** preenche com a conta de receita quando o arquivo usa uma só (analítica no 0500); com mais de uma → pendência.
+- **0150 sem código do município:** participante "diversos" recebe o município da empresa (0000); os demais → pendência.
+- **NF-e avulsa (série 890–899) com o CNPJ do Fisco na chave:** só aponta, com o fornecedor — retirar ou manter é decisão do escritório.
+- **0900 (entrega depois do prazo):** opção "Gerar o 0900" (desmarcada por padrão). Receita por bloco: A100 de saída; C170/C175 de saída com CFOP de venda (x1xx, x4xx) ou serviço (x933); F100 de receita; parcela "não receita bruta" = 0. O relatório mostra a comparação com a apuração (M210 + M400) e a diferença, para conferir antes de transmitir.
+- Teste com o arquivo: 23 VL_MERC, 2 CST, 6 contas e 1 participante corrigidos; 11 NF-e avulsas apontadas; 0900 gerado (C R$ 338.459,49 + F R$ 26.324,91 = R$ 364.784,40 × apuração R$ 368.357,66).
+
 ## 2.2.4
 
 - **Corretor da EFD-Contribuições · nota de serviço sem item (A100 sem A170):** erro do PVA "Registro filho obrigatório não foi informado" (A170). Agora, automático, para serviço **tomado** (IND_OPER 0, não cancelada): inclui o padrão do escritório igual ao lançado no PVA — 0200 |SERV|SERVIÇOS| tipo 09 (se não existir), 0500 |01012005|04|A|5|362|SERVIÇOS PRESTADOS POR TERCEIROS| (se não existir) e, em cada A100, o A170 |1|SERV||<valor do documento>|<desconto, se houver>||0|73||||73||||362|| (origem 0 – mercado interno, CST 73 – aquisição a alíquota zero). Refaz A990/0990/9900/9999. Serviço **prestado** (IND_OPER 1) sem A170 vira pendência (é receita: CST e base dependem da nota). Conta 362 que já existe como sintética → pendência. Teste com o SPED de set/2026 da Sudário e Batista: 8 A100 sem item → 8 A170 incluídos, 0200 SERV e 0500 362 criados.

@@ -3132,7 +3132,7 @@ def main(argv):
         try:
             _corr.corrigir_arquivo(argv[1], optc('--pva'), optc('--saida', 'efd_corrigido.txt'), optc('--painel-html'), optc('--json'), optc('--conta-ajuste', ''),
                                    optc('--conta-uso', '359'), optc('--conta-entrada', '55'), '--itens-genericos' in args,
-                                   '--incluir-0500' in args)
+                                   '--incluir-0500' in args, '--incluir-0900' in args)
         except Exception as e:
             res = {'erro': f'Não consegui corrigir esse arquivo: {e}'}
             if '--json' in args:

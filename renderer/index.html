@@ -920,6 +920,8 @@
             <input id="corrEfdContaEnt" value="55" style="width:70px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></label>
           <label style="font-size:12px;color:var(--ink2);display:flex;align-items:center;gap:6px" title="Quando a conta 55 (Mercadorias para revenda) ou 359 (Material de escritório) não existe no 0500 do arquivo, inclui o 0500 dela com os dados do plano do escritório (natureza, nível e conta referencial) antes de preencher os itens. Outras contas não são incluídas.">
             <input type="checkbox" id="corrEfdInc0500"> Incluir a conta no 0500 se não existir (55 · 359)</label>
+          <label style="font-size:12px;color:var(--ink2);display:flex;align-items:center;gap:6px" title="Para escrituração entregue depois do prazo: gera o 0900 (composição das receitas do período) com a receita de cada bloco. Confira com a apuração antes de transmitir.">
+            <input type="checkbox" id="corrEfdInc0900"> Gerar o 0900 (entrega depois do prazo)</label>
           <label style="font-size:12px;color:var(--ink2);display:flex;align-items:center;gap:6px" title="NF-e sem nenhum item (C100 sem C170): inclui um item único sem PIS/COFINS — entrada com CST 70, saída com CST 49 (CFOP 5929 quando acoberta NFC-e). Desligado, só aponta.">
             <input type="checkbox" id="corrEfdItensSem"> Notas sem item: incluir item (entrada CST 70 · saída CST 49)</label>
         </div>

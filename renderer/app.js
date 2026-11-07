@@ -5140,7 +5140,7 @@ function bindCorrigirEfd() {
     overlay(true, 'Corrigindo a EFD-Contribuições…');
     const res = await window.fiscocont.fiscal.efdCorrigir(est.sped, est.pva, ($('#corrEfdConta')?.value || '').trim(),
       ($('#corrEfdContaUso')?.value || '').trim(), ($('#corrEfdContaEnt')?.value || '').trim(), !!($('#corrEfdItensSem') || {}).checked,
-      !!($('#corrEfdInc0500') || {}).checked);
+      !!($('#corrEfdInc0500') || {}).checked, !!($('#corrEfdInc0900') || {}).checked);
     overlay(false);
     if (res.error) { toast(res.error, true); return; }
     $('#corrEfdVazio').hidden = true;
