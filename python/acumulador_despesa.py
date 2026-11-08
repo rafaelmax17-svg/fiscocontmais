@@ -4,9 +4,12 @@
 Cada item do C170 lançado no 7000 recebe a SUGESTÃO do acumulador de despesa certo (7001–7040, lista de acumuladores do
 escritório no Domínio), pela descrição do produto (0200) e pelo NCM, com o grau de confiança:
   alta = descrição e NCM apontam o mesmo acumulador · média = só um dos dois decidiu.
+Memória: cada escolha aplicada fica gravada (descrição + NCM → acumulador, quem e quando) e, na próxima vez, o produto
+já vem decidido como "Confirmado por …" — o sistema só pergunta o que nunca viu e não conseguiu decidir.
 Nada é trocado sozinho: o Admin revisa na tela (pode trocar qualquer sugestão) e só os itens marcados são aplicados.
 Ao aplicar: troca o COD_NAT do C170 e cadastra no 0400 os acumuladores que ainda não existem no arquivo.
 """
+import hashlib
 import json
 import os
 import re
@@ -126,6 +129,13 @@ def classifica(descr, ncm, cfop=''):
 ACUM_GENERICO = '7000'
 
 
+def chave_memoria(descr, ncm):
+    """Mesma chave no Python e no Electron: sha1 de 'DESCRIÇÃO NORMALIZADA|NCM8'."""
+    d = re.sub(r'\s+', ' ', re.sub(r'[^A-Z0-9 ]', ' ', _norm(descr))).strip()
+    n = re.sub(r'\D', '', str(ncm or ''))[:8]
+    return hashlib.sha1(f'{d}|{n}'.encode('utf-8')).hexdigest()[:20]
+
+
 def _itens_7000(linhas):
     p200, p150 = {}, {}
     for l in linhas:
@@ -152,7 +162,8 @@ def _itens_7000(linhas):
     return out
 
 
-def analisar_texto(texto):
+def analisar_texto(texto, memoria=None):
+    memoria = memoria or {}
     linhas = texto.splitlines()
     fim = next((i for i, l in enumerate(linhas) if l.startswith('|9999|')), None)
     if fim is not None:
@@ -169,8 +180,14 @@ def analisar_texto(texto):
     lista = []
     for p in prod.values():
         cf = sorted(p['cfops'])
-        ac, mot, conf = classifica(p['descr'], p['ncm'], cf[0] if len(cf) == 1 else '')
-        lista.append({'item': p['item'], 'descr': p['descr'], 'ncm': p['ncm'], 'linhas': p['linhas'], 'valor': round(p['valor'], 2),
+        ch = chave_memoria(p['descr'], p['ncm'])
+        mem = memoria.get(ch)
+        if mem and mem.get('a') in ACUM:
+            ac, conf = mem['a'], 'memoria'
+            mot = f"Confirmado por {mem.get('p') or 'Admin'}" + (f" em {mem['e']}" if mem.get('e') else '')
+        else:
+            ac, mot, conf = classifica(p['descr'], p['ncm'], cf[0] if len(cf) == 1 else '')
+        lista.append({'chave': ch, 'item': p['item'], 'descr': p['descr'], 'ncm': p['ncm'], 'linhas': p['linhas'], 'valor': round(p['valor'], 2),
                       'cfops': cf, 'notas': sorted(p['notas'])[:8], 'qtd_notas': len(p['notas']),
                       'sugestao': ac, 'motivo': mot, 'confianca': conf})
     lista.sort(key=lambda x: -x['valor'])
@@ -239,6 +256,10 @@ def main_cli(argv):
     try:
         import difal_ro as dr
         texto, enc = dr._ler(sped)
+        memoria = {}
+        if opt('--memoria') and os.path.exists(opt('--memoria')):
+            with open(opt('--memoria'), 'r', encoding='utf-8') as fh:
+                memoria = json.load(fh) or {}
         if opt('--aplicar'):
             with open(opt('--aplicar'), 'r', encoding='utf-8') as fh:
                 sel = json.load(fh)
@@ -248,7 +269,7 @@ def main_cli(argv):
                 fh.write(novo)
             os.replace(tmp, opt('--saida'))
         else:
-            res = analisar_texto(texto)
+            res = analisar_texto(texto, memoria)
     except Exception as e:  # pragma: no cover
         res = {'erro': f'Falha ao processar: {e}'}
     tmp = js + '.parcial'

@@ -1596,7 +1596,7 @@ function bindFiscal() {
       if (!an) return;
       const nomes = Object.fromEntries(an.acumuladores.map((a) => [a.cod, a.nome]));
       const itens = an.itens;
-      const conf = { alta: 0, media: 0 };
+      const conf = { memoria: 0, alta: 0, media: 0, confirmar: 0 };
       itens.forEach((i) => { conf[i.confianca] = (conf[i.confianca] || 0) + 1; });
       const porAc = {};
       itens.forEach((i) => { const a = AC.sel.get(i.item) || ''; const g = porAc[a] = porAc[a] || { n: 0, v: 0 }; g.n += i.linhas; g.v += i.valor; });
@@ -1608,32 +1608,33 @@ function bindFiscal() {
       const vis = itens.filter((i) => (AC.filtro === 'todos' || i.confianca === AC.filtro || (AC.filtro === 'nao' && !AC.marc.has(i.item)))
         && (!t || (i.descr + ' ' + i.item + ' ' + i.ncm).toLowerCase().includes(t)));
       const opts = (cur) => an.acumuladores.map((a) => `<option value="${a.cod}"${a.cod === cur ? ' selected' : ''}>${a.cod} · ${esc(a.nome)}</option>`).join('');
-      const lbl = { alta: ['Alta', 'k-ok'], media: ['Média', 'k-warn'] };
+      const lbl = { memoria: ['Confirmado', 'k-ok'], alta: ['Sistema · descrição e NCM', 'k-ok'], media: ['Sistema · só descrição ou NCM', 'k-warn'], confirmar: ['Precisa de você', 'k-bad'] };
       box.innerHTML = `
-        <div class="dif-k">Acumulador 7000 (DESPESAS) — sugestão do acumulador certo pela descrição e pelo NCM</div>
-        <p class="dif-sub">${an.resumo.linhas} item(ns) de nota (${an.resumo.produtos} produtos) · R$ ${acFm(an.resumo.valor)}. Revise e troque o que precisar: só os produtos marcados são alterados. O arquivo original não muda.</p>
+        <div class="dif-k">Acumulador 7000 (DESPESAS) — acumulador certo pela descrição, pelo NCM e pelo que já foi confirmado antes</div>
+        <p class="dif-sub">${an.resumo.linhas} item(ns) de nota (${an.resumo.produtos} produtos) · R$ ${acFm(an.resumo.valor)}. Cada escolha aplicada fica gravada: na próxima vez o produto já vem como “Confirmado”. Só os produtos marcados são alterados; o arquivo original não muda.</p>
         <div class="dif-kpis">
           <div><span>Itens no 7000</span><b>${an.resumo.linhas}</b><small>R$ ${acFm(an.resumo.valor)}</small></div>
-          <div class="k-ok"><span>Confiança alta</span><b>${conf.alta || 0}</b><small>produtos · descrição e NCM concordam</small></div>
-          <div class="k-warn"><span>Confiança média</span><b>${conf.media || 0}</b><small>produtos · só a descrição ou só o NCM</small></div>
+          <div class="k-ok"><span>Já confirmados</span><b>${conf.memoria || 0}</b><small>produtos decididos antes pela equipe</small></div>
+          <div class="k-ok"><span>Decididos pelo sistema</span><b>${(conf.alta || 0) + (conf.media || 0)}</b><small>${conf.alta || 0} pela descrição e NCM · ${conf.media || 0} por um dos dois</small></div>
+          <div class="${conf.confirmar ? 'k-warn' : 'k-ok'}"><span>Precisa de você</span><b>${conf.confirmar || 0}</b><small>sem acumulador: escolha uma vez e fica gravado</small></div>
           <div><span>Produtos marcados</span><b>${AC.marc.size}</b><small>${marcLin} item(ns) · R$ ${acFm(marcVal)}</small></div>
         </div>
         <div class="ac7-grid">
           <div class="ac7-bars"><div class="ac7-h">Para onde vai cada valor</div>${top.map(([k, g]) => `<div class="ac7-br"><span>${k ? k + ' · ' + esc((nomes[k] || '').replace(/^DESP\.( COM| NA)? /, '')) : 'sem acumulador'}</span><i><em style="width:${(g.v / mx * 100).toFixed(1)}%"></em></i><b>R$ ${acFm(g.v)}</b></div>`).join('')}</div>
           <div class="ac7-tab">
-            <div class="ac7-flt">${[['todos', `Todos (${itens.length})`], ['alta', `Alta (${conf.alta || 0})`], ['media', `Média (${conf.media || 0})`], ['nao', 'Desmarcados']].map(([k, tx]) => `<span class="ac7-ch${AC.filtro === k ? ' on' : ''}" data-f="${k}">${tx}</span>`).join('')}
+            <div class="ac7-flt">${[['todos', `Todos (${itens.length})`], ['confirmar', `Precisa de você (${conf.confirmar || 0})`], ['memoria', `Confirmados (${conf.memoria || 0})`], ['alta', `Descrição e NCM (${conf.alta || 0})`], ['media', `Um dos dois (${conf.media || 0})`], ['nao', 'Desmarcados']].map(([k, tx]) => `<span class="ac7-ch${AC.filtro === k ? ' on' : ''}" data-f="${k}">${tx}</span>`).join('')}
               <input id="ac7Busca" placeholder="Buscar produto, código ou NCM" value="${esc(AC.busca)}"></div>
-            <div class="ac7-wrap"><table><thead><tr><th><input type="checkbox" id="ac7Todos" title="Marcar/desmarcar os visíveis"></th><th>Produto</th><th style="text-align:right">Valor</th><th>Acumulador (pode trocar)</th><th>Confiança</th></tr></thead><tbody>
+            <div class="ac7-wrap"><table><thead><tr><th><input type="checkbox" id="ac7Todos" title="Marcar/desmarcar os visíveis"></th><th>Produto</th><th style="text-align:right">Valor</th><th>Acumulador (pode trocar)</th><th>Decisão</th></tr></thead><tbody>
             ${vis.slice(0, AC.mostrar).map((i) => `<tr><td><input type="checkbox" class="ac7-m" data-i="${esc(i.item)}"${AC.marc.has(i.item) ? ' checked' : ''}></td>
               <td>${esc(i.descr || i.item)}<span class="ac7-mi">cód. ${esc(i.item)} · NCM ${esc(i.ncm || '—')} · CFOP ${esc(i.cfops.join('/'))} · ${i.linhas} item(ns) em ${i.qtd_notas} nota(s)</span></td>
               <td style="text-align:right">${acFm(i.valor)}</td>
-              <td><select class="ac7-s" data-i="${esc(i.item)}">${opts(AC.sel.get(i.item))}</select><span class="ac7-mi">${esc(i.motivo)}</span></td>
+              <td><select class="ac7-s" data-i="${esc(i.item)}">${AC.sel.get(i.item) ? '' : '<option value="" selected>— escolha —</option>'}${opts(AC.sel.get(i.item))}</select><span class="ac7-mi">${esc(i.motivo)}</span></td>
               <td><span class="ac7-cf ${lbl[i.confianca] ? lbl[i.confianca][1] : ''}">${lbl[i.confianca] ? lbl[i.confianca][0] : i.confianca}</span></td></tr>`).join('')}
             </tbody></table>${vis.length > AC.mostrar ? `<button class="act inv-export" id="ac7Mais" style="margin:8px auto;display:block">Mostrar mais (${vis.length - AC.mostrar})</button>` : ''}</div>
           </div>
         </div>
         <div class="dif-acts">
-          <button class="act inv-export" id="ac7Alta">Marcar todos de confiança alta</button>
+          <button class="act inv-export" id="ac7Alta">Marcar confirmados e decididos pelo sistema</button>
           <button class="act inv-export" id="ac7Limpar">Desmarcar todos</button>
           <button class="act inv-export sn-big" id="ac7Aplicar" style="background:#e23d4c;color:#fff;border-color:transparent"${AC.marc.size ? '' : ' disabled'}>Aplicar no SPED (${AC.marc.size} produto${AC.marc.size === 1 ? '' : 's'})</button>
         </div>
@@ -1645,7 +1646,7 @@ function bindFiscal() {
       box.querySelectorAll('.ac7-s').forEach((c) => c.addEventListener('change', () => { AC.sel.set(c.dataset.i, c.value); AC.marc.add(c.dataset.i); acDesenhar(); }));
       $('#ac7Todos').addEventListener('change', (ev) => { vis.slice(0, AC.mostrar).forEach((i) => { if (ev.target.checked) AC.marc.add(i.item); else AC.marc.delete(i.item); }); acDesenhar(); });
       const mais = $('#ac7Mais'); if (mais) mais.addEventListener('click', () => { AC.mostrar += 300; acDesenhar(); });
-      $('#ac7Alta').addEventListener('click', () => { itens.forEach((i) => { if (i.confianca === 'alta') AC.marc.add(i.item); }); acDesenhar(); });
+      $('#ac7Alta').addEventListener('click', () => { itens.forEach((i) => { if (AC.sel.get(i.item)) AC.marc.add(i.item); }); acDesenhar(); });
       $('#ac7Limpar').addEventListener('click', () => { AC.marc.clear(); acDesenhar(); });
       $('#ac7Aplicar').addEventListener('click', acAplicar);
     }
@@ -1666,9 +1667,15 @@ function bindFiscal() {
     async function acAplicar() {
       if (!AC.marc.size) return;
       const itens = {};
-      AC.marc.forEach((k) => { const v = AC.sel.get(k); if (v) itens[k] = v; });
+      const memoria = [];
+      AC.marc.forEach((k) => {
+        const v = AC.sel.get(k); if (!v) return;
+        itens[k] = v;
+        const it = AC.an.itens.find((x) => x.item === k);
+        if (it && it.chave) memoria.push({ chave: it.chave, a: v, descr: it.descr });
+      });
       overlay(true, 'Trocando o acumulador 7000 pelos acumuladores escolhidos…');
-      const res = await window.fiscocont.admin.acum7000Aplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, selecao: { itens } });
+      const res = await window.fiscocont.admin.acum7000Aplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, selecao: { itens, memoria } });
       overlay(false);
       if (res.error) { toast(res.error, true); return; }
       corrFeito = true;

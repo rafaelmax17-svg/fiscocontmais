@@ -1,5 +1,5 @@
 rules_version = '2';
-// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.2.0.
+// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.2.9.
 // Publicadas automaticamente pelo GitHub (workflow "Publicar funções e regras no Firebase").
 // Publicar em: Console do Firebase > Firestore Database > Regras > colar este arquivo inteiro > Publicar.
 //
@@ -119,6 +119,11 @@ service cloud.firestore {
     // ------------------------------------------------------------ segredos do Admin (chave do Serpro / Integra Contador)
     // Só quem tem perfil Admin lê e grava; a equipe não lê nem sabe que existe. A chave vale para qualquer computador do Admin.
     match /segredos_admin/{doc} {
+      allow read, write: if admin();
+    }
+
+    // Memória das decisões do Admin (ex.: acumulador 7000: descrição + NCM → acumulador) — só o Admin lê e grava.
+    match /memoria_admin/{doc} {
       allow read, write: if admin();
     }
 

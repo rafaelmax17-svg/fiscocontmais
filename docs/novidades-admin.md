@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.9
+
+- **Corretor do SPED Fiscal · acumulador 7000 com memória:** cada produto aplicado fica gravado na nuvem (coleção memoria_admin, regra nova: só o Admin lê e grava) — descrição + NCM → acumulador, quem e quando. No próximo arquivo, de qualquer cliente, o produto já vem como **"Confirmado por <nome> em <data>"**, à frente da regra por descrição/NCM. A tela troca "Confiança alta/média" por quem decidiu: **Confirmado** (equipe), **Sistema · descrição e NCM**, **Sistema · só descrição ou NCM** e **Precisa de você** (sem acumulador — escolhe uma vez e fica gravado). Filtros novos para cada grupo; "Marcar confirmados e decididos pelo sistema". Sem a palavra "sugestão" na tela.
+
 ## 2.2.8
 
 - **Robô do Integra Contador · consulta de novo as não transmitidas:** ao clicar em "▶ Iniciar robô", toda empresa com Escrituração concluída = Sim que ainda não foi confirmada na Receita é consultada de novo — inclusive as que deram "Ainda não transmitido" pouco antes. Antes havia um intervalo de 6 h (resto da conferência automática, que não existe mais) e o robô pulava essas empresas ("0 empresa(s) consultada(s)").

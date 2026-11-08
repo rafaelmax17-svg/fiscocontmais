@@ -2630,13 +2630,38 @@ ipcMain.handle('admin:difalAplicar', async (_evt, { spedPath, usarCorrigido, sel
 });
 
 // Acumulador genérico 7000 (DESPESAS) → acumulador de despesa certo (7001–7040), revisado pelo Admin — só Admin
+// Memória do acumulador 7000 (nuvem, só Admin): descrição + NCM → acumulador escolhido, quem e quando. O produto
+// que já foi decidido uma vez vem como "Confirmado por …" nos próximos arquivos, de qualquer cliente.
+async function _memAcumLer() {
+  try {
+    const db = auth.db(); if (!db) return {};
+    const f = auth.fsMod();
+    const s = await f.getDoc(f.doc(db, 'memoria_admin', 'acum7000'));
+    return s.exists() ? (s.data().m || {}) : {};
+  } catch (_) { return {}; }
+}
+async function _memAcumGravar(lista) {
+  const db = auth.db(); if (!db || !lista || !lista.length) return;
+  const f = auth.fsMod();
+  const ses = auth.sessao() || {};
+  const hoje = new Date().toLocaleDateString('pt-BR');
+  const upd = {};
+  for (const x of lista.slice(0, 2000)) {
+    if (!/^[0-9a-f]{20}$/.test(x.chave || '') || !/^70\d\d$/.test(x.a || '')) continue;
+    upd[x.chave] = { a: x.a, p: ses.nome || ses.email || 'Admin', e: hoje, d: String(x.descr || '').slice(0, 80) };
+  }
+  if (Object.keys(upd).length) await f.setDoc(f.doc(db, 'memoria_admin', 'acum7000'), { m: upd }, { merge: true });
+}
 ipcMain.handle('admin:acum7000Analisar', async (_evt, { spedPath, usarCorrigido }) => {
   const bloq = _soAdmin(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const jsonOut = path.join(os.tmpdir(), `fc_acum_${Date.now()}.json`);
+  const memJson = path.join(os.tmpdir(), `fc_acum_mem_${Date.now()}.json`);
   try {
-    await runFiscal(['acum-7000', '--sped', base.arq, '--json', jsonOut], jsonOut);
+    fs.writeFileSync(memJson, JSON.stringify(await _memAcumLer()), 'utf-8');
+    await runFiscal(['acum-7000', '--sped', base.arq, '--json', jsonOut, '--memoria', memJson], jsonOut);
+    fs.unlink(memJson, () => {});
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
     if (res.erro) return { error: res.erro };
     return { ok: true, res, origem: base.origem };
@@ -2660,6 +2685,7 @@ ipcMain.handle('admin:acum7000Aplicar', async (_evt, { spedPath, usarCorrigido, 
     if (lastSpedCorrigidoPath && lastSpedCorrigidoPath !== base.arq) fs.unlink(lastSpedCorrigidoPath, () => {});
     else if (lastSpedCorrigidoPath === base.arq && base.origem === 'corrigido') fs.unlink(base.arq, () => {});
     lastSpedCorrigidoPath = saida;
+    try { await _memAcumGravar((selecao || {}).memoria || []); } catch (_) {}   // memória: falha não impede a correção
     return { ok: true, resumo: res, origem: base.origem };
   } catch (e) { return { error: String(e.message || e) }; }
 });
