@@ -40,7 +40,14 @@ const _cfgPath = () => path.join(D.userData(), 'fisconforme.json');
 function _cfg() { try { return JSON.parse(fs.readFileSync(_cfgPath(), 'utf-8')); } catch (_) { return {}; } }
 function _grava(c) { fs.writeFileSync(_cfgPath(), JSON.stringify(c, null, 1)); }
 function _ehAdmin() { const s = auth.sessao(); return !!(s && s.perfil === 'admin'); }
-function _exige() { if (!_ehAdmin()) throw new Error('Acesso restrito ao Admin.'); }
+// Fisconforme liberado para a equipe: Admin, Fiscal (padrão do perfil) ou quem recebeu o módulo na lista de módulos liberados
+function podeUsar(s = auth.sessao()) {
+  if (!s) return false;
+  if (s.perfil === 'admin') return true;
+  return Array.isArray(s.modulos) ? s.modulos.includes('fiscal-fisconforme') : s.perfil === 'fiscal';
+}
+function _exige() { if (!podeUsar()) throw new Error('Sem acesso ao módulo Fisconforme.'); }
+function _exigeAdmin() { if (!_ehAdmin()) throw new Error('Acesso restrito ao Admin.'); }
 function _fs() { const db = auth.db(); if (!db) throw new Error('Entre com o seu usuário.'); return { db, f: auth.fsMod() }; }
 const _so = (s) => String(s || '').replace(/\D/g, '');
 function _cpfDoCert(c) {
@@ -77,6 +84,7 @@ async function estado() {
   const { certs, aviso } = await certificados();
   const c = _cfg();
   const escolhido = certs.find((x) => x.cpf === c.cpf) || (certs.length === 1 ? certs[0] : null);
+  if (escolhido && (c.cpf !== escolhido.cpf || c.nome !== escolhido.nome)) _grava({ ...c, cpf: escolhido.cpf, nome: escolhido.nome });
   return { certs, aviso: aviso || '', cpf: escolhido ? escolhido.cpf : '', escolhido: escolhido || null, mostrarJanela: !!c.mostrarJanela };
 }
 function escolherCert(cpf) { _exige(); _grava({ ..._cfg(), cpf: _so(cpf) }); return { ok: true }; }
@@ -173,7 +181,7 @@ async function _login() {
     + 'Um print da última tela e o passo a passo ficaram em "fisconforme_login.png" e "fisconforme_log.txt", na pasta de dados do FiscoCont+.');
 }
 
-function mostrarJanela(sim) { _exige(); _grava({ ..._cfg(), mostrarJanela: !!sim }); return { ok: true }; }
+function mostrarJanela(sim) { _exigeAdmin(); _grava({ ..._cfg(), mostrarJanela: !!sim }); return { ok: true }; }
 function abrirPastaDados() { const { shell } = require('electron'); shell.openPath(D.userData()); return { ok: true }; }
 
 // ------------------------------------------------------------------ leitura das listas
@@ -285,6 +293,7 @@ async function ler() {
       paginas: Object.fromEntries(LISTAS.map((l) => [l, res[l].paginas])), contagens: cont, novas,
       primeiraLeituraGeral: (await f.getDoc(f.doc(db, COL, '_meta'))).data()?.primeiraLeituraGeral || lid,
       malhas: malhas.map((m) => ({ cod: m.cod, nome: m.nome })),
+      contador: { nome: _cfg().nome || '', cpf: _cpfAtivo || '' },
     }, { merge: true });
     _prog('', { fim: true });
     return { ok: true, contagens: cont, novas };
@@ -368,4 +377,4 @@ async function visualizar(codigo) {
   }
 }
 
-module.exports = { init, estado, escolherCert, ler, dados, explicarMalha, visualizar, certificados, mostrarJanela, abrirPastaDados };
+module.exports = { init, podeUsar, estado, escolherCert, ler, dados, explicarMalha, visualizar, certificados, mostrarJanela, abrirPastaDados };

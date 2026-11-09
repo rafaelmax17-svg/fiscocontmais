@@ -1,5 +1,5 @@
 'use strict';
-// Fisconforme · SEFIN-RO — painel das notificações de todas as empresas (só Admin, por enquanto).
+// Fisconforme · SEFIN-RO — painel das notificações de todas as empresas (equipe; navegador do robô e portal só para o Admin).
 // Ao entrar, confere se o e-CPF do contador está instalado no Windows ANTES de qualquer leitura.
 (function () {
   const e = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -11,14 +11,21 @@
   const dBr = (iso) => iso ? iso.slice(0, 10).split('-').reverse().join('/') : '';
   const dias = (iso) => iso ? Math.max(0, Math.round((Date.now() - new Date(iso.slice(0, 10) + 'T12:00:00')) / 864e5)) : 0;
   let desliga = null;
+  const ehAdm = () => typeof ROLE !== 'undefined' && ROLE === 'admin';
 
   async function entrar() {
     const raiz = $('#fcRaiz');
     raiz.innerHTML = '<div class="lic-empty">Conferindo o certificado do contador…</div>';
     const est = await window.fiscocont.fisconforme.estado();
     if (est && est.error) { raiz.innerHTML = `<div class="lic-empty">${e(est.error)}</div>`; return; }
-    F.est = est;
-    if (!est.certs.length || !est.escolhido) { semCertificado(); return; }
+    F.est = est; F.semCert = false;
+    if (!est.certs.length) {
+      // sem o e-CPF neste computador: não consulta nada no portal, mas mostra a última leitura salva (se houver)
+      const d = await window.fiscocont.fisconforme.dados();
+      if (d && !d.error && d.meta) { F.semCert = true; F.d = d; desenhar(); return; }
+      semCertificado(); return;
+    }
+    if (!est.escolhido) { semCertificado(); return; }
     if (!desliga) desliga = window.fiscocont.fisconforme.onProgresso((p) => {
       const el = $('#fcProg'); if (!el) return;
       el.hidden = !!p.fim; el.querySelector('span').textContent = p.txt || '';
@@ -67,7 +74,8 @@
 
   function desenhar() {
     const { notif, meta } = F.d;
-    const est = F.est.escolhido;
+    const est = F.est.escolhido || (meta && meta.contador) || { nome: 'contador', cpf: '' };
+    const adm = ehAdm();
     const c = contar(notif, meta);
     const pend = notif.filter((n) => n.status === 'pendente');
     const empsPend = new Set(pend.map((n) => n.cnpj || n.nome)).size;
@@ -90,12 +98,13 @@
     const chip = (k, rot, n) => `<button class="fc-f${F.filtro === k ? ' on' : ''}" data-f="${k}">${rot} (${n})</button>`;
     $('#fcRaiz').innerHTML = `
       <div class="fc-hd"><div><span class="fc-tag">SEFIN-RO · FISCONFORME</span><h2>Notificações do Fisconforme</h2>
-        <p>Todas as empresas vinculadas ao contador · ${e(est.nome)} (e-CPF ${fmtCpf(est.cpf)}) · o robô lê só as listas, sem abrir a notificação</p></div>
+        <p>Todas as empresas vinculadas ao contador · ${e(est.nome || 'contador')}${est.cpf ? ` (e-CPF ${fmtCpf(est.cpf)})` : ''} · o robô lê só as listas, sem abrir a notificação</p></div>
         <div class="fc-acts">${meta ? `<span class="fc-pill">● Última leitura ${e(new Date(meta.ultimaLeitura).toLocaleString('pt-BR').slice(0, 17).replace(',', ''))}${meta.por ? ' · ' + e(meta.por) : ''}</span>` : ''}
-          <label class="fc-chk" title="Abre a janela do navegador do robô para acompanhar a entrada no portal (ajuda no primeiro uso)"><input type="checkbox" id="fcVer"${F.est.mostrarJanela ? ' checked' : ''}> Mostrar o navegador do robô</label>
-          <button class="act inv-export" id="fcPortal">Abrir o portal ↗</button>
+          ${adm ? `<label class="fc-chk" title="Abre a janela do navegador do robô para acompanhar a entrada no portal (ajuda no primeiro uso)"><input type="checkbox" id="fcVer"${F.est.mostrarJanela ? ' checked' : ''}> Mostrar o navegador do robô</label>
+          <button class="act inv-export" id="fcPortal">Abrir o portal ↗</button>` : ''}
           ${meta ? '<button class="act inv-export" id="fcHtml">Exportar HTML</button><button class="act inv-export" id="fcPdf">Exportar PDF</button>' : ''}
-          <button class="act inv-export fc-go" id="fcLer">▶ Ler notificações</button></div></div>
+          <button class="act inv-export fc-go" id="fcLer"${F.semCert ? ' disabled title="Precisa do e-CPF do contador instalado neste computador"' : ''}>▶ Ler notificações</button></div></div>
+      ${F.semCert ? `<div class="fc-alerta"><b>O certificado do contador não está instalado neste computador.</b> Você está vendo a última leitura salva. Para ler de novo ou visualizar uma notificação no portal, use um computador com o e-CPF do contador instalado. Nada foi consultado.</div>` : ''}
       <div class="fc-prog" id="fcProg" hidden><i></i><span></span></div>
       ${!meta ? `<div class="fc-vazio"><b>Nenhuma leitura ainda.</b> Clique em “Ler notificações”: o robô entra no portal com o e-CPF do contador e lê as listas de pendentes, contestadas, indeferidas e resolvidas de todas as empresas (leva alguns minutos).</div>` : `
       <div class="fc-k">
@@ -137,7 +146,7 @@
       <td>${per(n.periodo)}</td><td>${e(n.codigo)}</td><td>${nova}<span class="fc-c ${cls}">${rot}</span></td>
       <td>${dBr(n.primeiraVez)}<small>${d === 0 ? 'hoje' : `há ${d} dia${d > 1 ? 's' : ''}`}</small></td>
       <td class="fc-ac"><button class="fc-b" data-x="${e(n.codigo)}">${ab ? 'Fechar' : 'Entenda esta malha'}</button>
-        ${n.detalhe ? `<button class="fc-b" data-v="${e(n.codigo)}" data-ja="1">Ver notificação</button>` : `<button class="fc-b fc-bv" data-v="${e(n.codigo)}">Visualizar</button>`}</td></tr>
+        ${n.detalhe ? `<button class="fc-b" data-v="${e(n.codigo)}" data-ja="1">Ver notificação</button>` : `<button class="fc-b fc-bv" data-v="${e(n.codigo)}"${F.semCert ? ' disabled title="Precisa do e-CPF do contador instalado neste computador"' : ''}>Visualizar</button>`}</td></tr>
       ${ab ? `<tr class="fc-det"><td colspan="7">
         ${n.detalhe ? `<div class="fc-box"><h4>Notificação (aberta em ${e(n.cienciaEm || '')}${n.cienciaPor ? ' por ' + e(n.cienciaPor) : ''})</h4><pre>${e(n.detalhe)}</pre></div>` : ''}
         <div class="fc-box"><h4>${n.explicacao ? 'Explicação desta notificação' : 'Entenda esta malha'}</h4><div class="fc-ex" id="fcEx">${n.explicacao ? fmt(n.explicacao) : (expl ? fmt(expl) : '<span class="fc-sub">Preparando a explicação…</span>')}</div></div>
@@ -148,8 +157,8 @@
   function ligar(vis) {
     const q = (s) => $('#fcRaiz').querySelectorAll(s);
     $('#fcLer').onclick = ler;
-    $('#fcPortal').onclick = () => window.fiscocont.fisconforme.abrirPortal();
-    $('#fcVer').onchange = async (ev) => { await window.fiscocont.fisconforme.mostrarJanela(ev.target.checked); F.est.mostrarJanela = ev.target.checked; };
+    if ($('#fcPortal')) $('#fcPortal').onclick = () => window.fiscocont.fisconforme.abrirPortal();
+    if ($('#fcVer')) $('#fcVer').onchange = async (ev) => { await window.fiscocont.fisconforme.mostrarJanela(ev.target.checked); F.est.mostrarJanela = ev.target.checked; };
     if (!F.d.meta) return;
     $('#fcHtml').onclick = () => exportar('html');
     $('#fcPdf').onclick = () => exportar('pdf');
@@ -261,7 +270,7 @@
     if (prog) prog.hidden = true;
     if (r && r.error) {
       toast(r.error, true);
-      if (/fisconforme_log/.test(r.error) && confirm('Abrir a pasta com o print e o passo a passo do robô?')) window.fiscocont.fisconforme.pastaDados();
+      if (/fisconforme_log/.test(r.error) && ehAdm() && confirm('Abrir a pasta com o print e o passo a passo do robô?')) window.fiscocont.fisconforme.pastaDados();
       return;
     }
     toast(`Leitura concluída: ${r.contagens.pendente} pendente(s)${r.novas ? ` · ${r.novas} nova(s)` : ''}.`);

@@ -145,7 +145,11 @@ function _anonimiza(t) {
 }
 
 exports.explicarFisconforme = onCall({ timeoutSeconds: 120, memory: '256MiB' }, async (req) => {
-  const quem = await quemChamou(req, true);
+  const quem = await quemChamou(req, false);
+  // mesmo critério do módulo: Admin, Fiscal (padrão do perfil) ou quem recebeu o Fisconforme nos módulos liberados
+  const libera = quem.perfil === 'admin'
+    || (Array.isArray(quem.modulos) ? quem.modulos.includes('fiscal-fisconforme') : quem.perfil === 'fiscal');
+  if (!libera) throw new HttpsError('permission-denied', 'Sem acesso ao módulo Fisconforme.');
   const malha = String(req.data?.malha || '').slice(0, 200).trim();
   const periodo = String(req.data?.periodo || '').replace(/\D/g, '').slice(0, 6);
   const detalhe = _anonimiza(req.data?.detalhe || '');

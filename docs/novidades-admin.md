@@ -3,6 +3,14 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.13
+
+- **Fisconforme liberado para a equipe:** o módulo saiu de "Administração" e foi para o menu **Fiscal**. Quem vê: Admin, todo o perfil Fiscal que está no padrão do perfil, e quem tem lista própria de módulos com "Fisconforme · SEFIN-RO" marcado em Usuários → Módulos liberados. Quem tem lista própria **não** recebe o módulo sozinho: é preciso marcar.
+- **Continuam só do Admin:** a opção "Mostrar o navegador do robô", o botão "Abrir o portal ↗" e a pasta com o passo a passo e o print do robô quando a entrada falha. A trava vale também no processo principal, não só na tela.
+- **Computador sem o e-CPF do contador:** mostra a última leitura salva com um aviso, sem consultar nada. "Ler notificações" e "Visualizar" ficam desabilitados nesse caso.
+- **Nuvem:** as regras do Firestore (versão 2.2.13) liberam a coleção fisconforme com o mesmo critério. A função de explicação também passou a aceitar a equipe com acesso ao módulo, e cada uso continua registrado em uso_ia.
+- A leitura agora grava no resumo o nome e o CPF do contador do certificado usado, para a tela mostrar isso também nos computadores sem o certificado.
+
 ## 2.2.12
 
 - **Fisconforme · exportar:** botões "Exportar HTML" e "Exportar PDF" no topo do painel. O relatório respeita os filtros de empresa e malha da tela e traz as notificações em aberto (pendentes, contestadas e indeferidas), com os números do topo, a distribuição por malha e a lista agrupada por empresa (código, malha, período, situação, data em que apareceu, ciência e prazo).

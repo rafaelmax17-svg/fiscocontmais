@@ -564,7 +564,7 @@ function switchView(name) {
     const fr = $('#efdFrame'); if (fr && fr.srcdoc) fr.srcdoc = fr.srcdoc;   // recarrega: a animação do painel toca de novo
     return;
   }
-  if (name === 'admin-fisconforme') { $('#view-admin-fisconforme').hidden = false; $('#empty').hidden = true; if (window._fiscEntrar) window._fiscEntrar(); return; }
+  if (name === 'fiscal-fisconforme') { $('#view-fiscal-fisconforme').hidden = false; $('#empty').hidden = true; if (window._fiscEntrar) window._fiscEntrar(); return; }
   if (name === 'admin-integra') { $('#view-admin-integra').hidden = false; $('#empty').hidden = true; if (window._integraEntrar) window._integraEntrar(); return; }
   if (name === 'admin-lic') { $('#view-admin-lic').hidden = false; $('#empty').hidden = true; loadLicensePanel(); return; }
   if (name === 'admin-usuarios') { $('#view-admin-usuarios').hidden = false; $('#empty').hidden = true; loadUsuarios(); return; }
@@ -3913,7 +3913,7 @@ function applyRole(role, modulos) {
   if (role !== 'admin' && MODULOS) {
     const ok = new Set(MODULOS);
     $$('.nav .nav-item[data-view]').forEach((b) => {
-      const exclusivo = ['admin-usuarios', 'admin-lic', 'admin-integra', 'admin-fisconforme'].includes(b.dataset.view);
+      const exclusivo = ['admin-usuarios', 'admin-lic', 'admin-integra'].includes(b.dataset.view);
       const sempre = b.dataset.view === 'manual-fiscal' && !hideFiscal;     // o manual vale para todo o Fiscal
       b.classList.toggle('role-hidden', exclusivo || (!sempre && !ok.has(b.dataset.view)));
     });
@@ -4635,7 +4635,7 @@ function usrMostraSenha(nome, email, senha, novo) {
   $('#usrOkSenha').addEventListener('click', () => { m.hidden = true; });
 }
 function usrModulos(u) {
-  const cat = catalogoModulos().filter((x) => !['admin-usuarios', 'admin-lic', 'admin-integra', 'admin-fisconforme'].includes(x.view));
+  const cat = catalogoModulos().filter((x) => !['admin-usuarios', 'admin-lic', 'admin-integra'].includes(x.view));
   const marcados = new Set(u.modulos || modulosPadrao(u.perfil));
   const grupos = [...new Set(cat.map((x) => x.grupoNome))];
   const m = usrModal(`

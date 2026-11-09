@@ -548,20 +548,26 @@ integra.init({
     return '';
   },
 });
-// ---- Fisconforme (SEFIN-RO): notificações de todas as empresas, com o e-CPF do contador — só Admin (electron/fisconforme.js)
+// ---- Fisconforme (SEFIN-RO): notificações de todas as empresas, com o e-CPF do contador (electron/fisconforme.js)
+// Liberado para a equipe (Admin, Fiscal ou quem recebeu o módulo). Só o Admin: navegador do robô, pasta de dados e abrir o portal.
 const fisconforme = require('./fisconforme');
 fisconforme.init({ userData: () => app.getPath('userData'), notificar: (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} } });
-ipcMain.handle('fisc:estado', () => _adm(() => fisconforme.estado()));
-ipcMain.handle('fisc:escolherCert', (_evt, cpf) => _adm(() => fisconforme.escolherCert(cpf)));
-ipcMain.handle('fisc:ler', () => _adm(() => fisconforme.ler()));
-ipcMain.handle('fisc:dados', () => _adm(() => fisconforme.dados()));
-ipcMain.handle('fisc:explicarMalha', (_evt, { cod, nome }) => _adm(() => fisconforme.explicarMalha(cod, nome)));
-ipcMain.handle('fisc:visualizar', (_evt, codigo) => _adm(() => fisconforme.visualizar(codigo)));
+const _fisc = async (fn) => {
+  if (!fisconforme.podeUsar()) return { error: 'Sem acesso ao módulo Fisconforme.' };
+  if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
+  try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String(e.message || e) }; }
+};
+ipcMain.handle('fisc:estado', () => _fisc(() => fisconforme.estado()));
+ipcMain.handle('fisc:escolherCert', (_evt, cpf) => _fisc(() => fisconforme.escolherCert(cpf)));
+ipcMain.handle('fisc:ler', () => _fisc(() => fisconforme.ler()));
+ipcMain.handle('fisc:dados', () => _fisc(() => fisconforme.dados()));
+ipcMain.handle('fisc:explicarMalha', (_evt, { cod, nome }) => _fisc(() => fisconforme.explicarMalha(cod, nome)));
+ipcMain.handle('fisc:visualizar', (_evt, codigo) => _fisc(() => fisconforme.visualizar(codigo)));
 ipcMain.handle('fisc:mostrarJanela', (_evt, sim) => _adm(() => fisconforme.mostrarJanela(sim)));
 ipcMain.handle('fisc:pastaDados', () => _adm(() => fisconforme.abrirPastaDados()));
 // Relatório do Fisconforme: o HTML vem pronto da tela; salva como HTML ou converte em PDF (paisagem, sem movimento)
 ipcMain.handle('fisc:exportar', async (_evt, { html, formato, nome }) => {
-  if (sessionRole !== 'admin') return { error: 'Acesso restrito ao Admin.' };
+  if (!fisconforme.podeUsar()) return { error: 'Sem acesso ao módulo Fisconforme.' };
   const pdf = formato === 'pdf';
   const save = await dialog.showSaveDialog(mainWindow, {
     title: pdf ? 'Salvar PDF do Fisconforme' : 'Salvar HTML do Fisconforme',
@@ -585,7 +591,7 @@ ipcMain.handle('fisc:exportar', async (_evt, { html, formato, nome }) => {
   } catch (e) { return { error: String(e.message || e) }; }
   finally { worker.destroy(); fs.unlink(tmp, () => {}); }
 });
-ipcMain.handle('fisc:abrirPortal', () => { shell.openExternal('https://fisconforme.sefin.ro.gov.br/contribuintes/pendente'); return { ok: true }; });
+ipcMain.handle('fisc:abrirPortal', () => { if (sessionRole !== 'admin') return { error: 'Acesso restrito ao Admin.' }; shell.openExternal('https://fisconforme.sefin.ro.gov.br/contribuintes/pendente'); return { ok: true }; });
 
 ipcMain.handle('integra:estado', () => _adm(async () => ({ local: await integra.estadoLocal(), nuvem: await integra.estadoNuvem().catch(() => null) })));
 ipcMain.handle('integra:salvarChave', (_evt, dados) => _adm(() => integra.salvarChave(dados || {})));

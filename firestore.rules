@@ -1,5 +1,5 @@
 rules_version = '2';
-// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.2.10.
+// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.2.13.
 // Publicadas automaticamente pelo GitHub (workflow "Publicar funções e regras no Firebase").
 // Publicar em: Console do Firebase > Firestore Database > Regras > colar este arquivo inteiro > Publicar.
 //
@@ -127,9 +127,15 @@ service cloud.firestore {
       allow read, write: if admin();
     }
 
-    // Fisconforme (SEFIN-RO): notificações lidas do portal pelo robô do Admin — por enquanto só o Admin vê.
+    // Fisconforme (SEFIN-RO): notificações lidas do portal com o e-CPF do contador. Liberado para a equipe:
+    // Admin, perfil Fiscal (padrão) ou quem recebeu o módulo "fiscal-fisconforme" na lista de módulos liberados.
+    function fisconforme() {
+      return admin() || (ativo() && (
+        (cadastro().get('modulos', null) == null && cadastro().perfil == 'fiscal')
+        || (cadastro().get('modulos', null) != null && 'fiscal-fisconforme' in cadastro().modulos)));
+    }
     match /fisconforme/{doc} {
-      allow read, write: if admin();
+      allow read, write: if fisconforme();
     }
 
     // qualquer outra coleção: fechada
