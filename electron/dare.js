@@ -50,12 +50,23 @@ const _limpaNome = (s) => String(s || '').replace(/[\\/:*?"<>|]+/g, ' ').replace
 const pasta = () => (P.cfg().pastaDare || PASTA_PADRAO);
 
 // ------------------------------------------------------------------ janela (a mesma do Fisconforme)
-function _janela() {
+// A página do DARE da SEFIN chama a impressão sozinha quando abre (window.print), o que mostraria a janela de
+// impressoras do Windows. Antes de qualquer página carregar, o sistema troca essa chamada por nada: o PDF é salvo direto.
+const SEM_IMPRESSAO = 'try { window.print = function () {}; } catch (e) {}';
+async function _janela() {
   const w = P.janela();
   if (!w.__dare) {
     w.__dare = true;
     // links que abrem nova aba (o "Emitir" do DARE, por exemplo): guarda o endereço e abre na mesma janela
     w.webContents.setWindowOpenHandler(({ url }) => { _abriu = url; P.log(`nova janela pedida: ${String(url).split('?')[0]}`); return { action: 'deny' }; });
+    try {
+      const dbg = w.webContents.debugger;
+      if (!dbg.isAttached()) dbg.attach('1.3');
+      await dbg.sendCommand('Page.enable');
+      await dbg.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: SEM_IMPRESSAO, runImmediately: true });
+    } catch (e) { P.log(`aviso: não consegui desligar a impressão automática (${e.message || e})`); }
+    // reforço: a cada página carregada, desliga de novo em todos os frames
+    w.webContents.on('dom-ready', () => { try { w.webContents.mainFrame.framesInSubtree.forEach((fr) => fr.executeJavaScript(SEM_IMPRESSAO).catch(() => {})); } catch (_) {} });
   }
   return w;
 }
@@ -191,7 +202,7 @@ const JS_CAP_NOVO = `(() => { ${JS_CAP}
   return false; })()`;
 
 const jsEmitir = (data, codigo) => `(() => { ${JS_LIMPA} ${JS_CAP}
-  window.__alerta = ''; window.alert = (m) => { window.__alerta = String(m); };
+  window.__alerta = ''; window.alert = (m) => { window.__alerta = String(m); }; window.print = function () {};
   const setv = (el, v) => { const d = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value'); if (d && d.set) d.set.call(el, v); else el.value = v;
     el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); el.dispatchEvent(new Event('blur', { bubbles: true })); };
   const s = dataSel();
@@ -225,7 +236,7 @@ async function _entrar() {
   P.canal('dare:progresso');
   _prog('Entrando no portal da SEFIN com o certificado do contador…');
   await P.loginSso();                                  // mesma entrada do Fisconforme (sessão do SSO)
-  _janela();
+  await _janela();
   _prog('Abrindo o Portal do Contribuinte…');
   await P.vai(URL_CONSULTA, 45000);
   const ate = Date.now() + 100000;

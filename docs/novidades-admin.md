@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.18
+
+- **Débitos e DARE:** a página do DARE da SEFIN chama `window.print()` sozinha quando abre, e isso fazia aparecer a janela de impressoras do Windows. Agora a janela da consulta troca essa chamada por nada antes de qualquer página carregar (Page.addScriptToEvaluateOnNewDocument), com reforço em cada página carregada e no clique em EMITIR. O PDF continua sendo salvo direto (printToPDF).
+
 ## 2.2.17
 
 - **Débitos e DARE (SEFIN-RO):** módulo novo no menu Fiscal (`fiscal-dare`), com o mesmo critério de acesso do Fisconforme. Quem tem lista própria de módulos precisa marcar "Débitos e DARE".
