@@ -56,7 +56,8 @@ function _cpfDoCert(c) {
   return m ? m[1] : '';
 }
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-function _prog(txt, extra) { try { D.notificar('fisc:progresso', { txt, ...(extra || {}) }); } catch (_) {} }
+let _canal = 'fisc:progresso';            // o módulo de DARE usa a mesma entrada e troca o canal do progresso
+function _prog(txt, extra) { try { D.notificar(_canal, { txt, ...(extra || {}) }); } catch (_) {} }
 
 // ------------------------------------------------------------------ certificados e-CPF instalados no Windows
 function certificados() {
@@ -242,8 +243,8 @@ function _mapaEmpresas(emps) {
 
 async function ler() {
   _exige();
-  if (_rodando) throw new Error('A leitura já está em andamento.');
-  _rodando = true;
+  if (_rodando) throw new Error('Há uma consulta da SEFIN em andamento. Aguarde terminar.');
+  _rodando = true; _canal = 'fisc:progresso';
   _logTxt = [];
   const inicio = new Date();
   const lid = inicio.toISOString();
@@ -347,8 +348,8 @@ async function explicarMalha(cod, nome) {
 // estava, chama o "Visualizar" do próprio portal, lê o texto da janela que abre e grava com a data da ciência.
 async function visualizar(codigo) {
   _exige();
-  if (_rodando) throw new Error('Aguarde a leitura terminar.');
-  _rodando = true;
+  if (_rodando) throw new Error('Há uma consulta da SEFIN em andamento. Aguarde terminar.');
+  _rodando = true; _canal = 'fisc:progresso';
   try {
     const { db, f } = _fs();
     const ref = f.doc(db, COL, String(codigo));
@@ -387,4 +388,16 @@ async function visualizar(codigo) {
   }
 }
 
-module.exports = { init, podeUsar, resumo, estado, escolherCert, ler, dados, explicarMalha, visualizar, certificados, mostrarJanela, abrirPastaDados };
+// Entrada por certificado e janela compartilhadas com o módulo Débitos e DARE (electron/dare.js).
+// Uma consulta por vez: as duas telas usam a mesma janela e a mesma sessão da SEFIN.
+const portal = {
+  janela: () => _janela(), vai: (u, l) => _vai(u, l), js: (c) => _js(c), win: () => _win,
+  log: (m) => _log(m), limpaLog: () => { _logTxt = []; }, prog: (t, x) => _prog(t, x), canal: (c) => { _canal = c; },
+  loginSso: () => _login(), cfg: () => _cfg(), ehAdmin: () => _ehAdmin(), ehSso: _ehSso, sleep: _sleep,
+  JS_ESTADO_LOGIN, JS_CLICA_ENTRAR,
+  ocupado: () => _rodando,
+  ocupar() { if (_rodando) throw new Error('Há uma consulta da SEFIN em andamento. Aguarde terminar.'); _rodando = true; },
+  liberar(fechar = true) { _rodando = false; if (fechar && _win && !_win.isDestroyed()) { _win.destroy(); _win = null; } },
+};
+
+module.exports = { portal, init, podeUsar, resumo, estado, escolherCert, ler, dados, explicarMalha, visualizar, certificados, mostrarJanela, abrirPastaDados };

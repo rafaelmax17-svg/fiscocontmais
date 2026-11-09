@@ -1,5 +1,5 @@
 rules_version = '2';
-// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.2.13.
+// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.2.17.
 // Publicadas automaticamente pelo GitHub (workflow "Publicar funções e regras no Firebase").
 // Publicar em: Console do Firebase > Firestore Database > Regras > colar este arquivo inteiro > Publicar.
 //
@@ -136,6 +136,16 @@ service cloud.firestore {
     }
     match /fisconforme/{doc} {
       allow read, write: if fisconforme();
+    }
+    // Débitos e DARE (SEFIN-RO): débitos em aberto por exercício + IE e os DAREs gerados. Mesmo critério:
+    // Admin, perfil Fiscal (padrão) ou quem recebeu o módulo "fiscal-dare" na lista de módulos liberados.
+    function dareOk() {
+      return admin() || (ativo() && (
+        (cadastro().get('modulos', null) == null && cadastro().perfil == 'fiscal')
+        || (cadastro().get('modulos', null) != null && 'fiscal-dare' in cadastro().modulos)));
+    }
+    match /dare/{doc} {
+      allow read, write: if dareOk();
     }
 
     // qualquer outra coleção: fechada

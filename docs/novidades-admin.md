@@ -3,6 +3,24 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.17
+
+- **Débitos e DARE (SEFIN-RO):** módulo novo no menu Fiscal (`fiscal-dare`), com o mesmo critério de acesso do Fisconforme. Quem tem lista própria de módulos precisa marcar "Débitos e DARE".
+- **Entrada:** usa a mesma entrada por e-CPF do Fisconforme e a mesma janela. Só uma consulta da SEFIN roda por vez; se houver outra em andamento, o sistema avisa.
+  - Abre `portalcontribuinte.sefin.ro.gov.br/app/consultadebitos/` e percorre a lista de Inscrições Estaduais da tela, no exercício escolhido.
+  - Lê a tabela inteira: lançamento, parcela, referência, complemento, receita, situação, vencimento e valores.
+- **DARE:** o sistema clica no "Emitir" da coluna Dare e abre a emissão em dare.sefin.ro.gov.br.
+  - Lê as datas de pagamento que o portal oferece.
+  - Se houver captcha, só mostra a imagem na tela para a pessoa digitar. O sistema **não** tenta resolver o código.
+  - Depois do EMITIR, salva o DARE em PDF e grava valor total, "pagamento até" e linha digitável.
+  - Se o código não conferir, mostra um código novo sem fechar a janela. O DARE aberto fecha sozinho depois de 5 min parado.
+- **Extrato:** o "Emitir" da coluna Extrato abre sem código. O extrato é salvo em A4 paisagem.
+- **Pasta:** `G:\Drives compartilhados\Fiscal - Lucro Real\00 - Arquivos FISCAL\DARES Automáticos\<EMPRESA> - IE <IE>\`.
+  - Receita começando com 1 sai como "ICMS <código>". As outras saem só com o código.
+  - Parcela diferente de 00 entra no nome do arquivo, para um DARE não sobrescrever outro.
+- **Nuvem:** coleção `dare`, com um documento `<ano>_<IE>` (débitos + `gerados`) e um `_meta_<ano>`. As regras do Firestore estão na versão 2.2.17.
+- **Se a entrada falhar:** o print fica em `dare_login.png` ou `dare_emissao.png` e o passo a passo em `fisconforme_log.txt`, na pasta de dados.
+
 ## 2.2.16
 
 - Fisconforme sem a palavra "robô" em nenhum texto que a equipe vê. As telas agora dizem "o sistema consulta". A coluna passou a se chamar "Encontrada em", e a janela, "FiscoCont+ · Fisconforme".

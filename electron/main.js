@@ -566,6 +566,46 @@ ipcMain.handle('fisc:explicarMalha', (_evt, { cod, nome }) => _fisc(() => fiscon
 ipcMain.handle('fisc:visualizar', (_evt, codigo) => _fisc(() => fisconforme.visualizar(codigo)));
 ipcMain.handle('fisc:mostrarJanela', (_evt, sim) => _adm(() => fisconforme.mostrarJanela(sim)));
 ipcMain.handle('fisc:pastaDados', () => _adm(() => fisconforme.abrirPastaDados()));
+// ---- Débitos e DARE (SEFIN-RO · Portal do Contribuinte): mesma entrada por certificado do Fisconforme (electron/dare.js)
+const dare = require('./dare');
+dare.init({ userData: () => app.getPath('userData'), notificar: (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} } });
+const _dare = async (fn) => {
+  if (!dare.podeUsar()) return { error: 'Sem acesso ao módulo Débitos e DARE.' };
+  if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
+  try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String(e.message || e) }; }
+};
+ipcMain.handle('dare:ler', (_evt, ano) => _dare(() => dare.ler(ano)));
+ipcMain.handle('dare:dados', (_evt, ano) => _dare(() => dare.dados(ano)));
+ipcMain.handle('dare:previa', (_evt, x) => _dare(() => dare.previa(x)));
+ipcMain.handle('dare:preparar', (_evt, x) => _dare(() => dare.preparar(x)));
+ipcMain.handle('dare:novoCodigo', () => _dare(() => dare.novoCodigo()));
+ipcMain.handle('dare:emitir', (_evt, o) => _dare(() => dare.emitir(o || {})));
+ipcMain.handle('dare:cancelar', () => _dare(() => dare.cancelar()));
+ipcMain.handle('dare:extrato', (_evt, x) => _dare(() => dare.extrato(x)));
+// abre o PDF salvo ou a pasta da empresa (só caminhos dentro da pasta dos DAREs)
+ipcMain.handle('dare:abrir', (_evt, arq) => _dare(async () => {
+  const alvo = path.resolve(String(arq || ''));
+  const raiz = path.resolve((require('./fisconforme').portal.cfg().pastaDare) || dare.PASTA_PADRAO);
+  if (!alvo.toLowerCase().startsWith(raiz.toLowerCase())) throw new Error('Caminho fora da pasta dos DAREs.');
+  if (!fs.existsSync(alvo)) throw new Error('Arquivo não encontrado.');
+  const r = await shell.openPath(alvo); if (r) throw new Error(r);
+  return {};
+}));
+ipcMain.handle('dare:exportar', async (_evt, { html, nome }) => {
+  if (!dare.podeUsar()) return { error: 'Sem acesso ao módulo Débitos e DARE.' };
+  const save = await dialog.showSaveDialog(mainWindow, { title: 'Salvar PDF dos débitos', defaultPath: `${String(nome || 'Débitos SEFIN-RO').replace(/[\\/:*?"<>|]+/g, ' ').trim()}.pdf`, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+  if (save.canceled || !save.filePath) return { canceled: true };
+  const tmp = path.join(os.tmpdir(), `fc_dare_${Date.now()}.html`);
+  fs.writeFileSync(tmp, String(html), 'utf-8');
+  const worker = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true } });
+  try {
+    await worker.loadFile(tmp); await new Promise((r) => setTimeout(r, 700));
+    fs.writeFileSync(save.filePath, await worker.webContents.printToPDF({ printBackground: true, pageSize: 'A4', landscape: true, margins: { marginType: 'default' } }));
+    shell.openPath(save.filePath);
+    return { ok: true, path: save.filePath };
+  } catch (e) { return { error: String(e.message || e) }; } finally { worker.destroy(); fs.unlink(tmp, () => {}); }
+});
+
 // Relatório do Fisconforme: o HTML vem pronto da tela; salva como HTML ou converte em PDF (paisagem, sem movimento)
 ipcMain.handle('fisc:exportar', async (_evt, { html, formato, nome }) => {
   if (!fisconforme.podeUsar()) return { error: 'Sem acesso ao módulo Fisconforme.' };

@@ -1524,3 +1524,52 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .fc-logo img{width:74px;height:auto}
 @keyframes fcLogo{from{opacity:0;transform:translateY(8px) scale(.94)}to{opacity:1;transform:none}}
 .fc-acts .act{white-space:nowrap}
+
+/* Débitos e DARE (SEFIN-RO) */
+.nav-item .ic-app.azul{background:linear-gradient(135deg,#0ea5e9,#1d4ed8);box-shadow:0 4px 10px -3px rgba(29,78,216,.7)}
+.dr-logo{width:64px;height:64px;flex:0 0 auto;border-radius:18px;display:grid;place-items:center;background:linear-gradient(135deg,#0ea5e9,#1d4ed8);
+  box-shadow:0 14px 26px -14px #1d4ed8;animation:fcLogo .7s both}
+.dr-logo svg{width:32px;height:32px}
+.dr .fc-k b{font-size:22px;letter-spacing:-.01em}
+.dr .fc-br{grid-template-columns:minmax(150px,240px) 1fr 110px}
+.dr-g2{grid-template-columns:1.25fr 1fr}
+.dr-mes{display:flex;align-items:flex-end;gap:10px;height:150px;padding-top:6px}
+.dr-mes>div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;font-size:11px;color:var(--ink2);height:100%}
+.dr-mes small{font-size:9.5px;color:var(--ink2)}
+.dr-mes i{width:100%;max-width:70px;border-radius:8px 8px 3px 3px;background:linear-gradient(180deg,#60a5fa,#1d4ed8);display:block;animation:drSobe .8s ease-out both;transform-origin:bottom}
+.dr-mes i.v{background:linear-gradient(180deg,#fb7185,#dc2626)}.dr-mes i.p{background:linear-gradient(180deg,#fbbf24,#d97706)}
+@keyframes drSobe{from{transform:scaleY(0)}}
+.dr-lote{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#eef2ff;border-radius:12px;padding:8px 12px;margin-bottom:10px;font-size:12.8px;color:#312e81;font-weight:700}
+.dr-tab td{vertical-align:middle}.dr-n{text-align:right;white-space:nowrap}
+.dr-bt{border:0;border-radius:9px;padding:6px 10px;font:inherit;font-size:11.5px;font-weight:800;background:#1d4ed8;color:#fff;cursor:pointer;white-space:nowrap}
+.dr-bt:hover{filter:brightness(1.1)}.dr-bt.ex{background:#eef2ff;color:#4338ca}.dr-bt:disabled{opacity:.45;cursor:not-allowed}
+.dr-ok{color:#047857!important;font-weight:700}.dr-ok a{color:inherit;text-decoration:none}.dr-ok a:hover{text-decoration:underline}
+.dr-pasta{margin-top:12px}
+.dr-ov{position:fixed;inset:0;background:rgba(20,23,51,.45);backdrop-filter:blur(2px);display:grid;place-items:center;z-index:9000;animation:fsUp .2s both}
+.dr-md{width:min(700px,94vw);max-height:92vh;overflow:auto;background:var(--panel);border-radius:22px;box-shadow:0 30px 60px -20px rgba(20,23,51,.6)}
+.dr-mh{padding:18px 24px;background:linear-gradient(135deg,#0ea5e9,#1d4ed8);color:#fff}
+.dr-mh small{opacity:.85;font-size:11.5px;font-weight:800;letter-spacing:.06em}.dr-mh h2{margin:4px 0 2px;font-size:19px}.dr-mh p{margin:0;opacity:.92;font-size:12.5px}
+.dr-mb{padding:18px 24px}.dr-mf{display:flex;justify-content:flex-end;gap:10px;padding:14px 24px;border-top:1px solid var(--line)}
+.dr-res{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.dr-res div{background:var(--bg,#f6f7fb);border-radius:12px;padding:9px 12px;font-size:11.5px;color:var(--ink2)}.dr-res b{display:block;font-size:14.5px;color:var(--ink);margin-top:2px}
+.dr-res .dr-in{color:#b91c1c}.dr-res .dr-pe{color:#9a5b00}.dr-res .dr-ok{color:#047857}
+.dr-q{font-weight:800;font-size:14px;margin-bottom:9px}
+.dr-ds{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
+.dr-d{border:1.6px solid var(--line);border-radius:13px;padding:9px 12px;font:inherit;font-size:11.5px;color:var(--ink2);background:var(--panel);text-align:left;cursor:pointer}
+.dr-d b{display:block;font-size:14px;color:var(--ink)}.dr-d.on{border-color:#1d4ed8;background:#eff6ff;box-shadow:0 0 0 3px rgba(29,78,216,.12)}
+.dr-cal{font-size:12.5px;margin-bottom:14px;display:flex;gap:8px;align-items:center}
+.dr-cal select,.dr-cal input{border:1.5px solid var(--line);border-radius:10px;padding:7px 10px;font:inherit;font-weight:700;background:var(--panel);color:var(--ink)}
+.dr-cap{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+.dr-cap img{height:48px;border-radius:10px;border:1.5px solid var(--line);background:#fff}
+.dr-cap input{flex:1;border:1.6px solid #1d4ed8;border-radius:10px;padding:12px;font:inherit;font-size:16px;font-weight:800;letter-spacing:4px;box-shadow:0 0 0 3px rgba(29,78,216,.12)}
+.dr-rf{width:44px;height:48px;border:0;border-radius:10px;background:#f59e0b;color:#fff;font-size:20px;font-weight:800;cursor:pointer}
+.dr-msg{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:12px;padding:10px 13px;font-size:12.5px;margin-bottom:12px;line-height:1.45}
+.dr-arq{background:var(--bg,#f6f7fb);border-radius:12px;padding:10px 13px;font-size:12px;color:var(--ink2);line-height:1.75;margin-bottom:10px;word-break:break-all}
+.dr-arq b{color:var(--ink)}.dr-arq code{font-family:Consolas,monospace;font-size:11.5px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+.dr-op{display:flex;gap:8px;align-items:center;font-size:12.8px;margin:6px 0}
+.dr-inf{margin-top:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:9px 12px;font-size:12px;color:#78350f;line-height:1.45}
+.dr-esp{display:flex;gap:12px;align-items:center;padding:26px 6px;font-size:13.5px;font-weight:600}
+.dr-esp i{width:20px;height:20px;border-radius:50%;border:3px solid #bfdbfe;border-top-color:#1d4ed8;animation:fcGira .8s linear infinite}
+.dr-fe{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:12.8px}
+.dr-fe small{display:block;color:var(--ink2);font-size:11.5px}
+.dr-cap input::placeholder{letter-spacing:normal;font-weight:500;font-size:13px}

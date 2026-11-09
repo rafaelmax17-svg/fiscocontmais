@@ -264,6 +264,11 @@
         <span>Fisconforme</span>
         <em class="nav-new" id="fiscNewBadge" hidden>NOVO</em>
       </button>
+      <button class="nav-item" data-group="fiscal" data-view="fiscal-dare" title="Débitos e DARE · SEFIN-RO">
+        <b class="ic-app azul"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2.5" fill="#fff"/><path d="M8 8h8M8 12h5M8 16h8" stroke="#1d4ed8" stroke-width="1.8" stroke-linecap="round"/></svg></b>
+        <span>Débitos e DARE</span>
+        <em class="nav-new" id="dareNewBadge" hidden>NOVO</em>
+      </button>
       <button class="nav-item" data-group="fiscal" data-view="manual-fiscal">
         <svg viewBox="0 0 24 24" class="ic"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5M8 7h8M8 11h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Manual do Fiscal</span>
@@ -1202,6 +1207,7 @@
       </div>
 
       <div class="view" id="view-fiscal-fisconforme" hidden><div id="fcRaiz" class="fc"></div></div>
+      <div class="view" id="view-fiscal-dare" hidden><div id="drRaiz" class="fc dr"></div></div>
       <div class="view" id="view-admin-integra" hidden><div id="igRaiz" class="ig"></div></div>
 
       <div class="view" id="view-admin-lic" hidden>
@@ -1526,5 +1532,6 @@
 <script src="fechamento-sn.js"></script>
 <script src="integra-admin.js"></script>
 <script src="fisconforme.js"></script>
+<script src="dare.js"></script>
 </body>
 </html>
