@@ -35,6 +35,7 @@
     const d = await window.fiscocont.dare.dados(R.ano);
     if (d && d.error) { $('#drRaiz').innerHTML = `<div class="lic-empty">${e(d.error)}</div>`; return; }
     R.d = d; R.anim = true;
+    badge();
     if (R.semCert && !d.meta) { semCertificado(); return; }
     desenhar();
   }
@@ -385,6 +386,23 @@
     const r = await window.fiscocont.dare.exportar(html, nome);
     if (r && r.error) toast(r.error, true); else if (r && r.ok) toast('PDF salvo.');
   }
+
+  // cartão do menu: quantos débitos vencem nos próximos 7 dias (hoje incluído); pulsa quando há vencido
+  async function badge() {
+    const el = document.getElementById('dareCnt'), rs = document.getElementById('dareResumo'); if (!el) return;
+    const nav = el.closest('.nav-item');
+    if (nav && nav.classList.contains('role-hidden')) { el.hidden = true; return; }
+    const r = await window.fiscocont.dare.resumo(String(new Date().getFullYear())).catch(() => null);
+    if (!r || r.error || !Array.isArray(r.vencs)) { el.hidden = true; if (rs) rs.textContent = 'Débitos da SEFIN'; return; }
+    const h = hoje0();
+    let sete = 0, vencN = 0, vencV = 0;
+    r.vencs.forEach((x) => { const d = dt(x.v); if (!d) return; const n = Math.round((d - h) / 864e5); if (n >= 0 && n <= 7) sete++; else if (n < 0) { vencN++; vencV += x.x || 0; } });
+    el.textContent = sete.toLocaleString('pt-BR'); el.hidden = !sete;
+    el.classList.toggle('nova', vencN > 0);
+    el.title = `${sete} vencem em 7 dias${vencN ? ` · ${vencN} vencido(s)` : ''}`;
+    if (rs) rs.textContent = sete ? `${sete} vence${sete === 1 ? '' : 'm'} em 7 dias` : vencN ? `${vencN} vencido${vencN === 1 ? '' : 's'}` : 'Nenhum vencimento próximo';
+  }
+  window._dareBadge = badge;
 
   window._dareEntrar = entrar;
 })();

@@ -65,9 +65,11 @@
     const nav = el.closest('.nav-item');
     if (nav && nav.classList.contains('role-hidden')) { el.hidden = true; return; }
     const r = await window.fiscocont.fisconforme.resumo().catch(() => null);
+    const rs = document.getElementById('fiscResumo');
     if (!r || r.error || r.pendentes == null) { el.hidden = true; return; }
     el.textContent = r.pendentes.toLocaleString('pt-BR');   // quantidade exata, sem abreviar
     el.hidden = !r.pendentes;
+    if (rs) rs.textContent = r.pendentes ? `${r.pendentes.toLocaleString('pt-BR')} pendente${r.pendentes === 1 ? '' : 's'}${r.novas && !r.primeira ? ` · ${r.novas} nova${r.novas === 1 ? '' : 's'}` : ''}` : 'Nenhuma pendente';
     el.classList.toggle('nova', !!r.novas && !r.primeira);
     el.title = `${r.pendentes} pendente(s)${r.novas && !r.primeira ? ` · ${r.novas} nova(s) na última leitura` : ''}`;
   }

@@ -1615,3 +1615,26 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .dr-tl .pico i{background:linear-gradient(180deg,#fbbf24,#d97706)}.dr-tl .hj i{outline:2px solid #10b981;outline-offset:2px}
 .dr-tl .on i{background:linear-gradient(180deg,#34d399,#059669)}
 .dr-tlx{display:flex;gap:4px;font-size:9.5px;color:var(--ink2);margin-top:4px}.dr-tlx span{flex:1;text-align:center;white-space:nowrap}
+
+/* Menu: grupo SEFIN-RO com os dois cartões em destaque (Fisconforme e Débitos e DARE) */
+.nav-group-sefin{color:#fbbf24;display:flex;align-items:center;gap:8px}
+.nav-group-sefin::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(251,191,36,.45),transparent)}
+.nav-item.nav-card{position:relative;overflow:hidden;flex-shrink:0;min-height:58px;margin:6px 0;padding:10px 12px;border-radius:14px;color:#fff;gap:11px}
+.nav-item.nav-card.nc-fisc{background:linear-gradient(135deg,#f97316,#e11d48);box-shadow:0 10px 22px -12px #e11d48}
+.nav-item.nav-card.nc-dare{background:linear-gradient(135deg,#0ea5e9,#1d4ed8);box-shadow:0 10px 22px -12px #1d4ed8}
+.nav-item.nav-card::after{content:'';position:absolute;right:-22px;top:-22px;width:72px;height:72px;border-radius:50%;background:rgba(255,255,255,.1);pointer-events:none}
+.nav-item.nav-card:hover:not(.disabled){color:#fff;filter:brightness(1.08);transform:translateY(-1px)}
+.nav-item.nav-card.nc-fisc:hover{background:linear-gradient(135deg,#f97316,#e11d48)}.nav-item.nav-card.nc-dare:hover{background:linear-gradient(135deg,#0ea5e9,#1d4ed8)}
+.nav-item.nav-card.active{box-shadow:0 0 0 2px rgba(255,255,255,.85),0 12px 24px -12px #000}
+.nav-item.nav-card.nc-fisc.active{background:linear-gradient(135deg,#f97316,#e11d48)}.nav-item.nav-card.nc-dare.active{background:linear-gradient(135deg,#0ea5e9,#1d4ed8)}
+.nc-ic{width:34px;height:34px;flex:0 0 auto;border-radius:10px;background:rgba(255,255,255,.2);display:grid;place-items:center}
+.nc-ic svg{width:19px;height:19px}
+.nav-item.nc-fisc:hover .nc-ic svg{animation:fcSino .7s ease-in-out}
+.nc-tx{display:flex;flex-direction:column;min-width:0;flex:1;line-height:1.25}
+.nc-tx span{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nc-tx small{font-size:11px;opacity:.88;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nc-cnt{flex:0 0 auto;min-width:22px;height:20px;padding:0 7px;border-radius:10px;background:rgba(255,255,255,.95);font-style:normal;font-size:10.5px;font-weight:800;display:grid;place-items:center;position:relative;z-index:1}
+.nc-fisc .nc-cnt{color:#be123c}.nc-dare .nc-cnt{color:#1d4ed8}
+.nc-cnt[hidden]{display:none}
+.nc-cnt.nova{animation:ncPulso 1.6s ease-in-out infinite}
+@keyframes ncPulso{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,.7)}50%{box-shadow:0 0 0 6px rgba(255,255,255,0)}}

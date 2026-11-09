@@ -576,6 +576,7 @@ const _dare = async (fn) => {
 };
 ipcMain.handle('dare:ler', (_evt, ano) => _dare(() => dare.ler(ano)));
 ipcMain.handle('dare:dados', (_evt, ano) => _dare(() => dare.dados(ano)));
+ipcMain.handle('dare:resumo', (_evt, ano) => _dare(() => dare.resumo(ano)));
 ipcMain.handle('dare:previa', (_evt, x) => _dare(() => dare.previa(x)));
 ipcMain.handle('dare:preparar', (_evt, x) => _dare(() => dare.preparar(x)));
 ipcMain.handle('dare:novoCodigo', () => _dare(() => dare.novoCodigo()));

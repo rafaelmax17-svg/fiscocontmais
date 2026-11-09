@@ -3,6 +3,13 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.20
+
+- **Menu:** novo grupo "SEFIN-RO" no final do Fiscal, com o Fisconforme e o Débitos e DARE como cartões (modelo B, na posição dos modelos A e C). O selo NOVO saiu desses dois.
+- **Número do Débitos e DARE:** débitos que vencem nos próximos 7 dias, com hoje incluído; pulsa quando há vencido.
+  - A consulta passa a gravar no `_meta_<ano>` um resumo leve (vencimento e valor de cada débito), para o menu ler um documento só.
+  - Para consultas feitas antes desta versão, o número é montado a partir das empresas.
+
 ## 2.2.19
 
 - **Débitos e DARE:** painel no modelo A (executivo), aprovado pelo Rafael.

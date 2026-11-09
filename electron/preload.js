@@ -74,6 +74,7 @@ contextBridge.exposeInMainWorld('fiscocont', {
   dare: {
     ler: (ano) => ipcRenderer.invoke('dare:ler', ano),
     dados: (ano) => ipcRenderer.invoke('dare:dados', ano),
+    resumo: (ano) => ipcRenderer.invoke('dare:resumo', ano),
     previa: (x) => ipcRenderer.invoke('dare:previa', x),
     preparar: (x) => ipcRenderer.invoke('dare:preparar', x),
     novoCodigo: () => ipcRenderer.invoke('dare:novoCodigo'),

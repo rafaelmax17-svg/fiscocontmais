@@ -307,6 +307,7 @@ async function ler(ano) {
     const { db, f } = _fs();
     const ses = auth.sessao() || {};
     let comDebito = 0, total = 0, falhas = 0;
+    const vencs = [];                                  // resumo leve para o número do menu: vencimento + valor de cada débito
     for (let i = 0; i < ies.length; i++) {
       const m = ies[i].t.match(/^(\d{8,14})\s*-\s*(.+)$/);
       const ie = m ? m[1] : _so(ies[i].t), nome = m ? m[2].trim() : ies[i].t;
@@ -318,6 +319,7 @@ async function ler(ano) {
         const linhas = res.r.linhas.map((l) => ({ ...l, valorN: _num(l.valor), valorAtuN: _num(l.valorAtu) }));
         doc = { ie, nome, razao: res.r.cab.razao || nome, cnpj: _so(res.r.cab.cnpj), ano, debitos: linhas, lidoEm: lid, erro: '' };
         if (linhas.length) { comDebito++; total += linhas.reduce((s, l) => s + l.valorN, 0); }
+        linhas.forEach((l) => vencs.push({ v: l.venc, x: l.valorN }));
         P.log(`${ie} ${nome}: ${linhas.length} débito(s)`);
       } catch (e) {
         falhas++; P.log(`${ie} ${nome}: ${e.message || e}`);
@@ -327,7 +329,7 @@ async function ler(ano) {
       await P.vai(URL_CONSULTA, 45000);
     }
     const resumo = { ultimaLeitura: lid, por: ses.nome || ses.email || '', ano, empresas: ies.length, comDebito, total: Math.round(total * 100) / 100,
-      falhas, duracaoSeg: Math.round((Date.now() - inicio) / 1000), contador: { nome: P.cfg().nome || '' } };
+      falhas, duracaoSeg: Math.round((Date.now() - inicio) / 1000), contador: { nome: P.cfg().nome || '' }, vencs };
     await f.setDoc(f.doc(db, COL, `_meta_${ano}`), resumo, { merge: true });
     _prog('', { fim: true });
     return { ok: true, ...resumo };
@@ -335,6 +337,20 @@ async function ler(ano) {
     P.log(`débitos: parou · ${e.message || e}`); _prog('', { fim: true });
     throw e;
   } finally { _lendo = false; P.liberar(true); }
+}
+
+// resumo para o cartão do menu: só o _meta do exercício (vencimentos e valores, sem as empresas)
+async function resumo(ano) {
+  _exige();
+  ano = String(ano || new Date().getFullYear());
+  const { db, f } = _fs();
+  const m = (await f.getDoc(f.doc(db, COL, `_meta_${ano}`))).data() || null;
+  if (!m) return { vencs: null };
+  if (Array.isArray(m.vencs)) return { vencs: m.vencs };
+  // consulta feita antes desta versão: monta a partir das empresas
+  const vencs = [];
+  (await f.getDocs(f.collection(db, COL))).forEach((d) => { if (d.id.startsWith(`${ano}_`)) (d.data().debitos || []).forEach((l) => vencs.push({ v: l.venc, x: l.valorN || 0 })); });
+  return { vencs };
 }
 
 async function dados(ano) {
@@ -510,4 +526,4 @@ async function emitir({ data, codigo, comExtrato }) {
 }
 function cancelar() { if (_prep) _fechaPrep(); return { ok: true }; }
 
-module.exports = { init, podeUsar, ler, dados, previa, preparar, novoCodigo, emitir, cancelar, extrato, PASTA_PADRAO };
+module.exports = { init, podeUsar, ler, resumo, dados, previa, preparar, novoCodigo, emitir, cancelar, extrato, PASTA_PADRAO };
