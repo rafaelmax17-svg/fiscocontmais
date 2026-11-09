@@ -3,6 +3,17 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.10
+
+- **Fisconforme · SEFIN-RO (novo, só Admin por enquanto):** acompanha as notificações do Fisconforme (Decreto 23.856/2019) de todas as empresas vinculadas ao contador.
+  - **Certificado:** ao abrir o módulo, confere antes de tudo se há e-CPF instalado no Windows (Cert:\CurrentUser\My, com chave privada). Sem certificado → aviso e nada é consultado; mais de um → o Admin escolhe o do contador (fica gravado neste computador).
+  - **Robô:** janela escondida, SSO da SEFIN pela aba "Acesso via cert. digital" com o e-CPF escolhido (sem captcha; se aparecer captcha, para e avisa). Lê as listas pendente, contestado, indeferido e resolvido, página por página. Se não conseguir entrar, salva um print da última tela (fisconforme_login.png na pasta de dados).
+  - **Nunca abre a notificação sozinho** (abrir = ciência, art. 3º, § 3º). Liga cada notificação ao CNPJ pela lista de empresas vinculadas que o próprio portal traz (IE + nome).
+  - **Nuvem:** coleção fisconforme (regra nova: só Admin), um documento por código: situação, desde quando, data em que o robô encontrou, página. Notificação que some de todas as listas → "Saiu das listas".
+  - **Painel:** pendentes, novas na última leitura, contestadas, indeferidas, resolvidas no mês; gráfico por malha; empresas com mais pendências; filtros por situação, empresa, malha e busca.
+  - **Entenda esta malha:** explicação da malha sem abrir a notificação e sem dado do cliente (função explicarFisconforme na nuvem, só Admin; guardada por malha; uso registrado em uso_ia). O texto não fala em "IA".
+  - **Visualizar:** com confirmação ("dá ciência"), o robô abre a notificação no portal, guarda o texto, a data da ciência e o prazo (quando aparece), e gera a explicação daquela notificação — o texto vai sem CNPJ, CPF, IE e sem o nome da empresa.
+
 ## 2.2.9
 
 - **Corretor do SPED Fiscal · acumulador 7000 com memória:** cada produto aplicado fica gravado na nuvem (coleção memoria_admin, regra nova: só o Admin lê e grava) — descrição + NCM → acumulador, quem e quando. No próximo arquivo, de qualquer cliente, o produto já vem como **"Confirmado por <nome> em <data>"**, à frente da regra por descrição/NCM. A tela troca "Confiança alta/média" por quem decidiu: **Confirmado** (equipe), **Sistema · descrição e NCM**, **Sistema · só descrição ou NCM** e **Precisa de você** (sem acumulador — escolhe uma vez e fica gravado). Filtros novos para cada grupo; "Marcar confirmados e decididos pelo sistema". Sem a palavra "sugestão" na tela.

@@ -286,6 +286,10 @@ async function trocarSenha(userDataDir, nova, salvar) {
   }
 }
 
+async function explicarFisconforme(dados) {
+  if (!_sessao) throw new Error('Entre com o seu usuário.');
+  return _chamar('explicarFisconforme', dados || {});
+}
 async function chatIA(mensagem, historico) {
   if (!logado()) throw new Error('Entre com o seu usuário (e com internet) para usar o chat.');
   return _chamar('chatIA', { mensagem, historico });
@@ -386,5 +390,5 @@ async function statusLicenca(codigo, status) {
 
 module.exports = {
   ADMIN_INICIAL, conectado, salvoPublico, salvoApagar, limpaOfflineAntigo, login, logout, confereSenha, redefinirSenha, criarAdminInicial, sessao, logado, db, fsMod,
-  listarUsuarios, cadastrarUsuario, novaSenhaProvisoria, alterarUsuario, cancelarConvite, trocarSenha, chatIA, listarLicencas, statusLicenca,
+  listarUsuarios, cadastrarUsuario, novaSenhaProvisoria, alterarUsuario, cancelarConvite, trocarSenha, chatIA, explicarFisconforme, listarLicencas, statusLicenca,
 };

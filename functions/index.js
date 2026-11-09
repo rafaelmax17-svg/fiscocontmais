@@ -122,3 +122,52 @@ exports.chatIA = onCall({ timeoutSeconds: 120, memory: '256MiB' }, async (req) =
   const texto = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
   return { texto, resposta: { role: 'assistant', content: data.content } };
 });
+
+// ------------------------------------------------------------------ Fisconforme (SEFIN-RO) — explicação da notificação
+// Só o Admin. Recebe a malha e, se houver, o texto da notificação JÁ SEM CNPJ, CPF, IE e nome do cliente (o programa
+// tira antes de mandar; aqui tiramos de novo por segurança). Cada uso fica registrado em uso_ia.
+const SISTEMA_FISCONFORME = `Você explica notificações do FISCONFORME, o programa de autorregularização da Secretaria de Estado de Finanças de Rondônia (SEFIN-RO, Decreto 23.856/2019), para a equipe fiscal de um escritório de contabilidade.
+
+Responda em português, em texto corrido e curto, com estas 4 partes, cada uma começando pelo título em negrito:
+**O que a SEFIN encontrou** — em 2 ou 3 frases, o cruzamento que gerou a malha (por exemplo NF-e emitida contra a empresa × EFD ICMS/IPI entregue).
+**Causas mais comuns** — 2 a 4 itens curtos, separados por ponto e vírgula, do que costuma provocar isso no escritório (nota não escriturada, nota de outro período, chave errada, nota cancelada/denegada, desconhecimento da operação etc.).
+**Como regularizar** — o caminho prático: retificar a EFD (quais registros), recolher a diferença, manifestar o destinatário, ou contestar pelo Processo online com documentos, conforme o caso. Diga que pagar/regularizar dentro do prazo exclui a notificação e afasta a multa moratória (art. 3º, §§ 1º e 2º do Decreto 23.856/2019, benefício 1 vez a cada 6 meses).
+**Quando vale contestar** — 1 ou 2 frases.
+
+Regras: não invente valores, artigos ou prazos que não estejam no texto recebido ou na legislação; se o texto da notificação trouxer prazo, valor ou período, destaque-os. Nunca use as palavras "IA", "inteligência artificial" ou "assistente". Sem preâmbulo, sem despedida, sem markdown além do negrito dos títulos.`;
+
+function _anonimiza(t) {
+  return String(t || '')
+    .replace(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/g, '[CNPJ]')
+    .replace(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/g, '[CPF]')
+    .replace(/\b\d{9,14}\b/g, '[IE]')
+    .slice(0, 6000);
+}
+
+exports.explicarFisconforme = onCall({ timeoutSeconds: 120, memory: '256MiB' }, async (req) => {
+  const quem = await quemChamou(req, true);
+  const malha = String(req.data?.malha || '').slice(0, 200).trim();
+  const periodo = String(req.data?.periodo || '').replace(/\D/g, '').slice(0, 6);
+  const detalhe = _anonimiza(req.data?.detalhe || '');
+  if (!malha) throw new HttpsError('invalid-argument', 'Informe a malha.');
+  const cfg = await db.doc('config/chat_ia').get();
+  const chave = cfg.exists ? cfg.data().anthropic_key : null;
+  if (!chave) throw new HttpsError('failed-precondition', 'Chave ainda não configurada na nuvem (config/chat_ia).');
+  const pedido = `Malha do Fisconforme: ${malha}` + (periodo ? `\nPeríodo de referência: ${periodo.slice(4)}/${periodo.slice(0, 4)}` : '')
+    + (detalhe ? `\n\nTexto da notificação (dados do contribuinte removidos):\n${detalhe}` : '\n\n(Sem o texto da notificação: explique a malha de forma geral.)');
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1100, system: SISTEMA_FISCONFORME,
+      messages: [{ role: 'user', content: pedido }] }),
+  });
+  if (!resp.ok) {
+    const t = await resp.text().catch(() => '');
+    throw new HttpsError('internal', `Erro ao gerar a explicação (${resp.status}): ${t.slice(0, 200)}`);
+  }
+  const data = await resp.json();
+  const texto = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+  await db.collection('uso_ia').add({ modulo: 'fisconforme', uid: quem.uid, email: quem.email, malha,
+    comDetalhe: !!detalhe, em: FieldValue.serverTimestamp() }).catch(() => {});
+  return { texto };
+});

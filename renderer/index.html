@@ -309,6 +309,11 @@
         <svg viewBox="0 0 24 24" class="ic"><rect x="4" y="11" width="16" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 11V7a5 5 0 0110 0v4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
         <span>Licenças de acesso</span>
       </button>
+      <button class="nav-item" data-group="admin-only" data-view="admin-fisconforme">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M6 3h9l4 4v14H6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 11h7M9 15h7M9 7h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="18" cy="5" r="3" fill="#f97316" stroke="none"/></svg>
+        <span>Fisconforme · SEFIN-RO</span>
+        <em class="nav-new" id="fiscNewBadge" hidden>NOVO</em>
+      </button>
       <button class="nav-item" data-group="admin-only" data-view="admin-integra">
         <svg viewBox="0 0 24 24" class="ic"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Integra Contador · Serpro</span>
@@ -1196,6 +1201,7 @@
         </div>
       </div>
 
+      <div class="view" id="view-admin-fisconforme" hidden><div id="fcRaiz" class="fc"></div></div>
       <div class="view" id="view-admin-integra" hidden><div id="igRaiz" class="ig"></div></div>
 
       <div class="view" id="view-admin-lic" hidden>
@@ -1519,5 +1525,6 @@
 <script src="app.js"></script>
 <script src="fechamento-sn.js"></script>
 <script src="integra-admin.js"></script>
+<script src="fisconforme.js"></script>
 </body>
 </html>

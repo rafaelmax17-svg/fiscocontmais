@@ -548,6 +548,17 @@ integra.init({
     return '';
   },
 });
+// ---- Fisconforme (SEFIN-RO): notificações de todas as empresas, com o e-CPF do contador — só Admin (electron/fisconforme.js)
+const fisconforme = require('./fisconforme');
+fisconforme.init({ userData: () => app.getPath('userData'), notificar: (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} } });
+ipcMain.handle('fisc:estado', () => _adm(() => fisconforme.estado()));
+ipcMain.handle('fisc:escolherCert', (_evt, cpf) => _adm(() => fisconforme.escolherCert(cpf)));
+ipcMain.handle('fisc:ler', () => _adm(() => fisconforme.ler()));
+ipcMain.handle('fisc:dados', () => _adm(() => fisconforme.dados()));
+ipcMain.handle('fisc:explicarMalha', (_evt, { cod, nome }) => _adm(() => fisconforme.explicarMalha(cod, nome)));
+ipcMain.handle('fisc:visualizar', (_evt, codigo) => _adm(() => fisconforme.visualizar(codigo)));
+ipcMain.handle('fisc:abrirPortal', () => { shell.openExternal('https://fisconforme.sefin.ro.gov.br/contribuintes/pendente'); return { ok: true }; });
+
 ipcMain.handle('integra:estado', () => _adm(async () => ({ local: await integra.estadoLocal(), nuvem: await integra.estadoNuvem().catch(() => null) })));
 ipcMain.handle('integra:salvarChave', (_evt, dados) => _adm(() => integra.salvarChave(dados || {})));
 ipcMain.handle('integra:testar', () => _adm(() => integra.testar()));

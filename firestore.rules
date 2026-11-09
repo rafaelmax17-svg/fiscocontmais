@@ -1,5 +1,5 @@
 rules_version = '2';
-// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.2.9.
+// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.2.10.
 // Publicadas automaticamente pelo GitHub (workflow "Publicar funções e regras no Firebase").
 // Publicar em: Console do Firebase > Firestore Database > Regras > colar este arquivo inteiro > Publicar.
 //
@@ -124,6 +124,11 @@ service cloud.firestore {
 
     // Memória das decisões do Admin (ex.: acumulador 7000: descrição + NCM → acumulador) — só o Admin lê e grava.
     match /memoria_admin/{doc} {
+      allow read, write: if admin();
+    }
+
+    // Fisconforme (SEFIN-RO): notificações lidas do portal pelo robô do Admin — por enquanto só o Admin vê.
+    match /fisconforme/{doc} {
       allow read, write: if admin();
     }
 

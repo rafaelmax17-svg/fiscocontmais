@@ -57,6 +57,16 @@ contextBridge.exposeInMainWorld('fiscocont', {
     abrirPasta: (pasta) => ipcRenderer.invoke('integra:abrirPasta', pasta),
     onMudou: (cb) => { ipcRenderer.removeAllListeners('fech:mudou'); ipcRenderer.on('fech:mudou', (_e, d) => cb(d)); },
   },
+  fisconforme: {
+    estado: () => ipcRenderer.invoke('fisc:estado'),
+    escolherCert: (cpf) => ipcRenderer.invoke('fisc:escolherCert', cpf),
+    ler: () => ipcRenderer.invoke('fisc:ler'),
+    dados: () => ipcRenderer.invoke('fisc:dados'),
+    explicarMalha: (cod, nome) => ipcRenderer.invoke('fisc:explicarMalha', { cod, nome }),
+    visualizar: (codigo) => ipcRenderer.invoke('fisc:visualizar', codigo),
+    abrirPortal: () => ipcRenderer.invoke('fisc:abrirPortal'),
+    onProgresso: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('fisc:progresso', h); return () => ipcRenderer.removeListener('fisc:progresso', h); },
+  },
   integra: {
     estado: () => ipcRenderer.invoke('integra:estado'),
     salvarChave: (dados) => ipcRenderer.invoke('integra:salvarChave', dados),
