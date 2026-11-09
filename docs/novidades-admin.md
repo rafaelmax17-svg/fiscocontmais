@@ -3,6 +3,12 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.14
+
+- Ícone do Fisconforme no menu no modelo "ícone de app" escolhido (opção C), com o nome encurtado para "Fisconforme" (o "SEFIN-RO" fica na dica ao passar o mouse e no título do módulo).
+- O contador vem só do resumo da última leitura (documento _meta), sem ler as notificações. Ele é atualizado ao entrar no sistema e depois de cada leitura.
+- Logo do Fisconforme no topo do módulo (renderer/img/fisconforme-logo.png), a partir da imagem enviada. Se houver uma versão maior da logo, basta trocar o arquivo.
+
 ## 2.2.13
 
 - **Fisconforme liberado para a equipe:** o módulo saiu de "Administração" e foi para o menu **Fiscal**. Quem vê: Admin, todo o perfil Fiscal que está no padrão do perfil, e quem tem lista própria de módulos com "Fisconforme · SEFIN-RO" marcado em Usuários → Módulos liberados. Quem tem lista própria **não** recebe o módulo sozinho: é preciso marcar.

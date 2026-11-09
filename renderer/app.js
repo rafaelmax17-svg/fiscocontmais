@@ -4010,6 +4010,7 @@ function _entrou(res) {
   const ut = $('#userTag');
   if (ut && SESSAO.info) ut.textContent = `${SESSAO.info.nome} · ${({ admin: 'Admin', fiscal: 'Fiscal', contabil: 'Contábil' })[SESSAO.info.perfil] || ''}${SESSAO.info.offline ? ' · sem internet' : ''}`;
   applyRole(res.role, (res.sessao || {}).modulos || null);
+  if (window._fiscBadge) window._fiscBadge();
   if (res.aviso) toast(res.aviso);
   _saudacaoLiga();
   verificarNovidades();

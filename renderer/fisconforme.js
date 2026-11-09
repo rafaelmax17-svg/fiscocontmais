@@ -11,6 +11,7 @@
   const dBr = (iso) => iso ? iso.slice(0, 10).split('-').reverse().join('/') : '';
   const dias = (iso) => iso ? Math.max(0, Math.round((Date.now() - new Date(iso.slice(0, 10) + 'T12:00:00')) / 864e5)) : 0;
   let desliga = null;
+  const LOGO = '<div class="fc-logo"><img src="img/fisconforme-logo.png" alt="Fisconforme"></div>';
   const ehAdm = () => typeof ROLE !== 'undefined' && ROLE === 'admin';
 
   async function entrar() {
@@ -36,7 +37,7 @@
   // ------------------------------------------------------------------ sem certificado: avisa antes de qualquer coisa
   function semCertificado() {
     const est = F.est;
-    $('#fcRaiz').innerHTML = `<div class="fc-hd"><div><span class="fc-tag">SEFIN-RO · FISCONFORME</span><h2>Notificações do Fisconforme</h2></div></div>
+    $('#fcRaiz').innerHTML = `<div class="fc-hd"><div class="fc-tit">${LOGO}<div><span class="fc-tag">SEFIN-RO · FISCONFORME</span><h2>Notificações do Fisconforme</h2></div></div></div>
       <div class="fc-alerta"><b>${est.certs.length ? 'Escolha o certificado do contador' : 'Certificado do contador não encontrado neste computador'}</b>
       ${est.certs.length
         ? `<p>Há mais de um e-CPF instalado no Windows. Escolha o do contador que acessa o Fisconforme:</p>
@@ -55,8 +56,22 @@
   async function carregar() {
     const d = await window.fiscocont.fisconforme.dados();
     if (d && d.error) { toast(d.error, true); return; }
-    F.d = d; desenhar();
+    F.d = d; desenhar(); badge();
   }
+
+  // contador no ícone do menu: pendentes da última leitura; pulsa quando a última leitura trouxe notificação nova
+  async function badge() {
+    const el = document.getElementById('fiscCnt'); if (!el) return;
+    const nav = el.closest('.nav-item');
+    if (nav && nav.classList.contains('role-hidden')) { el.hidden = true; return; }
+    const r = await window.fiscocont.fisconforme.resumo().catch(() => null);
+    if (!r || r.error || r.pendentes == null) { el.hidden = true; return; }
+    el.textContent = r.pendentes > 99 ? '99+' : String(r.pendentes);
+    el.hidden = !r.pendentes;
+    el.classList.toggle('nova', !!r.novas && !r.primeira);
+    el.title = `${r.pendentes} pendente(s)${r.novas && !r.primeira ? ` · ${r.novas} nova(s) na última leitura` : ''}`;
+  }
+  window._fiscBadge = badge;
 
   function contar(notif, meta) {
     const c = { pendente: 0, contestado: 0, indeferido: 0, resolvido: 0, fora: 0, novas: 0, resMes: 0 };
@@ -97,8 +112,8 @@
       .sort((a, b) => (a.primeiraVez || '').localeCompare(b.primeiraVez || '') || a.nome.localeCompare(b.nome));
     const chip = (k, rot, n) => `<button class="fc-f${F.filtro === k ? ' on' : ''}" data-f="${k}">${rot} (${n})</button>`;
     $('#fcRaiz').innerHTML = `
-      <div class="fc-hd"><div><span class="fc-tag">SEFIN-RO · FISCONFORME</span><h2>Notificações do Fisconforme</h2>
-        <p>Todas as empresas vinculadas ao contador · ${e(est.nome || 'contador')}${est.cpf ? ` (e-CPF ${fmtCpf(est.cpf)})` : ''} · o robô lê só as listas, sem abrir a notificação</p></div>
+      <div class="fc-hd"><div class="fc-tit">${LOGO}<div><span class="fc-tag">SEFIN-RO · FISCONFORME</span><h2>Notificações do Fisconforme</h2>
+        <p>Todas as empresas vinculadas ao contador · ${e(est.nome || 'contador')}${est.cpf ? ` (e-CPF ${fmtCpf(est.cpf)})` : ''} · o robô lê só as listas, sem abrir a notificação</p></div></div>
         <div class="fc-acts">${meta ? `<span class="fc-pill">● Última leitura ${e(new Date(meta.ultimaLeitura).toLocaleString('pt-BR').slice(0, 17).replace(',', ''))}${meta.por ? ' · ' + e(meta.por) : ''}</span>` : ''}
           ${adm ? `<label class="fc-chk" title="Abre a janela do navegador do robô para acompanhar a entrada no portal (ajuda no primeiro uso)"><input type="checkbox" id="fcVer"${F.est.mostrarJanela ? ' checked' : ''}> Mostrar o navegador do robô</label>
           <button class="act inv-export" id="fcPortal">Abrir o portal ↗</button>` : ''}

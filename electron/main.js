@@ -561,6 +561,7 @@ ipcMain.handle('fisc:estado', () => _fisc(() => fisconforme.estado()));
 ipcMain.handle('fisc:escolherCert', (_evt, cpf) => _fisc(() => fisconforme.escolherCert(cpf)));
 ipcMain.handle('fisc:ler', () => _fisc(() => fisconforme.ler()));
 ipcMain.handle('fisc:dados', () => _fisc(() => fisconforme.dados()));
+ipcMain.handle('fisc:resumo', () => _fisc(() => fisconforme.resumo()));
 ipcMain.handle('fisc:explicarMalha', (_evt, { cod, nome }) => _fisc(() => fisconforme.explicarMalha(cod, nome)));
 ipcMain.handle('fisc:visualizar', (_evt, codigo) => _fisc(() => fisconforme.visualizar(codigo)));
 ipcMain.handle('fisc:mostrarJanela', (_evt, sim) => _adm(() => fisconforme.mostrarJanela(sim)));

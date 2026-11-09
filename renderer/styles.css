@@ -1504,3 +1504,23 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .fc-ex{font-size:12.6px;line-height:1.6}
 .fc-aviso{margin-top:12px;background:#fff7e6;border:1px solid #f5d69a;color:#7c4a03;border-radius:12px;padding:10px 14px;font-size:12px;line-height:1.5}
 .fc-chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2);white-space:nowrap}
+
+/* Fisconforme: ícone de app no menu (sino branco no quadrado laranja) com contador de pendentes */
+.nav-item .ic-app{position:relative;width:22px;height:22px;flex:0 0 auto;border-radius:7px;display:grid;place-items:center;
+  background:linear-gradient(135deg,#f97316,#e11d48);box-shadow:0 4px 10px -3px rgba(249,115,22,.7)}
+.nav-item .ic-app svg{width:14px;height:14px}
+.nav-item:hover .ic-app svg{animation:fcSino .7s ease-in-out}
+.ic-cnt{position:absolute;top:-7px;right:-10px;min-width:17px;height:15px;padding:0 4px;border-radius:9px;font-style:normal;
+  background:linear-gradient(135deg,#fb923c,#ef4444);color:#fff;font-size:9px;font-weight:800;display:grid;place-items:center;
+  box-shadow:0 0 0 2px var(--side,#141733)}
+.ic-cnt[hidden]{display:none}
+.ic-cnt.nova{animation:fcCnt 1.6s ease-in-out infinite}
+@keyframes fcSino{0%,100%{transform:rotate(0)}20%{transform:rotate(16deg)}45%{transform:rotate(-13deg)}70%{transform:rotate(7deg)}}
+@keyframes fcCnt{0%,100%{box-shadow:0 0 0 2px var(--side,#141733),0 0 0 0 rgba(239,68,68,.6)}50%{box-shadow:0 0 0 2px var(--side,#141733),0 0 0 6px rgba(239,68,68,0)}}
+/* Fisconforme: logo no topo do módulo */
+.fc-tit{display:flex;gap:18px;align-items:center}
+.fc-logo{width:96px;height:84px;flex:0 0 auto;background:#fff;border-radius:18px;display:grid;place-items:center;
+  box-shadow:0 12px 28px -16px rgba(30,40,90,.45),inset 0 0 0 1px #e8ecf5;animation:fcLogo .7s both}
+.fc-logo img{width:74px;height:auto}
+@keyframes fcLogo{from{opacity:0;transform:translateY(8px) scale(.94)}to{opacity:1;transform:none}}
+.fc-acts .act{white-space:nowrap}

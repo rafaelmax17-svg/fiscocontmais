@@ -320,6 +320,15 @@ async function dados() {
   return { notif, meta, explicMalha: extras, rodando: _rodando };
 }
 
+// resumo para o ícone do menu: só o documento _meta (não lê as notificações)
+async function resumo() {
+  _exige();
+  const { db, f } = _fs();
+  const m = (await f.getDoc(f.doc(db, COL, '_meta'))).data() || null;
+  return { pendentes: m && m.contagens ? (m.contagens.pendente || 0) : null, novas: m ? (m.novas || 0) : 0,
+    primeira: !!m && m.ultimaLeitura === m.primeiraLeituraGeral };
+}
+
 // ------------------------------------------------------------------ explicação (sem dados do cliente)
 async function explicarMalha(cod, nome) {
   _exige();
@@ -377,4 +386,4 @@ async function visualizar(codigo) {
   }
 }
 
-module.exports = { init, podeUsar, estado, escolherCert, ler, dados, explicarMalha, visualizar, certificados, mostrarJanela, abrirPastaDados };
+module.exports = { init, podeUsar, resumo, estado, escolherCert, ler, dados, explicarMalha, visualizar, certificados, mostrarJanela, abrirPastaDados };
