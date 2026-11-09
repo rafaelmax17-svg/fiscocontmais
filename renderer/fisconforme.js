@@ -59,14 +59,14 @@
     F.d = d; desenhar(); badge();
   }
 
-  // contador no ícone do menu: pendentes da última leitura; pulsa quando a última leitura trouxe notificação nova
+  // contador no ícone do menu: quantidade exata de pendentes da última leitura; pulsa quando a última leitura trouxe notificação nova
   async function badge() {
     const el = document.getElementById('fiscCnt'); if (!el) return;
     const nav = el.closest('.nav-item');
     if (nav && nav.classList.contains('role-hidden')) { el.hidden = true; return; }
     const r = await window.fiscocont.fisconforme.resumo().catch(() => null);
     if (!r || r.error || r.pendentes == null) { el.hidden = true; return; }
-    el.textContent = r.pendentes > 99 ? '99+' : String(r.pendentes);
+    el.textContent = r.pendentes.toLocaleString('pt-BR');   // quantidade exata, sem abreviar
     el.hidden = !r.pendentes;
     el.classList.toggle('nova', !!r.novas && !r.primeira);
     el.title = `${r.pendentes} pendente(s)${r.novas && !r.primeira ? ` · ${r.novas} nova(s) na última leitura` : ''}`;

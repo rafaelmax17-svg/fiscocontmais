@@ -3,6 +3,10 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.15
+
+- Contador do ícone do Fisconforme mostra a quantidade exata de pendentes (antes abreviava para "99+").
+
 ## 2.2.14
 
 - Ícone do Fisconforme no menu no modelo "ícone de app" escolhido (opção C), com o nome encurtado para "Fisconforme" (o "SEFIN-RO" fica na dica ao passar o mouse e no título do módulo).
