@@ -3,6 +3,15 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.19
+
+- **Débitos e DARE:** painel no modelo A (executivo), aprovado pelo Rafael.
+  - Topo escuro com o total em aberto e os 4 cartões, que também filtram a tabela.
+  - Barra de vencidos por faixa de atraso.
+  - Ranking agrupado pela raiz do CNPJ (matriz + filiais; sem CNPJ, agrupa pelo nome).
+  - Gráfico de valor por dia nos próximos 30 dias, com os 3 maiores em laranja e o dia de hoje contornado.
+- **Movimento:** contagem dos números, barras crescendo e cartões entrando. Acontece só ao abrir ou depois de consultar; ao filtrar, a tela não anima de novo.
+
 ## 2.2.18
 
 - **Débitos e DARE:** a página do DARE da SEFIN chama `window.print()` sozinha quando abre, e isso fazia aparecer a janela de impressoras do Windows. Agora a janela da consulta troca essa chamada por nada antes de qualquer página carregar (Page.addScriptToEvaluateOnNewDocument), com reforço em cada página carregada e no clique em EMITIR. O PDF continua sendo salvo direto (printToPDF).

@@ -1573,3 +1573,45 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .dr-fe{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:12.8px}
 .dr-fe small{display:block;color:var(--ink2);font-size:11.5px}
 .dr-cap input::placeholder{letter-spacing:normal;font-weight:500;font-size:13px}
+/* Débitos e DARE · painel executivo (topo escuro, atraso, ranking e próximos 30 dias) */
+.dr-hero{display:grid;grid-template-columns:1.3fr 1fr;gap:26px;border-radius:24px;padding:22px 26px;margin-bottom:16px;color:#fff;
+  background:radial-gradient(1100px 300px at 85% -40%,rgba(56,189,248,.35),transparent),linear-gradient(135deg,#0b1437,#162a6b 55%,#1d4ed8);
+  box-shadow:0 30px 50px -30px #0b1437;position:relative;overflow:hidden}
+.dr-hero::after{content:'';position:absolute;inset:0;background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.07) 45%,transparent 60%);transform:translateX(-100%);pointer-events:none}
+.dr-hero.dr-in::after{animation:drBrilho 1.6s .3s ease-out}
+@keyframes drBrilho{to{transform:translateX(100%)}}
+.dr-ht{display:flex;gap:12px;align-items:center}.dr-ht span{font-size:10.5px;font-weight:800;letter-spacing:.1em;opacity:.75}.dr-ht p{margin:3px 0 0;font-size:13px;opacity:.85}
+.dr-hico{width:44px;height:44px;border-radius:13px;background:rgba(255,255,255,.14);display:grid;place-items:center;flex:0 0 auto}.dr-hico svg{width:24px;height:24px}
+.dr-big{margin:12px 0 4px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.dr-big b{font-size:42px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}.dr-big small{font-size:14px;opacity:.72;font-weight:600}
+.dr-hk{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;margin-top:12px}
+.dr-hk button{all:unset;cursor:pointer;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:10px 13px;transition:background .2s,transform .2s}
+.dr-hk button:hover{background:rgba(255,255,255,.18);transform:translateY(-2px)}.dr-hk button.on{background:rgba(255,255,255,.24);border-color:rgba(255,255,255,.5)}
+.dr-hk b{display:block;font-size:16px;font-variant-numeric:tabular-nums;white-space:nowrap}.dr-hk span{font-size:11.5px;opacity:.78}
+.dr-in .dr-hk button{animation:fsUp .5s both}.dr-in .dr-hk button:nth-child(2){animation-delay:.08s}.dr-in .dr-hk button:nth-child(3){animation-delay:.16s}.dr-in .dr-hk button:nth-child(4){animation-delay:.24s}
+.dr-hb{display:flex;gap:8px;justify-content:flex-end;margin-bottom:14px;flex-wrap:wrap}
+.dr-hb select,.dr-hb button{font:inherit;font-size:12.5px;font-weight:700;color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:11px;padding:8px 13px;cursor:pointer}
+.dr-hb select option{color:#141b2d}.dr-hb button.g{background:#10b981;border-color:#10b981}.dr-hb button.g:hover{background:#059669}.dr-hb button:disabled{opacity:.5;cursor:not-allowed}
+.dr-ag h4{margin:0 0 10px;font-size:13px;opacity:.85}
+.dr-stk{display:flex;height:16px;border-radius:9px;overflow:hidden;background:rgba(255,255,255,.12);margin-bottom:12px}
+.dr-stk i{display:block;height:100%}.dr-in .dr-stk i{animation:drCresce .7s ease-out both;transform-origin:left}
+@keyframes drCresce{from{transform:scaleX(0)}}
+.dr-lg{display:grid;grid-template-columns:1fr 1fr;gap:7px 16px;font-size:12px}.dr-lg div{display:flex;justify-content:space-between;gap:8px}
+.dr-lg i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:6px}.dr-ag small{display:block;margin-top:12px;font-size:11.5px;opacity:.7}
+.dr-g2{display:grid;grid-template-columns:1.1fr 1fr;gap:16px;margin-bottom:16px}.dr-g2 h3 small{font-size:11.5px;color:var(--ink2);font-weight:600}
+.dr-in .fc-card{animation:fsUp .5s .1s both}
+.dr-rk{display:grid;grid-template-columns:26px 1fr 130px 130px;gap:10px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--line);font-size:12.6px;cursor:pointer;border-radius:8px}
+.dr-rk:hover{background:#f5f7ff}.dr-in .dr-rk{animation:fsUp .45s both}
+.dr-rn{width:24px;height:24px;border-radius:8px;background:#eef2ff;color:#4338ca;font-weight:800;display:grid;place-items:center;font-size:11px}
+.dr-rk small{display:block;color:var(--ink2);font-size:11px}.dr-rk em{font-style:normal;color:#b91c1c;font-weight:700}
+.dr-rb{display:block;height:8px;border-radius:5px;background:var(--line);overflow:hidden}.dr-rb em{display:block;height:100%;background:linear-gradient(90deg,#f43f5e,#fb923c)}
+.dr-in .dr-rb em{animation:fcEnche .9s ease-out both}
+.dr-rk strong{text-align:right;font-variant-numeric:tabular-nums}
+.dr-tl{display:flex;align-items:flex-end;gap:4px;height:160px;border-bottom:1.5px solid var(--line);padding-bottom:3px}
+.dr-tl button{all:unset;flex:1;height:100%;display:flex;align-items:flex-end;cursor:pointer;border-radius:5px}
+.dr-tl button:hover{background:#f1f5ff}
+.dr-tl i{display:block;width:100%;border-radius:5px 5px 2px 2px;background:linear-gradient(180deg,#60a5fa,#1d4ed8);transform-origin:bottom}
+.dr-in .dr-tl i{animation:drSobe .7s ease-out both}
+.dr-tl .pico i{background:linear-gradient(180deg,#fbbf24,#d97706)}.dr-tl .hj i{outline:2px solid #10b981;outline-offset:2px}
+.dr-tl .on i{background:linear-gradient(180deg,#34d399,#059669)}
+.dr-tlx{display:flex;gap:4px;font-size:9.5px;color:var(--ink2);margin-top:4px}.dr-tlx span{flex:1;text-align:center;white-space:nowrap}

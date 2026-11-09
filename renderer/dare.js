@@ -4,7 +4,7 @@
 // Usa o mesmo e-CPF do contador escolhido no Fisconforme.
 (function () {
   const e = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const R = { ano: String(new Date().getFullYear()), d: null, filtro: 'todos', emp: '', rec: '', busca: '', sel: new Set(), mostrar: 150, semCert: false, est: null };
+  const R = { ano: String(new Date().getFullYear()), d: null, filtro: 'todos', emp: '', rec: '', busca: '', dia: '', grp: '', anim: false, sel: new Set(), mostrar: 150, semCert: false, est: null };
   const brl = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const fmtCnpj = (c) => String(c || '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
   const hoje0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -34,7 +34,7 @@
   async function carregar() {
     const d = await window.fiscocont.dare.dados(R.ano);
     if (d && d.error) { $('#drRaiz').innerHTML = `<div class="lic-empty">${e(d.error)}</div>`; return; }
-    R.d = d;
+    R.d = d; R.anim = true;
     if (R.semCert && !d.meta) { semCertificado(); return; }
     desenhar();
   }
@@ -73,6 +73,8 @@
     if (R.filtro === 'sete' && !(x.dias >= 0 && x.dias <= 7)) return false;
     if (R.filtro === 'avencer' && !(x.dias > 7)) return false;
     if (R.filtro === 'gerados' && !x.ger) return false;
+    if (R.dia && x.venc !== R.dia) return false;
+    if (R.grp && R._raiz && R._raiz(x) !== R.grp) return false;
     if (R.emp && x.ie !== R.emp) return false;
     if (R.rec && x.rec !== R.rec) return false;
     if (R.busca) { const b = R.busca.toLowerCase(); if (![x.nome, x.ie, x.nr, x.comp, x.cnpj].join(' ').toLowerCase().includes(b)) return false; }
@@ -84,7 +86,7 @@
     const { meta, emps } = R.d;
     const L = linhas();
     const soma = (a) => a.reduce((s, x) => s + (x.valorN || 0), 0);
-    const venc = L.filter((x) => x.dias < 0), sete = L.filter((x) => x.dias >= 0 && x.dias <= 7);
+    const venc = L.filter((x) => x.dias < 0), sete = L.filter((x) => x.dias >= 0 && x.dias <= 7), avencer = L.filter((x) => x.dias > 7);
     const empsDeb = new Set(L.map((x) => x.ie));
     const mesAt = new Date().toISOString().slice(0, 7);
     const gerMes = L.filter((x) => x.ger && String(x.ger.em || '').slice(0, 7) === mesAt).length;
@@ -94,44 +96,81 @@
     const vis = L.filter(passa);
     const recs = [...new Set(L.map((x) => x.rec))].sort();
     const listaEmp = [...new Map(L.map((x) => [x.ie, x.nome])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
-
-    // por empresa (valor) e por mês de vencimento
-    const porE = new Map(); L.forEach((x) => { const k = x.ie; porE.set(k, { ie: k, nome: x.nome, v: (porE.get(k)?.v || 0) + (x.valorN || 0), n: (porE.get(k)?.n || 0) + 1 }); });
-    const topE = [...porE.values()].sort((a, b) => b.v - a.v).slice(0, 8);
-    const mxE = Math.max(1, ...topE.map((x) => x.v));
-    const porM = Array.from({ length: 12 }, () => ({ v: 0, vencido: 0 }));
-    L.forEach((x) => { const v = dt(x.venc); if (v && String(v.getFullYear()) === R.ano) { porM[v.getMonth()].v += x.valorN || 0; if (x.dias < 0) porM[v.getMonth()].vencido += x.valorN || 0; } });
-    const mesesUsados = porM.map((m, i) => ({ ...m, i })).filter((m) => m.v > 0);
-    const mxM = Math.max(1, ...mesesUsados.map((m) => m.v));
     const selTot = soma(L.filter((x) => R.sel.has(chave(x))));
     const podeSefin = !R.semCert;
+    const anima = R.anim; R.anim = false;                      // movimento só ao abrir/atualizar, não a cada filtro
+    const est = (R.est && R.est.escolhido) || (meta && meta.contador) || { nome: 'contador' };
 
-    const acoes = `<div class="fc-acts">${meta ? `<span class="fc-pill">● Última consulta ${e(quando)}${meta.por ? ' · ' + e(meta.por) : ''}</span>` : ''}
-      <select class="fc-sel" id="drAno">${anos.map((a) => `<option ${a === R.ano ? 'selected' : ''}>${a}</option>`).join('')}</select>
-      ${meta ? '<button class="act inv-export" id="drPdf">Exportar PDF</button>' : ''}
-      <button class="act inv-export fc-go" id="drLer"${podeSefin ? '' : ' disabled title="Precisa do e-CPF do contador instalado neste computador"'}>▶ Consultar débitos</button></div>`;
+    // vencidos por tempo de atraso
+    const faixas = [['até 30 dias', 0, 30, '#fbbf24'], ['31 a 60 dias', 31, 60, '#fb923c'], ['61 a 90 dias', 61, 90, '#f43f5e'], ['mais de 90 dias', 91, 1e9, '#9f1239']]
+      .map(([t, a, b, c]) => { const l = venc.filter((x) => -x.dias >= a && -x.dias <= b); return { t, c, v: soma(l), n: l.length, a, b }; });
+    const totV = Math.max(0.01, soma(venc));
 
-    $('#drRaiz').innerHTML = `${cabecalho(acoes)}
+    // ranking: matriz e filiais juntas (mesma raiz de CNPJ; sem CNPJ, mesmo nome)
+    const raiz = (x) => (x.cnpj && x.cnpj.length >= 8 ? x.cnpj.slice(0, 8) : 'N' + String(x.nome || '').toUpperCase().replace(/[^A-Z0-9]/g, ''));
+    const grupos = new Map();
+    L.forEach((x) => {
+      const k = raiz(x);
+      if (!grupos.has(k)) grupos.set(k, { k, nome: x.nome, ies: new Set(), v: 0, n: 0, vencido: 0, prox: null });
+      const g = grupos.get(k); g.ies.add(x.ie); g.v += x.valorN || 0; g.n++;
+      if (x.dias < 0) g.vencido += x.valorN || 0;
+      else if (x.dias != null && (!g.prox || x.dias < g.prox.dias)) g.prox = x;
+      if (/^\d{8}0001/.test(x.cnpj || '')) g.nome = x.nome;      // nome da matriz
+    });
+    const topG = [...grupos.values()].sort((a, b) => b.v - a.v).slice(0, 8);
+    const mxG = Math.max(1, ...topG.map((g) => g.v));
+
+    // próximos 30 dias: valor por dia de vencimento
+    const h0 = hoje0();
+    const dias30 = Array.from({ length: 30 }, (_, i) => { const d = new Date(h0.getTime() + i * 864e5); return { d, s: br(d), v: 0, n: 0 }; });
+    const porDia = new Map(dias30.map((x) => [x.s, x]));
+    L.forEach((x) => { const o = porDia.get(x.venc); if (o) { o.v += x.valorN || 0; o.n++; } });
+    const mxD = Math.max(1, ...dias30.map((x) => x.v));
+    const picos = new Set([...dias30].filter((x) => x.v > 0).sort((a, b) => b.v - a.v).slice(0, 3).map((x) => x.s));
+    const tot30 = dias30.reduce((s, x) => s + x.v, 0);
+
+    const cnt = (v, moeda = true) => anima ? `data-cnt="${v}"${moeda ? '' : ' data-int="1"'}` : '';
+    const heroTopo = `<div class="dr-hero${anima ? ' dr-in' : ''}">
+      <div class="dr-hl"><div class="dr-ht"><div class="dr-hico">${ICONE}</div><div><span>SEFIN-RO · DÉBITOS E DARE · EXERCÍCIO ${e(R.ano)}</span>
+        <p>${meta ? `Total em aberto nas ${meta.empresas || (emps || []).length} empresas consultadas` : 'Débitos em aberto das empresas vinculadas ao contador'} · ${e(est.nome || 'contador')} (e-CPF)</p></div></div>
+        ${meta ? `<div class="dr-big"><b ${cnt(soma(L))}>${brl(soma(L))}</b><small>${L.length} débito(s) · ${empsDeb.size} empresa(s)</small></div>
+        <div class="dr-hk">
+          <button data-f="venc" class="${R.filtro === 'venc' ? 'on' : ''}"><b ${cnt(soma(venc))}>${brl(soma(venc))}</b><span>Vencidos · ${venc.length}</span></button>
+          <button data-f="sete" class="${R.filtro === 'sete' ? 'on' : ''}"><b ${cnt(soma(sete))}>${brl(soma(sete))}</b><span>Vencem em 7 dias · ${sete.length}</span></button>
+          <button data-f="avencer" class="${R.filtro === 'avencer' ? 'on' : ''}"><b ${cnt(soma(avencer))}>${brl(soma(avencer))}</b><span>A vencer · ${avencer.length}</span></button>
+          <button data-f="gerados" class="${R.filtro === 'gerados' ? 'on' : ''}"><b ${cnt(gerMes, false)}>${gerMes}</b><span>DARE${gerMes === 1 ? '' : 's'} gerado${gerMes === 1 ? '' : 's'} no mês</span></button>
+        </div>` : ''}</div>
+      <div class="dr-hr"><div class="dr-hb"><select id="drAno">${anos.map((a) => `<option ${a === R.ano ? 'selected' : ''}>${a}</option>`).join('')}</select>
+        ${meta ? '<button id="drPdf">Exportar PDF</button>' : ''}
+        <button class="g" id="drLer"${podeSefin ? '' : ' disabled title="Precisa do e-CPF do contador instalado neste computador"'}>▶ Consultar débitos</button></div>
+        ${meta ? `<div class="dr-ag"><h4>Vencidos por tempo de atraso</h4>
+          <div class="dr-stk">${faixas.map((f, i) => `<i style="width:${(f.v / totV * 100).toFixed(2)}%;background:${f.c};animation-delay:${0.25 + i * 0.12}s" title="${f.t}: ${brl(f.v)} · ${f.n} débito(s)"></i>`).join('')}</div>
+          <div class="dr-lg">${faixas.map((f) => `<div><span><i style="background:${f.c}"></i>${f.t}</span><b>${brl(f.v)}</b></div>`).join('')}</div>
+          <small>Última consulta ${e(quando)}${meta.por ? ' · ' + e(meta.por) : ''}</small></div>` : ''}</div></div>`;
+
+    $('#drRaiz').innerHTML = `${heroTopo}
       <div class="fc-prog" id="drProg" hidden><i></i><span></span></div>
       ${R.semCert ? '<div class="fc-alerta" style="margin-bottom:12px"><b>O certificado do contador não está instalado neste computador.</b> Você está vendo a última consulta salva. Para consultar de novo ou gerar DARE e extrato, use um computador com o e-CPF do contador instalado.</div>' : ''}
       ${!meta ? `<div class="fc-vazio"><b>Nenhuma consulta em ${e(R.ano)} ainda.</b> Clique em “Consultar débitos”: o sistema entra no Portal do Contribuinte com o e-CPF do contador e consulta o exercício de todas as empresas da lista (leva alguns minutos).</div>` : `
-      <div class="fc-k">
-        <div style="--c:#1d4ed8"><b>${brl(soma(L))}</b><span>Total em aberto</span><small>${L.length} débito(s) em ${e(R.ano)}</small></div>
-        <div style="--c:#dc2626"><b>${brl(soma(venc))}</b><span>Vencidos</span><small>${venc.length} débito(s) · ${new Set(venc.map((x) => x.ie)).size} empresa(s)</small></div>
-        <div style="--c:#d97706"><b>${brl(soma(sete))}</b><span>Vencem em 7 dias</span><small>até ${br(new Date(hoje0().getTime() + 7 * 864e5))}</small></div>
-        <div style="--c:#0e7490"><b>${empsDeb.size}</b><span>Empresas com débito</span><small>de ${meta.empresas || (emps || []).length} consultada(s)</small></div>
-        <div style="--c:#059669"><b>${gerMes}</b><span>DAREs gerados no mês</span><small>salvos na pasta de cada empresa</small></div>
-      </div>
       ${falhas.length ? `<div class="fc-aviso" style="margin:0 0 12px">Não consegui consultar ${falhas.length} empresa(s) na última consulta: ${falhas.slice(0, 6).map((m) => e(m.nome)).join(', ')}${falhas.length > 6 ? '…' : ''}. Elas entram de novo na próxima consulta.</div>` : ''}
-      ${L.length ? `<div class="fc-g2 dr-g2">
-        <div class="fc-card"><h3>Empresas com maior valor em aberto</h3>${topE.map((x) => `<div class="fc-br dr-br" data-emp="${e(x.ie)}"><span>${e(x.nome)}</span><i><em style="width:${(x.v / mxE * 100).toFixed(1)}%"></em></i><b>${brl(x.v)}</b></div>`).join('')}</div>
-        <div class="fc-card"><h3>Vencimentos por mês · ${e(R.ano)}</h3><div class="dr-mes">${mesesUsados.map((m) => `<div title="${brl(m.v)}${m.vencido ? ' · vencido ' + brl(m.vencido) : ''}"><small>${brl(m.v).replace('R$', '').replace(/,\d{2}$/, '').trim()}</small><i class="${m.vencido >= m.v ? 'v' : m.vencido ? 'p' : ''}" style="height:${Math.max(6, m.v / mxM * 110)}px"></i>${MES[m.i]}</div>`).join('')}</div></div>
+      ${L.length ? `<div class="dr-g2${anima ? ' dr-in' : ''}">
+        <div class="fc-card"><h3>Maiores valores em aberto <small>· matriz e filiais juntas</small></h3>
+          ${topG.map((g, i) => `<div class="dr-rk" data-grp="${e(g.k)}" style="animation-delay:${0.15 + i * 0.06}s"><span class="dr-rn">${i + 1}</span>
+            <div><b>${e(g.nome)}</b><small>${g.ies.size} inscriç${g.ies.size === 1 ? 'ão' : 'ões'} · ${g.n} débito(s)${g.vencido ? ` · <em>${brl(g.vencido)} vencido</em>` : g.prox ? ` · próximo ${e(g.prox.venc.slice(0, 5))}` : ''}</small></div>
+            <i class="dr-rb"><em style="width:${(g.v / mxG * 100).toFixed(1)}%;animation-delay:${0.3 + i * 0.06}s"></em></i><strong>${brl(g.v)}</strong></div>`).join('')}</div>
+        <div class="fc-card"><h3>Próximos 30 dias <small>· ${brl(tot30)} por dia de vencimento</small></h3>
+          <div class="dr-tl">${dias30.map((x, i) => `<button class="${picos.has(x.s) ? 'pico' : ''} ${i === 0 ? 'hj' : ''} ${R.dia === x.s ? 'on' : ''}" data-dia="${x.s}" title="${x.s} · ${x.n ? `${brl(x.v)} · ${x.n} débito(s)` : 'nenhum vencimento'}">
+            <i style="height:${x.v ? Math.max(4, x.v / mxD * 100) : 2}%;animation-delay:${0.2 + i * 0.025}s"></i></button>`).join('')}</div>
+          <div class="dr-tlx">${dias30.map((x, i) => `<span>${i === 0 ? 'hoje' : (i % 5 === 0 || i === 29) ? x.s.slice(0, 5) : ''}</span>`).join('')}</div>
+          <div class="fc-sub" style="margin-top:8px">Laranja: dias de maior valor · clique num dia para ver só os débitos daquele vencimento.</div></div>
       </div>` : ''}
       <div class="fc-card">
         <div class="fc-flt">
-          ${[['todos', `Todos · ${L.length}`], ['venc', `Vencidos · ${venc.length}`], ['sete', `Vencem em 7 dias · ${sete.length}`], ['avencer', `A vencer · ${L.filter((x) => x.dias > 7).length}`], ['gerados', `DARE gerado · ${L.filter((x) => x.ger).length}`]]
-            .map(([k, t]) => `<button class="fc-f ${R.filtro === k ? 'on' : ''}" data-f="${k}">${t}</button>`).join('')}
-          <select class="fc-sel" id="drEmp"><option value="">Todas as empresas</option>${listaEmp.map(([ie, n]) => `<option value="${e(ie)}" ${R.emp === ie ? 'selected' : ''}>${e(n)}</option>`).join('')}</select>
+          ${[['todos', `Todos · ${L.length}`], ['venc', `Vencidos · ${venc.length}`], ['sete', `Vencem em 7 dias · ${sete.length}`], ['avencer', `A vencer · ${avencer.length}`], ['gerados', `DARE gerado · ${L.filter((x) => x.ger).length}`]]
+            .map(([k, t]) => `<button class="fc-f ${R.filtro === k && !R.dia && !R.grp ? 'on' : ''}" data-f="${k}">${t}</button>`).join('')}
+          ${R.dia ? `<button class="fc-f on" id="drDiaX">Vencimento ${e(R.dia)} ✕</button>` : ''}
+          ${R.grp ? `<button class="fc-f on" id="drGrpX">${e((grupos.get(R.grp) || {}).nome || 'empresa')} ✕</button>` : ''}
+          <select class="fc-sel" id="drEmp"><option value="">Todas as empresas</option>${listaEmp.map(([ie, n]) => `<option value="${e(ie)}" ${R.emp === ie ? 'selected' : ''}>${e(n)} · IE ${e(ie)}</option>`).join('')}</select>
           <select class="fc-sel" id="drRec"><option value="">Todas as receitas</option>${recs.map((r) => `<option ${R.rec === r ? 'selected' : ''}>${e(r)}</option>`).join('')}</select>
           <input class="fc-sel" id="drBusca" placeholder="Buscar empresa, IE ou nº do lançamento" value="${e(R.busca)}">
         </div>
@@ -151,16 +190,32 @@
         : `<div class="fc-sub" style="padding:14px 4px">${L.length ? 'Nenhum débito com esses filtros.' : `Nenhum débito em aberto em ${e(R.ano)} nas empresas consultadas.`}</div>`}
         <div class="fc-sub dr-pasta">📁 Os DAREs e extratos são salvos em <b>${e(R.d.pasta)}</b>\\&lt;empresa&gt; - IE &lt;inscrição&gt;</div>
       </div>`}`;
-    ligar(L);
+    if (anima) contar();
+    ligar(L, raiz);
   }
 
-  function ligar(L) {
+  // números do topo contando até o valor (só na abertura)
+  function contar() {
+    document.querySelectorAll('#drRaiz [data-cnt]').forEach((el) => {
+      const fim = +el.dataset.cnt, inteiro = !!el.dataset.int; let t0 = null;
+      const fmt = (v) => inteiro ? String(Math.round(v)) : brl(v);
+      const passo = (t) => { if (!t0) t0 = t; const k = Math.min(1, (t - t0) / 1100); el.textContent = fmt(fim * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(passo); };
+      el.textContent = fmt(0); requestAnimationFrame(passo);
+    });
+  }
+
+  function ligar(L, raiz) {
     $('#drLer').onclick = consultar;
     $('#drAno').onchange = (ev) => { R.ano = ev.target.value; R.sel.clear(); carregar(); };
     if (!R.d.meta) return;
     if ($('#drPdf')) $('#drPdf').onclick = exportar;
-    document.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => { R.filtro = b.dataset.f; R.mostrar = 150; desenhar(); });
-    document.querySelectorAll('.dr-br').forEach((b) => b.onclick = () => { R.emp = R.emp === b.dataset.emp ? '' : b.dataset.emp; desenhar(); });
+    R._raiz = raiz;
+    const rola = () => { const t = document.querySelector('#drRaiz .dr-tab, #drRaiz .fc-flt'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+    document.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => { const no = b.closest('.dr-hk'); R.filtro = no && R.filtro === b.dataset.f ? 'todos' : b.dataset.f; R.dia = ''; R.grp = ''; R.mostrar = 150; desenhar(); if (no) rola(); });
+    document.querySelectorAll('[data-dia]').forEach((b) => b.onclick = () => { R.dia = R.dia === b.dataset.dia ? '' : b.dataset.dia; R.filtro = 'todos'; R.grp = ''; R.mostrar = 150; desenhar(); if (R.dia) rola(); });
+    document.querySelectorAll('[data-grp]').forEach((b) => b.onclick = () => { R.grp = R.grp === b.dataset.grp ? '' : b.dataset.grp; R.filtro = 'todos'; R.dia = ''; R.mostrar = 150; desenhar(); if (R.grp) rola(); });
+    if ($('#drDiaX')) $('#drDiaX').onclick = () => { R.dia = ''; desenhar(); };
+    if ($('#drGrpX')) $('#drGrpX').onclick = () => { R.grp = ''; desenhar(); };
     if ($('#drEmp')) $('#drEmp').onchange = (ev) => { R.emp = ev.target.value; desenhar(); };
     if ($('#drRec')) $('#drRec').onchange = (ev) => { R.rec = ev.target.value; desenhar(); };
     const bu = $('#drBusca');
