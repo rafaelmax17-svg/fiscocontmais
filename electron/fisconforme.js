@@ -107,7 +107,7 @@ function _log(m) {
 function _janela() {
   if (_win && !_win.isDestroyed()) return _win;
   const mostrar = !!_cfg().mostrarJanela;
-  _win = new BrowserWindow({ show: mostrar, width: 1200, height: 860, title: 'FiscoCont+ · robô do Fisconforme', autoHideMenuBar: true,
+  _win = new BrowserWindow({ show: mostrar, width: 1200, height: 860, title: 'FiscoCont+ · Fisconforme', autoHideMenuBar: true,
     webPreferences: { partition: PARTICAO, contextIsolation: true, nodeIntegration: false, sandbox: true } });
   _win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   _win.webContents.on('did-navigate', (_e, url) => _log(`abriu ${url.split('?')[0]}`));
@@ -165,7 +165,7 @@ async function _login() {
     if (_ehSso(u.host)) {
       const st = await _js(JS_ESTADO_LOGIN).catch(() => null);
       if (st && st.texto !== ultimoTxt) { _log(`tela do SSO: ${st.texto}`); ultimoTxt = st.texto; }
-      if (st && st.captcha) throw new Error('O portal pediu captcha: o robô parou. Entre uma vez pelo navegador e tente de novo depois.');
+      if (st && st.captcha) throw new Error('O portal pediu captcha e a consulta parou. Entre uma vez pelo navegador e tente de novo depois.');
       if (st && st.temEntrar && clicouEntrar < 3) {
         _prog('Confirmando o acesso com o e-CPF do contador…');
         await _js(JS_CLICA_ENTRAR); clicouEntrar++; _log('clicou em Entrar'); await _sleep(3000); continue;
@@ -177,7 +177,8 @@ async function _login() {
     await _sleep(1500);
   }
   try { const img = await _win.webContents.capturePage(); fs.writeFileSync(path.join(D.userData(), 'fisconforme_login.png'), img.toPNG()); } catch (_) {}
-  throw new Error('Não consegui entrar no portal com o certificado do contador. Ligue "Mostrar o navegador do robô" na tela e tente de novo para ver onde parou. '
+  if (!_ehAdmin()) throw new Error('Não consegui entrar no portal com o certificado do contador. Tente de novo em alguns minutos; se continuar, avise o Admin.');
+  throw new Error('Não consegui entrar no portal com o certificado do contador. Ligue "Mostrar a janela da consulta" na tela e tente de novo para ver onde parou. '
     + 'Um print da última tela e o passo a passo ficaram em "fisconforme_login.png" e "fisconforme_log.txt", na pasta de dados do FiscoCont+.');
 }
 

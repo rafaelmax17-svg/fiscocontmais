@@ -1,5 +1,5 @@
 'use strict';
-// Fisconforme · SEFIN-RO — painel das notificações de todas as empresas (equipe; navegador do robô e portal só para o Admin).
+// Fisconforme · SEFIN-RO — painel das notificações de todas as empresas (equipe; janela da consulta e portal só para o Admin). A tela não fala em "robô": o texto é sempre "o sistema"..
 // Ao entrar, confere se o e-CPF do contador está instalado no Windows ANTES de qualquer leitura.
 (function () {
   const e = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -42,7 +42,7 @@
       ${est.certs.length
         ? `<p>Há mais de um e-CPF instalado no Windows. Escolha o do contador que acessa o Fisconforme:</p>
            <div class="fc-certs">${est.certs.map((c) => `<button class="fc-cert" data-cpf="${e(c.cpf)}"><b>${e(c.nome)}</b><small>CPF ${fmtCpf(c.cpf)} · vence ${dBr(c.vence)}${c.vencido ? ' · <em>vencido</em>' : ''}</small></button>`).join('')}</div>`
-        : `<p>O robô entra no portal da SEFIN com o <b>e-CPF do contador</b> instalado no Windows (certificado A1). Nenhum e-CPF foi encontrado aqui${est.aviso ? ` (${e(est.aviso)})` : ''}.</p>
+        : `<p>O sistema consulta o portal da SEFIN com o <b>e-CPF do contador</b> instalado no Windows (certificado A1). Nenhum e-CPF foi encontrado aqui${est.aviso ? ` (${e(est.aviso)})` : ''}.</p>
            <p>Instale o certificado neste computador (duplo clique no arquivo .pfx → “Usuário atual”) e abra o módulo de novo. Nada foi consultado.</p>`}
       <button class="act inv-export" id="fcRever">Conferir de novo</button></div>`;
     $('#fcRever').onclick = entrar;
@@ -113,15 +113,15 @@
     const chip = (k, rot, n) => `<button class="fc-f${F.filtro === k ? ' on' : ''}" data-f="${k}">${rot} (${n})</button>`;
     $('#fcRaiz').innerHTML = `
       <div class="fc-hd"><div class="fc-tit">${LOGO}<div><span class="fc-tag">SEFIN-RO · FISCONFORME</span><h2>Notificações do Fisconforme</h2>
-        <p>Todas as empresas vinculadas ao contador · ${e(est.nome || 'contador')}${est.cpf ? ` (e-CPF ${fmtCpf(est.cpf)})` : ''} · o robô lê só as listas, sem abrir a notificação</p></div></div>
+        <p>Todas as empresas vinculadas ao contador · ${e(est.nome || 'contador')}${est.cpf ? ` (e-CPF ${fmtCpf(est.cpf)})` : ''} · o sistema consulta só as listas, sem abrir a notificação</p></div></div>
         <div class="fc-acts">${meta ? `<span class="fc-pill">● Última leitura ${e(new Date(meta.ultimaLeitura).toLocaleString('pt-BR').slice(0, 17).replace(',', ''))}${meta.por ? ' · ' + e(meta.por) : ''}</span>` : ''}
-          ${adm ? `<label class="fc-chk" title="Abre a janela do navegador do robô para acompanhar a entrada no portal (ajuda no primeiro uso)"><input type="checkbox" id="fcVer"${F.est.mostrarJanela ? ' checked' : ''}> Mostrar o navegador do robô</label>
+          ${adm ? `<label class="fc-chk" title="Abre a janela da consulta para acompanhar a entrada no portal (ajuda no primeiro uso)"><input type="checkbox" id="fcVer"${F.est.mostrarJanela ? ' checked' : ''}> Mostrar a janela da consulta</label>
           <button class="act inv-export" id="fcPortal">Abrir o portal ↗</button>` : ''}
           ${meta ? '<button class="act inv-export" id="fcHtml">Exportar HTML</button><button class="act inv-export" id="fcPdf">Exportar PDF</button>' : ''}
           <button class="act inv-export fc-go" id="fcLer"${F.semCert ? ' disabled title="Precisa do e-CPF do contador instalado neste computador"' : ''}>▶ Ler notificações</button></div></div>
       ${F.semCert ? `<div class="fc-alerta"><b>O certificado do contador não está instalado neste computador.</b> Você está vendo a última leitura salva. Para ler de novo ou visualizar uma notificação no portal, use um computador com o e-CPF do contador instalado. Nada foi consultado.</div>` : ''}
       <div class="fc-prog" id="fcProg" hidden><i></i><span></span></div>
-      ${!meta ? `<div class="fc-vazio"><b>Nenhuma leitura ainda.</b> Clique em “Ler notificações”: o robô entra no portal com o e-CPF do contador e lê as listas de pendentes, contestadas, indeferidas e resolvidas de todas as empresas (leva alguns minutos).</div>` : `
+      ${!meta ? `<div class="fc-vazio"><b>Nenhuma leitura ainda.</b> Clique em “Ler notificações”: o sistema consulta o portal com o e-CPF do contador e traz as listas de pendentes, contestadas, indeferidas e resolvidas de todas as empresas (leva alguns minutos).</div>` : `
       <div class="fc-k">
         <div style="--c:#d97706"><b>${c.pendente}</b><span>Pendentes</span><small>em ${empsPend} empresa(s)</small></div>
         <div style="--c:#0e7490"><b>${c.novas}</b><span>Novas na última leitura</span><small>apareceram desde a leitura anterior</small></div>
@@ -141,11 +141,11 @@
           <select id="fcEmp" class="fc-sel"><option value="">Todas as empresas</option>${empresas.map(([k, n]) => `<option value="${e(k)}"${F.emp === k ? ' selected' : ''}>${e(n)}</option>`).join('')}</select>
           <select id="fcMalha" class="fc-sel"><option value="">Todas as malhas</option>${malhas.map((m) => `<option${F.malha === m ? ' selected' : ''}>${e(m)}</option>`).join('')}</select>
           <input id="fcBusca" class="fc-sel" placeholder="Buscar empresa, CNPJ, IE ou código" value="${e(F.busca)}"></div>
-        <table class="fc-tab"><thead><tr><th>Empresa</th><th>Malha / descrição</th><th>Período</th><th>Código</th><th>Situação</th><th>Encontrada pelo robô</th><th></th></tr></thead><tbody>
+        <table class="fc-tab"><thead><tr><th>Empresa</th><th>Malha / descrição</th><th>Período</th><th>Código</th><th>Situação</th><th>Encontrada em</th><th></th></tr></thead><tbody>
         ${vis.slice(0, F.mostrar).map((n) => linha(n)).join('') || '<tr><td colspan="7" class="fc-sub" style="text-align:center;padding:18px">Nada neste filtro.</td></tr>'}
         </tbody></table>
         ${vis.length > F.mostrar ? `<button class="act inv-export" id="fcMais" style="margin:10px auto;display:block">Mostrar mais (${vis.length - F.mostrar})</button>` : ''}
-        <div class="fc-aviso">⚠ O robô lê só as listas do portal e <b>nunca abre a notificação sozinho</b>: abrir o conteúdo conta como ciência e começa o prazo (Decreto 23.856/2019, art. 3º, § 3º). “Entenda esta malha” explica sem abrir nada. “Visualizar” abre a notificação no portal — <b>dá ciência</b> — e só roda depois da sua confirmação.</div>
+        <div class="fc-aviso">⚠ O sistema consulta só as listas do portal e <b>nunca abre a notificação sozinho</b>: abrir o conteúdo conta como ciência e começa o prazo (Decreto 23.856/2019, art. 3º, § 3º). “Entenda esta malha” explica sem abrir nada. “Visualizar” abre a notificação no portal — <b>dá ciência</b> — e só roda depois da sua confirmação.</div>
       </div>`}`;
     ligar(vis);
   }
@@ -285,7 +285,7 @@
     if (prog) prog.hidden = true;
     if (r && r.error) {
       toast(r.error, true);
-      if (/fisconforme_log/.test(r.error) && ehAdm() && confirm('Abrir a pasta com o print e o passo a passo do robô?')) window.fiscocont.fisconforme.pastaDados();
+      if (/fisconforme_log/.test(r.error) && ehAdm() && confirm('Abrir a pasta com o print e o passo a passo da consulta?')) window.fiscocont.fisconforme.pastaDados();
       return;
     }
     toast(`Leitura concluída: ${r.contagens.pendente} pendente(s)${r.novas ? ` · ${r.novas} nova(s)` : ''}.`);

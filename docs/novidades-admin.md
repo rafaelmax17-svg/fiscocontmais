@@ -3,6 +3,12 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.16
+
+- Fisconforme sem a palavra "robô" em nenhum texto que a equipe vê. As telas agora dizem "o sistema consulta". A coluna passou a se chamar "Encontrada em", e a janela, "FiscoCont+ · Fisconforme".
+- A sua opção de Admin passou a se chamar "Mostrar a janela da consulta".
+- Quando a entrada no portal falha, a equipe recebe só "tente de novo em alguns minutos; se continuar, avise o Admin". O Admin continua recebendo o detalhe, com o print e o passo a passo.
+
 ## 2.2.15
 
 - Contador do ícone do Fisconforme mostra a quantidade exata de pendentes (antes abreviava para "99+").
