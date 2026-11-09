@@ -559,6 +559,32 @@ ipcMain.handle('fisc:explicarMalha', (_evt, { cod, nome }) => _adm(() => fisconf
 ipcMain.handle('fisc:visualizar', (_evt, codigo) => _adm(() => fisconforme.visualizar(codigo)));
 ipcMain.handle('fisc:mostrarJanela', (_evt, sim) => _adm(() => fisconforme.mostrarJanela(sim)));
 ipcMain.handle('fisc:pastaDados', () => _adm(() => fisconforme.abrirPastaDados()));
+// Relatório do Fisconforme: o HTML vem pronto da tela; salva como HTML ou converte em PDF (paisagem, sem movimento)
+ipcMain.handle('fisc:exportar', async (_evt, { html, formato, nome }) => {
+  if (sessionRole !== 'admin') return { error: 'Acesso restrito ao Admin.' };
+  const pdf = formato === 'pdf';
+  const save = await dialog.showSaveDialog(mainWindow, {
+    title: pdf ? 'Salvar PDF do Fisconforme' : 'Salvar HTML do Fisconforme',
+    defaultPath: `${String(nome || 'Fisconforme').replace(/[\\/:*?"<>|]+/g, ' ').trim()}.${pdf ? 'pdf' : 'html'}`,
+    filters: [pdf ? { name: 'PDF', extensions: ['pdf'] } : { name: 'Página HTML', extensions: ['html'] }],
+  });
+  if (save.canceled || !save.filePath) return { canceled: true };
+  if (!pdf) { fs.writeFileSync(save.filePath, String(html), 'utf-8'); shell.openPath(save.filePath); return { ok: true, path: save.filePath }; }
+  const tmp = path.join(os.tmpdir(), `fc_fisc_${Date.now()}.html`);
+  const estatico = String(html).replace('</head>', '<style>*,*::before,*::after{animation:none!important;transition:none!important}</style></head>')
+    .replace('<body', '<body data-pdf="1"');
+  fs.writeFileSync(tmp, estatico, 'utf-8');
+  const worker = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true } });
+  try {
+    await worker.loadFile(tmp);
+    await new Promise((r) => setTimeout(r, 900));
+    const buf = await worker.webContents.printToPDF({ printBackground: true, pageSize: 'A4', landscape: true, margins: { marginType: 'default' } });
+    fs.writeFileSync(save.filePath, buf);
+    shell.openPath(save.filePath);
+    return { ok: true, path: save.filePath };
+  } catch (e) { return { error: String(e.message || e) }; }
+  finally { worker.destroy(); fs.unlink(tmp, () => {}); }
+});
 ipcMain.handle('fisc:abrirPortal', () => { shell.openExternal('https://fisconforme.sefin.ro.gov.br/contribuintes/pendente'); return { ok: true }; });
 
 ipcMain.handle('integra:estado', () => _adm(async () => ({ local: await integra.estadoLocal(), nuvem: await integra.estadoNuvem().catch(() => null) })));

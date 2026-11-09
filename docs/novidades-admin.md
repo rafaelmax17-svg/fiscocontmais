@@ -3,6 +3,12 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.12
+
+- **Fisconforme · exportar:** botões "Exportar HTML" e "Exportar PDF" no topo do painel. O relatório respeita os filtros de empresa e malha da tela e traz as notificações em aberto (pendentes, contestadas e indeferidas), com os números do topo, a distribuição por malha e a lista agrupada por empresa (código, malha, período, situação, data em que apareceu, ciência e prazo).
+- O HTML abre com os números contando e as barras enchendo; o PDF sai em A4 paisagem com tudo já no estado final, cabeçalho da tabela repetido a cada página e o nome da empresa sem ficar sozinho no pé da página.
+- Rodapé com a base legal (Decreto 23.856/2019, art. 3º). Sem textos internos do sistema nem a explicação gerada — só os dados do portal.
+
 ## 2.2.11
 
 - **Fisconforme · entrada no portal:** o robô ficava "carregando" sem fazer nada — ele procurava o SSO em sitafe-sso e o acesso por certificado é por outro endereço (sitafesec-sso-int.sefin.ro.gov.br/acesso_externo/acesso_digital, o mesmo link que o contador usa). Agora entra direto por esse link, confirma em "Entrar" e volta para o Fisconforme; se a sessão ainda estiver válida, vai direto.
