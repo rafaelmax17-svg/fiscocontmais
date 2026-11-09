@@ -65,6 +65,8 @@ contextBridge.exposeInMainWorld('fiscocont', {
     explicarMalha: (cod, nome) => ipcRenderer.invoke('fisc:explicarMalha', { cod, nome }),
     visualizar: (codigo) => ipcRenderer.invoke('fisc:visualizar', codigo),
     abrirPortal: () => ipcRenderer.invoke('fisc:abrirPortal'),
+    mostrarJanela: (sim) => ipcRenderer.invoke('fisc:mostrarJanela', sim),
+    pastaDados: () => ipcRenderer.invoke('fisc:pastaDados'),
     onProgresso: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('fisc:progresso', h); return () => ipcRenderer.removeListener('fisc:progresso', h); },
   },
   integra: {

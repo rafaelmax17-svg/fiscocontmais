@@ -557,6 +557,8 @@ ipcMain.handle('fisc:ler', () => _adm(() => fisconforme.ler()));
 ipcMain.handle('fisc:dados', () => _adm(() => fisconforme.dados()));
 ipcMain.handle('fisc:explicarMalha', (_evt, { cod, nome }) => _adm(() => fisconforme.explicarMalha(cod, nome)));
 ipcMain.handle('fisc:visualizar', (_evt, codigo) => _adm(() => fisconforme.visualizar(codigo)));
+ipcMain.handle('fisc:mostrarJanela', (_evt, sim) => _adm(() => fisconforme.mostrarJanela(sim)));
+ipcMain.handle('fisc:pastaDados', () => _adm(() => fisconforme.abrirPastaDados()));
 ipcMain.handle('fisc:abrirPortal', () => { shell.openExternal('https://fisconforme.sefin.ro.gov.br/contribuintes/pendente'); return { ok: true }; });
 
 ipcMain.handle('integra:estado', () => _adm(async () => ({ local: await integra.estadoLocal(), nuvem: await integra.estadoNuvem().catch(() => null) })));

@@ -1503,3 +1503,4 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .fc-box pre{white-space:pre-wrap;font:inherit;font-size:12.2px;margin:0;max-height:340px;overflow:auto}
 .fc-ex{font-size:12.6px;line-height:1.6}
 .fc-aviso{margin-top:12px;background:#fff7e6;border:1px solid #f5d69a;color:#7c4a03;border-radius:12px;padding:10px 14px;font-size:12px;line-height:1.5}
+.fc-chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2);white-space:nowrap}

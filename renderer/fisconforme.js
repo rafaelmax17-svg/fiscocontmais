@@ -92,6 +92,7 @@
       <div class="fc-hd"><div><span class="fc-tag">SEFIN-RO · FISCONFORME</span><h2>Notificações do Fisconforme</h2>
         <p>Todas as empresas vinculadas ao contador · ${e(est.nome)} (e-CPF ${fmtCpf(est.cpf)}) · o robô lê só as listas, sem abrir a notificação</p></div>
         <div class="fc-acts">${meta ? `<span class="fc-pill">● Última leitura ${e(new Date(meta.ultimaLeitura).toLocaleString('pt-BR').slice(0, 17).replace(',', ''))}${meta.por ? ' · ' + e(meta.por) : ''}</span>` : ''}
+          <label class="fc-chk" title="Abre a janela do navegador do robô para acompanhar a entrada no portal (ajuda no primeiro uso)"><input type="checkbox" id="fcVer"${F.est.mostrarJanela ? ' checked' : ''}> Mostrar o navegador do robô</label>
           <button class="act inv-export" id="fcPortal">Abrir o portal ↗</button>
           <button class="act inv-export fc-go" id="fcLer">▶ Ler notificações</button></div></div>
       <div class="fc-prog" id="fcProg" hidden><i></i><span></span></div>
@@ -147,6 +148,7 @@
     const q = (s) => $('#fcRaiz').querySelectorAll(s);
     $('#fcLer').onclick = ler;
     $('#fcPortal').onclick = () => window.fiscocont.fisconforme.abrirPortal();
+    $('#fcVer').onchange = async (ev) => { await window.fiscocont.fisconforme.mostrarJanela(ev.target.checked); F.est.mostrarJanela = ev.target.checked; };
     if (!F.d.meta) return;
     q('.fc-f').forEach((b) => b.onclick = () => { F.filtro = b.dataset.f; F.mostrar = 120; desenhar(); });
     $('#fcEmp').onchange = (ev) => { F.emp = ev.target.value; desenhar(); };
@@ -190,7 +192,11 @@
     const r = await window.fiscocont.fisconforme.ler();
     b.disabled = false; b.textContent = '▶ Ler notificações';
     if (prog) prog.hidden = true;
-    if (r && r.error) { toast(r.error, true); return; }
+    if (r && r.error) {
+      toast(r.error, true);
+      if (/fisconforme_log/.test(r.error) && confirm('Abrir a pasta com o print e o passo a passo do robô?')) window.fiscocont.fisconforme.pastaDados();
+      return;
+    }
     toast(`Leitura concluída: ${r.contagens.pendente} pendente(s)${r.novas ? ` · ${r.novas} nova(s)` : ''}.`);
     await carregar();
   }

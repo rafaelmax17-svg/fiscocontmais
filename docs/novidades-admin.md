@@ -3,6 +3,13 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.11
+
+- **Fisconforme · entrada no portal:** o robô ficava "carregando" sem fazer nada — ele procurava o SSO em sitafe-sso e o acesso por certificado é por outro endereço (sitafesec-sso-int.sefin.ro.gov.br/acesso_externo/acesso_digital, o mesmo link que o contador usa). Agora entra direto por esse link, confirma em "Entrar" e volta para o Fisconforme; se a sessão ainda estiver válida, vai direto.
+- Todo carregamento de página tem limite de tempo (não trava mais esperando o portal) e cada passo é registrado em fisconforme_log.txt (pasta de dados); quando não consegue entrar, salva também fisconforme_login.png e oferece abrir a pasta.
+- Opção "Mostrar o navegador do robô" na tela, para acompanhar a entrada no primeiro uso.
+- Certificado pedido pelo site: usa o e-CPF escolhido; se ele não estiver na lista do Windows, o registro mostra isso.
+
 ## 2.2.10
 
 - **Fisconforme · SEFIN-RO (novo, só Admin por enquanto):** acompanha as notificações do Fisconforme (Decreto 23.856/2019) de todas as empresas vinculadas ao contador.

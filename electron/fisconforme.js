@@ -30,7 +30,9 @@ function init(deps) {
   app.on('select-client-certificate', (event, webContents, url, lista, callback) => {
     if (!_win || _win.isDestroyed() || webContents.id !== _win.webContents.id) return;
     const alvo = lista.find((c) => _cpfDoCert(c) === _cpfAtivo);
-    if (alvo) { event.preventDefault(); callback(alvo); }
+    _log(`o site pediu certificado (${url.split('?')[0]}): ${lista.length} disponível(is) · ${alvo ? 'usando o e-CPF do contador' : 'o e-CPF escolhido NÃO está na lista'}`);
+    event.preventDefault();
+    callback(alvo || undefined);
   });
 }
 
@@ -75,25 +77,47 @@ async function estado() {
   const { certs, aviso } = await certificados();
   const c = _cfg();
   const escolhido = certs.find((x) => x.cpf === c.cpf) || (certs.length === 1 ? certs[0] : null);
-  return { certs, aviso: aviso || '', cpf: escolhido ? escolhido.cpf : '', escolhido: escolhido || null };
+  return { certs, aviso: aviso || '', cpf: escolhido ? escolhido.cpf : '', escolhido: escolhido || null, mostrarJanela: !!c.mostrarJanela };
 }
 function escolherCert(cpf) { _exige(); _grava({ ..._cfg(), cpf: _so(cpf) }); return { ok: true }; }
 
 // ------------------------------------------------------------------ janela do robô e login
+// Entrada pelo certificado (o mesmo link que o contador usa no navegador): o SSO de certificado pede o e-CPF no TLS,
+// mostra nome e CPF e o botão "Entrar", e volta para o Fisconforme.
+const URL_CERT = 'https://sitafesec-sso-int.sefin.ro.gov.br/acesso_externo/acesso_digital?request_url='
+  + encodeURIComponent(`${BASE}/contribuintes/pendente`) + '&login_template=default';
+const _ehSso = (host) => /(^|\.)sitafe[\w-]*\.sefin\.ro\.gov\.br$/i.test(host || '');
+
+// Registro passo a passo (fisconforme_log.txt na pasta de dados) — ajuda a ajustar o robô no primeiro uso.
+let _logTxt = [];
+function _log(m) {
+  const l = `${new Date().toLocaleTimeString('pt-BR')} ${m}`;
+  _logTxt.push(l);
+  try { fs.writeFileSync(path.join(D.userData(), 'fisconforme_log.txt'), _logTxt.slice(-400).join('\n')); } catch (_) {}
+}
+
 function _janela() {
   if (_win && !_win.isDestroyed()) return _win;
-  _win = new BrowserWindow({ show: false, width: 1280, height: 900,
+  const mostrar = !!_cfg().mostrarJanela;
+  _win = new BrowserWindow({ show: mostrar, width: 1200, height: 860, title: 'FiscoCont+ · robô do Fisconforme', autoHideMenuBar: true,
     webPreferences: { partition: PARTICAO, contextIsolation: true, nodeIntegration: false, sandbox: true } });
   _win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  _win.webContents.on('did-navigate', (_e, url) => _log(`abriu ${url.split('?')[0]}`));
+  _win.webContents.on('did-fail-load', (_e, cod, desc, url) => { if (cod !== -3) _log(`falha ao abrir ${String(url).split('?')[0]}: ${desc} (${cod})`); });
+  _win.webContents.on('certificate-error', (_e, url, err) => _log(`erro de certificado do site ${url}: ${err}`));
   return _win;
 }
-async function _vai(url) {
+// loadURL com limite de tempo: o portal às vezes não termina de carregar e a promessa nunca resolveria
+async function _vai(url, limite = 45000) {
   const w = _janela();
-  try { await w.loadURL(url); } catch (e) { if (!/ERR_ABORTED/.test(String(e))) throw e; }
-  await _sleep(400);
+  let venceu = false;
+  const t = new Promise((r) => setTimeout(() => { venceu = true; r(); }, limite));
+  await Promise.race([w.loadURL(url).catch((e) => { if (!/ERR_ABORTED/.test(String(e))) _log(`loadURL: ${e.message || e}`); }), t]);
+  if (venceu) { _log(`demorou mais de ${limite / 1000}s: ${url.split('?')[0]}`); try { w.webContents.stop(); } catch (_) {} }
+  await _sleep(500);
   return w;
 }
-const _js = (code) => _win.webContents.executeJavaScript(code, true);
+const _js = (code) => Promise.race([_win.webContents.executeJavaScript(code, true), new Promise((_r, rej) => setTimeout(() => rej(new Error('a página não respondeu')), 20000))]);
 
 const JS_ESTADO_LOGIN = `(() => {
   const vis = (e) => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
@@ -102,46 +126,55 @@ const JS_ESTADO_LOGIN = `(() => {
   const els = [...document.querySelectorAll('a, button, li, [role=tab], .nav-link, input[type=submit]')].filter(vis);
   const aba = els.find((e) => /cert\\.?\\s*digital/i.test(e.innerText || e.value || ''));
   const entrar = els.find((e) => /^\\s*entrar\\s*$/i.test(e.innerText || e.value || '') && !e.disabled);
-  return { url: location.href, captcha, temAba: !!aba, abaAtiva: !!(aba && /active|selected|ativo/i.test((aba.className || '') + (aba.parentElement ? aba.parentElement.className : ''))),
-           temEntrar: !!entrar, mostraCpf: /\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}/.test(txt) };
+  return { url: location.href, captcha, temAba: !!aba, temEntrar: !!entrar, mostraCpf: /\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}/.test(txt),
+           texto: txt.replace(/\\s+/g, ' ').slice(0, 300) };
 })()`;
-const JS_CLICA_ABA = `(() => { const vis = (e) => !!(e && (e.offsetWidth || e.offsetHeight));
-  const a = [...document.querySelectorAll('a, button, li, [role=tab], .nav-link')].filter(vis).find((e) => /cert\\.?\\s*digital/i.test(e.innerText || ''));
-  if (a) { a.click(); return true; } return false; })()`;
 const JS_CLICA_ENTRAR = `(() => { const vis = (e) => !!(e && (e.offsetWidth || e.offsetHeight));
   const b = [...document.querySelectorAll('button, input[type=submit], a')].filter(vis).find((e) => /^\\s*entrar\\s*$/i.test(e.innerText || e.value || '') && !e.disabled);
   if (b) { b.click(); return true; } return false; })()`;
+
+async function _logado() {
+  const u = new URL(_win.webContents.getURL() || 'about:blank');
+  if (u.host !== 'fisconforme.sefin.ro.gov.br') return false;
+  return _js(`!!document.querySelector('a[href*="sso/logout"]')`).catch(() => false);
+}
 
 async function _login() {
   const c = _cfg();
   if (!c.cpf) throw new Error('Escolha o certificado (e-CPF) do contador na tela do módulo.');
   _cpfAtivo = c.cpf;
   _prog('Entrando no portal da SEFIN com o certificado do contador…');
-  await _vai(`${BASE}/contribuintes/pendente`);
+  // já logado (sessão guardada)? vai direto
+  await _vai(`${BASE}/contribuintes/pendente`, 30000);
+  if (await _logado()) { _log('sessão ainda válida'); return true; }
+  _log('abrindo o acesso por certificado digital');
+  await _vai(URL_CERT, 60000);
   const ate = Date.now() + 90000;
-  let clicouAba = 0, clicouEntrar = 0;
+  let clicouEntrar = 0, ultimoTxt = '';
   while (Date.now() < ate) {
+    if (await _logado()) { _log('entrou no Fisconforme'); return true; }
     const u = new URL(_win.webContents.getURL() || 'about:blank');
-    if (u.host === 'fisconforme.sefin.ro.gov.br' && /\/contribuintes\//.test(u.pathname)) {
-      const ok = await _js(`!!document.querySelector('a[href*="sso/logout"]')`).catch(() => false);
-      if (ok) return true;
-    }
-    if (/sitafe-sso\.sefin\.ro\.gov\.br/.test(u.host)) {
+    if (_ehSso(u.host)) {
       const st = await _js(JS_ESTADO_LOGIN).catch(() => null);
+      if (st && st.texto !== ultimoTxt) { _log(`tela do SSO: ${st.texto}`); ultimoTxt = st.texto; }
       if (st && st.captcha) throw new Error('O portal pediu captcha: o robô parou. Entre uma vez pelo navegador e tente de novo depois.');
-      if (st && st.temEntrar && (st.mostraCpf || st.abaAtiva) && clicouEntrar < 3) { await _js(JS_CLICA_ENTRAR); clicouEntrar++; await _sleep(2500); continue; }
-      if (st && st.temAba && clicouAba < 3) { await _js(JS_CLICA_ABA); clicouAba++; await _sleep(2500); continue; }
-    } else if (/portalcontribuinte\.sefin\.ro\.gov\.br/.test(u.host)) {
-      await _vai(`${BASE}/contribuintes/pendente`);      // o SSO voltou para o portal: segue para o Fisconforme
+      if (st && st.temEntrar && clicouEntrar < 3) {
+        _prog('Confirmando o acesso com o e-CPF do contador…');
+        await _js(JS_CLICA_ENTRAR); clicouEntrar++; _log('clicou em Entrar'); await _sleep(3000); continue;
+      }
+    } else if (u.host === 'fisconforme.sefin.ro.gov.br' || /portalcontribuinte\.sefin\.ro\.gov\.br/.test(u.host)) {
+      await _vai(`${BASE}/contribuintes/pendente`, 30000);
       continue;
     }
     await _sleep(1500);
   }
-  // não entrou: guarda um print para o Admin mandar (ajuda a ajustar o robô)
   try { const img = await _win.webContents.capturePage(); fs.writeFileSync(path.join(D.userData(), 'fisconforme_login.png'), img.toPNG()); } catch (_) {}
-  throw new Error('Não consegui entrar no portal com o certificado. Confira se o e-CPF do contador está instalado neste Windows e válido. '
-    + 'Um print da última tela ficou salvo em "fisconforme_login.png" na pasta de dados do FiscoCont+.');
+  throw new Error('Não consegui entrar no portal com o certificado do contador. Ligue "Mostrar o navegador do robô" na tela e tente de novo para ver onde parou. '
+    + 'Um print da última tela e o passo a passo ficaram em "fisconforme_login.png" e "fisconforme_log.txt", na pasta de dados do FiscoCont+.');
 }
+
+function mostrarJanela(sim) { _exige(); _grava({ ..._cfg(), mostrarJanela: !!sim }); return { ok: true }; }
+function abrirPastaDados() { const { shell } = require('electron'); shell.openPath(D.userData()); return { ok: true }; }
 
 // ------------------------------------------------------------------ leitura das listas
 const JS_LISTA = `(() => {
@@ -202,6 +235,7 @@ async function ler() {
   _exige();
   if (_rodando) throw new Error('A leitura já está em andamento.');
   _rodando = true;
+  _logTxt = [];
   const inicio = new Date();
   const lid = inicio.toISOString();
   try {
@@ -254,6 +288,9 @@ async function ler() {
     }, { merge: true });
     _prog('', { fim: true });
     return { ok: true, contagens: cont, novas };
+  } catch (e) {
+    _log(`parou: ${e.message || e}`);
+    throw e;
   } finally {
     _rodando = false;
     if (_win && !_win.isDestroyed()) { _win.destroy(); _win = null; }
@@ -331,4 +368,4 @@ async function visualizar(codigo) {
   }
 }
 
-module.exports = { init, estado, escolherCert, ler, dados, explicarMalha, visualizar, certificados };
+module.exports = { init, estado, escolherCert, ler, dados, explicarMalha, visualizar, certificados, mostrarJanela, abrirPastaDados };
