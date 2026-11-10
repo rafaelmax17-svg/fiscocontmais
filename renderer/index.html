@@ -253,6 +253,11 @@
         <span>Baixas DF-e</span>
         <em class="nav-new" id="downloadsNewBadge" hidden>NOVO</em>
       </button>
+      <button class="nav-item" data-group="admin-only" data-view="fiscal-nfechave" title="Consulta NF-e por chave · só Admin (em teste)">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M6 3h8l5 5v6M14 3v5h5M5 3.5V21h7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16.5" cy="17.5" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M18.7 19.7L21 22" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>Consulta NF-e por chave</span>
+        <em class="nav-new">NOVO</em>
+      </button>
       <button class="nav-item" data-group="fiscal" data-view="fiscal-efd-contrib">
         <svg viewBox="0 0 24 24" class="ic"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM14 3v6h6M9 13h6M9 17h6M9 9h1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>EFD-Contribuições</span>
@@ -1208,6 +1213,7 @@
       </div>
 
       <div class="view" id="view-fiscal-fisconforme" hidden><div id="fcRaiz" class="fc"></div></div>
+      <div class="view" id="view-fiscal-nfechave" hidden><div id="ncRaiz" class="nc"></div></div>
       <div class="view" id="view-fiscal-dare" hidden><div id="drRaiz" class="fc dr"></div></div>
       <div class="view" id="view-admin-integra" hidden><div id="igRaiz" class="ig"></div></div>
 
@@ -1535,6 +1541,7 @@
 <script src="fechamento-sn.js"></script>
 <script src="integra-admin.js"></script>
 <script src="fisconforme.js"></script>
+  <script src="nfechave.js"></script>
 <script src="dare.js"></script>
 </body>
 </html>

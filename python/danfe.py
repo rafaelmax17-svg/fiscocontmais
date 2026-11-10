@@ -126,7 +126,18 @@ class _D:
             c.drawString(x, H - y - k * (tam + 1.5), l)
 
 
-def gerar_pdf(texto_xml, saida):
+def _tarja(c, texto):
+    """Tarja diagonal (ex.: CANCELADA) sobre a folha atual."""
+    c.saveState()
+    c.setFillColorRGB(0.85, 0.1, 0.1, alpha=0.28)
+    c.setFont('Helvetica-Bold', 92)
+    c.translate(W / 2, H / 2)
+    c.rotate(45)
+    c.drawCentredString(0, -30, texto)
+    c.restoreState()
+
+
+def gerar_pdf(texto_xml, saida, tarja=''):
     d = ler(texto_xml)
     inf, chave, prot = d['inf'], d['chave'], d['prot']
     ide, emit, dest = inf.find('ide'), inf.find('emit'), inf.find('dest')
@@ -346,6 +357,8 @@ def gerar_pdf(texto_xml, saida):
     c.drawRightString(W - M, 10, 'Gerado pelo FiscoCont+ a partir do XML da NF-e')
     folha = 1
     while k < len(dets):
+        if tarja:
+            _tarja(c, tarja)
         c.showPage()
         folha += 1
         y = cabecalho(M, folha)
@@ -355,6 +368,8 @@ def gerar_pdf(texto_xml, saida):
             k += 1
         c.setFont('Helvetica', 5.5)
         c.drawRightString(W - M, 10, 'Gerado pelo FiscoCont+ a partir do XML da NF-e')
+    if tarja:
+        _tarja(c, tarja)
     c.save()
 
 

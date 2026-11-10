@@ -565,6 +565,7 @@ function switchView(name) {
     return;
   }
   if (name === 'fiscal-dare') { $('#view-fiscal-dare').hidden = false; $('#empty').hidden = true; if (window._dareEntrar) window._dareEntrar(); return; }
+  if (name === 'fiscal-nfechave') { $('#view-fiscal-nfechave').hidden = false; $('#empty').hidden = true; if (window._nfechEntrar) window._nfechEntrar(); return; }
   if (name === 'fiscal-fisconforme') { $('#view-fiscal-fisconforme').hidden = false; $('#empty').hidden = true; if (window._fiscEntrar) window._fiscEntrar(); return; }
   if (name === 'admin-integra') { $('#view-admin-integra').hidden = false; $('#empty').hidden = true; if (window._integraEntrar) window._integraEntrar(); return; }
   if (name === 'admin-lic') { $('#view-admin-lic').hidden = false; $('#empty').hidden = true; loadLicensePanel(); return; }

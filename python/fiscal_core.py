@@ -2904,6 +2904,34 @@ def main(argv):
         print(json.dumps(info, ensure_ascii=False))
         return 0 if 'erro' not in info else 1
 
+    # "nfe-chave" — Consulta NF-e por chave (Admin): situação + XML (Ambiente Nacional) + DANFE.
+    # Entrada: JSON {chaves, cnpj, empresa, pasta, baixar, ciencia, pdf}. Saída: JSON {itens: [...]}.
+    if modo == 'nfe-chave':
+        import nfe_chave as _nc
+        args = argv[1:]
+
+        def optn(name, default=None):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        saida = optn('--json', 'nfe_chave.json')
+        try:
+            with open(optn('--entrada'), encoding='utf-8') as fh:
+                ent = json.load(fh)
+            senha = optn('--senha', '')
+            cert_pem, key_pem, tmp_cert = _extrair_cert_chave_temp(args[0], senha)
+            try:
+                itens = _nc.consultar(ent.get('chaves') or [], cert_pem, key_pem, args[0], senha, ent.get('cnpj', ''),
+                                      ent.get('empresa', ''), cuf=ent.get('cuf', '11'), pasta_base=ent.get('pasta', ''),
+                                      baixar=bool(ent.get('baixar', True)), com_ciencia=bool(ent.get('ciencia')),
+                                      gerar_pdf=bool(ent.get('pdf', True)), progresso=optn('--progresso'))
+            finally:
+                import shutil as _sh
+                _sh.rmtree(tmp_cert, ignore_errors=True)
+            res = {'itens': itens}
+        except Exception as e:
+            res = {'erro': str(e)}
+        _out(saida, json.dumps(res, ensure_ascii=False))
+        return 0 if 'erro' not in res else 1
+
     # "manifestacao" — Consulta Manifestação NF-e (só consulta): situação na SEFAZ + manifestação do destinatário
     # por chave. Entrada: JSON com a lista de chaves. Saída: JSON {itens: [...]}. --progresso: arquivo {feitas, total}.
     if modo in ('manifestacao', 'manifestacao-chaves', 'manifestacao-xlsx'):

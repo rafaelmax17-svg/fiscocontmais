@@ -1487,6 +1487,120 @@ ipcMain.handle('manif:exportar', (_evt, { formato, itens, titulo, html, nome }) 
   return { path: r.filePath };
 }));
 
+// ---------------------------------------------------------------------------
+// Consulta NF-e por chave · XML e PDF (2.2.27) — SÓ ADMIN por enquanto (em teste).
+// Situação na SEFAZ autorizadora + XML pelo Ambiente Nacional (consulta por chave) com o certificado da empresa
+// escolhida (cadastrado nas Baixas DF-e) + DANFE. "Ciência da operação" só é enviada se o Admin marcar a opção.
+// Resultados guardados em nfe-chave-cache.json: nota já baixada, cancelada/denegada ou NFC-e não é consultada de novo
+// (a SEFAZ bloqueia consulta repetida da mesma chave).
+// ---------------------------------------------------------------------------
+function _nfechCachePath() { return path.join(app.getPath('userData'), 'nfe-chave-cache.json'); }
+function _nfechCacheLer() { try { return JSON.parse(fs.readFileSync(_nfechCachePath(), 'utf-8')); } catch (_) { return { itens: {} }; } }
+function _nfechCacheGravar(c) {
+  const ent = Object.entries(c.itens || {});
+  if (ent.length > 20000) c.itens = Object.fromEntries(ent.sort((a, b) => (b[1].em || '').localeCompare(a[1].em || '')).slice(0, 20000));
+  try { fs.writeFileSync(_nfechCachePath(), JSON.stringify(c)); } catch (_) {}
+}
+const _nfechFinal = (it) => it && ((it.xml && fs.existsSync(it.xml)) || ['cancelada', 'denegada'].includes(it.situacao) || (it.modelo && it.modelo !== '55'));
+ipcMain.handle('nfech:empresas', () => _adm(async () => {
+  let pasta = '';
+  try { pasta = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase || ''; } catch (_) {}
+  return {
+    pasta,
+    empresas: (_lerIndiceCert().empresas || []).map((e) => ({
+      id: e.id, nome: e.razaoSocial, cnpj: e.cnpj, tipo: e.tipo || 'matriz', validade: e.validade || '',
+      vencido: !!(e.validade && new Date(e.validade) < new Date()),
+    })).sort((a, b) => a.nome.localeCompare(b.nome)),
+  };
+}));
+ipcMain.handle('nfech:importar', () => _adm(async () => {
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'Arquivo com as chaves de acesso (SPED, planilha, texto ou XML)', properties: ['openFile'],
+    filters: [{ name: 'SPED, texto, planilha ou XML', extensions: ['txt', 'csv', 'xlsx', 'xlsm', 'xml'] }] });
+  if (r.canceled || !r.filePaths.length) return { cancelado: true };
+  const saida = path.join(os.tmpdir(), `fc_nfech_ch_${Date.now()}.json`);
+  await runFiscal(['manifestacao-chaves', r.filePaths[0], '--json', saida], saida);
+  const res = JSON.parse(fs.readFileSync(saida, 'utf-8')); fs.unlink(saida, () => {});
+  if (res.erro) throw new Error(res.erro);
+  // SPED: o CNPJ do registro 0000 diz de qual empresa é o arquivo
+  let cnpjArquivo = '';
+  try {
+    const ini = fs.readFileSync(r.filePaths[0], 'latin1').slice(0, 2000);
+    const l0 = (ini.match(/\|0000\|[^\r\n]*/) || [''])[0];
+    cnpjArquivo = l0.split('|').find((x) => /^\d{14}$/.test(x)) || '';
+  } catch (_) {}
+  return { chaves: res.chaves || [], cnpjArquivo, arquivo: path.basename(r.filePaths[0]) };
+}));
+ipcMain.handle('nfech:consultar', (_evt, { empresaId, chaves, baixar, ciencia, pdf }) => _adm(async () => {
+  const indice = _lerIndiceCert();
+  const empresa = (indice.empresas || []).find((e) => e.id === empresaId);
+  if (!empresa) throw new Error('Escolha a empresa (certificado cadastrado nas Baixas DF-e).');
+  if (empresa.tipo === 'procuracao') throw new Error('Esta empresa está cadastrada por procuração (vale só para NFS-e). Para NF-e, cadastre o certificado da própria empresa nas Baixas DF-e.');
+  const cred = _credDe(indice, empresa);
+  if (cred.error) throw new Error(cred.error);
+  let pasta = '';
+  try { pasta = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase || ''; } catch (_) {}
+  const lista = [...new Set((chaves || []).map((c) => String(c).replace(/\D/g, '')).filter((c) => c.length === 44))].slice(0, 1000);
+  if (!lista.length) throw new Error('Nenhuma chave válida para consultar.');
+  const cache = _nfechCacheLer();
+  const ck = (c) => `${empresa.cnpj}|${c}`;
+  const faltam = lista.filter((c) => { const h = cache.itens[ck(c)]; return !(h && _nfechFinal(h.item)); });
+  const env = (d) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('nfech:progresso', d); };
+  const guardadas = lista.length - faltam.length;
+  env({ feitas: 0, total: faltam.length, guardadas });
+  for (let ini = 0; ini < faltam.length; ini += 50) {
+    const parte = faltam.slice(ini, ini + 50);
+    const tag = `${Date.now()}_${ini}`;
+    const entrada = path.join(os.tmpdir(), `fc_nfech_in_${tag}.json`);
+    const saida = path.join(os.tmpdir(), `fc_nfech_out_${tag}.json`);
+    const prog = path.join(os.tmpdir(), `fc_nfech_prog_${tag}.json`);
+    fs.writeFileSync(entrada, JSON.stringify({ chaves: parte, cnpj: empresa.cnpj, empresa: empresa.razaoSocial, pasta,
+      baixar: baixar !== false, ciencia: !!ciencia, pdf: pdf !== false }));
+    const tm = setInterval(() => {
+      try { const p = JSON.parse(fs.readFileSync(prog, 'utf-8')); env({ feitas: ini + p.feitas, total: faltam.length, guardadas }); } catch (_) {}
+    }, 700);
+    try {
+      await runFiscal(['nfe-chave', cred.pfxPath, '--senha', cred.senha, '--entrada', entrada, '--progresso', prog, '--json', saida], saida);
+    } finally { clearInterval(tm); }
+    const res = JSON.parse(fs.readFileSync(saida, 'utf-8'));
+    for (const f of [entrada, saida, prog]) fs.unlink(f, () => {});
+    if (res.erro) throw new Error(res.erro);
+    const em = new Date().toISOString();
+    for (const it of res.itens || []) cache.itens[ck(it.chave)] = { item: it, em };
+    _nfechCacheGravar(cache);
+  }
+  const itens = lista.map((c) => { const h = cache.itens[ck(c)] || {}; return { ...h.item, chave: c, consultadoEm: h.em || '', guardada: !faltam.includes(c) }; });
+  // nome do emitente pelo CNPJ quando a SEFAZ não devolveu
+  cache.nomes = cache.nomes || {};
+  for (const cnpj of [...new Set(itens.filter((i) => !i.emitente && i.cnpj_emit).map((i) => i.cnpj_emit))].slice(0, 60)) {
+    if (!(cnpj in cache.nomes)) {
+      const api = await _consultaCnpjApi(cnpj).catch(() => null);
+      cache.nomes[cnpj] = api ? (api.razao_social || api.nome || '') : '';
+    }
+  }
+  for (const i of itens) if (!i.emitente && cache.nomes[i.cnpj_emit]) i.emitente = cache.nomes[i.cnpj_emit];
+  _nfechCacheGravar(cache);
+  return { empresa: { nome: empresa.razaoSocial, cnpj: empresa.cnpj }, pasta, itens, consultadas: faltam.length, quando: new Date().toISOString() };
+}));
+ipcMain.handle('nfech:abrir', (_evt, { caminho, pasta }) => _adm(async () => {
+  if (!caminho || !fs.existsSync(caminho)) throw new Error('Arquivo não encontrado (foi movido ou apagado?).');
+  if (pasta) shell.showItemInFolder(caminho); else await shell.openPath(caminho);
+  return {};
+}));
+ipcMain.handle('nfech:exportar', (_evt, { itens, titulo, nome }) => _adm(async () => {
+  const r = await dialog.showSaveDialog(mainWindow, { title: 'Salvar resultado da consulta',
+    defaultPath: `${(nome || 'Consulta_NFe').replace(/[\\/:*?"<>|]/g, '_')}.xlsx`, filters: [{ name: 'Planilha Excel', extensions: ['xlsx'] }] });
+  if (r.canceled || !r.filePath) return { cancelado: true };
+  const entrada = path.join(os.tmpdir(), `fc_nfech_x_${Date.now()}.json`);
+  const saida = entrada + '.res.json';
+  fs.writeFileSync(entrada, JSON.stringify(itens || []));
+  await runFiscal(['manifestacao-xlsx', r.filePath, '--entrada', entrada, '--titulo', String(titulo || ''), '--json', saida], saida);
+  const res = JSON.parse(fs.readFileSync(saida, 'utf-8'));
+  for (const f of [entrada, saida]) fs.unlink(f, () => {});
+  if (res.erro) throw new Error(res.erro);
+  shell.openPath(r.filePath);
+  return { path: r.filePath };
+}));
+
 ipcMain.handle('fiscal:nfseBaixar', async (_evt, { empresaId, dataInicial, dataFinal, gerarPdf }) => {
   const empresa = _lerIndiceCert().empresas.find((e) => e.id === empresaId);
   if (!empresa) return { error: 'Empresa não encontrada — cadastre o certificado primeiro.' };

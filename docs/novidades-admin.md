@@ -3,6 +3,18 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.27
+
+- **Consulta NF-e por chave · XML e PDF** (só Admin, em teste). Item próprio no menu, com `data-group="admin-only"`; os IPC `nfech:*` passam pelo `_adm`.
+  - **Situação:** NfeConsultaProtocolo 4.00 na SEFAZ autorizadora, pela UF da chave (reaproveita `manifestacao.py`). Traz o protocolo e os eventos: cancelamento, carta de correção, ciência e manifestação.
+  - **XML (só modelo 55):** NFeDistribuicaoDFe por chave (`consChNFe`) no Ambiente Nacional, com o certificado da empresa escolhida, cadastrado nas Baixas DF-e. Empresa cadastrada por procuração não serve (lá é só NFS-e). Mensagens claras para os retornos 640 (não participa), 641 (emitente), 632 (fora do prazo), 653/654 (cancelada/denegada, sem XML) e 656 (consumo indevido: para de pedir XML no resto do lote).
+  - **Ciência da Operação (210210):** só quando o Admin marca a caixa, com confirmação. É enviada só quando a SEFAZ devolveu apenas o resumo (`resNFe`). Assinatura XMLDSig RSA-SHA1 montada à mão em forma canônica C14N, conferida com lxml numa cópia destacada. Depois da ciência, consulta a chave de novo (3 s e 6 s).
+  - **PDF:** DANFE pelo `danfe.py`, que ganhou o parâmetro `tarja` (escreve "CANCELADA" na diagonal).
+  - **Arquivos:** `<pasta das Baixas DF-e>\<MM-AAAA da emissão>\<empresa>\NF-e\XML\<chave>-procNFe.xml` e `...\PDF\<chave>-DANFE.pdf`. Arquivo igual não é regravado; se o conteúdo for diferente, grava com data no nome.
+  - **Cache:** `nfe-chave-cache.json`. Nota já baixada, cancelada, denegada ou NFC-e não é consultada de novo. Consulta em partes de 50 chaves.
+  - **Importar:** SPED, Excel, texto ou XML. No SPED, a empresa sai do CNPJ do registro 0000.
+  - **Não foi testado com certificado real:** retorno do Ambiente Nacional por chave, ciência e tempo de liberação do XML.
+
 ## 2.2.26
 
 - **Fisconforme · painel A2** (escolhido pelo Rafael entre A1, A2 e A3; substitui o modelo A da 2.2.25, que foi gravada mas não publicada).
