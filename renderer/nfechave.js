@@ -10,8 +10,9 @@
   const brl = (v) => { const n = Number(v); return v === '' || v == null || isNaN(n) ? '' : n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); };
   const SIT = { autorizada: ['Autorizada', 'ok'], cancelada: ['Cancelada', 'ca'], denegada: ['Denegada', 'de'], nao_encontrada: ['Não encontrada', 'nf'], erro: ['Erro na consulta', 'er'] };
   const EV = { cancelamento: 'Cancelamento', carta_correcao: 'Carta de correção', ciencia: 'Ciência da operação', confirmada: 'Confirmação da operação',
-    desconhecida: 'Desconhecimento', nao_realizada: 'Operação não realizada' };
-  const MOD = { 55: 'NF-e', 65: 'NFC-e' };
+    desconhecida: 'Desconhecimento', nao_realizada: 'Operação não realizada',
+    desacordo: 'Prestação em desacordo', cancel_desacordo: 'Cancelamento do desacordo', comprovante_entrega: 'Comprovante de entrega' };
+  const MOD = { 55: 'NF-e', 65: 'NFC-e', 57: 'CT-e', 67: 'CT-e OS' };
   const N = { empresas: [], pasta: '', empId: '', texto: '', baixar: true, ciencia: false, res: null, filtro: 'todas', sel: '', rodando: false };
 
   // ------------------------------------------------------------------ chaves (confere tamanho e dígito antes de ir à SEFAZ)
@@ -69,8 +70,8 @@
     const k = (n, t) => `<div><b>${n}</b><span>${t}</span></div>`;
     $('#ncRaiz').innerHTML = `
       <div class="nc-hero">
-        <div><span class="nc-tag">SEFAZ · NF-e E NFC-e <em>SÓ ADMIN · EM TESTE</em></span><h1>Consulta NF-e por chave · XML e PDF</h1>
-          <p>Cole uma ou várias chaves (44 dígitos). O sistema confere a chave, descobre a SEFAZ da nota e traz a situação oficial: autorizada, cancelada ou denegada, com o protocolo e os eventos. Quando a empresa escolhida participa da nota, baixa o XML completo e gera o PDF (DANFE).</p>
+        <div><span class="nc-tag">SEFAZ · NF-e, NFC-e E CT-e <em>SÓ ADMIN · EM TESTE</em></span><h1>Consulta NF-e por chave · XML e PDF</h1>
+          <p>Cole uma ou várias chaves (44 dígitos) de NF-e, NFC-e ou CT-e. O sistema confere a chave, descobre a SEFAZ do documento e traz a situação oficial: autorizada, cancelada ou denegada, com o protocolo e os eventos. Quando a empresa escolhida participa da nota, baixa o XML completo e gera o PDF (DANFE).</p>
           <div class="nc-ks">${k(c.autorizada, 'Autorizadas')}${k(c.cancelada, 'Canceladas')}${k(c.denegada, 'Denegadas')}${k(c.nao_encontrada + c.erro, 'Não encontradas / erro')}</div></div>
         <div class="nc-in">
           <label>Chaves de acesso <small>(uma por linha · pode colar com espaços ou pontos)</small></label>

@@ -1501,7 +1501,9 @@ function _nfechCacheGravar(c) {
   if (ent.length > 20000) c.itens = Object.fromEntries(ent.sort((a, b) => (b[1].em || '').localeCompare(a[1].em || '')).slice(0, 20000));
   try { fs.writeFileSync(_nfechCachePath(), JSON.stringify(c)); } catch (_) {}
 }
-const _nfechFinal = (it) => it && ((it.xml && fs.existsSync(it.xml)) || ['cancelada', 'denegada'].includes(it.situacao) || (it.modelo && it.modelo !== '55'));
+// não consulta de novo: XML já baixado, cancelada/denegada (não mudam mais), ou autorizada sem download possível consultada há menos de 12 h
+const _nfechFinal = (it, em) => it && ((it.xml && fs.existsSync(it.xml)) || ['cancelada', 'denegada'].includes(it.situacao)
+  || (it.situacao === 'autorizada' && it.modelo !== '55' && em && Date.now() - Date.parse(em) < 12 * 3600000));
 ipcMain.handle('nfech:empresas', () => _adm(async () => {
   let pasta = '';
   try { pasta = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase || ''; } catch (_) {}
@@ -1543,7 +1545,7 @@ ipcMain.handle('nfech:consultar', (_evt, { empresaId, chaves, baixar, ciencia, p
   if (!lista.length) throw new Error('Nenhuma chave válida para consultar.');
   const cache = _nfechCacheLer();
   const ck = (c) => `${empresa.cnpj}|${c}`;
-  const faltam = lista.filter((c) => { const h = cache.itens[ck(c)]; return !(h && _nfechFinal(h.item)); });
+  const faltam = lista.filter((c) => { const h = cache.itens[ck(c)]; return !(h && _nfechFinal(h.item, h.em)); });
   const env = (d) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('nfech:progresso', d); };
   const guardadas = lista.length - faltam.length;
   env({ feitas: 0, total: faltam.length, guardadas });

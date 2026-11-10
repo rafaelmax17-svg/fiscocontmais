@@ -3,6 +3,17 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.29
+
+- **Consulta NF-e por chave · CT-e e NFC-e.** Com as raízes da ICP-Brasil da 2.2.28, a conexão com o SVRS passou a funcionar. As chaves de teste eram de **CT-e (modelo 57)** e iam para o serviço da NF-e, que respondia 215 (falha no schema).
+  - **CT-e (57) e CT-e OS (67):** consulta pelo CTeConsultaV4 (`consSitCTe` 4.00, ação `cteConsultaCT`), com situação, protocolo e eventos (cancelamento, CC-e, desacordo, comprovante de entrega).
+    - **Autorizadores:** MG, MS, MT e PR próprios; SP, AP, PE e RR pelo SVSP; os demais, incluindo RO, pelo SVRS.
+    - **Sem download:** CT-e não tem consulta por chave na distribuição; ela só funciona por NSU.
+  - **NFC-e (65):** passa a ir aos servidores próprios da NFC-e (SVRS NFC-e para RO), e não aos da NF-e.
+  - **Erros mais claros:** a regra "autorizadora não respondeu = erro, e não 'não encontrada'" vale também para CT-e e NFC-e.
+  - **Cache:** documento autorizado sem download possível (NFC-e, CT-e) é reconsultado depois de 12 h. Antes ficava guardado para sempre, até com erro.
+  - **Endereços sem teste com certificado real:** os de CT-e e NFC-e fora de RO.
+
 ## 2.2.28
 
 - **Consulta NF-e por chave · correção do "não encontrada" falso.** Notas de RO, autorizadas pelo SVRS, apareciam como "NF-e não consta". Isso também tinha acontecido na Consulta Manifestação em 2.1.27.

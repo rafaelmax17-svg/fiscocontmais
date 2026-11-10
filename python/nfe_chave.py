@@ -167,6 +167,120 @@ def _pdf(proc, destino, cancelada):
     return destino
 
 
+# ------------------------------------------------------------------ situação por modelo (NF-e 55 · NFC-e 65 · CT-e 57/67)
+# NFC-e tem servidores próprios (diferentes dos da NF-e); CT-e tem outro serviço (CTeConsultaV4) e outros autorizadores.
+_NFCE = {
+    'SVRS': 'https://nfce.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    'SP': 'https://nfce.fazenda.sp.gov.br/ws/NFeConsultaProtocolo4.asmx',
+    'MG': 'https://nfce.fazenda.mg.gov.br/nfce/services/NFeConsultaProtocolo4',
+    'AM': 'https://nfce.sefaz.am.gov.br/nfce-services/services/NfeConsulta4',
+    'GO': 'https://nfe.sefaz.go.gov.br/nfe/services/NFeConsultaProtocolo4',
+    'MS': 'https://nfce.sefaz.ms.gov.br/ws/NFeConsultaProtocolo4',
+    'MT': 'https://nfce.sefaz.mt.gov.br/nfcews/services/NfeConsulta4',
+    'PR': 'https://nfce.sefa.pr.gov.br/nfce/NFeConsultaProtocolo4',
+    'RS': 'https://nfce.sefazrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+}
+_NFCE_UF = {'35': 'SP', '31': 'MG', '13': 'AM', '52': 'GO', '50': 'MS', '51': 'MT', '41': 'PR', '43': 'RS'}
+_CTE = {
+    'SVRS': 'https://cte.svrs.rs.gov.br/ws/CTeConsultaV4/CTeConsultaV4.asmx',
+    'SVSP': 'https://nfe.fazenda.sp.gov.br/CTeWS/WS/CTeConsultaV4.asmx',
+    'MG': 'https://cte.fazenda.mg.gov.br/cte/services/CTeConsultaV4',
+    'MS': 'https://producao.cte.ms.gov.br/ws/CTeConsultaV4',
+    'MT': 'https://cte.sefaz.mt.gov.br/ctews2/services/CTeConsultaV4',
+    'PR': 'https://cte.fazenda.pr.gov.br/cte4/CTeConsultaV4',
+}
+_CTE_UF = {'35': 'SVSP', '16': 'SVSP', '26': 'SVSP', '14': 'SVSP', '31': 'MG', '50': 'MS', '51': 'MT', '41': 'PR'}
+_NS_CTE = 'http://www.portalfiscal.inf.br/cte'
+
+
+def _soap_cte(sess, url, corpo, timeout=30):
+    ns = 'http://www.portalfiscal.inf.br/cte/wsdl/CTeConsultaV4'
+    env = ('<?xml version="1.0" encoding="utf-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">'
+           f'<soap12:Body><cteDadosMsg xmlns="{ns}">{corpo}</cteDadosMsg></soap12:Body></soap12:Envelope>')
+    r = sess.post(url, data=env.encode('utf-8'), timeout=timeout,
+                  headers={'Content-Type': f'application/soap+xml; charset=utf-8; action="{ns}/cteConsultaCT"'})
+    r.raise_for_status()
+    return r.text
+
+
+def _analisa_cte(xml):
+    ret = re.search(r'<(?:\w+:)?retConsSitCTe\b.*?</(?:\w+:)?retConsSitCTe>', xml, re.S)
+    ret = ret.group(0) if ret else xml
+    cst, mot = mf._txt(ret, 'cStat'), mf._txt(ret, 'xMotivo')
+    prot = mf._blocos(ret, 'protCTe')
+    dh_aut = mf._txt(prot[0], 'dhRecbto') if prot else ''
+    cst_prot = mf._txt(prot[0], 'cStat') if prot else ''
+    eventos = []
+    for pe in mf._blocos(ret, 'procEventoCTe'):
+        tp = mf._txt(pe, 'tpEvento')
+        rets = mf._blocos(pe, 'retEventoCTe') or mf._blocos(pe, 'retEvento')
+        st_ev = mf._txt(rets[0], 'cStat') if rets else ''
+        if st_ev and st_ev not in ('134', '135', '136'):
+            continue
+        dh = (mf._txt(rets[0], 'dhRegEvento') if rets else '') or mf._txt(pe, 'dhEvento')
+        eventos.append({'tipo': tp, 'quando': dh})
+    if cst == '101' or cst_prot == '101' or any(e['tipo'] == '110111' for e in eventos):
+        sit = 'cancelada'
+    elif cst in ('110', '301', '302') or cst_prot in ('110', '301', '302'):
+        sit = 'denegada'
+    elif cst == '100' or cst_prot == '100':
+        sit = 'autorizada'
+    elif cst == '217':
+        sit = 'nao_encontrada'
+    else:
+        sit = 'erro'
+    return {'situacao': sit, 'cstat': cst, 'motivo': mot, 'dh_autorizacao': dh_aut, 'eventos': eventos}
+
+
+def _tentar(lista, chamar, analisar, uf, nome_prim):
+    """Tenta os servidores na ordem; o primeiro é o autorizador da UF. Se ele não responder, o "não consta" dos outros
+    não vale (a nota não é deles): devolve erro com o motivo real."""
+    tent, guardado, erro_prim = [], None, ''
+    for i, (aut, url) in enumerate(lista):
+        try:
+            xml = chamar(url)
+        except Exception as e:
+            tent.append({'aut': aut, 'cstat': '', 'motivo': mf._erro_legivel(e)})
+            if i == 0:
+                erro_prim = mf._erro_legivel(e)
+            continue
+        r = analisar(xml)
+        tent.append({'aut': aut, 'cstat': r['cstat'], 'motivo': r['motivo']})
+        if r['cstat'] in ('217', '226', '227', '236', '613') and r['situacao'] not in ('autorizada', 'cancelada', 'denegada'):
+            guardado = guardado or (r, aut)
+            continue
+        return {**r, 'autorizador': aut, 'tentativas': tent}
+    if erro_prim:
+        raise RuntimeError(f'A SEFAZ que autoriza estes documentos de {uf} ({nome_prim}) não respondeu: {erro_prim}')
+    if guardado:
+        return {**guardado[0], 'autorizador': guardado[1], 'tentativas': tent}
+    raise RuntimeError(' · '.join(f"{t['aut']}: {t['motivo']}" for t in tent) or 'Sem resposta da SEFAZ.')
+
+
+def situacao(sess, ch):
+    mod, uf = ch[20:22], mf.UF_SIGLA.get(ch[:2], ch[:2])
+    if mod in ('57', '67'):
+        corpo = (f'<consSitCTe xmlns="{_NS_CTE}" versao="4.00"><tpAmb>1</tpAmb><xServ>CONSULTAR</xServ>'
+                 f'<chCTe>{ch}</chCTe></consSitCTe>')
+        prim = _CTE_UF.get(ch[:2], 'SVRS')
+        lista = [(prim, _CTE[prim])] + [(a, _CTE[a]) for a in ('SVRS', 'SVSP') if a != prim]
+        r = _tentar(lista, lambda u: _soap_cte(sess, u, corpo), _analisa_cte, uf, prim)
+    elif mod == '65':
+        corpo = (f'<consSitNFe xmlns="{NS_NFE}" versao="4.00"><tpAmb>1</tpAmb>'
+                 f'<xServ>CONSULTAR</xServ><chNFe>{ch}</chNFe></consSitNFe>')
+        ns = 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4'
+        prim = _NFCE_UF.get(ch[:2], 'SVRS')
+        lista = [(prim, _NFCE[prim])] + ([('SVRS', _NFCE['SVRS'])] if prim != 'SVRS' else [])
+        r = _tentar(lista, lambda u: mf._soap(sess, u, ns, corpo, 'nfeConsultaNF'), mf._analisa_situacao, uf, prim)
+    else:
+        xml, aut, tent = mf._consulta_situacao(sess, ch)
+        r = {**mf._analisa_situacao(xml), 'autorizador': aut, 'tentativas': tent}
+    for e in r.get('eventos') or []:
+        e['nome'] = {'110110': 'carta_correcao', '610110': 'desacordo', '610112': 'cancel_desacordo', '110180': 'comprovante_entrega',
+                     **mf.EVENTOS}.get(e['tipo'], e['tipo'])
+    return r
+
+
 # ------------------------------------------------------------------ consulta
 def consultar(chaves, cert_pem, key_pem, pfx, senha, cnpj, empresa, cuf='11', pasta_base='', baixar=True,
               com_ciencia=False, gerar_pdf=True, progresso=None, pausa=0.4):
@@ -179,15 +293,16 @@ def consultar(chaves, cert_pem, key_pem, pfx, senha, cnpj, empresa, cuf='11', pa
             item = {'chave': ch, **mf.dados_da_chave(ch), 'xml': '', 'pdf': '', 'download': ''}
             # 1) situação na SEFAZ autorizadora
             try:
-                xml, aut, tent = mf._consulta_situacao(sess, ch)
-                item.update(mf._analisa_situacao(xml)); item['autorizador'] = aut; item['tentativas'] = tent
+                item.update(situacao(sess, ch))
             except Exception as e:
                 item.update({'situacao': 'erro', 'motivo': str(e)[:200]})
-            for e in item.get('eventos') or []:
-                e['nome'] = {'110110': 'carta_correcao', **mf.EVENTOS}.get(e['tipo'], e['tipo'])
             # 2) XML pelo Ambiente Nacional
             if item['modelo'] != '55':
-                item['download'] = 'NFC-e e outros modelos não têm download pela SEFAZ: só a consulta.'
+                item['download'] = {
+                    '65': 'NFC-e não tem download pela SEFAZ: só a consulta.',
+                    '57': 'CT-e: a SEFAZ não entrega o XML pela chave (só pela sequência de documentos da empresa). Só a consulta.',
+                    '67': 'CT-e OS: a SEFAZ não entrega o XML pela chave. Só a consulta.',
+                }.get(item['modelo'], 'Modelo sem download pela SEFAZ: só a consulta.')
             elif not baixar:
                 pass
             elif not dist_ok:
