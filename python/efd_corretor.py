@@ -780,6 +780,9 @@ def _fix_vlmerc(L, acoes, pend, ctx):
     return L
 
 
+_CFOP_SEM_CREDITO = {'556': 'uso e consumo', '407': 'uso e consumo com ST', '653': 'combustível/lubrificante para consumo'}
+
+
 def det_cst_ent(L):
     out = []
     for i, pc, its in _blocos_c100(L):
@@ -795,10 +798,18 @@ def det_cst_ent(L):
 def _fix_cst_ent(L, acoes, pend, ctx):
     """Item de ENTRADA com CST que não é de entrada (ex.: "00", que nem existe na tabela). CFOP de "outras entradas"
     (x9xx: comodato, remessa, retorno, brinde, amostra…) → CST 98 (outras operações de entrada), sem base nem crédito.
+    Uso e consumo (x.556, x.407) e combustível/lubrificante para consumo (x.653) → CST 70 (aquisição sem direito a
+    crédito), sem base nem crédito — regra do escritório (Rafael, 10/11/2026).
     Outro CFOP → pendência: pode ser entrada com direito a crédito, o CST depende da nota."""
     for f in det_cst_ent(L):
         q = _partes(L[f['i']]['txt'])
-        if f['cfop'][:1] in ('1', '2', '3') and f['cfop'][1:2] == '9':
+        if f['cfop'][:1] in ('1', '2', '3') and f['cfop'][1:] in _CFOP_SEM_CREDITO:
+            antes = L[f['i']]['txt']
+            _zera_pis_cofins(q, '70')
+            L[f['i']]['txt'] = _monta(q)
+            acoes.append({'cat': 'cst_ent', 'tipo': 'alterado', 'linha': L[f['i']]['n'], 'registro': 'C170', 'antes': antes, 'depois': L[f['i']]['txt'],
+                          'motivo': f"NF {f['num']}, CFOP {f['cfop']} ({_CFOP_SEM_CREDITO[f['cfop'][1:]]}): CST {f['cst_pis']}/{f['cst_cof']} não é de entrada → 70 (aquisição sem direito a crédito), sem base e sem crédito."})
+        elif f['cfop'][:1] in ('1', '2', '3') and f['cfop'][1:2] == '9':
             antes = L[f['i']]['txt']
             for k in (24, 30):                       # CST PIS / CST COFINS
                 if q[k] not in CST_ENTRADA_OK:
@@ -1750,7 +1761,7 @@ _EXPLICA = {
     'vlmerc': ('Na NF-e de saída, o valor da mercadoria (VL_MERC) do C100 precisa ser maior ou igual à soma dos itens (C170).',
                'O VL_MERC passou a ser a soma dos itens. O total do documento não foi alterado.'),
     'cst_ent': ('Item de entrada só aceita CST 50 a 66, 70 a 75, 98 ou 99 (e "00" nem existe na tabela de PIS/COFINS).',
-                'CFOP de outras entradas (x9xx: comodato, remessa, retorno…) → CST 98, sem base e sem crédito. Outros CFOPs ficam como pendência, porque podem dar direito a crédito.'),
+                'Uso e consumo (x.556, x.407) e combustível para consumo (x.653) → CST 70 (aquisição sem direito a crédito). CFOP de outras entradas (x9xx: comodato, remessa, retorno…) → CST 98. Os dois sem base e sem crédito. Outros CFOPs ficam como pendência, porque podem dar direito a crédito.'),
     'cta_rec': ('A conta contábil analítica é obrigatória no C175 e no M400/M410/M800/M810.',
                 'Quando o arquivo usa uma única conta de receita, ela é usada nos registros em branco. Com mais de uma conta, fica pendência.'),
     'part_mun': ('Participante do Brasil precisa do código do município (IBGE).',

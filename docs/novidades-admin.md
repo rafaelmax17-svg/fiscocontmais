@@ -3,6 +3,11 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.24
+
+- **Corretor da EFD-Contribuições · CST inválido em entrada:** item de entrada de uso e consumo (CFOP x.556 e x.407) ou de combustível/lubrificante para consumo (x.653) com CST que não é de entrada (ex.: 00) passa para **CST 70** (aquisição sem direito a crédito), sem base e sem crédito. Regra do escritório (Rafael, 10/11/2026). Antes, esses itens ficavam como pendência.
+  - Continua igual: outras entradas (x9xx) → CST 98; demais CFOPs → pendência.
+
 ## 2.2.23
 
 - **Consulta automática da SEFIN** (`electron/agenda_sefin.js`): o Fisconforme e, logo depois, os Débitos e DARE do exercício são consultados 4x por dia em dias úteis (07:45, 10:45, 13:45 e 16:45). Os horários ficam fixos no código.
