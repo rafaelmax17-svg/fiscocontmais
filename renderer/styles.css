@@ -1666,3 +1666,39 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .sefin-av b{display:block;font-size:13.5px}.sefin-av span{display:block;font-size:12px;opacity:.82;margin-top:2px}
 .sefin-av em{font-style:normal;display:inline-block;margin-top:7px;font-size:11.5px;font-weight:800;color:#93c5fd}
 .sefin-av button{all:unset;cursor:pointer;position:absolute;top:8px;right:10px;font-size:12px;opacity:.6}.sefin-av button:hover{opacity:1}
+/* Fisconforme · painel executivo (topo escuro vinho/laranja, tempo de pendência, ranking de malhas e empresas) */
+.fh-hero{display:grid;grid-template-columns:1.25fr 1fr;gap:26px;border-radius:24px;padding:22px 26px;margin-bottom:16px;color:#fff;position:relative;overflow:hidden;
+  background:radial-gradient(900px 260px at 90% -40%,rgba(251,146,60,.45),transparent),linear-gradient(135deg,#2a0b16,#7f1d1d 50%,#c2410c);box-shadow:0 30px 50px -30px #7f1d1d}
+.fh-hero::after{content:'';position:absolute;inset:0;background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.07) 45%,transparent 60%);transform:translateX(-100%);pointer-events:none}
+.fh-hero.fh-in::after{animation:drBrilho 1.6s .3s ease-out}
+.fh-tt{display:flex;gap:14px;align-items:center}
+.fh-tt .fc-logo{width:58px;height:58px;border-radius:16px;box-shadow:0 10px 20px -10px #000}.fh-tt .fc-logo img{width:46px}
+.fh-tt span{font-size:10.5px;font-weight:800;letter-spacing:.1em;opacity:.75}.fh-tt p{margin:3px 0 0;font-size:13px;opacity:.86}
+.fh-h2{margin:14px 0 0;font-size:24px}
+.fh-big{margin:14px 0 2px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}.fh-big b{font-size:50px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}.fh-big small{font-size:14px;opacity:.75;font-weight:600}
+.fh-ks{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-top:12px}
+.fh-k{all:unset;cursor:pointer;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:10px 13px;transition:background .2s,transform .2s}
+.fh-k:hover{background:rgba(255,255,255,.18);transform:translateY(-2px)}.fh-k.on{background:rgba(255,255,255,.26);border-color:rgba(255,255,255,.55)}
+.fh-k b{display:block;font-size:20px;font-variant-numeric:tabular-nums}.fh-k span{font-size:11.5px;opacity:.8}
+.fh-in .fh-k{animation:fsUp .5s both}.fh-in .fh-k:nth-child(2){animation-delay:.08s}.fh-in .fh-k:nth-child(3){animation-delay:.16s}.fh-in .fh-k:nth-child(4){animation-delay:.24s}
+.fh-bt{display:flex;gap:8px;justify-content:flex-end;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.fh-bt button,.fh-chk{font:inherit;font-size:12.5px;font-weight:700;color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:11px;padding:8px 13px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.fh-bt button.g{background:#10b981;border-color:#10b981}.fh-bt button.g:hover{background:#059669}.fh-bt button:disabled{opacity:.5;cursor:not-allowed}
+.fh-ag h4{margin:0 0 10px;font-size:13px;opacity:.88}
+.fh-stk{display:flex;height:16px;border-radius:9px;overflow:hidden;background:rgba(255,255,255,.12);margin-bottom:12px}.fh-stk i{display:block;height:100%}
+.fh-in .fh-stk i{animation:drCresce .7s ease-out both;transform-origin:left}
+.fh-lg{display:grid;grid-template-columns:1fr 1fr;gap:7px 16px;font-size:12px}.fh-lg div{display:flex;justify-content:space-between;gap:8px}.fh-lg i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:6px}
+.fh-ag small{display:block;margin-top:12px;font-size:11.5px;opacity:.72;line-height:1.45}
+.fh-g2{display:grid;grid-template-columns:1fr 1.15fr;gap:16px;margin-bottom:16px}.fh-g2 h3 small{font-size:11.5px;color:var(--ink2);font-weight:600}
+.fh-in .fc-card{animation:fsUp .5s .1s both}
+.fh-ml{display:grid;grid-template-columns:28px 1fr 50px;gap:10px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--line);font-size:12.6px;cursor:pointer;border-radius:8px}
+.fh-ml:hover,.fh-ml.on{background:#fff7f0}.fh-ml.fh-out{cursor:default;background:none}
+.fh-n{width:26px;height:26px;border-radius:8px;background:#fff1e6;color:#c2410c;font-weight:800;display:grid;place-items:center;font-size:11px}
+.fh-ml i{display:block;height:7px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:5px}.fh-ml i em{display:block;height:100%;background:linear-gradient(90deg,#fb923c,#e11d48)}
+.fh-in .fh-ml{animation:fsUp .45s both}.fh-in .fh-ml i em,.fh-in .fh-sb i{animation:fcEnche .9s ease-out both}
+.fh-ml b{text-align:right;font-size:15px}
+.fh-ec{display:grid;grid-template-columns:1fr 150px 50px;gap:12px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--line);font-size:12.6px;cursor:pointer;border-radius:8px}
+.fh-ec:hover,.fh-ec.on{background:#fff7f0}.fh-ec small{display:block;color:var(--ink2);font-size:11px}.fh-ec em{font-style:normal;color:#0e7490;font-weight:700}
+.fh-in .fh-ec{animation:fsUp .45s both}
+.fh-sb{display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--line)}.fh-sb i{display:block;height:100%}
+.fh-ec b{text-align:right;font-size:15px}

@@ -3,6 +3,15 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.25
+
+- **Fisconforme · painel executivo** (modelo A, aprovado pelo Rafael).
+  - **Topo:** escuro, em vinho e laranja, com a logo, o total de pendentes e os 4 cartões que filtram a lista.
+  - **Tempo de pendência:** barra calculada a partir da data em que cada notificação apareceu pela primeira vez.
+  - **Quadros:** ranking numerado das malhas e empresas com barra de pendente, contestada e indeferida. As duas filtram a lista e rolam a tela até ela.
+  - **Movimento:** contagem dos números e barras crescendo, só ao abrir, depois de ler ou na consulta automática.
+  - **O que não mudou:** os botões ("Mostrar a janela" e "Abrir o portal" continuam só para o Admin), a lista, o "Entenda esta malha" e o "Visualizar".
+
 ## 2.2.24
 
 - **Corretor da EFD-Contribuições · CST inválido em entrada:** item de entrada de uso e consumo (CFOP x.556 e x.407) ou de combustível/lubrificante para consumo (x.653) com CST que não é de entrada (ex.: 00) passa para **CST 70** (aquisição sem direito a crédito), sem base e sem crédito. Regra do escritório (Rafael, 10/11/2026). Antes, esses itens ficavam como pendência.

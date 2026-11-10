@@ -23,7 +23,7 @@
     if (!est.certs.length) {
       // sem o e-CPF neste computador: não consulta nada no portal, mas mostra a última leitura salva (se houver)
       const d = await window.fiscocont.fisconforme.dados();
-      if (d && !d.error && d.meta) { F.semCert = true; F.d = d; desenhar(); return; }
+      if (d && !d.error && d.meta) { F.semCert = true; F.d = d; F.anim = true; desenhar(); return; }
       semCertificado(); return;
     }
     if (!est.escolhido) { semCertificado(); return; }
@@ -56,7 +56,7 @@
   async function carregar() {
     const d = await window.fiscocont.fisconforme.dados();
     if (d && d.error) { toast(d.error, true); return; }
-    F.d = d; desenhar(); badge();
+    F.d = d; F.anim = true; desenhar(); badge();
   }
 
   // contador no ícone do menu: quantidade exata de pendentes da última leitura; pulsa quando a última leitura trouxe notificação nova
@@ -115,29 +115,44 @@
       && (!t || `${n.nome} ${n.cnpj} ${n.ie} ${n.codigo} ${n.desc}`.toLowerCase().includes(t)))
       .sort((a, b) => (a.primeiraVez || '').localeCompare(b.primeiraVez || '') || a.nome.localeCompare(b.nome));
     const chip = (k, rot, n) => `<button class="fc-f${F.filtro === k ? ' on' : ''}" data-f="${k}">${rot} (${n})</button>`;
+    const anima = F.anim; F.anim = false;                     // movimento só ao abrir/ler, não a cada filtro
+    const cnt = (v) => (anima ? ` data-cnt="${v}"` : '');
+    // há quanto tempo as pendentes estão abertas (desde que apareceram pela primeira vez)
+    const faixas = [['até 30 dias', 0, 30, '#fde68a'], ['31 a 90 dias', 31, 90, '#fbbf24'], ['91 a 180 dias', 91, 180, '#f97316'], ['mais de 180 dias', 181, 1e9, '#be123c']]
+      .map(([t, a, b, cor]) => ({ t, cor, n: pend.filter((n) => { const d = dias(n.primeiraVez); return d >= a && d <= b; }).length }));
+    const totP = Math.max(1, pend.length);
+    const quando = meta ? new Date(meta.ultimaLeitura).toLocaleString('pt-BR').slice(0, 17).replace(',', '') : '';
+    const kp = (k, n, rot) => `<button class="fh-k${F.filtro === k ? ' on' : ''}" data-f="${k}"><b${cnt(n)}>${n}</b><span>${rot}</span></button>`;
+    const mxE = Math.max(1, ...topE.map((g) => g.pe + g.co + g.in));
     $('#fcRaiz').innerHTML = `
-      <div class="fc-hd"><div class="fc-tit">${LOGO}<div><span class="fc-tag">SEFIN-RO · FISCONFORME</span><h2>Notificações do Fisconforme</h2>
-        <p>Todas as empresas vinculadas ao contador · ${e(est.nome || 'contador')}${est.cpf ? ` (e-CPF ${fmtCpf(est.cpf)})` : ''} · o sistema consulta só as listas, sem abrir a notificação · consulta automática em dias úteis às 07:45, 10:45, 13:45 e 16:45</p></div></div>
-        <div class="fc-acts">${meta ? `<span class="fc-pill">● Última leitura ${e(new Date(meta.ultimaLeitura).toLocaleString('pt-BR').slice(0, 17).replace(',', ''))}${meta.por ? ' · ' + e(meta.por) : ''}</span>` : ''}
-          ${adm ? `<label class="fc-chk" title="Abre a janela da consulta para acompanhar a entrada no portal (ajuda no primeiro uso)"><input type="checkbox" id="fcVer"${F.est.mostrarJanela ? ' checked' : ''}> Mostrar a janela da consulta</label>
-          <button class="act inv-export" id="fcPortal">Abrir o portal ↗</button>` : ''}
-          ${meta ? '<button class="act inv-export" id="fcHtml">Exportar HTML</button><button class="act inv-export" id="fcPdf">Exportar PDF</button>' : ''}
-          <button class="act inv-export fc-go" id="fcLer"${F.semCert ? ' disabled title="Precisa do e-CPF do contador instalado neste computador"' : ''}>▶ Ler notificações</button></div></div>
+      <div class="fh-hero${anima ? ' fh-in' : ''}">
+        <div><div class="fh-tt">${LOGO}<div><span>SEFIN-RO · FISCONFORME</span>
+          <p>Todas as empresas vinculadas ao contador · ${e(est.nome || 'contador')}${est.cpf ? ` (e-CPF ${fmtCpf(est.cpf)})` : ''}</p></div></div>
+          ${meta ? `<div class="fh-big"><b${cnt(c.pendente)}>${c.pendente}</b><small>notificaç${c.pendente === 1 ? 'ão pendente' : 'ões pendentes'} · ${empsPend} empresa(s)</small></div>
+          <div class="fh-ks">${kp('novas', c.novas, 'Novas na última leitura')}${kp('contestado', c.contestado, 'Contestadas')}${kp('indeferido', c.indeferido, 'Indeferidas · regularizar')}${kp('resolvido', c.resMes, 'Resolvidas no mês')}</div>`
+          : '<h2 class="fh-h2">Notificações do Fisconforme</h2>'}</div>
+        <div><div class="fh-bt">
+          ${adm ? `<label class="fh-chk" title="Abre a janela da consulta para acompanhar a entrada no portal (ajuda no primeiro uso)"><input type="checkbox" id="fcVer"${F.est.mostrarJanela ? ' checked' : ''}> Mostrar a janela</label>
+          <button id="fcPortal">Abrir o portal ↗</button>` : ''}
+          ${meta ? '<button id="fcHtml">Exportar HTML</button><button id="fcPdf">Exportar PDF</button>' : ''}
+          <button class="g" id="fcLer"${F.semCert ? ' disabled title="Precisa do e-CPF do contador instalado neste computador"' : ''}>▶ Ler notificações</button></div>
+          ${meta ? `<div class="fh-ag"><h4>Há quanto tempo estão pendentes</h4>
+            <div class="fh-stk">${faixas.map((f, i) => `<i style="width:${(f.n / totP * 100).toFixed(2)}%;background:${f.cor};animation-delay:${0.25 + i * 0.12}s" title="${f.t}: ${f.n}"></i>`).join('')}</div>
+            <div class="fh-lg">${faixas.map((f) => `<div><span><i style="background:${f.cor}"></i>${f.t}</span><b>${f.n}</b></div>`).join('')}</div>
+            <small>Última leitura ${e(quando)}${meta.por ? ' · ' + e(meta.por) : ''} · automática em dias úteis às 07:45, 10:45, 13:45 e 16:45 · o sistema consulta só as listas, sem abrir a notificação</small></div>` : ''}</div>
+      </div>
       ${F.semCert ? `<div class="fc-alerta"><b>O certificado do contador não está instalado neste computador.</b> Você está vendo a última leitura salva. Para ler de novo ou visualizar uma notificação no portal, use um computador com o e-CPF do contador instalado. Nada foi consultado.</div>` : ''}
       <div class="fc-prog" id="fcProg" hidden><i></i><span></span></div>
       ${!meta ? `<div class="fc-vazio"><b>Nenhuma leitura ainda.</b> Clique em “Ler notificações”: o sistema consulta o portal com o e-CPF do contador e traz as listas de pendentes, contestadas, indeferidas e resolvidas de todas as empresas (leva alguns minutos).</div>` : `
-      <div class="fc-k">
-        <div style="--c:#d97706"><b>${c.pendente}</b><span>Pendentes</span><small>em ${empsPend} empresa(s)</small></div>
-        <div style="--c:#0e7490"><b>${c.novas}</b><span>Novas na última leitura</span><small>apareceram desde a leitura anterior</small></div>
-        <div style="--c:#4338ca"><b>${c.contestado}</b><span>Contestadas</span><small>aguardando decisão da SEFIN</small></div>
-        <div style="--c:#dc2626"><b>${c.indeferido}</b><span>Indeferidas</span><small>contestação negada · regularizar</small></div>
-        <div style="--c:#059669"><b>${c.resMes}</b><span>Resolvidas no mês</span><small>saíram de pendente este mês</small></div>
-      </div>
-      <div class="fc-g2">
-        <div class="fc-card"><h3>Pendentes por malha</h3>${topM.map(([m, n]) => `<div class="fc-br" data-m="${e(m)}"><span>${e(m)}</span><i><em style="width:${(n / mx * 100).toFixed(1)}%"></em></i><b>${n}</b></div>`).join('') || '<p class="fc-sub">Nenhuma pendente.</p>'}
-          ${resto ? `<div class="fc-br"><span>Outras (${malhasOrd.length - 6} malhas)</span><i><em style="width:${(resto / mx * 100).toFixed(1)}%"></em></i><b>${resto}</b></div>` : ''}</div>
-        <div class="fc-card"><h3>Empresas com mais pendências</h3>${topE.map((g) => `<div class="fc-emp" data-e="${e(g.cnpj || g.nome)}"><div><b>${e(g.nome)}</b><small>${g.cnpj ? 'CNPJ ' + fmtCnpj(g.cnpj) + ' · ' : ''}IE ${e(g.ie)}</small></div>
-          <div class="fc-chips">${g.pe ? `<span class="fc-c pe">${g.pe} pendente(s)</span>` : ''}${g.nv ? `<span class="fc-c nv">${g.nv} nova(s)</span>` : ''}${g.co ? `<span class="fc-c co">${g.co} contestada(s)</span>` : ''}${g.in ? `<span class="fc-c in">${g.in} indeferida(s)</span>` : ''}</div></div>`).join('') || '<p class="fc-sub">Nenhuma empresa com pendência.</p>'}</div>
+      <div class="fh-g2${anima ? ' fh-in' : ''}">
+        <div class="fc-card"><h3>Pendentes por malha <small>· clique para filtrar</small></h3>
+          ${topM.map(([m, n], i) => `<div class="fh-ml${F.malha === m ? ' on' : ''}" data-mm="${e(m)}" style="animation-delay:${0.12 + i * 0.06}s"><span class="fh-n">${i + 1}</span>
+            <div>${e(m)}<i><em style="width:${(n / mx * 100).toFixed(1)}%;animation-delay:${0.3 + i * 0.06}s"></em></i></div><b>${n}</b></div>`).join('') || '<p class="fc-sub">Nenhuma pendente.</p>'}
+          ${resto ? `<div class="fh-ml fh-out"><span class="fh-n">+</span><div>Outras (${malhasOrd.length - 6} malhas)<i><em style="width:${(resto / mx * 100).toFixed(1)}%"></em></i></div><b>${resto}</b></div>` : ''}</div>
+        <div class="fc-card"><h3>Empresas com mais pendências <small>· barra: <span style="color:#f97316">pendente</span> · <span style="color:#4338ca">contestada</span> · <span style="color:#dc2626">indeferida</span></small></h3>
+          ${topE.map((g, i) => `<div class="fh-ec${F.emp === (g.cnpj || g.nome) ? ' on' : ''}" data-ee="${e(g.cnpj || g.nome)}" style="animation-delay:${0.12 + i * 0.06}s"><div><b>${e(g.nome)}</b><small>${g.cnpj ? 'CNPJ ' + fmtCnpj(g.cnpj) + ' · ' : ''}IE ${e(g.ie)}${g.nv ? ` · <em>${g.nv} nova(s)</em>` : ''}</small></div>
+            <div class="fh-sb"><i style="width:${(g.pe / mxE * 100).toFixed(1)}%;background:#f97316"></i><i style="width:${(g.co / mxE * 100).toFixed(1)}%;background:#4338ca"></i><i style="width:${(g.in / mxE * 100).toFixed(1)}%;background:#dc2626"></i></div>
+            <b>${g.pe + g.co + g.in}</b></div>`).join('') || '<p class="fc-sub">Nenhuma empresa com pendência.</p>'}</div>
       </div>
       <div class="fc-card">
         <h3>Notificações</h3>
@@ -151,6 +166,11 @@
         ${vis.length > F.mostrar ? `<button class="act inv-export" id="fcMais" style="margin:10px auto;display:block">Mostrar mais (${vis.length - F.mostrar})</button>` : ''}
         <div class="fc-aviso">⚠ O sistema consulta só as listas do portal e <b>nunca abre a notificação sozinho</b>: abrir o conteúdo conta como ciência e começa o prazo (Decreto 23.856/2019, art. 3º, § 3º). “Entenda esta malha” explica sem abrir nada. “Visualizar” abre a notificação no portal — <b>dá ciência</b> — e só roda depois da sua confirmação.</div>
       </div>`}`;
+    if (anima) $('#fcRaiz').querySelectorAll('[data-cnt]').forEach((el) => {
+      const fim = +el.dataset.cnt; let t0 = null;
+      const passo = (t) => { if (!t0) t0 = t; const k = Math.min(1, (t - t0) / 1000); el.textContent = Math.round(fim * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(passo); };
+      el.textContent = '0'; requestAnimationFrame(passo);
+    });
     ligar(vis);
   }
 
@@ -181,7 +201,11 @@
     if (!F.d.meta) return;
     $('#fcHtml').onclick = () => exportar('html');
     $('#fcPdf').onclick = () => exportar('pdf');
+    const rola = () => { const t = $('#fcRaiz .fc-tab'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
     q('.fc-f').forEach((b) => b.onclick = () => { F.filtro = b.dataset.f; F.mostrar = 120; desenhar(); });
+    q('.fh-k').forEach((b) => b.onclick = () => { F.filtro = F.filtro === b.dataset.f ? 'pendente' : b.dataset.f; F.mostrar = 120; desenhar(); rola(); });
+    q('[data-mm]').forEach((b) => b.onclick = () => { F.malha = F.malha === b.dataset.mm ? '' : b.dataset.mm; F.filtro = 'pendente'; desenhar(); if (F.malha) rola(); });
+    q('[data-ee]').forEach((b) => b.onclick = () => { F.emp = F.emp === b.dataset.ee ? '' : b.dataset.ee; desenhar(); if (F.emp) rola(); });
     $('#fcEmp').onchange = (ev) => { F.emp = ev.target.value; desenhar(); };
     $('#fcMalha').onchange = (ev) => { F.malha = ev.target.value; desenhar(); };
     $('#fcBusca').onchange = (ev) => { F.busca = ev.target.value; desenhar(); };
