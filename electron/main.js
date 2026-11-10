@@ -2815,6 +2815,37 @@ ipcMain.handle('admin:tudoAplicar', async (_evt, { spedPath, usarCorrigido, xmls
     return { ok: true, resumo: res, origem: base.origem };
   } catch (e) { return { error: String(e.message || e) }; }
 });
+// Unidade × XML (só Admin): o código da unidade do C170 ("1") vira a unidade da nota ("UN") — inconsistência do portal, aba Estoque
+ipcMain.handle('admin:unidAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!spedPath || !xmls) return { error: 'Selecione o SPED e os XMLs das notas.' };
+  const base = _difalBase(spedPath, usarCorrigido);
+  const jsonOut = path.join(os.tmpdir(), `fc_unid_${Date.now()}.json`);
+  try {
+    await runFiscal(['unidade-xml', '--sped', base.arq, '--xmls', xmls, '--json', jsonOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    return { ok: true, res, origem: base.origem };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('admin:unidAplicar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!spedPath || !xmls) return { error: 'Selecione o SPED e os XMLs das notas.' };
+  const base = _difalBase(spedPath, usarCorrigido);
+  const stamp = Date.now();
+  const jsonOut = path.join(os.tmpdir(), `fc_unid_res_${stamp}.json`);
+  const saida = path.join(os.tmpdir(), `fc_unid_sped_${stamp}.txt`);
+  try {
+    await runFiscal(['unidade-xml', '--sped', base.arq, '--xmls', xmls, '--json', jsonOut, '--aplicar', '--saida', saida], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    if (!fs.existsSync(saida)) return { error: 'O arquivo corrigido não foi gerado.' };
+    if (lastSpedCorrigidoPath && lastSpedCorrigidoPath !== base.arq) fs.unlink(lastSpedCorrigidoPath, () => {});
+    else if (lastSpedCorrigidoPath === base.arq && base.origem === 'corrigido') fs.unlink(base.arq, () => {});
+    lastSpedCorrigidoPath = saida;
+    return { ok: true, resumo: res, origem: base.origem };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
 ipcMain.handle('admin:descAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
   const bloq = _soAdmin(); if (bloq) return bloq;
   if (!spedPath || !xmls) return { error: 'Selecione o SPED e os XMLs de entrada.' };

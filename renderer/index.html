@@ -1231,6 +1231,7 @@
           <button class="act inv-export btn-auto" id="btnCorrLote" hidden title="Corrige os SPEDs de todos os clientes do mês de uma vez — você só decide as exceções">⚡ Automatizar correção</button>
           <span class="fiscal-spacer"></span>
           <button class="act inv-export" id="btnCorrSpedVerOriginal" disabled>Ver todos os dados (original)</button>
+          <button class="act inv-export" id="btnCorrUnid" disabled title="Inconsistência do portal (aba Estoque): unidade do C170 diferente da NF-e. Troca o código da unidade pelo da nota em todo o arquivo">Unidade × XML</button>
           <button class="act inv-export" id="btnCorrDesc" disabled title="Confere o desconto do C100 e de cada item (C170) com o XML; sem desconto no item do XML, divide em proporção ao valor de cada item">Desconto × XML</button>
           <button class="act inv-export" id="btnCorrDifal" disabled title="Confere CFOP 1.556/2.556 (e ativo) pela UF do fornecedor, o DIFAL de RO e o crédito de ICMS tomado indevidamente; aplica só o que você confirmar">Uso e consumo · DIFAL e crédito</button>
           <button class="act inv-export" id="btnCorrIcmsXml" disabled title="Confere o ICMS creditado nas entradas com o ICMS destacado no XML de cada nota e corrige o crédito tomado a mais">ICMS creditado × XML</button>
@@ -1256,6 +1257,7 @@
         <div id="corrCad" class="dif ac7" hidden></div>
         <div id="corrMaca" class="dif cm" hidden></div>
         <div id="corrDesc" class="dif ac7" hidden></div>
+        <div id="corrUnid" class="dif ac7" hidden></div>
         <div id="corrTudo" class="dif tudo" hidden></div>
         <div id="corrIcmsXml" class="dif" hidden></div>
         <div id="corrValXml" class="dif" hidden></div>

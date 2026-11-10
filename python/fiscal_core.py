@@ -3063,6 +3063,9 @@ def main(argv):
     if modo == 'analisar-tudo':
         import analisar_tudo as _tudo
         return _tudo.main_cli(argv[1:])
+    if modo == 'unidade-xml':
+        import unidade_xml as _ux
+        return _ux.main_cli(argv[1:])
     if modo == 'desconto-xml':
         import desconto_xml as _dx
         return _dx.main_cli(argv[1:])

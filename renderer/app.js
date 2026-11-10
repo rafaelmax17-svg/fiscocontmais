@@ -1461,7 +1461,8 @@ function bindFiscal() {
     // ⚡ Automatizar correção → "Abrir no modo manual" de um cliente: escolhe o SPED (e a pasta de XMLs) como se fosse à mão
     window.__corrAbrirManual = (sped, xmls) => {
       corrSpedPath = sped; FISCAL.corrSpedPath = sped;
-      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad', '#btnCorrMaca', '#btnCorrTudo', '#btnCorrDesc'].forEach((id) => { $(id).disabled = false; });
+      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad', '#btnCorrMaca', '#btnCorrTudo', '#btnCorrDesc', '#btnCorrUnid'].forEach((id) => { $(id).disabled = false; });
+      $('#corrUnid').hidden = true; $('#corrUnid').innerHTML = '';
       $('#corrMaca').hidden = true; $('#corrMaca').innerHTML = '';
       $('#corrTudo').hidden = true; $('#corrTudo').innerHTML = ''; $('#corrDesc').hidden = true; $('#corrDesc').innerHTML = '';
       $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = ''; $('#corrCad').hidden = true; $('#corrCad').innerHTML = '';
@@ -1487,8 +1488,9 @@ function bindFiscal() {
       $('#btnCorrAcum').disabled = false; $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = '';
       $('#btnCorrCad').disabled = false; $('#corrCad').hidden = true; $('#corrCad').innerHTML = '';
       $('#btnCorrMaca').disabled = false; $('#corrMaca').hidden = true; $('#corrMaca').innerHTML = '';
-      ['#btnCorrTudo', '#btnCorrDesc'].forEach((id) => { $(id).disabled = false; });
+      ['#btnCorrTudo', '#btnCorrDesc', '#btnCorrUnid'].forEach((id) => { $(id).disabled = false; });
       $('#corrTudo').hidden = true; $('#corrTudo').innerHTML = ''; $('#corrDesc').hidden = true; $('#corrDesc').innerHTML = '';
+      $('#corrUnid').hidden = true; $('#corrUnid').innerHTML = '';
       corrFeito = false;
       SN.an = null; XMLS.path = null;
       $('#corrSimples').hidden = true; $('#corrSimples').innerHTML = '';
@@ -1871,7 +1873,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
 
     // ---- painéis do Corretor: esconde os outros ao abrir um
     const CORR_PAINEIS = ['#corrSpedEmpty', '#corrSpedFrame', '#corrSpedResumo', '#corrDifal', '#corrSimples', '#corrLote', '#corrIcmsXml',
-      '#corrValXml', '#corrEstST', '#corrAcum', '#corrCad', '#corrMaca', '#corrDesc', '#corrTudo'];
+      '#corrValXml', '#corrEstST', '#corrAcum', '#corrCad', '#corrMaca', '#corrDesc', '#corrUnid', '#corrTudo'];
     const corrSoMostra = (id) => CORR_PAINEIS.forEach((x) => { const el = $(x); if (el) el.hidden = x !== id; });
     const fmR = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     async function corrPedeXmls() {
@@ -1948,6 +1950,81 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       $('#dsBaixar').addEventListener('click', corrBaixar);
     }
     $('#btnCorrDesc').addEventListener('click', dsAbrir);
+
+    // ---- Unidade × XML (inconsistência do portal, aba Estoque: "[C170] erro de valor do produto ou incompatibilidade
+    // com sequência dos itens da NF-e"): o código da unidade do Domínio ("1") vira a unidade da nota ("UN")
+    const UN = { an: null, verItens: false };
+    function unDesenhar() {
+      const box = $('#corrUnid'), an = UN.an, rs = an.resumo, emp = an.empresa || {};
+      const per = (d) => (d && d.length === 8 ? `${d.slice(2, 4)}/${d.slice(4)}` : '');
+      const mx = Math.max(1, ...an.unidades.map((u) => u.itens));
+      box.innerHTML = `
+        <div class="un-hero"><div><div class="dif-k">Corretor do SPED · Admin · Unidade × XML</div>
+          <h3>Itens do C170 com unidade diferente da NF-e</h3>
+          <div class="dif-sub">${esc(emp.nome || '')}${emp.uf ? ' · ' + esc(emp.uf) : ''}${emp.dt_ini ? ' · ' + per(emp.dt_ini) : ''} · o portal compara cada C170 com o item da nota (sequência, código, unidade, quantidade e valor).
+          O código da unidade passa a ser o mesmo da nota em todo o arquivo (0190, 0200, 0220, C170 e inventário).</div></div>
+          <div class="sn-hbtn"><button class="act inv-export" id="unXmls">Trocar XMLs</button><button class="act inv-export" id="unFechar">Fechar</button></div></div>
+        <div class="dif-kpis un-k">
+          <div><span>Notas comparadas</span><b data-anima="${rs.notas_conferidas}">${rs.notas_conferidas}</b><small>${rs.c170} item(ns) no C170${rs.notas_sem_xml ? ` · ${rs.notas_sem_xml} nota(s) sem XML` : ''}</small></div>
+          <div class="k-bad"><span>Unidade diferente</span><b data-anima="${rs.itens_unid}">${rs.itens_unid}</b><small>${rs.itens_ja_ok} já igual(is) à nota</small></div>
+          <div class="k-ok"><span>Vão ficar iguais à nota</span><b data-anima="${rs.itens_unid}">${rs.itens_unid}</b><small>${rs.codigos} código(s) de unidade</small></div>
+          <div class="${rs.pendencias ? 'k-warn' : 'k-ok'}"><span>Pendências</span><b data-anima="${rs.pendencias}">${rs.pendencias}</b><small>quantidade, valor ou item diferente</small></div></div>
+        ${an.unidades.length ? `<div class="un-g2">
+          <div class="un-card"><h4>Unidades: como estão × como ficam</h4>
+            ${an.unidades.map((u, i) => `<div class="un-mp" style="animation-delay:${0.1 + i * 0.07}s"><code>${esc(u.de)}</code><span>→</span><div><code class="n">${esc(u.para)}</code> <small>${esc(u.descr_para || '')}</small>
+              ${u.conflito ? `<small class="un-cf">também aparece como ${Object.keys(u.destinos).filter((k) => k !== u.para).map(esc).join(', ')}: cada item recebe a unidade da própria nota</small>` : ''}</div>
+              <i class="un-bar"><em style="width:${(u.itens / mx * 100).toFixed(1)}%"></em></i><b>${u.itens.toLocaleString('pt-BR')}</b></div>`).join('')}</div>
+          <div class="un-card"><h4>Notas</h4><div class="un-nt">
+            ${an.notas.map((n) => `<div><b>NF ${esc(n.num)}</b><span>${esc(n.oper)} · ${esc(n.part || '')}</span><em>${n.unid}/${n.itens} item(ns)</em></div>`).join('')}</div></div>
+        </div>
+        <div class="un-card" style="margin-top:14px"><h4>Itens <a class="td-lk" id="unVer">${UN.verItens ? 'esconder' : `ver ${Math.min(an.itens.length, 300)} primeiro(s)`}</a></h4>
+          ${UN.verItens ? `<div class="ac7-wrap"><table><thead><tr><th>Nota</th><th>Item</th><th>Código</th><th>Descrição</th><th>Unid. no SPED</th><th>Unid. na NF-e</th><th style="text-align:right">Qtd</th><th style="text-align:right">Valor</th></tr></thead><tbody>
+            ${an.itens.map((x) => `<tr><td>${esc(x.nota)}</td><td>${esc(x.item)}</td><td>${esc(x.cod)}</td><td>${esc(x.descr)}</td><td><s class="un-a">${esc(x.de)}</s> <b class="un-d">${esc(x.para)}</b></td><td>${esc(x.para)}</td><td style="text-align:right">${esc(x.qtd)}</td><td style="text-align:right">${esc(x.valor)}</td></tr>`).join('')}
+          </tbody></table></div>` : ''}</div>
+        ${an.pendencias.length ? `<div class="dif-av"><b>${rs.pendencias} pendência(s) que não são alteradas</b> (mexer nisso muda o C190 e a apuração):<ul>${an.pendencias.slice(0, 40).map((p) => `<li>NF ${esc(p.nota)} · item ${esc(p.item)} (${esc(p.cod)}): ${esc(p.motivo)}</li>`).join('')}</ul></div>` : ''}
+        <div class="dif-acts"><button class="act inv-export sn-big" id="unAplicar" style="background:#e23d4c;color:#fff;border-color:transparent">Corrigir as unidades (${rs.itens_unid.toLocaleString('pt-BR')} item(ns))</button></div>`
+        : `<div class="dif-av ok"><b>Nenhum item com unidade diferente da nota</b>${rs.notas_sem_xml ? ` · ${rs.notas_sem_xml} nota(s) com C170 sem XML anexado` : ''}.</div>`}
+        <div id="unRes"></div>`;
+      $('#unFechar').addEventListener('click', () => { box.hidden = true; $('#corrSpedEmpty').hidden = false; });
+      $('#unXmls').addEventListener('click', async () => { if (await corrPedeXmls()) unAbrir(); });
+      const v = $('#unVer'); if (v) v.addEventListener('click', () => { UN.verItens = !UN.verItens; unDesenhar(); });
+      const ap = $('#unAplicar'); if (ap) ap.addEventListener('click', unAplicar);
+    }
+    async function unAbrir() {
+      if (!corrSpedPath) return;
+      corrSoMostra('#corrUnid');
+      const box = $('#corrUnid');
+      if (!XMLS.path) {
+        box.innerHTML = `<div class="dif-head"><div><div class="dif-k">Corretor do SPED · Admin · Unidade × XML</div><h3>Selecione os XMLs das notas que têm C170</h3></div></div>
+          <div class="sn-vazio"><p>Anexe a pasta ou os <b>.zip</b> com os XMLs das notas do período (as notas com itens no C170 — normalmente as de entrada).</p><button class="act inv-export sn-big" id="unPick">Selecionar XMLs</button></div>`;
+        $('#unPick').addEventListener('click', async () => { if (await corrPedeXmls()) unAbrir(); });
+        return;
+      }
+      overlay(true, 'Comparando cada item do C170 com a nota…');
+      const r = await window.fiscocont.admin.unidAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path });
+      overlay(false);
+      if (r.error) { toast(r.error, true); return; }
+      UN.an = r.res; UN.verItens = false;
+      unDesenhar();
+      if (typeof animaNumeros === 'function') animaNumeros($('#corrUnid'));
+    }
+    async function unAplicar() {
+      overlay(true, 'Trocando as unidades pelo que está nas notas…');
+      const res = await window.fiscocont.admin.unidAplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path });
+      overlay(false);
+      if (res.error) { toast(res.error, true); return; }
+      corrFeito = true;
+      const r = res.resumo || {};
+      $('#unRes').innerHTML = `<div class="dif-done sn-done"><div class="dif-k">Corrigido: arquivo novo gerado (o original não foi alterado)</div>
+        <div class="dif-kpis"><div class="k-ok"><span>Itens corrigidos</span><b>${(r.itens || 0).toLocaleString('pt-BR')}</b><small>${r.iguais || 0} item(ns) agora iguais à nota</small></div>
+          <div class="${r.restantes ? 'k-warn' : 'k-ok'}"><span>Ainda diferentes</span><b>${r.restantes || 0}</b><small>depois da correção</small></div>
+          <div><span>Códigos trocados</span><b>${(r.renomeados || []).length}</b><small>${(r.renomeados || []).map((x) => `${esc(x.de)}→${esc(x.para)}`).join(' · ')}</small></div></div>
+        ${(r.avisos || []).length ? `<div class="dif-av"><ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+        <div class="dif-acts"><button class="act inv-export" id="unReconf">Conferir de novo</button><button class="act inv-export sn-big" id="unBaixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button></div></div>`;
+      $('#unReconf').addEventListener('click', unAbrir);
+      $('#unBaixar').addEventListener('click', corrBaixar);
+    }
+    $('#btnCorrUnid').addEventListener('click', unAbrir);
 
     // ---- 🔎 Analisar tudo / Aplicar tudo
     const TD = { an: null, etapa: {}, marc: {}, val: {}, aberto: new Set(), gAberto: new Set(), lAberta: new Set(), busca: {}, lim: {}, modo: {}, e116: null };

@@ -3,6 +3,18 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.21
+
+- **Corretor do SPED Fiscal · "Unidade × XML"** (botão novo, só Admin). Corrige a inconsistência do portal, aba Estoque: "[100] - [C170] erro de valor do produto ou erro de incompatibilidade com sequência dos itens da NF-e".
+  - **Comparação:** cada C170 é comparado com o item da NF-e pela chave do C100 e pelo número do item, nos campos sequência, código, unidade, quantidade e valor.
+  - **Troca do código:** o código da unidade do Domínio ("1") vira a unidade da nota ("UN") em todo o arquivo: 0190, 0200, 0220, C170, C321, C425, C470, C495 e H010.
+  - **Código com mais de uma unidade:** o código vira a unidade principal; só o item que foge dela recebe a unidade da própria nota, com 0190 e 0220 novos (fator do 0220 antigo, ou 1), e os blocos e o Bloco 9 são recontados.
+  - **Pendências:** quantidade, valor ou item diferentes da nota ficam como pendência, sem alteração.
+- **Testado com a ELTON AM (09/2026):** os 1.623 C170 diferiam só na unidade.
+  - Códigos trocados: 1→UN, 11→PT, 5→CX, 4→CJ e 97→CR.
+  - Depois da correção, 0 itens diferentes e nenhuma linha a mais.
+  - Os XMLs necessários eram as 11 transferências da matriz RO (notas de entrada da filial).
+
 ## 2.2.20
 
 - **Menu:** novo grupo "SEFIN-RO" no final do Fiscal, com o Fisconforme e o Débitos e DARE como cartões (modelo B, na posição dos modelos A e C). O selo NOVO saiu desses dois.

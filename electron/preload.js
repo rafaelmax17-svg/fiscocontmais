@@ -252,6 +252,8 @@ contextBridge.exposeInMainWorld('fiscocont', {
     loteAplicar: (params) => ipcRenderer.invoke('admin:loteAplicar', params),
     loteSalvar: (params) => ipcRenderer.invoke('admin:loteSalvar', params),
     difalAplicar: (params) => ipcRenderer.invoke('admin:difalAplicar', params),
+    unidAnalisar: (params) => ipcRenderer.invoke('admin:unidAnalisar', params),
+    unidAplicar: (params) => ipcRenderer.invoke('admin:unidAplicar', params),
     simplesAnalisar: (params) => ipcRenderer.invoke('admin:simplesAnalisar', params),
     simplesAplicar: (params) => ipcRenderer.invoke('admin:simplesAplicar', params),
     legalLista: () => ipcRenderer.invoke('admin:legalLista'),
