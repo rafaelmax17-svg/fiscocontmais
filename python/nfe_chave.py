@@ -38,7 +38,7 @@ NS_DS = 'http://www.w3.org/2000/09/xmldsig#'
 MSG_DIST = {
     '137': 'A SEFAZ não devolveu documento para esta empresa.',
     '640': 'A empresa escolhida não participa desta nota (não é destinatária, transportadora nem autorizada a baixar).',
-    '641': 'A SEFAZ não entrega a nota ao próprio emitente: o XML fica no sistema que emitiu.',
+    '641': 'Esta empresa é a EMITENTE da nota: a SEFAZ não devolve a nota a quem emitiu (o XML fica no sistema emissor). A nota existe no Ambiente Nacional.',
     '632': 'Fora do prazo: a SEFAZ não disponibiliza mais o download desta nota.',
     '653': 'Nota cancelada: a SEFAZ não disponibiliza o XML de nota cancelada.',
     '654': 'Nota denegada: a SEFAZ não disponibiliza o XML de nota denegada.',
@@ -170,9 +170,7 @@ def _pdf(proc, destino, cancelada):
 # ------------------------------------------------------------------ consulta
 def consultar(chaves, cert_pem, key_pem, pfx, senha, cnpj, empresa, cuf='11', pasta_base='', baixar=True,
               com_ciencia=False, gerar_pdf=True, progresso=None, pausa=0.4):
-    import requests
-    sess = requests.Session()
-    sess.cert = (cert_pem, key_pem)
+    sess = mf.sessao(cert_pem, key_pem)
     chave_priv = cert_b64 = None
     dist_ok = baixar
     res = []
@@ -181,8 +179,8 @@ def consultar(chaves, cert_pem, key_pem, pfx, senha, cnpj, empresa, cuf='11', pa
             item = {'chave': ch, **mf.dados_da_chave(ch), 'xml': '', 'pdf': '', 'download': ''}
             # 1) situação na SEFAZ autorizadora
             try:
-                xml, aut, _t = mf._consulta_situacao(sess, ch)
-                item.update(mf._analisa_situacao(xml)); item['autorizador'] = aut
+                xml, aut, tent = mf._consulta_situacao(sess, ch)
+                item.update(mf._analisa_situacao(xml)); item['autorizador'] = aut; item['tentativas'] = tent
             except Exception as e:
                 item.update({'situacao': 'erro', 'motivo': str(e)[:200]})
             for e in item.get('eventos') or []:

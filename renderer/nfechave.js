@@ -131,7 +131,8 @@
         <dt>Emissão</dt><dd>${i.dh_emissao ? dhBr(i.dh_emissao) : e(i.aamm)}</dd>
         ${i.valor ? `<dt>Valor</dt><dd>${brl(i.valor)}</dd>` : ''}
         ${i.motivo && i.situacao !== 'autorizada' ? `<dt>SEFAZ disse</dt><dd>${e(i.cstat || '')} ${e(i.motivo)}</dd>` : ''}
-        <dt>Consultada</dt><dd>${dhBr(i.consultadoEm)}</dd></dl>
+        <dt>Consultada</dt><dd>${dhBr(i.consultadoEm)}</dd>
+        ${(i.tentativas || []).length && i.situacao !== 'autorizada' ? `<dt>Servidores</dt><dd>${i.tentativas.map((t) => `<small>${e(t.aut)}: ${e(t.cstat ? t.cstat + ' · ' : '')}${e(t.motivo || '')}</small>`).join('')}</dd>` : ''}</dl>
       ${tl.length ? `<h4>Linha do tempo</h4><div class="nc-tl">${tl.map(([cor, t, q]) => `<div style="--c:${cor}"><b>${e(t)}</b><small>${e(q)}</small></div>`).join('')}</div>` : ''}
       ${i.xml ? `<div class="nc-bt">${i.pdf ? `<button class="p" data-ab="${e(i.pdf)}">Abrir PDF (DANFE)</button>` : ''}<button data-ab="${e(i.xml)}">Abrir XML</button><button data-pa="${e(i.xml)}">Abrir pasta</button></div>`
         : i.download ? `<div class="nc-aviso">${e(i.download)}</div>` : ''}

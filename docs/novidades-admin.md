@@ -3,6 +3,14 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.28
+
+- **Consulta NF-e por chave · correção do "não encontrada" falso.** Notas de RO, autorizadas pelo SVRS, apareciam como "NF-e não consta". Isso também tinha acontecido na Consulta Manifestação em 2.1.27.
+  - **Causa provável:** o servidor da SEFAZ usa certificado SSL da ICP-Brasil, que o Python não reconhece por padrão. A conexão com o SVRS falhava, o sistema seguia para SVAN e SVC-AN, e esses respondiam 217 porque a nota não é deles. O 217 deles virava "não encontrada".
+  - **Correção 1:** novo `icp_brasil.py` com as raízes públicas AC Raiz Brasileira v5, v10, v11 e v12 (assinaturas conferidas; v5 e v10 iguais em duas fontes independentes). O pacote padrão (certifi) mais essas raízes vira o `verify` das sessões, via `manifestacao.sessao()`, usado pela Consulta NF-e e pela Consulta Manifestação.
+  - **Correção 2:** se a SEFAZ autorizadora da UF não responde, o "não consta" das outras não vale mais. A nota aparece como **erro**, com o motivo real (SSL, tempo esgotado etc.). O painel de detalhes mostra a resposta de cada servidor consultado.
+  - **641:** a mensagem agora diz que a empresa escolhida é a emitente e que a nota existe no Ambiente Nacional.
+
 ## 2.2.27
 
 - **Consulta NF-e por chave · XML e PDF** (só Admin, em teste). Item próprio no menu, com `data-group="admin-only"`; os IPC `nfech:*` passam pelo `_adm`.

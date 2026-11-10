@@ -107,6 +107,25 @@ def _soap(sess, url, ns_wsdl, corpo, acao, timeout=30):
     return r.text
 
 
+def _erro_legivel(e):
+    t = str(e)
+    if 'CERTIFICATE_VERIFY_FAILED' in t or 'SSLError' in type(e).__name__ or 'certificate verify failed' in t:
+        return 'falha na conferência do certificado SSL do servidor da SEFAZ (' + t[:90] + ')'
+    if 'timed out' in t.lower() or 'Timeout' in type(e).__name__:
+        return 'tempo esgotado (servidor lento ou fora do ar)'
+    return t[:140]
+
+
+def sessao(cert, key):
+    """Sessão HTTPS com o certificado A1 e as raízes da ICP-Brasil (os servidores da SEFAZ usam SSL da ICP-Brasil)."""
+    import requests
+    import icp_brasil
+    s = requests.Session()
+    s.cert = (cert, key)
+    s.verify = icp_brasil.bundle()
+    return s
+
+
 def _consulta_situacao(sess, ch):
     """Consulta na SEFAZ autorizadora da UF da chave. Se ela responder "não consta" (217) ou não for a autorizadora
     (226/227), ou estiver fora do ar, tenta os outros ambientes (SVRS, SVAN e a contingência SVC-AN) antes de concluir.
@@ -116,12 +135,14 @@ def _consulta_situacao(sess, ch):
     ns = 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4'
     prim = _PROPRIO.get(ch[:2], 'SVAN' if ch[:2] == '21' else 'SVRS')
     ordem = [prim] + [a for a in ('SVRS', 'SVAN', 'SVC-AN') if a != prim]
-    tentativas, guardado = [], None
+    tentativas, guardado, erro_prim = [], None, ''
     for aut in ordem:
         try:
             xml = _soap(sess, _WS[aut], ns, corpo, 'nfeConsultaNF')
         except Exception as e:          # endereço fora do ar: tenta o próximo
             tentativas.append({'aut': aut, 'cstat': '', 'motivo': str(e)[:140]})
+            if aut == prim:
+                erro_prim = _erro_legivel(e)
             continue
         cst, mot = _txt(xml, 'cStat'), _txt(xml, 'xMotivo')
         tentativas.append({'aut': aut, 'cstat': cst, 'motivo': mot})
@@ -130,6 +151,9 @@ def _consulta_situacao(sess, ch):
                 guardado = (cst, xml, aut)
             continue
         return xml, aut, tentativas
+    if guardado and erro_prim:
+        # a SEFAZ que autorizou a nota não respondeu: o "não consta" das outras não vale (a nota não é delas)
+        raise RuntimeError(f'A SEFAZ que autoriza as notas de {UF_SIGLA.get(ch[:2], ch[:2])} ({prim}) não respondeu: {erro_prim}')
     if guardado:
         return guardado[1], guardado[2], tentativas
     raise RuntimeError(' · '.join(f"{t['aut']}: {t['motivo']}" for t in tentativas) or 'Sem resposta da SEFAZ.')
@@ -207,9 +231,7 @@ def _resumo_an(sess, ch, cnpj, cuf):
 
 def consultar(chaves, cert, key, cnpj, cuf='11', progresso=None, com_resumo=True, pausa=0.35):
     """cert/key: PEM temporários do certificado A1 (quem chama extrai do .pfx e apaga depois)."""
-    import requests
-    sess = requests.Session()
-    sess.cert = (cert, key)
+    sess = sessao(cert, key)
     res, an_ok = [], com_resumo
     try:
         for i, ch in enumerate(chaves, 1):
