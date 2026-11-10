@@ -91,6 +91,74 @@
   }
   const ehNova = (n) => F.d.meta && n.primeiraLeitura === F.d.meta.ultimaLeitura && F.d.meta.ultimaLeitura !== F.d.meta.primeiraLeituraGeral;
 
+  // no fundo escuro do topo o vermelho-escuro some: usa um tom mais claro
+  const corTopo = (c) => (c === '#be123c' ? '#fb7185' : c);
+
+  // anel do topo: pendentes divididas pela idade
+  function anel(fx, total) {
+    const r = 78, C = 2 * Math.PI * r, t = fx.reduce((s, f) => s + f.n, 0) || 0;
+    const usados = fx.filter((f) => f.n).length, gap = usados > 1 ? 3 : 0;
+    let o = 0, h = '';
+    if (t) fx.forEach((f, i) => {
+      if (!f.n) return;
+      const l = C * f.n / t;
+      h += `<circle cx="95" cy="95" r="${r}" class="fh-rs" stroke="${corTopo(f.cor)}" stroke-dasharray="${Math.max(0.5, l - gap).toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-o).toFixed(2)}" style="animation-delay:${(0.2 + i * 0.15).toFixed(2)}s"><title>${f.t}: ${f.n}</title></circle>`;
+      o += l;
+    });
+    return `<svg viewBox="0 0 190 190" width="190" height="190" aria-label="${total} pendentes"><circle cx="95" cy="95" r="${r}" class="fh-rf"/><g transform="rotate(-90 95 95)">${h}</g></svg>`;
+  }
+
+  // gráfico de colunas (SVG) — cols: [{ r: rótulo, tt: dica, v: [valores] }]
+  function colunas(cols, cores) {
+    const W = 560, B = 120, n = Math.max(cols.length, 1), step = W / n, ns = (cols[0] && cols[0].v.length) || 1;
+    const gw = Math.min(54, step * 0.72), bw = (gw - (ns - 1) * 3) / ns;
+    const mxv = Math.max(1, ...cols.flatMap((c) => c.v));
+    let h = `<line x1="0" y1="${B + 0.5}" x2="${W}" y2="${B + 0.5}" stroke="rgba(255,255,255,.25)"/>`;
+    cols.forEach((c, i) => {
+      const x0 = i * step + (step - gw) / 2;
+      c.v.forEach((v, j) => {
+        const hh = v / mxv * 92, x = x0 + j * (bw + 3);
+        if (v) h += `<rect class="fh-bar" x="${x.toFixed(1)}" y="${(B - hh).toFixed(1)}" width="${bw.toFixed(1)}" height="${hh.toFixed(1)}" rx="4" fill="${cores[j]}" style="animation-delay:${(0.2 + i * 0.04).toFixed(2)}s"><title>${e(c.tt || c.r)}: ${v}</title></rect>
+          <text x="${(x + bw / 2).toFixed(1)}" y="${(B - hh - 5).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="700" fill="rgba(255,255,255,.9)">${v}</text>`;
+      });
+      h += `<text x="${(x0 + gw / 2).toFixed(1)}" y="${B + 17}" text-anchor="middle" font-size="11" fill="rgba(255,255,255,.8)">${e(c.r)}</text>`;
+    });
+    return `<svg viewBox="0 0 ${W} 142" preserveAspectRatio="xMidYMid meet">${h}</svg>`;
+  }
+
+  const MES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  // gráfico do topo: "Evolução mês a mês" (apareceram × resolvidas, desde a primeira leitura do sistema)
+  // ou "Por período" (pendentes pelo mês/ano de referência da notificação)
+  function grafico(notif, meta, pend) {
+    const _2 = (x) => String(x).padStart(2, '0');
+    const prim = meta.primeiraLeituraGeral || '', ini = prim.slice(0, 7);
+    const hoje = new Date(), meses = [];
+    for (let k = 11; k >= 0; k--) { const x = new Date(hoje.getFullYear(), hoje.getMonth() - k, 1); const m = `${x.getFullYear()}-${_2(x.getMonth() + 1)}`; if (!ini || m >= ini) meses.push(m); }
+    const ap = {}, rs = {}; let base = 0;
+    notif.forEach((n) => {
+      if (prim && n.primeiraLeitura === prim) base++; else { const m = (n.primeiraVez || '').slice(0, 7); ap[m] = (ap[m] || 0) + 1; }
+      if ((n.status === 'resolvido' || n.status === 'fora') && n.statusDesde && n.primeiraVez !== n.statusDesde) { const m = n.statusDesde.slice(0, 7); rs[m] = (rs[m] || 0) + 1; }
+    });
+    const modo = F.graf || (meses.length >= 3 ? 'evol' : 'per');
+    let corpo;
+    if (modo === 'evol') {
+      const cols = meses.map((m) => ({ r: MES[+m.slice(5) - 1], tt: `${MES[+m.slice(5) - 1]}/${m.slice(0, 4)}`, v: [ap[m] || 0, rs[m] || 0] }));
+      const ini2 = ini ? `${MES[+ini.slice(5) - 1]}/${ini.slice(0, 4)}` : '';
+      corpo = `<div class="fh-cl"><span><i style="background:#fdba74"></i>apareceram</span><span><i style="background:#34d399"></i>resolvidas</span></div>
+        ${colunas(cols, ['#fdba74', '#34d399'])}
+        <small class="fh-nt">Histórico desde ${e(ini2)}, quando o sistema fez a primeira leitura${base ? ` · as ${base} que já estavam no portal nessa leitura não entram em “apareceram”` : ''}.</small>`;
+    } else {
+      const pp = {}; pend.forEach((n) => { const p = /^\d{6}$/.test(n.periodo || '') ? n.periodo : '?'; pp[p] = (pp[p] || 0) + 1; });
+      const ks = Object.keys(pp).filter((k) => k !== '?').sort();
+      const ult = ks.slice(-12), ant = ks.slice(0, -12).reduce((s, k) => s + pp[k], 0) + (pp['?'] || 0);
+      const cols = ult.map((k) => ({ r: `${MES[+k.slice(4) - 1]}/${k.slice(2, 4)}`, tt: per(k), v: [pp[k]] }));
+      corpo = cols.length || ant ? `<div class="fh-cl"><span><i style="background:#fdba74"></i>pendentes do período</span></div>${colunas(cols, ['#fdba74'])}
+        <small class="fh-nt">Mês/ano a que cada notificação pendente se refere${ant ? ` · mais <b>${ant}</b> de períodos anteriores${ult.length ? ` a ${per(ult[0])}` : ''}` : ''}.</small>` : '<small class="fh-nt">Nenhuma pendente.</small>';
+    }
+    return `<div class="fh-ch"><div class="fh-cht"><h4>${modo === 'evol' ? 'Evolução mês a mês' : 'Pendentes por período de referência'}</h4>
+      <div class="fh-seg"><button data-g="evol"${modo === 'evol' ? ' class="on"' : ''}>Evolução</button><button data-g="per"${modo === 'per' ? ' class="on"' : ''}>Por período</button></div></div>${corpo}</div>`;
+  }
+
   function desenhar() {
     const { notif, meta } = F.d;
     const est = F.est.escolhido || (meta && meta.contador) || { nome: 'contador', cpf: '' };
@@ -98,15 +166,18 @@
     const c = contar(notif, meta);
     const pend = notif.filter((n) => n.status === 'pendente');
     const empsPend = new Set(pend.map((n) => n.cnpj || n.nome)).size;
-    const porMalha = {}; pend.forEach((n) => { porMalha[n.desc] = (porMalha[n.desc] || 0) + 1; });
-    const malhasOrd = Object.entries(porMalha).sort((a, b) => b[1] - a[1]);
+    // idade de cada pendente (desde que o sistema a encontrou pela primeira vez): 0 até 30 · 1 31–90 · 2 91–180 · 3 mais de 180 dias
+    const idade = (n) => { const d = dias(n.primeiraVez); return d <= 30 ? 0 : d <= 90 ? 1 : d <= 180 ? 2 : 3; };
+    const porMalha = {}; pend.forEach((n) => { (porMalha[n.desc] = porMalha[n.desc] || [0, 0, 0, 0])[idade(n)]++; });
+    const soma = (v) => v.reduce((s, x) => s + x, 0);
+    const malhasOrd = Object.entries(porMalha).map(([m, v]) => [m, soma(v), v]).sort((a, b) => b[1] - a[1]);
     const topM = malhasOrd.slice(0, 6), resto = malhasOrd.slice(6).reduce((s, x) => s + x[1], 0);
     const mx = Math.max(1, ...malhasOrd.map((x) => x[1]));
     const porEmp = {};
     notif.forEach((n) => { if (n.status === 'fora' || n.status === 'resolvido') return; const k = n.cnpj || n.nome;
-      const g = porEmp[k] = porEmp[k] || { nome: n.nome, cnpj: n.cnpj, ie: n.ie, pe: 0, co: 0, in: 0, nv: 0 };
-      if (n.status === 'pendente') g.pe++; if (n.status === 'contestado') g.co++; if (n.status === 'indeferido') g.in++; if (ehNova(n)) g.nv++; });
-    const topE = Object.values(porEmp).sort((a, b) => (b.pe + b.in) - (a.pe + a.in)).slice(0, 6);
+      const g = porEmp[k] = porEmp[k] || { nome: n.nome, cnpj: n.cnpj, ie: n.ie, pe: 0, ida: [0, 0, 0, 0], co: 0, in: 0, nv: 0 };
+      if (n.status === 'pendente') { g.pe++; g.ida[idade(n)]++; } if (n.status === 'contestado') g.co++; if (n.status === 'indeferido') g.in++; if (ehNova(n)) g.nv++; });
+    const topE = Object.values(porEmp).sort((a, b) => (b.pe - a.pe) || (b.in - a.in)).slice(0, 6);
     const empresas = [...new Map(notif.map((n) => [n.cnpj || n.nome, n.nome])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
     const malhas = [...new Set(notif.map((n) => n.desc))].sort();
     const t = F.busca.toLowerCase();
@@ -120,39 +191,42 @@
     // há quanto tempo as pendentes estão abertas (desde que apareceram pela primeira vez)
     const faixas = [['até 30 dias', 0, 30, '#fde68a'], ['31 a 90 dias', 31, 90, '#fbbf24'], ['91 a 180 dias', 91, 180, '#f97316'], ['mais de 180 dias', 181, 1e9, '#be123c']]
       .map(([t, a, b, cor]) => ({ t, cor, n: pend.filter((n) => { const d = dias(n.primeiraVez); return d >= a && d <= b; }).length }));
-    const totP = Math.max(1, pend.length);
     const quando = meta ? new Date(meta.ultimaLeitura).toLocaleString('pt-BR').slice(0, 17).replace(',', '') : '';
     const kp = (k, n, rot) => `<button class="fh-k${F.filtro === k ? ' on' : ''}" data-f="${k}"><b${cnt(n)}>${n}</b><span>${rot}</span></button>`;
-    const mxE = Math.max(1, ...topE.map((g) => g.pe + g.co + g.in));
-    $('#fcRaiz').innerHTML = `
-      <div class="fh-hero${anima ? ' fh-in' : ''}">
-        <div><div class="fh-tt">${LOGO}<div><span>SEFIN-RO · FISCONFORME</span>
-          <p>Todas as empresas vinculadas ao contador · ${e(est.nome || 'contador')}${est.cpf ? ` (e-CPF ${fmtCpf(est.cpf)})` : ''}</p></div></div>
-          ${meta ? `<div class="fh-big"><b${cnt(c.pendente)}>${c.pendente}</b><small>notificaç${c.pendente === 1 ? 'ão pendente' : 'ões pendentes'} · ${empsPend} empresa(s)</small></div>
-          <div class="fh-ks">${kp('novas', c.novas, 'Novas na última leitura')}${kp('contestado', c.contestado, 'Contestadas')}${kp('indeferido', c.indeferido, 'Indeferidas · regularizar')}${kp('resolvido', c.resMes, 'Resolvidas no mês')}</div>`
-          : '<h2 class="fh-h2">Notificações do Fisconforme</h2>'}</div>
-        <div><div class="fh-bt">
+    const mxE = Math.max(1, ...topE.map((g) => g.pe));
+    const COR = faixas.map((f) => f.cor);
+    // barra empilhada pela idade (cores das faixas)
+    const pilha = (v, larg, i) => { const t = soma(v) || 1; return `<span class="fh-st" style="width:${larg.toFixed(1)}%;animation-delay:${0.3 + i * 0.06}s">${v.map((x, j) => x ? `<i style="width:${(x / t * 100).toFixed(2)}%;background:${COR[j]}" title="${faixas[j].t}: ${x}"></i>` : '').join('')}</span>`; };
+    const btns = `<div class="fh-bt">
           ${adm ? `<label class="fh-chk" title="Abre a janela da consulta para acompanhar a entrada no portal (ajuda no primeiro uso)"><input type="checkbox" id="fcVer"${F.est.mostrarJanela ? ' checked' : ''}> Mostrar a janela</label>
           <button id="fcPortal">Abrir o portal ↗</button>` : ''}
           ${meta ? '<button id="fcHtml">Exportar HTML</button><button id="fcPdf">Exportar PDF</button>' : ''}
-          <button class="g" id="fcLer"${F.semCert ? ' disabled title="Precisa do e-CPF do contador instalado neste computador"' : ''}>▶ Ler notificações</button></div>
-          ${meta ? `<div class="fh-ag"><h4>Há quanto tempo estão pendentes</h4>
-            <div class="fh-stk">${faixas.map((f, i) => `<i style="width:${(f.n / totP * 100).toFixed(2)}%;background:${f.cor};animation-delay:${0.25 + i * 0.12}s" title="${f.t}: ${f.n}"></i>`).join('')}</div>
-            <div class="fh-lg">${faixas.map((f) => `<div><span><i style="background:${f.cor}"></i>${f.t}</span><b>${f.n}</b></div>`).join('')}</div>
-            <small>Última leitura ${e(quando)}${meta.por ? ' · ' + e(meta.por) : ''} · automática em dias úteis às 07:45, 10:45, 13:45 e 16:45 · o sistema consulta só as listas, sem abrir a notificação</small></div>` : ''}</div>
-      </div>
+          <button class="g" id="fcLer"${F.semCert ? ' disabled title="Precisa do e-CPF do contador instalado neste computador"' : ''}>▶ Ler notificações</button></div>`;
+    const titulo = `<div class="fh-tt">${LOGO}<div><span>SEFIN-RO · FISCONFORME</span>
+          <p>Todas as empresas vinculadas ao contador · ${e(est.nome || 'contador')}${est.cpf ? ` (e-CPF ${fmtCpf(est.cpf)})` : ''}</p></div></div>`;
+    $('#fcRaiz').innerHTML = `
+      ${meta ? `<div class="fh-hero fh-a2${anima ? ' fh-in' : ''}">
+        <div class="fh-dn">${anel(faixas, c.pendente)}<div class="fh-dc"><b${cnt(c.pendente)}>${c.pendente}</b><small>pendente${c.pendente === 1 ? '' : 's'}<br>${empsPend} empresa${empsPend === 1 ? '' : 's'}</small></div></div>
+        <div>${titulo}
+          <h4 class="fh-h4" title="Contado desde o dia em que o sistema encontrou a notificação no portal">Há quanto tempo estão pendentes</h4>
+          <div class="fh-lg">${faixas.map((f) => `<div><span><i style="background:${corTopo(f.cor)}"></i>${f.t}</span><b>${f.n}</b></div>`).join('')}</div>
+          <div class="fh-ks">${kp('novas', c.novas, 'Novas na última leitura')}${kp('contestado', c.contestado, 'Contestadas')}${kp('indeferido', c.indeferido, 'Indeferidas · regularizar')}${kp('resolvido', c.resMes, 'Resolvidas no mês')}</div></div>
+        <div class="fh-dir">${btns}${grafico(notif, meta, pend)}
+          <small class="fh-rod">Última leitura ${e(quando)}${meta.por ? ' · ' + e(meta.por) : ''} · automática em dias úteis às 07:45, 10:45, 13:45 e 16:45 · o sistema consulta só as listas, sem abrir a notificação</small></div>
+      </div>` : `<div class="fh-hero${anima ? ' fh-in' : ''}"><div>${titulo}<h2 class="fh-h2">Notificações do Fisconforme</h2></div><div>${btns}</div></div>`}
       ${F.semCert ? `<div class="fc-alerta"><b>O certificado do contador não está instalado neste computador.</b> Você está vendo a última leitura salva. Para ler de novo ou visualizar uma notificação no portal, use um computador com o e-CPF do contador instalado. Nada foi consultado.</div>` : ''}
       <div class="fc-prog" id="fcProg" hidden><i></i><span></span></div>
       ${!meta ? `<div class="fc-vazio"><b>Nenhuma leitura ainda.</b> Clique em “Ler notificações”: o sistema consulta o portal com o e-CPF do contador e traz as listas de pendentes, contestadas, indeferidas e resolvidas de todas as empresas (leva alguns minutos).</div>` : `
       <div class="fh-g2${anima ? ' fh-in' : ''}">
-        <div class="fc-card"><h3>Pendentes por malha <small>· clique para filtrar</small></h3>
-          ${topM.map(([m, n], i) => `<div class="fh-ml${F.malha === m ? ' on' : ''}" data-mm="${e(m)}" style="animation-delay:${0.12 + i * 0.06}s"><span class="fh-n">${i + 1}</span>
-            <div>${e(m)}<i><em style="width:${(n / mx * 100).toFixed(1)}%;animation-delay:${0.3 + i * 0.06}s"></em></i></div><b>${n}</b></div>`).join('') || '<p class="fc-sub">Nenhuma pendente.</p>'}
-          ${resto ? `<div class="fh-ml fh-out"><span class="fh-n">+</span><div>Outras (${malhasOrd.length - 6} malhas)<i><em style="width:${(resto / mx * 100).toFixed(1)}%"></em></i></div><b>${resto}</b></div>` : ''}</div>
-        <div class="fc-card"><h3>Empresas com mais pendências <small>· barra: <span style="color:#f97316">pendente</span> · <span style="color:#4338ca">contestada</span> · <span style="color:#dc2626">indeferida</span></small></h3>
-          ${topE.map((g, i) => `<div class="fh-ec${F.emp === (g.cnpj || g.nome) ? ' on' : ''}" data-ee="${e(g.cnpj || g.nome)}" style="animation-delay:${0.12 + i * 0.06}s"><div><b>${e(g.nome)}</b><small>${g.cnpj ? 'CNPJ ' + fmtCnpj(g.cnpj) + ' · ' : ''}IE ${e(g.ie)}${g.nv ? ` · <em>${g.nv} nova(s)</em>` : ''}</small></div>
-            <div class="fh-sb"><i style="width:${(g.pe / mxE * 100).toFixed(1)}%;background:#f97316"></i><i style="width:${(g.co / mxE * 100).toFixed(1)}%;background:#4338ca"></i><i style="width:${(g.in / mxE * 100).toFixed(1)}%;background:#dc2626"></i></div>
-            <b>${g.pe + g.co + g.in}</b></div>`).join('') || '<p class="fc-sub">Nenhuma empresa com pendência.</p>'}</div>
+        <div class="fc-card"><h3>Pendentes por malha <small>· a cor mostra a idade · clique para filtrar</small></h3>
+          <div class="fh-leg">${faixas.map((f) => `<span><i style="background:${f.cor}"></i>${f.t}</span>`).join('')}</div>
+          ${topM.map(([m, n, v], i) => `<div class="fh-ml${F.malha === m ? ' on' : ''}" data-mm="${e(m)}" style="animation-delay:${0.12 + i * 0.06}s"><span class="fh-n">${i + 1}</span>
+            <div>${e(m)}${pilha(v, n / mx * 100, i)}</div><b>${n}</b></div>`).join('') || '<p class="fc-sub">Nenhuma pendente.</p>'}
+          ${resto ? `<div class="fh-ml fh-out"><span class="fh-n">+</span><div>Outras (${malhasOrd.length - 6} malhas)${pilha(malhasOrd.slice(6).reduce((a, x) => a.map((y, j) => y + x[2][j]), [0, 0, 0, 0]), Math.min(100, resto / mx * 100), 6)}</div><b>${resto}</b></div>` : ''}</div>
+        <div class="fc-card"><h3>Empresas com mais pendências <small>· a cor mostra a idade · clique para filtrar</small></h3>
+          ${topE.map((g, i) => `<div class="fh-ec${F.emp === (g.cnpj || g.nome) ? ' on' : ''}" data-ee="${e(g.cnpj || g.nome)}" style="animation-delay:${0.12 + i * 0.06}s"><div><b>${e(g.nome)}</b><small>${g.cnpj ? 'CNPJ ' + fmtCnpj(g.cnpj) + ' · ' : ''}IE ${e(g.ie)}${g.in ? ` · <em class="in">${g.in} indeferida${g.in > 1 ? 's' : ''}</em>` : ''}${g.co ? ` · <em class="co">${g.co} contestada${g.co > 1 ? 's' : ''}</em>` : ''}${g.nv ? ` · <em>${g.nv} nova${g.nv > 1 ? 's' : ''}</em>` : ''}</small></div>
+            <div class="fh-sb">${pilha(g.ida, g.pe / mxE * 100, i)}</div>
+            <b>${g.pe}</b></div>`).join('') || '<p class="fc-sub">Nenhuma empresa com pendência.</p>'}</div>
       </div>
       <div class="fc-card">
         <h3>Notificações</h3>
@@ -203,6 +277,7 @@
     $('#fcPdf').onclick = () => exportar('pdf');
     const rola = () => { const t = $('#fcRaiz .fc-tab'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
     q('.fc-f').forEach((b) => b.onclick = () => { F.filtro = b.dataset.f; F.mostrar = 120; desenhar(); });
+    q('[data-g]').forEach((b) => b.onclick = () => { F.graf = b.dataset.g; desenhar(); });
     q('.fh-k').forEach((b) => b.onclick = () => { F.filtro = F.filtro === b.dataset.f ? 'pendente' : b.dataset.f; F.mostrar = 120; desenhar(); rola(); });
     q('[data-mm]').forEach((b) => b.onclick = () => { F.malha = F.malha === b.dataset.mm ? '' : b.dataset.mm; F.filtro = 'pendente'; desenhar(); if (F.malha) rola(); });
     q('[data-ee]').forEach((b) => b.onclick = () => { F.emp = F.emp === b.dataset.ee ? '' : b.dataset.ee; desenhar(); if (F.emp) rola(); });

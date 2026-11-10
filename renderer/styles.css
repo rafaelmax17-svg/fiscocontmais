@@ -1702,3 +1702,34 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .fh-in .fh-ec{animation:fsUp .45s both}
 .fh-sb{display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--line)}.fh-sb i{display:block;height:100%}
 .fh-ec b{text-align:right;font-size:15px}
+/* Fisconforme · painel A2 (anel de idade + gráfico mês a mês + barras por idade) */
+.fh-hero.fh-a2{grid-template-columns:auto minmax(0,1fr) minmax(0,1.15fr);align-items:center;gap:24px}
+.fh-dn{position:relative;width:190px;height:190px;flex:none}
+.fh-dn svg{display:block}
+.fh-dc{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.fh-dc b{font-size:44px;font-weight:800;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums;display:block}
+.fh-dc small{font-size:11.5px;opacity:.8;margin-top:5px;display:block;line-height:1.35}
+.fh-rf{fill:none;stroke:rgba(255,255,255,.12);stroke-width:20}
+.fh-rs{fill:none;stroke-width:20}
+.fh-in .fh-rs{animation:fhAnel .9s ease-out both}
+@keyframes fhAnel{from{stroke-dasharray:0 999}}
+.fh-h4{margin:14px 0 8px;font-size:12.5px;opacity:.92}.fh-h4 small{font-weight:600;opacity:.75;font-size:11px}
+.fh-a2 .fh-ks{grid-template-columns:1fr 1fr;margin-top:12px}
+.fh-dir .fh-bt{margin-bottom:10px}
+.fh-cht{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.fh-cht h4{margin:0;font-size:13px;opacity:.92}
+.fh-seg{display:flex;background:rgba(0,0,0,.2);border-radius:9px;padding:2px}
+.fh-seg button{all:unset;cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:7px;opacity:.75}
+.fh-seg button:hover{opacity:1}.fh-seg button.on{background:rgba(255,255,255,.22);opacity:1}
+.fh-cl{display:flex;gap:14px;font-size:11.5px;opacity:.88;margin:6px 0 2px}.fh-cl i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.fh-ch svg{display:block;width:100%;height:142px}
+.fh-bar{transform-box:fill-box;transform-origin:bottom}.fh-in .fh-bar{animation:fhSobe .7s ease-out both}
+@keyframes fhSobe{from{transform:scaleY(0)}}
+.fh-nt{display:block;font-size:11px;opacity:.7;line-height:1.4}
+.fh-rod{display:block;margin-top:8px;font-size:11.5px;opacity:.72;line-height:1.45}
+@media (max-width:1250px){.fh-hero.fh-a2{grid-template-columns:auto minmax(0,1fr)}.fh-hero.fh-a2 .fh-dir{grid-column:1/-1}}
+.fh-leg{display:flex;gap:14px;font-size:11.5px;color:var(--ink2);margin:-4px 0 6px;flex-wrap:wrap}.fh-leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.fh-st{display:flex;height:8px;border-radius:5px;overflow:hidden;margin-top:5px;max-width:100%}
+.fh-ml .fh-st i,.fh-sb .fh-st i{display:block;height:100%;margin:0;border-radius:0;flex:none;background-clip:padding-box}
+.fh-sb{background:none}.fh-sb .fh-st{height:100%;margin:0}
+.fh-in .fh-st{animation:fcEnche .9s ease-out both}.fh-in .fh-sb .fh-st i{animation:none}
+.fh-ec{grid-template-columns:1fr 170px 50px}.fh-ec em.in{color:#dc2626}.fh-ec em.co{color:#4338ca}

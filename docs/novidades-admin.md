@@ -3,6 +3,14 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.26
+
+- **Fisconforme · painel A2** (escolhido pelo Rafael entre A1, A2 e A3; substitui o modelo A da 2.2.25, que foi gravada mas não publicada).
+  - **Anel:** pendentes pela idade, contada a partir de `primeiraVez` (dia em que o sistema encontrou a notificação). No fundo escuro, a faixa "mais de 180 dias" usa rosa (#fb7185) em vez de vinho, para aparecer.
+  - **"Evolução mês a mês":** "apareceram" agrupa por mês de `primeiraVez` e exclui as notificações da primeira leitura geral (`primeiraLeituraGeral`), que já estavam no portal. "Resolvidas" agrupa por `statusDesde` das que estão como resolvida ou "saiu das listas", com a mesma regra do cartão "Resolvidas no mês". Mostra no máximo 12 meses, começando no mês da primeira leitura.
+  - **"Por período":** pendentes pelo `periodo` (AAAAMM), com os 12 mais recentes no gráfico e o restante somado no texto ("mais N de períodos anteriores"). Abre direto nessa visão enquanto o histórico tiver menos de 3 meses.
+  - **Quadros:** barras empilhadas por idade. O ranking de empresas ordena por pendentes, e indeferidas e contestadas aparecem no texto.
+
 ## 2.2.25
 
 - **Fisconforme · painel executivo** (modelo A, aprovado pelo Rafael).
