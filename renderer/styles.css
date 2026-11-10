@@ -1656,3 +1656,13 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .un-nt{max-height:260px;overflow:auto}.un-nt>div{display:grid;grid-template-columns:90px 1fr auto;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12.5px}
 .un-nt span{color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.un-nt em{font-style:normal;font-weight:700;color:#b91c1c}
 .un-a{color:#b91c1c;font-weight:700}.un-d{color:#047857}
+
+/* avisos da consulta automática da SEFIN (canto da tela) */
+.sefin-avs{position:fixed;right:18px;bottom:18px;z-index:9500;display:flex;flex-direction:column;gap:10px;max-width:420px}
+.sefin-av{display:flex;gap:12px;align-items:flex-start;background:#141733;color:#fff;border-radius:16px;padding:13px 14px;box-shadow:0 20px 40px -18px #000;cursor:pointer;animation:fsUp .35s both;position:relative}
+.sefin-av .sa-ic{width:34px;height:34px;flex:0 0 auto;border-radius:10px;display:grid;place-items:center}
+.sefin-av.f .sa-ic{background:linear-gradient(135deg,#f97316,#e11d48)}.sefin-av.d .sa-ic{background:linear-gradient(135deg,#0ea5e9,#1d4ed8)}
+.sefin-av .sa-ic svg{width:19px;height:19px}
+.sefin-av b{display:block;font-size:13.5px}.sefin-av span{display:block;font-size:12px;opacity:.82;margin-top:2px}
+.sefin-av em{font-style:normal;display:inline-block;margin-top:7px;font-size:11.5px;font-weight:800;color:#93c5fd}
+.sefin-av button{all:unset;cursor:pointer;position:absolute;top:8px;right:10px;font-size:12px;opacity:.6}.sefin-av button:hover{opacity:1}

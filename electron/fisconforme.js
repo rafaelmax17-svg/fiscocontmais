@@ -105,9 +105,10 @@ function _log(m) {
   try { fs.writeFileSync(path.join(D.userData(), 'fisconforme_log.txt'), _logTxt.slice(-400).join('\n')); } catch (_) {}
 }
 
+let _auto = false;                          // consulta automática: janela sempre escondida
 function _janela() {
   if (_win && !_win.isDestroyed()) return _win;
-  const mostrar = !!_cfg().mostrarJanela;
+  const mostrar = !_auto && !!_cfg().mostrarJanela;
   _win = new BrowserWindow({ show: mostrar, width: 1200, height: 860, title: 'FiscoCont+ · Fisconforme', autoHideMenuBar: true,
     webPreferences: { partition: PARTICAO, contextIsolation: true, nodeIntegration: false, sandbox: true } });
   _win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -241,10 +242,10 @@ function _mapaEmpresas(emps) {
   };
 }
 
-async function ler() {
+async function ler(opc = {}) {
   _exige();
   if (_rodando) throw new Error('Há uma consulta da SEFIN em andamento. Aguarde terminar.');
-  _rodando = true; _canal = 'fisc:progresso';
+  _rodando = true; _canal = 'fisc:progresso'; _auto = !!opc.auto;
   _logTxt = [];
   const inicio = new Date();
   const lid = inicio.toISOString();
@@ -288,10 +289,14 @@ async function ler() {
       await b.commit();
     }
     const cont = Object.fromEntries(LISTAS.map((l) => [l, res[l].linhas.length]));
-    const novas = [...visto.keys()].filter((c) => !ant.has(c)).length;
+    const novasCod = [...visto.keys()].filter((c) => !ant.has(c));
+    const novas = novasCod.length;
+    const porEmp = {};
+    novasCod.forEach((c) => { const n = visto.get(c).nome || ''; porEmp[n] = (porEmp[n] || 0) + 1; });
+    const novasEmp = Object.entries(porEmp).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([nome, n]) => ({ nome, n }));
     const ses = auth.sessao() || {};
     await f.setDoc(f.doc(db, COL, '_meta'), {
-      ultimaLeitura: lid, por: ses.nome || ses.email || '', duracaoSeg: Math.round((Date.now() - inicio) / 1000),
+      ultimaLeitura: lid, por: opc.auto ? 'Consulta automática' : (ses.nome || ses.email || ''), auto: !!opc.auto, novasEmp, duracaoSeg: Math.round((Date.now() - inicio) / 1000),
       paginas: Object.fromEntries(LISTAS.map((l) => [l, res[l].paginas])), contagens: cont, novas,
       primeiraLeituraGeral: (await f.getDoc(f.doc(db, COL, '_meta'))).data()?.primeiraLeituraGeral || lid,
       malhas: malhas.map((m) => ({ cod: m.cod, nome: m.nome })),
@@ -303,7 +308,7 @@ async function ler() {
     _log(`parou: ${e.message || e}`);
     throw e;
   } finally {
-    _rodando = false;
+    _rodando = false; _auto = false;
     if (_win && !_win.isDestroyed()) { _win.destroy(); _win = null; }
   }
 }
@@ -328,7 +333,7 @@ async function resumo() {
   const { db, f } = _fs();
   const m = (await f.getDoc(f.doc(db, COL, '_meta'))).data() || null;
   return { pendentes: m && m.contagens ? (m.contagens.pendente || 0) : null, novas: m ? (m.novas || 0) : 0,
-    primeira: !!m && m.ultimaLeitura === m.primeiraLeituraGeral };
+    primeira: !!m && m.ultimaLeitura === m.primeiraLeituraGeral, ultimaLeitura: m ? m.ultimaLeitura : '', novasEmp: (m && m.novasEmp) || [] };
 }
 
 // ------------------------------------------------------------------ explicação (sem dados do cliente)
@@ -396,6 +401,7 @@ const portal = {
   loginSso: () => _login(), cfg: () => _cfg(), ehAdmin: () => _ehAdmin(), ehSso: _ehSso, sleep: _sleep,
   JS_ESTADO_LOGIN, JS_CLICA_ENTRAR,
   ocupado: () => _rodando,
+  silencioso: (s) => { _auto = !!s; },
   ocupar() { if (_rodando) throw new Error('Há uma consulta da SEFIN em andamento. Aguarde terminar.'); _rodando = true; },
   liberar(fechar = true) { _rodando = false; if (fechar && _win && !_win.isDestroyed()) { _win.destroy(); _win = null; } },
 };

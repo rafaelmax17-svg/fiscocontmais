@@ -574,6 +574,10 @@ const _dare = async (fn) => {
   if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
   try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String(e.message || e) }; }
 };
+// consulta automática da SEFIN (Fisconforme + Débitos): 4x por dia, no primeiro FiscoCont+ aberto com o e-CPF do contador
+const agendaSefin = require('./agenda_sefin');
+agendaSefin.init({ notificar: (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} } });
+ipcMain.handle('sefin:agenda', () => ({ ok: true, ...agendaSefin.estado() }));
 ipcMain.handle('dare:ler', (_evt, ano) => _dare(() => dare.ler(ano)));
 ipcMain.handle('dare:dados', (_evt, ano) => _dare(() => dare.dados(ano)));
 ipcMain.handle('dare:resumo', (_evt, ano) => _dare(() => dare.resumo(ano)));

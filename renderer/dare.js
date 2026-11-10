@@ -147,7 +147,7 @@
         ${meta ? `<div class="dr-ag"><h4>Vencidos por tempo de atraso</h4>
           <div class="dr-stk">${faixas.map((f, i) => `<i style="width:${(f.v / totV * 100).toFixed(2)}%;background:${f.c};animation-delay:${0.25 + i * 0.12}s" title="${f.t}: ${brl(f.v)} · ${f.n} débito(s)"></i>`).join('')}</div>
           <div class="dr-lg">${faixas.map((f) => `<div><span><i style="background:${f.c}"></i>${f.t}</span><b>${brl(f.v)}</b></div>`).join('')}</div>
-          <small>Última consulta ${e(quando)}${meta.por ? ' · ' + e(meta.por) : ''}</small></div>` : ''}</div></div>`;
+          <small>Última consulta ${e(quando)}${meta.por ? ' · ' + e(meta.por) : ''}<br>Consulta automática em dias úteis: 07:45 · 10:45 · 13:45 · 16:45</small></div>` : ''}</div></div>`;
 
     $('#drRaiz').innerHTML = `${heroTopo}
       <div class="fc-prog" id="drProg" hidden><i></i><span></span></div>
@@ -403,6 +403,55 @@
     if (rs) rs.textContent = sete ? `${sete} vence${sete === 1 ? '' : 'm'} em 7 dias` : vencN ? `${vencN} vencido${vencN === 1 ? '' : 's'}` : 'Nenhum vencimento próximo';
   }
   window._dareBadge = badge;
+
+  // ------------------------------------------------------------------ consulta automática: avisa a equipe da novidade
+  // A consulta roda 4x por dia no primeiro FiscoCont+ aberto com o e-CPF do contador (electron/agenda_sefin.js).
+  // Aqui, em qualquer computador, o sistema confere de tempos em tempos se houve leitura nova e mostra o aviso.
+  const VISTO = 'fc_sefin_visto';
+  const lerVisto = () => { try { return JSON.parse(localStorage.getItem(VISTO) || '{}'); } catch (_) { return {}; } };
+  const gravaVisto = (v) => { try { localStorage.setItem(VISTO, JSON.stringify(v)); } catch (_) {} };
+  function aviso(cls, titulo, linha, view) {
+    let box = document.getElementById('sefinAvisos');
+    if (!box) { box = document.createElement('div'); box.id = 'sefinAvisos'; box.className = 'sefin-avs'; document.body.appendChild(box); }
+    const el = document.createElement('div');
+    el.className = `sefin-av ${cls}`;
+    el.innerHTML = `<b class="sa-ic">${cls === 'f' ? '<svg viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 2H4.4z" fill="#fff"/></svg>' : ICONE}</b>
+      <div><b>${e(titulo)}</b><span>${e(linha)}</span><em>Ver agora →</em></div><button title="Fechar">✕</button>`;
+    el.querySelector('button').onclick = (ev) => { ev.stopPropagation(); el.remove(); };
+    el.onclick = () => { const n = document.querySelector(`.nav-item[data-view="${view}"]`); if (n) n.click(); el.remove(); };
+    box.appendChild(el);
+    setTimeout(() => el.remove(), 20000);
+  }
+  async function vigia() {
+    const v = lerVisto(), novo = { ...v };
+    const nav = (view) => { const n = document.querySelector(`.nav-item[data-view="${view}"]`); return n && !n.classList.contains('role-hidden'); };
+    if (nav('fiscal-fisconforme') && window.fiscocont.fisconforme.resumo) {
+      const r = await window.fiscocont.fisconforme.resumo().catch(() => null);
+      if (r && !r.error && r.ultimaLeitura) {
+        if (v.f && v.f !== r.ultimaLeitura && r.novas > 0 && !r.primeira) {
+          aviso('f', `Fisconforme: ${r.novas} notificaç${r.novas === 1 ? 'ão nova' : 'ões novas'}`,
+            (r.novasEmp || []).map((x) => `${x.nome} (${x.n})`).join(' · ') || 'Veja no Fisconforme', 'fiscal-fisconforme');
+        }
+        novo.f = r.ultimaLeitura;
+        if (window._fiscBadge) window._fiscBadge();
+      }
+    }
+    if (nav('fiscal-dare')) {
+      const r = await window.fiscocont.dare.resumo(String(new Date().getFullYear())).catch(() => null);
+      if (r && !r.error && r.ultimaLeitura) {
+        if (v.d && v.d !== r.ultimaLeitura && r.novos > 0) {
+          aviso('d', `Débitos e DARE: ${r.novos} débito${r.novos === 1 ? ' novo' : 's novos'}`,
+            `${brl(r.novosValor)}${(r.novosEmp || []).length ? ' · ' + r.novosEmp.map((x) => `${x.nome} (${x.n})`).join(' · ') : ''}`, 'fiscal-dare');
+        }
+        novo.d = r.ultimaLeitura;
+        badge();
+      }
+    }
+    gravaVisto(novo);
+  }
+  setInterval(() => { vigia().catch(() => {}); }, 3 * 60 * 1000);
+  setTimeout(() => { vigia().catch(() => {}); }, 15000);
+  if (window.fiscocont.sefin) window.fiscocont.sefin.onAuto(() => { setTimeout(() => { vigia().catch(() => {}); if ($('#drRaiz') && !$('#view-fiscal-dare').hidden) carregar(); }, 1500); });
 
   window._dareEntrar = entrar;
 })();

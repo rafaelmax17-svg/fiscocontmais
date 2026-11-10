@@ -295,10 +295,10 @@ async function _abrirLink(res, nr, parc, qual) {
 
 // ------------------------------------------------------------------ consulta de todas as empresas
 let _lendo = false;
-async function ler(ano) {
+async function ler(ano, opc = {}) {
   _exige();
   ano = String(ano || new Date().getFullYear());
-  P.ocupar(); _lendo = true;
+  P.ocupar(); _lendo = true; P.silencioso(!!opc.auto);
   P.limpaLog();
   const inicio = Date.now(), lid = new Date().toISOString();
   try {
@@ -307,6 +307,12 @@ async function ler(ano) {
     const { db, f } = _fs();
     const ses = auth.sessao() || {};
     let comDebito = 0, total = 0, falhas = 0;
+    // débitos já conhecidos (para contar os novos desta consulta)
+    const conhecidos = new Set();
+    (await f.getDocs(f.collection(db, COL))).forEach((d) => { if (d.id.startsWith(`${ano}_`)) (d.data().debitos || []).forEach((l) => conhecidos.add(`${d.data().ie}|${l.nr}|${l.parc}`)); });
+    const primeira = conhecidos.size === 0;
+    let novos = 0, novosValor = 0;
+    const novosEmp = {};
     const vencs = [];                                  // resumo leve para o número do menu: vencimento + valor de cada débito
     for (let i = 0; i < ies.length; i++) {
       const m = ies[i].t.match(/^(\d{8,14})\s*-\s*(.+)$/);
@@ -319,6 +325,7 @@ async function ler(ano) {
         const linhas = res.r.linhas.map((l) => ({ ...l, valorN: _num(l.valor), valorAtuN: _num(l.valorAtu) }));
         doc = { ie, nome, razao: res.r.cab.razao || nome, cnpj: _so(res.r.cab.cnpj), ano, debitos: linhas, lidoEm: lid, erro: '' };
         if (linhas.length) { comDebito++; total += linhas.reduce((s, l) => s + l.valorN, 0); }
+        linhas.forEach((l) => { if (!conhecidos.has(`${ie}|${l.nr}|${l.parc}`)) { novos++; novosValor += l.valorN; novosEmp[nome] = (novosEmp[nome] || 0) + 1; } });
         linhas.forEach((l) => vencs.push({ v: l.venc, x: l.valorN }));
         P.log(`${ie} ${nome}: ${linhas.length} débito(s)`);
       } catch (e) {
@@ -328,7 +335,9 @@ async function ler(ano) {
       await f.setDoc(f.doc(db, COL, `${ano}_${ie}`), doc, { merge: true });
       await P.vai(URL_CONSULTA, 45000);
     }
-    const resumo = { ultimaLeitura: lid, por: ses.nome || ses.email || '', ano, empresas: ies.length, comDebito, total: Math.round(total * 100) / 100,
+    const resumo = { ultimaLeitura: lid, por: opc.auto ? 'Consulta automática' : (ses.nome || ses.email || ''), auto: !!opc.auto,
+      novos: primeira ? 0 : novos, novosValor: primeira ? 0 : Math.round(novosValor * 100) / 100,
+      novosEmp: primeira ? [] : Object.entries(novosEmp).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([nome, n]) => ({ nome, n })), ano, empresas: ies.length, comDebito, total: Math.round(total * 100) / 100,
       falhas, duracaoSeg: Math.round((Date.now() - inicio) / 1000), contador: { nome: P.cfg().nome || '' }, vencs };
     await f.setDoc(f.doc(db, COL, `_meta_${ano}`), resumo, { merge: true });
     _prog('', { fim: true });
@@ -336,7 +345,7 @@ async function ler(ano) {
   } catch (e) {
     P.log(`débitos: parou · ${e.message || e}`); _prog('', { fim: true });
     throw e;
-  } finally { _lendo = false; P.liberar(true); }
+  } finally { _lendo = false; P.silencioso(false); P.liberar(true); }
 }
 
 // resumo para o cartão do menu: só o _meta do exercício (vencimentos e valores, sem as empresas)
@@ -346,11 +355,12 @@ async function resumo(ano) {
   const { db, f } = _fs();
   const m = (await f.getDoc(f.doc(db, COL, `_meta_${ano}`))).data() || null;
   if (!m) return { vencs: null };
-  if (Array.isArray(m.vencs)) return { vencs: m.vencs };
+  const info = { ultimaLeitura: m.ultimaLeitura || '', novos: m.novos || 0, novosValor: m.novosValor || 0, novosEmp: m.novosEmp || [] };
+  if (Array.isArray(m.vencs)) return { vencs: m.vencs, ...info };
   // consulta feita antes desta versão: monta a partir das empresas
   const vencs = [];
   (await f.getDocs(f.collection(db, COL))).forEach((d) => { if (d.id.startsWith(`${ano}_`)) (d.data().debitos || []).forEach((l) => vencs.push({ v: l.venc, x: l.valorN || 0 })); });
-  return { vencs };
+  return { vencs, ...info };
 }
 
 async function dados(ano) {

@@ -1,5 +1,5 @@
 rules_version = '2';
-// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.2.17.
+// Regras de Segurança do Firestore do FiscoCont+ (projeto fiscocontmais) — versão 2.2.23.
 // Publicadas automaticamente pelo GitHub (workflow "Publicar funções e regras no Firebase").
 // Publicar em: Console do Firebase > Firestore Database > Regras > colar este arquivo inteiro > Publicar.
 //
@@ -146,6 +146,10 @@ service cloud.firestore {
     }
     match /dare/{doc} {
       allow read, write: if dareOk();
+    }
+    // Consulta automática da SEFIN: a vez de cada horário (quem pegou, quando, resultado) — mesmo acesso dos dois módulos
+    match /agenda_sefin/{doc} {
+      allow read, write: if fisconforme() || dareOk();
     }
 
     // qualquer outra coleção: fechada

@@ -85,6 +85,10 @@ contextBridge.exposeInMainWorld('fiscocont', {
     exportar: (html, nome) => ipcRenderer.invoke('dare:exportar', { html, nome }),
     onProgresso: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('dare:progresso', h); return () => ipcRenderer.removeListener('dare:progresso', h); },
   },
+  sefin: {
+    agenda: () => ipcRenderer.invoke('sefin:agenda'),
+    onAuto: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('sefin:auto', h); return () => ipcRenderer.removeListener('sefin:auto', h); },
+  },
   integra: {
     estado: () => ipcRenderer.invoke('integra:estado'),
     salvarChave: (dados) => ipcRenderer.invoke('integra:salvarChave', dados),

@@ -3,6 +3,21 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.23
+
+- **Consulta automática da SEFIN** (`electron/agenda_sefin.js`): o Fisconforme e, logo depois, os Débitos e DARE do exercício são consultados 4x por dia em dias úteis (07:45, 10:45, 13:45 e 16:45). Os horários ficam fixos no código.
+  - **Onde roda:** no primeiro FiscoCont+ aberto, de qualquer usuário com acesso aos módulos, que tenha o e-CPF do contador.
+  - **Trava de certificado:** o CPF do certificado tem de ser o mesmo da última leitura do Fisconforme (`_meta.contador.cpf`); sem leitura anterior, só o computador do Admin participa. Assim, nenhum computador consulta com o e-CPF de outra pessoa.
+  - **Quem consulta cada horário:** a vez fica numa transação na coleção nova `agenda_sefin/<AAAAMMDD>_<HHMM>`, então só um computador consulta.
+  - **Falhas:** se quem pegou o horário não terminar em 40 min, outro pode assumir. Depois de erro, nova tentativa em 10 min, até 3 tentativas dentro da janela de 55 min.
+  - **Sem atrapalhar:** se houver consulta manual, DARE ou extrato em andamento, a automática espera. A janela fica sempre escondida, mesmo com "Mostrar a janela da consulta" ligado.
+- **Resumo gravado na nuvem:**
+  - Fisconforme: novas notificações por empresa (`_meta.novasEmp`).
+  - Débitos: débitos novos, valor e empresas, comparando com a consulta anterior; na primeira consulta, nada conta como novo.
+  - "por" fica como "Consulta automática".
+- **Aviso:** todos os computadores conferem a cada 3 min se houve leitura nova e mostram o aviso no canto, com as empresas e um clique para abrir o módulo. Quem consultou recebe o aviso na hora.
+- **Regras do Firestore** na versão 2.2.23 (coleção `agenda_sefin` com o mesmo acesso dos módulos).
+
 ## 2.2.22
 
 - **Corretor da EFD-Contribuições · crédito extemporâneo** (regra do escritório, 10/11/2026).

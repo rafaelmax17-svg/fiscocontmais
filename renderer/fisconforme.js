@@ -74,6 +74,8 @@
     el.title = `${r.pendentes} pendente(s)${r.novas && !r.primeira ? ` · ${r.novas} nova(s) na última leitura` : ''}`;
   }
   window._fiscBadge = badge;
+  // terminou a consulta automática: se a tela está aberta, mostra os dados novos
+  if (window.fiscocont.sefin) window.fiscocont.sefin.onAuto(() => { setTimeout(() => { const v = document.getElementById('view-fiscal-fisconforme'); if (v && !v.hidden && F.d) carregar(); }, 1500); });
 
   function contar(notif, meta) {
     const c = { pendente: 0, contestado: 0, indeferido: 0, resolvido: 0, fora: 0, novas: 0, resMes: 0 };
@@ -115,7 +117,7 @@
     const chip = (k, rot, n) => `<button class="fc-f${F.filtro === k ? ' on' : ''}" data-f="${k}">${rot} (${n})</button>`;
     $('#fcRaiz').innerHTML = `
       <div class="fc-hd"><div class="fc-tit">${LOGO}<div><span class="fc-tag">SEFIN-RO · FISCONFORME</span><h2>Notificações do Fisconforme</h2>
-        <p>Todas as empresas vinculadas ao contador · ${e(est.nome || 'contador')}${est.cpf ? ` (e-CPF ${fmtCpf(est.cpf)})` : ''} · o sistema consulta só as listas, sem abrir a notificação</p></div></div>
+        <p>Todas as empresas vinculadas ao contador · ${e(est.nome || 'contador')}${est.cpf ? ` (e-CPF ${fmtCpf(est.cpf)})` : ''} · o sistema consulta só as listas, sem abrir a notificação · consulta automática em dias úteis às 07:45, 10:45, 13:45 e 16:45</p></div></div>
         <div class="fc-acts">${meta ? `<span class="fc-pill">● Última leitura ${e(new Date(meta.ultimaLeitura).toLocaleString('pt-BR').slice(0, 17).replace(',', ''))}${meta.por ? ' · ' + e(meta.por) : ''}</span>` : ''}
           ${adm ? `<label class="fc-chk" title="Abre a janela da consulta para acompanhar a entrada no portal (ajuda no primeiro uso)"><input type="checkbox" id="fcVer"${F.est.mostrarJanela ? ' checked' : ''}> Mostrar a janela da consulta</label>
           <button class="act inv-export" id="fcPortal">Abrir o portal ↗</button>` : ''}
