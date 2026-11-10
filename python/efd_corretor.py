@@ -46,6 +46,7 @@ TITULOS = {
     'cta_rec': ('Conta contábil em branco na receita (C175 · M400/M410 · M800/M810)', '#6d28d9'),
     'part_mun': ('Participante sem código do município (0150)', '#0891b2'),
     'avulsa': ('NF-e avulsa: CNPJ da chave diferente do participante (situação 08)', '#be123c'),
+    'extemp': ('Crédito extemporâneo (1101/1501 e notas extemporâneas)', '#b45309'),
     'r0900': ('Composição das receitas do período (0900)', '#047857'),
     'contadores': ('Contadores do arquivo (9900, x990, 9999)', '#6b7392'),
 }
@@ -1048,6 +1049,151 @@ def calc_0900(L):
     return {k: round(v, 2) for k, v in tot.items()}
 
 
+# ------------------------------------------------------------------ crédito extemporâneo
+_SUB_1100 = {'1100': ('1101', '1102'), '1500': ('1501', '1502')}
+
+
+def det_extemp(L):
+    """1101/1102 e 1501/1502 (crédito extemporâneo) em escrituração a partir de 08/2013 — o PVA não aceita mais esses
+    registros ("Estrutura da linha inválida") — e C100 de entrada extemporâneo (situação 01) com crédito no C170."""
+    p0 = _partes(L[0]['txt']) if L and _reg(L[0]) == '0000' else []
+    ini = p0[5] if len(p0) > 5 else ''
+    a_partir_2013 = len(ini) == 8 and (ini[4:] + ini[2:4]) >= '201308'
+    out = []
+    if a_partir_2013:
+        out += [{'i': i, 'tipo': 'reg', 'reg': _reg(l)} for i, l in enumerate(L) if _reg(l) in ('1101', '1102', '1501', '1502')]
+    for i, pc, its in _blocos_c100(L):
+        if len(pc) > 5 and pc[1] == '0' and pc[5] == '01':
+            com = [j for j in its if len(_partes(L[j]['txt'])) > 35 and (_partes(L[j]['txt'])[24] in _CST_CRED or _partes(L[j]['txt'])[30] in _CST_CRED)]
+            if com:
+                out.append({'i': i, 'tipo': 'c100', 'itens': com, 'num': pc[7]})
+    return out
+
+
+_CST_CRED = tuple(str(x) for x in range(50, 67))
+
+
+def _fix_extemp(L, acoes, pend, ctx):
+    """Regra do escritório (Rafael, 10/11/2026): crédito de nota extemporânea sai deste arquivo.
+    • 1101/1102 e 1501/1502: o PVA não valida nem permite registros de operação extemporânea para períodos a partir de
+      08/2013 (o crédito extemporâneo deve ir pela retificação da escrituração do período da nota). Os registros saem;
+      o 1100/1500 pai deixa de ter o valor extemporâneo (campo 07) e o que foi descontado nesta escrituração (campo 13)
+      volta para o M200/M600 (campo 04, crédito de períodos anteriores) — a contribuição a recolher aumenta nesse valor e
+      o M205/M605 acompanha. 1100/1500 sem saldo nenhum depois disso também sai.
+    • C100 de entrada com situação 01 (extemporâneo) e crédito no C170: itens com CST 70 (aquisição sem direito a
+      crédito), sem base nem crédito."""
+    achados = det_extemp(L)
+    if not achados:
+        return L
+    remover = set()
+    volta = {'PIS': 0.0, 'COFINS': 0.0}
+    regs = {a['i'] for a in achados if a['tipo'] == 'reg'}
+    if regs:
+        pai = None
+        for i, l in enumerate(L):
+            r = _reg(l)
+            if r in _SUB_1100:
+                pai = i
+            elif r in ('1101', '1102', '1501', '1502') and i in regs:
+                remover.add(i)
+                acoes.append({'cat': 'extemp', 'tipo': 'removido', 'linha': L[i]['n'], 'registro': r, 'antes': L[i]['txt'], 'depois': '(registro removido)',
+                              'motivo': 'Crédito extemporâneo: o PVA não aceita o registro em escrituração a partir de 08/2013. O crédito deve ir pela retificação do período da nota.'})
+        for i, l in enumerate(L):
+            r = _reg(l)
+            if r not in _SUB_1100:
+                continue
+            # só os filhos imediatos deste pai
+            filhos = []
+            for j in range(i + 1, len(L)):
+                if _reg(L[j]) in _SUB_1100[r]:
+                    filhos.append(j)
+                else:
+                    break
+            if not any(j in remover for j in filhos):
+                continue
+            p = _partes(L[i]['txt'])
+            if len(p) < 18:
+                continue
+            antes = L[i]['txt']
+            n = [_num(x) for x in p]
+            desc_antes = n[12]
+            n[6] = 0.0                                       # VL_CRED_EXT_APU
+            n[7] = n[5] + n[6]                               # VL_TOT_CRED_APU
+            n[11] = max(0.0, round(n[7] - n[8] - n[9] - n[10], 2))   # SD_CRED_DISP_EFD
+            n[12] = min(n[12], n[11])                        # VL_CRED_DESC_EFD
+            resto = n[11] - n[12]
+            for k in (13, 14, 15, 16):                       # per/dcomp/trans/out: cabem no que sobrou
+                n[k] = min(n[k], max(0.0, resto)); resto -= n[k]
+            n[17] = max(0.0, round(resto, 2))                # SLD_CRED_FIM
+            trib = 'PIS' if r == '1100' else 'COFINS'
+            volta[trib] += round(desc_antes - n[12], 2)
+            for k in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17):
+                p[k] = _fmt(n[k])
+            if all(n[k] == 0 for k in (11, 12, 13, 14, 15, 16, 17)):
+                remover.add(i)
+                acoes.append({'cat': 'extemp', 'tipo': 'removido', 'linha': L[i]['n'], 'registro': r, 'antes': antes, 'depois': '(registro removido)',
+                              'motivo': f'Sem o crédito extemporâneo, o controle de crédito de {p[1][:2]}/{p[1][2:]} fica sem saldo nenhum neste período.'})
+            else:
+                L[i]['txt'] = _monta(p)
+                acoes.append({'cat': 'extemp', 'tipo': 'alterado', 'linha': L[i]['n'], 'registro': r, 'antes': antes, 'depois': L[i]['txt'],
+                              'motivo': 'Controle de crédito sem o valor extemporâneo (campo 07) e com o saldo refeito.'})
+    # crédito descontado nesta escrituração volta para a contribuição (M200/M600 campo 04 e M205/M605)
+    for trib, valor in volta.items():
+        if valor <= 0.004:
+            continue
+        r200, r205, cod = ('M200', 'M205', '6912') if trib == 'PIS' else ('M600', 'M605', '5856')
+        m = next((i for i, l in enumerate(L) if _reg(l) == r200), None)
+        if m is None:
+            continue
+        p = _partes(L[m]['txt'])
+        antes = L[m]['txt']
+        p[3] = _fmt(max(0.0, _num(p[3]) - valor))
+        p[4] = _fmt(_num(p[1]) - _num(p[2]) - _num(p[3]))
+        p[7] = _fmt(_num(p[4]) - _num(p[5]) - _num(p[6]))
+        p[12] = _fmt(_num(p[7]) + _num(p[11]))
+        L[m]['txt'] = _monta(p)
+        ctx.setdefault('recalc', []).append({'trib': trib, 'registro': r200, 'linha': L[m]['n'],
+                                             'campos': [{'campo': 'VL_TOT_CRED_DESC_ANT', 'antes': _num(_partes(antes)[3]), 'depois': _num(p[3])},
+                                                        {'campo': 'VL_TOT_CONT_REC', 'antes': _num(_partes(antes)[12]), 'depois': _num(p[12])}],
+                                             'antes': antes, 'depois': L[m]['txt'], 'motivo': f'Crédito extemporâneo de {trib} retirado: {_brl(valor)} a mais a recolher.'})
+        acoes.append({'cat': 'extemp', 'tipo': 'alterado', 'linha': L[m]['n'], 'registro': r200, 'antes': antes, 'depois': L[m]['txt'],
+                      'motivo': f'O crédito extemporâneo de {trib} descontado nesta escrituração ({_brl(valor)}) volta para a contribuição a recolher.'})
+        alvos = [i for i, l in enumerate(L) if _reg(l) == r205]
+        if alvos:
+            alvo = next((i for i in alvos if _partes(L[i]['txt'])[2].startswith(cod)), next((i for i in alvos if _partes(L[i]['txt'])[1] == '08'), alvos[0]))
+            q = _partes(L[alvo]['txt'])
+            antes2 = L[alvo]['txt']
+            q[3] = _fmt(_num(q[3]) + valor)
+            L[alvo]['txt'] = _monta(q)
+            acoes.append({'cat': 'extemp', 'tipo': 'alterado', 'linha': L[alvo]['n'], 'registro': r205, 'antes': antes2, 'depois': L[alvo]['txt'],
+                          'motivo': f'Débito a recolher do código {q[2]} acompanha o {r200}: + {_brl(valor)}.'})
+    # notas de entrada extemporâneas (situação 01) com crédito no C170 → CST 70
+    for a in achados:
+        if a['tipo'] != 'c100':
+            continue
+        for j in a['itens']:
+            q = _partes(L[j]['txt'])
+            antes = L[j]['txt']
+            _zera_pis_cofins(q, '70')
+            L[j]['txt'] = _monta(q)
+            acoes.append({'cat': 'extemp', 'tipo': 'alterado', 'linha': L[j]['n'], 'registro': 'C170', 'antes': antes, 'depois': L[j]['txt'],
+                          'motivo': f"Nota extemporânea {a['num']} (situação 01): item {q[1]} com CST 70 (aquisição sem direito a crédito), sem base nem crédito."})
+        pend.append({'cat': 'extemp', 'linha': L[a['i']]['n'], 'titulo': f"NF {a['num']} extemporânea",
+                     'detalhe': 'O crédito saiu deste arquivo; recalcule a apuração (M100/M105/M500/M505) no Domínio ou pela retificação do período da nota.'})
+    # 1001: bloco 1 sem nenhum registro passa a "sem dados"
+    if remover:
+        L = [l for k, l in enumerate(L) if k not in remover]
+        tem = any(_reg(l)[0] == '1' and _reg(l) not in ('1001', '1990') for l in L if _reg(l))
+        for l in L:
+            if _reg(l) == '1001':
+                q = _partes(l['txt'])
+                if not tem and q[1] != '1':
+                    antes = l['txt']; q[1] = '1'; l['txt'] = _monta(q)
+                    acoes.append({'cat': 'extemp', 'tipo': 'alterado', 'linha': l['n'], 'registro': '1001', 'antes': antes, 'depois': l['txt'],
+                                  'motivo': 'Bloco 1 ficou sem registros: indicador de movimento passa para 1 (sem dados).'})
+    return L
+
+
 def _fix_0900(L, acoes, pend, ctx):
     if not ctx.get('incluir_0900'):
         return L
@@ -1430,12 +1576,12 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
         'natureza': det_natureza(L), 'm410': det_m410(L), 'cta': det_cta(L), 'contadores': det_contadores(L),
         'cta_item': det_cta_item(L), 'cta_m400': det_cta_m400(L), 'c100sem': det_c100sem(L), 'a100sem': det_a100sem(L),
         'cst_ent': det_cst_ent(L), 'cta_rec': det_cta_rec(L), 'part_mun': det_part_mun(L), 'avulsa': det_avulsa(L), 'r0900': [],
-        'vlmerc': det_vlmerc(L),
+        'vlmerc': det_vlmerc(L), 'extemp': det_extemp(L),
     }
     atencao = det_atencao_aliquota(L)
     n_antes = len(L)
     acoes, pend = [], []
-    for fix in (_fix_cpf, _fix_c100, _fix_c175dup, _fix_mdup, _fix_msoma, _fix_natureza, _fix_m105, _fix_m410, _fix_cta,
+    for fix in (_fix_extemp, _fix_cpf, _fix_c100, _fix_c175dup, _fix_mdup, _fix_msoma, _fix_natureza, _fix_m105, _fix_m410, _fix_cta,
                 _fix_0500, _fix_cta_itens, _fix_cta_m400, _fix_c100sem, _fix_a100sem,
                 _fix_vlmerc, _fix_cst_ent, _fix_cta_rec, _fix_part_mun, _fix_avulsa, _fix_0900):
         L = fix(L, acoes, pend, ctx)
@@ -1443,11 +1589,11 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
     depois = {'cpf': det_cpf(L), 'c100': det_c100(L), 'c175dup': det_c175dup(L), 'mdup': det_mdup(L), 'msoma': det_msoma(L),
               'natureza': det_natureza(L), 'm410': det_m410(L), 'cta': det_cta(L), 'contadores': det_contadores(L),
               'cta_item': det_cta_item(L), 'cta_m400': det_cta_m400(L), 'c100sem': det_c100sem(L), 'a100sem': det_a100sem(L),
-              'cst_ent': det_cst_ent(L), 'cta_rec': det_cta_rec(L), 'part_mun': det_part_mun(L), 'avulsa': det_avulsa(L), 'r0900': [], 'vlmerc': det_vlmerc(L)}
+              'cst_ent': det_cst_ent(L), 'cta_rec': det_cta_rec(L), 'part_mun': det_part_mun(L), 'avulsa': det_avulsa(L), 'r0900': [], 'vlmerc': det_vlmerc(L), 'extemp': det_extemp(L)}
     pva_cat = (pva or {}).get('por_cat', {})
     dup_total = pva_cat.get('dup')
     cats = []
-    for cid in ('cpf', 'c100', 'c175dup', 'mdup', 'msoma', 'natureza', 'm105', 'm410', 'cta', 'cta_item', 'cta_m400', 'c100sem', 'a100sem', 'vlmerc', 'cst_ent', 'cta_rec', 'part_mun', 'avulsa', 'r0900', 'contadores'):
+    for cid in ('cpf', 'c100', 'c175dup', 'mdup', 'msoma', 'natureza', 'm105', 'm410', 'cta', 'cta_item', 'cta_m400', 'c100sem', 'a100sem', 'vlmerc', 'cst_ent', 'cta_rec', 'part_mun', 'avulsa', 'extemp', 'r0900', 'contadores'):
         titulo, cor = TITULOS[cid]
         a_cat = [a for a in acoes if a['cat'] == cid]
         pendentes = sum(x.get('qtd', 1) for x in pend if x['cat'] == cid)
@@ -1476,6 +1622,9 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
             achados, corrigidos = len(antes[cid]), len([x for x in a_cat if x['registro'] == 'C170'])
         elif cid == 'a100sem':
             achados, corrigidos = len(antes[cid]), len([x for x in a_cat if x['registro'] == 'A170'])
+        elif cid == 'extemp':
+            achados = sum(1 for x in antes[cid] if x['tipo'] == 'reg') + sum(len(x['itens']) for x in antes[cid] if x['tipo'] == 'c100')
+            corrigidos = len([x for x in a_cat if x['registro'] in ('1101', '1102', '1501', '1502', 'C170')])
         elif cid == 'avulsa':
             achados, corrigidos = len(antes[cid]), len([x for x in a_cat if x['registro'] == 'C100'])
         elif cid == 'r0900':
@@ -1504,6 +1653,7 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
         ('Conta em branco na receita (C175/M400/M410/M800/M810)', len(antes['cta_rec']), len(depois['cta_rec'])),
         ('Participante sem código do município', len(antes['part_mun']), len(depois['part_mun'])),
         ('NF-e avulsa com CNPJ da chave ≠ participante', len(antes['avulsa']), len(depois['avulsa'])),
+        ('Crédito extemporâneo (1101/1501 e notas situação 01)', len(antes['extemp']), len(depois['extemp'])),
         ('Contadores (9900/x990/9999) divergentes', len(antes['contadores']), len(depois['contadores'])),
     ]
     resumo = {
@@ -1607,12 +1757,14 @@ _EXPLICA = {
                  'Participante genérico ("diversos") recebe o município da empresa. Os demais ficam como pendência para corrigir o cadastro.'),
     'avulsa': ('NF-e avulsa (série 890 a 899) é emitida pelo Fisco: a chave traz o CNPJ da SEFAZ, e o PVA acusa diferença com o participante.',
                'Regra do escritório: a nota passa para a situação 08 (documento emitido com base em regime especial ou norma específica) e os itens ficam com CST 70 de PIS/COFINS (aquisição sem direito a crédito), sem base nem crédito.'),
+    'extemp': ('O PVA não valida nem permite registros de crédito extemporâneo (1101/1501) em escrituração a partir de 08/2013: a linha dá "Estrutura da linha inválida" e o bloco 1 e o total do arquivo deixam de bater. O crédito extemporâneo deve ser tomado pela retificação da escrituração do período da nota.',
+               'Regra do escritório: o crédito extemporâneo sai deste arquivo. Os 1101/1501 são retirados, o 1100/1500 fica sem o valor extemporâneo, e o que tinha sido descontado aqui volta para a contribuição a recolher (M200/M600 e M205/M605). Nota de entrada extemporânea (situação 01) com crédito no C170 fica com CST 70, sem base nem crédito.'),
     'r0900': ('Escrituração entregue depois do prazo precisa do 0900 (composição das receitas do período).',
               'Com a opção marcada, o 0900 é gerado com a receita de cada bloco: valor bruto das operações com CST de receita (01 a 09), como o PVA confere. Um 0900 já existente é recalculado.'),
     'contadores': ('Depois das correções o número de linhas muda, então os contadores do arquivo ficam errados.',
                    'Os contadores 9900, x990 e 9999 foram refeitos. Não é um erro do PVA: é consequência das correções.'),
 }
-_CURTO = {'cpf': 'CPF', 'c100': 'C100', 'c175dup': 'C175 duplic.', 'mdup': 'M210/M610', 'msoma': 'M205/M605', 'natureza': 'Natureza 0400', 'm105': 'M105/M505', 'm410': 'M410/M810', 'cta': 'COD_CTA ajustes', 'cta_item': 'COD_CTA itens', 'cta_m400': 'Conta M400', 'c100sem': 'C100 s/ item', 'a100sem': 'A100 s/ item', 'vlmerc': 'VL_MERC', 'cst_ent': 'CST entrada', 'cta_rec': 'Conta receita', 'part_mun': 'Município 0150', 'avulsa': 'NF-e avulsa', 'r0900': '0900'}
+_CURTO = {'cpf': 'CPF', 'c100': 'C100', 'c175dup': 'C175 duplic.', 'mdup': 'M210/M610', 'msoma': 'M205/M605', 'natureza': 'Natureza 0400', 'm105': 'M105/M505', 'm410': 'M410/M810', 'cta': 'COD_CTA ajustes', 'cta_item': 'COD_CTA itens', 'cta_m400': 'Conta M400', 'c100sem': 'C100 s/ item', 'a100sem': 'A100 s/ item', 'vlmerc': 'VL_MERC', 'cst_ent': 'CST entrada', 'cta_rec': 'Conta receita', 'part_mun': 'Município 0150', 'avulsa': 'NF-e avulsa', 'extemp': 'Extemporâneo', 'r0900': '0900'}
 
 
 def _mix(hexc, alvo, f):

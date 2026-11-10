@@ -3,6 +3,19 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.2.22
+
+- **Corretor da EFD-Contribuições · crédito extemporâneo** (regra do escritório, 10/11/2026).
+  - **Por que:** para escriturações a partir de 08/2013, o PVA não valida nem permite os registros 1101/1102 e 1501/1502 (crédito extemporâneo). A linha dá "Estrutura da linha inválida" e, por consequência, também erram a contagem do bloco 1 e o 9999.
+  - **Bloco 1:** os 1101/1501 saem. O 1100/1500 pai perde o valor extemporâneo (campo 07) e tem o saldo refeito; sem saldo nenhum, ele também sai. Se o bloco 1 ficar vazio, o 1001 passa para 1 (sem dados).
+  - **Bloco M:** o crédito que tinha sido descontado nesta escrituração volta para a contribuição a recolher: M200/M600 campo 04 e M205/M605 (6912/5856).
+  - **Notas extemporâneas no C170:** nota de entrada com situação 01 e crédito no C170 fica com CST 70, sem base nem crédito, e vira pendência para recalcular a apuração.
+- **Testado com o arquivo do ESPAÇO DO ESPETO, 08/2026:** 11 1101 e 11 1501 (notas de 04/2026) retirados, junto com o 1100 e o 1500.
+  - PIS: + R$ 10,90 a recolher (3.160,05 → 3.170,95).
+  - COFINS: + R$ 50,21 (14.550,47 → 14.600,68).
+  - Os 24 erros do PVA somem; o arquivo fica com 23.736 linhas.
+  - O crédito dessas notas deve ser tomado na retificação da EFD-Contribuições de 04/2026.
+
 ## 2.2.21
 
 - **Corretor do SPED Fiscal · "Unidade × XML"** (botão novo, só Admin). Corrige a inconsistência do portal, aba Estoque: "[100] - [C170] erro de valor do produto ou erro de incompatibilidade com sequência dos itens da NF-e".
