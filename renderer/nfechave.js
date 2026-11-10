@@ -139,7 +139,8 @@
         : i.download ? `<div class="nc-aviso">${e(i.download)}</div>` : ''}
       ${i.ciencia && !i.ciencia.ok ? `<div class="nc-aviso er">Ciência recusada pela SEFAZ: ${e(i.ciencia.cstat)} · ${e(i.ciencia.motivo)}</div>` : ''}
       ${i.situacao === 'cancelada' ? '<div class="nc-aviso er">⚠ Nota cancelada: se foi escriturada no SPED, precisa ser retirada.</div>' : ''}
-      <div class="nc-bt"><button data-cp="${i.chave}">Copiar chave</button></div></div>`;
+      <div class="nc-bt"><button data-cp="${i.chave}">Copiar chave</button><button data-rc="${i.chave}" title="Consulta esta chave na SEFAZ de novo, mesmo que já esteja guardada">Consultar de novo</button></div>
+      ${i.bruto ? `<details class="nc-raw"><summary>Resposta da SEFAZ (técnico) · ${(i.bruto.match(/<(?:\w+:)?procEvento/g) || []).length} evento(s) no retorno</summary><pre>${e(i.bruto)}</pre></details>` : ''}</div>`;
   }
 
   function ligar() {
@@ -165,6 +166,17 @@
     q('tr[data-ch]').forEach((tr) => tr.onclick = (ev) => { if (ev.target.closest('[data-ab]')) return; N.sel = tr.dataset.ch; desenhar(); });
     q('[data-ab]').forEach((b) => b.onclick = async (ev) => { ev.stopPropagation(); const r = await window.fiscocont.nfech.abrir(b.dataset.ab, false); if (r && r.error) toast(r.error, true); });
     q('[data-pa]').forEach((b) => b.onclick = async () => { const r = await window.fiscocont.nfech.abrir(b.dataset.pa, true); if (r && r.error) toast(r.error, true); });
+    q('[data-rc]').forEach((b) => b.onclick = async () => {
+      if (N.rodando) return;
+      N.rodando = true; b.disabled = true; b.textContent = 'Consultando…';
+      const r = await window.fiscocont.nfech.consultar({ empresaId: N.empId, chaves: [b.dataset.rc], baixar: N.baixar, ciencia: N.ciencia, pdf: N.baixar, forcar: true });
+      N.rodando = false;
+      if (r && r.error) { toast(r.error, true); desenhar(); return; }
+      const novo = (r.itens || [])[0];
+      if (novo && N.res) N.res.itens = N.res.itens.map((x) => (x.chave === novo.chave ? novo : x));
+      toast('Chave consultada de novo.');
+      desenhar();
+    });
     q('[data-cp]').forEach((b) => b.onclick = () => { navigator.clipboard.writeText(b.dataset.cp); toast('Chave copiada.'); });
   }
 

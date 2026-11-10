@@ -3,6 +3,12 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.0
+
+- **Consulta NF-e por chave · conferência dos eventos.** Notas com XML baixado (o que exige manifestação do destinatário) apareciam como "sem eventos". Falta confirmar se a SEFAZ autorizadora (SVRS) devolve os eventos de manifestação registrados no Ambiente Nacional.
+  - **Resposta da SEFAZ (técnico):** o painel de detalhes mostra a resposta da consulta, sem as assinaturas, com a contagem de `procEvento` no retorno. Fica guardada no cache (`bruto`, até 20 mil caracteres).
+  - **"Consultar de novo":** botão no detalhe que consulta a chave ignorando o cache (`forcar`).
+
 ## 2.2.29
 
 - **Consulta NF-e por chave · CT-e e NFC-e.** Com as raízes da ICP-Brasil da 2.2.28, a conexão com o SVRS passou a funcionar. As chaves de teste eram de **CT-e (modelo 57)** e iam para o serviço da NF-e, que respondia 215 (falha no schema).

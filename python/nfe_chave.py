@@ -232,6 +232,15 @@ def _analisa_cte(xml):
     return {'situacao': sit, 'cstat': cst, 'motivo': mot, 'dh_autorizacao': dh_aut, 'eventos': eventos}
 
 
+def _bruto(xml):
+    """Resposta da SEFAZ para conferência (sem as assinaturas, que são longas e não dizem nada): mostra quais eventos vieram."""
+    m = re.search(r'<(?:\w+:)?retConsSit(?:NFe|CTe)\b.*?</(?:\w+:)?retConsSit(?:NFe|CTe)>', xml, re.S)
+    t = m.group(0) if m else xml
+    t = re.sub(r'<(?:\w+:)?Signature\b.*?</(?:\w+:)?Signature>', '', t, flags=re.S)
+    t = re.sub(r'>\s*<', '>\n<', t)
+    return t[:20000]
+
+
 def _tentar(lista, chamar, analisar, uf, nome_prim):
     """Tenta os servidores na ordem; o primeiro é o autorizador da UF. Se ele não responder, o "não consta" dos outros
     não vale (a nota não é deles): devolve erro com o motivo real."""
@@ -244,7 +253,7 @@ def _tentar(lista, chamar, analisar, uf, nome_prim):
             if i == 0:
                 erro_prim = mf._erro_legivel(e)
             continue
-        r = analisar(xml)
+        r = {**analisar(xml), 'bruto': _bruto(xml)}
         tent.append({'aut': aut, 'cstat': r['cstat'], 'motivo': r['motivo']})
         if r['cstat'] in ('217', '226', '227', '236', '613') and r['situacao'] not in ('autorizada', 'cancelada', 'denegada'):
             guardado = guardado or (r, aut)
@@ -274,7 +283,7 @@ def situacao(sess, ch):
         r = _tentar(lista, lambda u: mf._soap(sess, u, ns, corpo, 'nfeConsultaNF'), mf._analisa_situacao, uf, prim)
     else:
         xml, aut, tent = mf._consulta_situacao(sess, ch)
-        r = {**mf._analisa_situacao(xml), 'autorizador': aut, 'tentativas': tent}
+        r = {**mf._analisa_situacao(xml), 'autorizador': aut, 'tentativas': tent, 'bruto': _bruto(xml)}
     for e in r.get('eventos') or []:
         e['nome'] = {'110110': 'carta_correcao', '610110': 'desacordo', '610112': 'cancel_desacordo', '110180': 'comprovante_entrega',
                      **mf.EVENTOS}.get(e['tipo'], e['tipo'])

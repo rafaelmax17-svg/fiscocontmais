@@ -1532,7 +1532,7 @@ ipcMain.handle('nfech:importar', () => _adm(async () => {
   } catch (_) {}
   return { chaves: res.chaves || [], cnpjArquivo, arquivo: path.basename(r.filePaths[0]) };
 }));
-ipcMain.handle('nfech:consultar', (_evt, { empresaId, chaves, baixar, ciencia, pdf }) => _adm(async () => {
+ipcMain.handle('nfech:consultar', (_evt, { empresaId, chaves, baixar, ciencia, pdf, forcar }) => _adm(async () => {
   const indice = _lerIndiceCert();
   const empresa = (indice.empresas || []).find((e) => e.id === empresaId);
   if (!empresa) throw new Error('Escolha a empresa (certificado cadastrado nas Baixas DF-e).');
@@ -1545,7 +1545,7 @@ ipcMain.handle('nfech:consultar', (_evt, { empresaId, chaves, baixar, ciencia, p
   if (!lista.length) throw new Error('Nenhuma chave válida para consultar.');
   const cache = _nfechCacheLer();
   const ck = (c) => `${empresa.cnpj}|${c}`;
-  const faltam = lista.filter((c) => { const h = cache.itens[ck(c)]; return !(h && _nfechFinal(h.item, h.em)); });
+  const faltam = forcar ? lista : lista.filter((c) => { const h = cache.itens[ck(c)]; return !(h && _nfechFinal(h.item, h.em)); });
   const env = (d) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('nfech:progresso', d); };
   const guardadas = lista.length - faltam.length;
   env({ feitas: 0, total: faltam.length, guardadas });
