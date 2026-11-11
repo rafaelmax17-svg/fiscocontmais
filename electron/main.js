@@ -1603,6 +1603,35 @@ ipcMain.handle('nfech:exportar', (_evt, { itens, titulo, nome }) => _adm(async (
   return { path: r.filePath };
 }));
 
+// ---------------------------------------------------------------------------
+// Adaptação de planilhas (2.3.1) — SÓ ADMIN. Lê a planilha de auditoria de itens e gera um NOVO Excel (Modelo B)
+// ao lado do original ("<nome> - Profissional.xlsx"). O arquivo original nunca é alterado.
+// ---------------------------------------------------------------------------
+ipcMain.handle('plan:escolher', () => _adm(async () => {
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'Planilha para adaptar', properties: ['openFile'],
+    filters: [{ name: 'Planilha Excel', extensions: ['xlsx', 'xlsm'] }] });
+  if (r.canceled || !r.filePaths.length) return { cancelado: true };
+  const arq = r.filePaths[0];
+  const saida = path.join(os.tmpdir(), `fc_plan_${Date.now()}.json`);
+  await runFiscal(['planilha-auditoria', arq, '--acao', 'analisar', '--json', saida], saida);
+  const res = JSON.parse(fs.readFileSync(saida, 'utf-8')); fs.unlink(saida, () => {});
+  if (res.erro) throw new Error(res.erro);
+  return { ...res, arquivo: arq, nome: path.basename(arq) };
+}));
+ipcMain.handle('plan:gerar', (_evt, { arquivo, titulo }) => _adm(async () => {
+  if (!arquivo || !fs.existsSync(arquivo)) throw new Error('Planilha não encontrada (foi movida ou apagada?).');
+  const saida = path.join(os.tmpdir(), `fc_plan_g_${Date.now()}.json`);
+  await runFiscal(['planilha-auditoria', arquivo, '--acao', 'gerar', '--titulo', String(titulo || ''), '--json', saida], saida);
+  const res = JSON.parse(fs.readFileSync(saida, 'utf-8')); fs.unlink(saida, () => {});
+  if (res.erro) throw new Error(res.erro);
+  return res;
+}));
+ipcMain.handle('plan:abrir', (_evt, { caminho, pasta }) => _adm(async () => {
+  if (!caminho || !fs.existsSync(caminho)) throw new Error('Arquivo não encontrado.');
+  if (pasta) shell.showItemInFolder(caminho); else await shell.openPath(caminho);
+  return {};
+}));
+
 ipcMain.handle('fiscal:nfseBaixar', async (_evt, { empresaId, dataInicial, dataFinal, gerarPdf }) => {
   const empresa = _lerIndiceCert().empresas.find((e) => e.id === empresaId);
   if (!empresa) return { error: 'Empresa não encontrada — cadastre o certificado primeiro.' };

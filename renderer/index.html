@@ -363,6 +363,11 @@
         <svg viewBox="0 0 24 24" class="ic"><path d="M3 7h11v8H3zM14 10h4l3 3v2h-7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="7" cy="17" r="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="17.5" cy="17" r="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
         <span>Crédito PIS/COFINS · Frete FOB</span>
       </button>
+      <button class="nav-item nav-item-adm" data-group="admin-only" data-view="admin-planilhas" title="Adaptação de planilhas · só Admin">
+        <svg viewBox="0 0 24 24" class="ic"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 9h16M9 9v11M12.5 13.5h4M12.5 16.5h3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span>Adaptação de planilhas</span>
+        <em class="nav-new">NOVO</em>
+      </button>
       <button class="nav-item nav-item-adm" data-group="admin-only" data-view="admin-bi">
         <svg viewBox="0 0 24 24" class="ic"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="16" cy="9" r="1.6" fill="currentColor"/></svg>
         <span>BI da Empresa</span>
@@ -1214,6 +1219,7 @@
 
       <div class="view" id="view-fiscal-fisconforme" hidden><div id="fcRaiz" class="fc"></div></div>
       <div class="view" id="view-fiscal-nfechave" hidden><div id="ncRaiz" class="nc"></div></div>
+      <div class="view" id="view-admin-planilhas" hidden><div id="plRaiz" class="pl"></div></div>
       <div class="view" id="view-fiscal-dare" hidden><div id="drRaiz" class="fc dr"></div></div>
       <div class="view" id="view-admin-integra" hidden><div id="igRaiz" class="ig"></div></div>
 
@@ -1542,6 +1548,7 @@
 <script src="integra-admin.js"></script>
 <script src="fisconforme.js"></script>
   <script src="nfechave.js"></script>
+  <script src="planilhas.js"></script>
 <script src="dare.js"></script>
 </body>
 </html>

@@ -2904,6 +2904,25 @@ def main(argv):
         print(json.dumps(info, ensure_ascii=False))
         return 0 if 'erro' not in info else 1
 
+    # "planilha-auditoria" — Adaptação de planilhas (Admin): analisa ou gera o Excel no Modelo B.
+    # Uso: planilha-auditoria <arquivo.xlsx> --acao analisar|gerar [--titulo T] --json saida.json
+    if modo == 'planilha-auditoria':
+        import planilha_auditoria as _pa
+        args = argv[1:]
+
+        def optp(name, default=None):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        saida = optp('--json', 'planilha.json')
+        try:
+            if optp('--acao', 'analisar') == 'gerar':
+                res = _pa.gerar(args[0], _pa.saida_livre(args[0]), optp('--titulo', ''))
+            else:
+                res = _pa.analisar(args[0])
+        except Exception as e:
+            res = {'erro': str(e)}
+        _out(saida, json.dumps(res, ensure_ascii=False))
+        return 0 if 'erro' not in res else 1
+
     # "nfe-chave" — Consulta NF-e por chave (Admin): situação + XML (Ambiente Nacional) + DANFE.
     # Entrada: JSON {chaves, cnpj, empresa, pasta, baixar, ciencia, pdf}. Saída: JSON {itens: [...]}.
     if modo == 'nfe-chave':

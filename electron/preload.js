@@ -24,6 +24,11 @@ contextBridge.exposeInMainWorld('fiscocont', {
     novaSenha: (uid) => ipcRenderer.invoke('admin:usuarioNovaSenha', uid),
     cancelarConvite: (email) => ipcRenderer.invoke('admin:conviteCancelar', email),
   },
+  plan: {
+    escolher: () => ipcRenderer.invoke('plan:escolher'),
+    gerar: (o) => ipcRenderer.invoke('plan:gerar', o),
+    abrir: (caminho, pasta) => ipcRenderer.invoke('plan:abrir', { caminho, pasta }),
+  },
   nfech: {
     empresas: () => ipcRenderer.invoke('nfech:empresas'),
     importar: () => ipcRenderer.invoke('nfech:importar'),

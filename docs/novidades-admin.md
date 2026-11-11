@@ -3,6 +3,23 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.1
+
+- **Adaptação de planilhas** (só Admin, em "Módulos Admin · teste"). Lê a planilha de auditoria de itens (colunas NF, COD_ITEM, DESCRICAO, NCM, CST, CFOP, LEGENDA e CONDICIONAL; o cabeçalho pode estar em qualquer uma das 15 primeiras linhas) e gera um **novo** Excel no **Modelo B**: `<nome> - Profissional.xlsx`, ao lado do original, sem sobrescrever. O original não é tocado.
+  - **Aba "Auditoria":**
+    - **Topo:** faixa com o título (sugerido pelo nome do arquivo, com o período MMAAAA no fim; o Admin pode editar).
+    - **Resumo:** cada situação tem link para o seu grupo.
+    - **Grupos:** cada um com uma explicação e a coluna "O que fazer". "Corretos" e "Entradas" vêm recolhidos (agrupamento do Excel).
+  - **Aba "Base original":** os dados exatamente como vieram, com filtro e cabeçalho fixo.
+  - **Regra, só para saídas:**
+    - **CST de ST:** os terminados em 10, 30, 60, 61 e 70.
+    - **Saiu como ST, mas o produto é tributado:** legenda "Tributado" com CST de ST.
+    - **Tributou produto com ST:** legenda "S.T" com CST que não é de ST.
+    - **CST errado para isento:** legenda "Isento" com CST diferente de 40/41.
+    - **Depende da finalidade:** item com texto em CONDICIONAL; a regra é mostrada, com a cedilha corrigida só na leitura ("PEcAS" vira "PEÇAS").
+    - **Entradas:** CFOP 1/2/3, só informativo.
+  - **Testado com AUDIT_POSTO_AV_OPO102026:** 10.231 itens; 27 saíram como ST sendo tributados, 12 tributaram produto com ST, 32 condicionais, 10.101 corretos e 59 entradas. A base original confere linha a linha.
+
 ## 2.3.0
 
 - **Consulta NF-e por chave · conferência dos eventos.** Notas com XML baixado (o que exige manifestação do destinatário) apareciam como "sem eventos". Falta confirmar se a SEFAZ autorizadora (SVRS) devolve os eventos de manifestação registrados no Ambiente Nacional.
