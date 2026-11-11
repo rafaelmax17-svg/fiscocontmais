@@ -26,7 +26,9 @@ contextBridge.exposeInMainWorld('fiscocont', {
   },
   plan: {
     escolher: () => ipcRenderer.invoke('plan:escolher'),
+    pasta: () => ipcRenderer.invoke('plan:pasta'),
     gerar: (o) => ipcRenderer.invoke('plan:gerar', o),
+    onProgresso: (cb) => { ipcRenderer.removeAllListeners('plan:progresso'); ipcRenderer.on('plan:progresso', (_e, d) => cb(d)); },
     abrir: (caminho, pasta) => ipcRenderer.invoke('plan:abrir', { caminho, pasta }),
   },
   nfech: {

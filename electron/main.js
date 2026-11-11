@@ -1604,27 +1604,57 @@ ipcMain.handle('nfech:exportar', (_evt, { itens, titulo, nome }) => _adm(async (
 }));
 
 // ---------------------------------------------------------------------------
-// Adaptação de planilhas (2.3.1) — SÓ ADMIN. Lê a planilha de auditoria de itens e gera um NOVO Excel (Modelo B)
-// ao lado do original ("<nome> - Profissional.xlsx"). O arquivo original nunca é alterado.
+// Adaptação de planilhas — SÓ ADMIN. Lê uma ou várias planilhas de auditoria de itens e gera um NOVO Excel (Modelo 4)
+// ao lado de cada original ("<nome> - OK.xlsx"). Os originais nunca são alterados.
 // ---------------------------------------------------------------------------
+function _planAnalisar(arquivos) {
+  const tag = Date.now();
+  const entrada = path.join(os.tmpdir(), `fc_plan_in_${tag}.json`);
+  const saida = path.join(os.tmpdir(), `fc_plan_${tag}.json`);
+  fs.writeFileSync(entrada, JSON.stringify(arquivos));
+  return runFiscal(['planilha-auditoria', '-', '--acao', 'analisar-lote', '--entrada', entrada, '--json', saida], saida).then(() => {
+    const res = JSON.parse(fs.readFileSync(saida, 'utf-8'));
+    for (const f of [entrada, saida]) fs.unlink(f, () => {});
+    if (res.erro) throw new Error(res.erro);
+    return { itens: res.itens || [] };
+  });
+}
+const _planGerada = (nome) => / - (OK|Profissional)( \(\d+\))?\.xls[xm]$/i.test(nome);
+// várias planilhas de uma vez (Ctrl/Shift na janela)
 ipcMain.handle('plan:escolher', () => _adm(async () => {
-  const r = await dialog.showOpenDialog(mainWindow, { title: 'Planilha para adaptar', properties: ['openFile'],
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'Planilhas para adaptar (pode escolher várias)', properties: ['openFile', 'multiSelections'],
     filters: [{ name: 'Planilha Excel', extensions: ['xlsx', 'xlsm'] }] });
   if (r.canceled || !r.filePaths.length) return { cancelado: true };
-  const arq = r.filePaths[0];
-  const saida = path.join(os.tmpdir(), `fc_plan_${Date.now()}.json`);
-  await runFiscal(['planilha-auditoria', arq, '--acao', 'analisar', '--json', saida], saida);
-  const res = JSON.parse(fs.readFileSync(saida, 'utf-8')); fs.unlink(saida, () => {});
-  if (res.erro) throw new Error(res.erro);
-  return { ...res, arquivo: arq, nome: path.basename(arq) };
+  return _planAnalisar(r.filePaths);
 }));
-ipcMain.handle('plan:gerar', (_evt, { arquivo, titulo }) => _adm(async () => {
-  if (!arquivo || !fs.existsSync(arquivo)) throw new Error('Planilha não encontrada (foi movida ou apagada?).');
-  const saida = path.join(os.tmpdir(), `fc_plan_g_${Date.now()}.json`);
-  await runFiscal(['planilha-auditoria', arquivo, '--acao', 'gerar', '--titulo', String(titulo || ''), '--json', saida], saida);
-  const res = JSON.parse(fs.readFileSync(saida, 'utf-8')); fs.unlink(saida, () => {});
+// uma pasta inteira: pega as planilhas da pasta (sem subpastas), ignorando as já geradas e os temporários do Excel
+ipcMain.handle('plan:pasta', () => _adm(async () => {
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'Pasta com as planilhas', properties: ['openDirectory'] });
+  if (r.canceled || !r.filePaths.length) return { cancelado: true };
+  const dir = r.filePaths[0];
+  const arqs = fs.readdirSync(dir).filter((n) => /\.xls[xm]$/i.test(n) && !n.startsWith('~$') && !_planGerada(n)).map((n) => path.join(dir, n));
+  if (!arqs.length) throw new Error('Nenhuma planilha (.xlsx) nesta pasta.');
+  if (arqs.length > 200) throw new Error(`A pasta tem ${arqs.length} planilhas: escolha no máximo 200 por vez.`);
+  return _planAnalisar(arqs);
+}));
+ipcMain.handle('plan:gerar', (_evt, { itens }) => _adm(async () => {
+  const lista = (itens || []).filter((x) => x && x.arquivo && fs.existsSync(x.arquivo)).map((x) => ({ arquivo: x.arquivo, titulo: String(x.titulo || '') }));
+  if (!lista.length) throw new Error('Nenhuma planilha para gerar (foram movidas ou apagadas?).');
+  const tag = Date.now();
+  const entrada = path.join(os.tmpdir(), `fc_plan_g_in_${tag}.json`);
+  const saida = path.join(os.tmpdir(), `fc_plan_g_${tag}.json`);
+  const prog = path.join(os.tmpdir(), `fc_plan_g_prog_${tag}.json`);
+  fs.writeFileSync(entrada, JSON.stringify(lista));
+  const env = (d) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('plan:progresso', d); };
+  env({ feitas: 0, total: lista.length, atual: path.basename(lista[0].arquivo) });
+  const tm = setInterval(() => { try { env(JSON.parse(fs.readFileSync(prog, 'utf-8'))); } catch (_) {} }, 600);
+  try {
+    await runFiscal(['planilha-auditoria', '-', '--acao', 'gerar-lote', '--entrada', entrada, '--progresso', prog, '--json', saida], saida);
+  } finally { clearInterval(tm); }
+  const res = JSON.parse(fs.readFileSync(saida, 'utf-8'));
+  for (const f of [entrada, saida, prog]) fs.unlink(f, () => {});
   if (res.erro) throw new Error(res.erro);
-  return res;
+  return { itens: res.itens || [] };
 }));
 ipcMain.handle('plan:abrir', (_evt, { caminho, pasta }) => _adm(async () => {
   if (!caminho || !fs.existsSync(caminho)) throw new Error('Arquivo não encontrado.');

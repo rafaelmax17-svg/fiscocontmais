@@ -227,14 +227,56 @@ def gerar(caminho, saida, titulo=''):
     return {'saida': saida, 'itens': len(itens), 'notas': n_notas, 'contagem': dict(cont), 'titulo': titulo, 'divergentes': n_div}
 
 
+SUFIXO = ' - OK'
+_RE_GERADO = re.compile(r' - (OK|Profissional)( \(\d+\))?$', re.I)
+
+
+def ja_gerada(caminho):
+    """Planilha que o próprio módulo gerou (não entra de novo num lote)."""
+    return bool(_RE_GERADO.search(os.path.splitext(os.path.basename(caminho))[0]))
+
+
 def saida_livre(original):
     base, _ = os.path.splitext(original)
-    p = f'{base} - Profissional.xlsx'
+    p = f'{base}{SUFIXO}.xlsx'
     n = 2
     while os.path.exists(p):
-        p = f'{base} - Profissional ({n}).xlsx'
+        p = f'{base}{SUFIXO} ({n}).xlsx'
         n += 1
     return p
+
+
+def analisar_lote(arquivos):
+    out = []
+    for a in arquivos:
+        item = {'arquivo': a, 'nome': os.path.basename(a)}
+        try:
+            r = analisar(a)
+            c = r['contagem']
+            item.update(r, divergentes=c.get('st_indevido', 0) + c.get('trib_indevido', 0) + c.get('isento_div', 0))
+        except Exception as e:
+            item['erro'] = str(e)
+        out.append(item)
+    return out
+
+
+def gerar_lote(entradas, progresso=None):
+    out = []
+    for i, ent in enumerate(entradas, 1):
+        a = ent.get('arquivo', '')
+        item = {'arquivo': a, 'nome': os.path.basename(a)}
+        try:
+            item.update(gerar(a, saida_livre(a), ent.get('titulo', '')))
+        except Exception as e:
+            item['erro'] = str(e)
+        out.append(item)
+        if progresso:
+            try:
+                with open(progresso, 'w', encoding='utf-8') as fh:
+                    json.dump({'feitas': i, 'total': len(entradas), 'atual': os.path.basename(a)}, fh)
+            except OSError:
+                pass
+    return out
 
 
 if __name__ == '__main__':

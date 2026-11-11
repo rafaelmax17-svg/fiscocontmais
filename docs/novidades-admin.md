@@ -3,6 +3,15 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.3
+
+- **Adaptação de planilhas · em lote e com " - OK" no nome.**
+  - **Escolher planilhas:** aceita várias de uma vez (Ctrl/Shift).
+  - **Escolher pasta:** pega as .xlsx/.xlsm da pasta, sem subpastas, até 200. Ignora os temporários `~$` e as que o próprio módulo já gerou (" - OK" e " - Profissional").
+  - **Lista antes de gerar:** cada planilha aparece com caixa para incluir ou tirar, título editável, itens e CST divergente. As que estão fora do formato ficam marcadas em amarelo e não entram.
+  - **Geração:** numa chamada só do Python (`--acao gerar-lote`), com barra de andamento. No fim, cada linha tem os botões "Abrir" e "Pasta".
+  - **Nome do arquivo:** `<nome> - OK.xlsx`, ou `<nome> - OK (2).xlsx` se já existir. Antes era " - Profissional".
+
 ## 2.3.2
 
 - **Adaptação de planilhas · Modelo 4** (escolhido pelo Rafael; substitui o Modelo B da 2.3.1).

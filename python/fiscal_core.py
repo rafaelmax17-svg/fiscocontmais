@@ -2906,6 +2906,7 @@ def main(argv):
 
     # "planilha-auditoria" — Adaptação de planilhas (Admin): analisa ou gera o Excel no Modelo B.
     # Uso: planilha-auditoria <arquivo.xlsx> --acao analisar|gerar [--titulo T] --json saida.json
+    #      planilha-auditoria - --acao analisar-lote|gerar-lote --entrada lista.json [--progresso p.json] --json saida.json
     if modo == 'planilha-auditoria':
         import planilha_auditoria as _pa
         args = argv[1:]
@@ -2914,7 +2915,12 @@ def main(argv):
             return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
         saida = optp('--json', 'planilha.json')
         try:
-            if optp('--acao', 'analisar') == 'gerar':
+            acao = optp('--acao', 'analisar')
+            if acao in ('analisar-lote', 'gerar-lote'):
+                with open(optp('--entrada'), encoding='utf-8') as fh:
+                    ent = json.load(fh)
+                res = {'itens': _pa.analisar_lote(ent) if acao == 'analisar-lote' else _pa.gerar_lote(ent, optp('--progresso'))}
+            elif acao == 'gerar':
                 res = _pa.gerar(args[0], _pa.saida_livre(args[0]), optp('--titulo', ''))
             else:
                 res = _pa.analisar(args[0])
