@@ -3,7 +3,8 @@
 
 Gera um NOVO Excel no "Modelo 4" aprovado: a mesma planilha (mesmas colunas, mesma ordem, dados iguais) com título,
 resumo, cabeçalho fixo com filtro, linhas zebradas, a tributação em etiqueta colorida e a coluna "Conferência" no fim
-(✔ OK · ✖ CST divergente, com a linha em vermelho claro · ◆ Ver condição · Entrada). O original nunca é alterado.
+(✔ OK · ✖ CST divergente, com a linha em vermelho claro · ◆ Ver condição · Entrada · Despesa). Item com CFOP de uso e
+consumo aparece com a Tributação "Despesa". O original nunca é alterado.
 
 Regra da situação (só para SAÍDAS, CFOP 5/6/7; entradas ficam como informativo, porque o CST é do fornecedor):
   • CST de substituição tributária = terminados em 10, 30, 60, 61 e 70.
@@ -48,6 +49,11 @@ def ler(caminho):
     import openpyxl
     wb = openpyxl.load_workbook(caminho, read_only=True, data_only=True)
     for ws in wb.worksheets:
+        # alguns sistemas gravam a "dimensão" da aba errada (ex.: A1:G…): sem isto a última coluna (CONDICIONAL) some
+        try:
+            ws.reset_dimensions()
+        except Exception:
+            pass
         linhas = ws.iter_rows(values_only=True)
         cab, mapa, pulo = None, None, 0
         for i, r in enumerate(linhas):
@@ -75,8 +81,19 @@ def ler(caminho):
                      '(e, se houver, COD_ITEM, NCM e CONDICIONAL).')
 
 
+# CFOP de aquisição para uso e consumo (material de uso/consumo, inclusive com ST, transferência para uso/consumo,
+# e combustível/lubrificante comprado por consumidor final): o item é DESPESA, a tributação do produto não se aplica.
+CFOP_USO_CONSUMO = {'1407', '2407', '1556', '2556', '3556', '1557', '2557', '1653', '2653', '3653'}
+
+
+def eh_despesa(it):
+    return re.sub(r'\D', '', it['cfop']) in CFOP_USO_CONSUMO
+
+
 def situacao(it):
     cfop = re.sub(r'\D', '', it['cfop'])
+    if cfop in CFOP_USO_CONSUMO:
+        return 'despesa'
     if cfop[:1] in ('1', '2', '3'):
         return 'entrada'
     if it['cond']:
@@ -116,13 +133,14 @@ def analisar(caminho):
 
 CONF = {'ok': ('✔ OK', '15803D'), 'st_indevido': ('✖ CST divergente', 'B91C1C'), 'trib_indevido': ('✖ CST divergente', 'B91C1C'),
         'isento_div': ('✖ CST divergente', 'B91C1C'), 'condicional': ('◆ Ver condição', '4338CA'), 'entrada': ('Entrada', '64748B'),
+        'despesa': ('Despesa · uso e consumo', '6D28D9'),
         'sem_legenda': ('Sem legenda', '64748B')}
 NOTA_DIV = {
     'st_indevido': 'Produto TRIBUTADO saiu com CST de substituição tributária: a venda deveria destacar o ICMS (CST 00, ou 20 com redução de base). Corrigir o cadastro do produto.',
     'trib_indevido': 'Produto com ICMS-ST saiu TRIBUTADO: o ICMS já foi pago antes; vender com CST 60 (61 nos combustíveis), sem destaque. Corrigir o cadastro do produto.',
     'isento_div': 'Produto ISENTO saiu com CST de produto tributado ou com ST: vender com CST 40 (ou 41). Corrigir o cadastro do produto.',
 }
-PILL = {'S.T': ('DBEAFE', '1E40AF'), 'TRIBUTADO': ('FFEDD5', '9A3412'), 'ISENTO': ('DCFCE7', '166534')}
+PILL = {'S.T': ('DBEAFE', '1E40AF'), 'TRIBUTADO': ('FFEDD5', '9A3412'), 'ISENTO': ('DCFCE7', '166534'), 'DESPESA': ('EDE9FE', '5B21B6')}
 
 
 def gerar(caminho, saida, titulo=''):
@@ -138,7 +156,7 @@ def gerar(caminho, saida, titulo=''):
     for it in itens:
         it['sit'] = situacao(it)
     cont = Counter(it['sit'] for it in itens)
-    leg = Counter(it['leg'].upper().replace(' ', '') for it in itens)
+    leg = Counter(it['leg'].upper().replace(' ', '') for it in itens if it['sit'] != 'despesa')
     titulo = titulo or titulo_padrao(caminho)
     n_notas = len({i['nf'] for i in itens})
     n_cond = sum(1 for i in itens if i['cond'])
@@ -165,8 +183,9 @@ def gerar(caminho, saida, titulo=''):
         ws.cell(1, k).fill = F('0F172A')
     ws.row_dimensions[1].height = 32
     # 2 · resumo
-    resumo = (f'Resumo: {_n(len(itens))} itens · {_n(n_notas)} notas   |   S.T {_n(leg["S.T"] + leg["ST"])}  ·  '
-              f'Tributado {_n(leg["TRIBUTADO"])}  ·  Isento {_n(leg["ISENTO"])}  ·  Com condição especial {_n(n_cond)}   |   '
+    resumo = (f'Resumo: {_n(len(itens))} {"item" if len(itens) == 1 else "itens"} · {_n(n_notas)} {"nota" if n_notas == 1 else "notas"}   |   S.T {_n(leg["S.T"] + leg["ST"])}  ·  '
+              f'Tributado {_n(leg["TRIBUTADO"])}  ·  Isento {_n(leg["ISENTO"])}  ·  Despesa (uso e consumo) {_n(cont["despesa"])}  ·  '
+              f'Com condição especial {_n(n_cond)}   |   '
               f'{_n(n_div)} {"item" if n_div == 1 else "itens"} com CST divergente   ·   gerado pelo FiscoCont+ em {datetime.now():%d/%m/%Y}')
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=NC)
     c = ws.cell(2, 1, resumo)
@@ -187,7 +206,8 @@ def gerar(caminho, saida, titulo=''):
     for n, it in enumerate(itens):
         sit = it['sit']
         fundo = div if sit in NOTA_DIV else (zebra if n % 2 else None)
-        vals = [it['nf'], it['cod'], it['desc'], it['ncm'], it['cst'], it['cfop'], it['leg'], it['cond']]
+        desp = sit == 'despesa'
+        vals = [it['nf'], it['cod'], it['desc'], it['ncm'], it['cst'], it['cfop'], 'Despesa' if desp else it['leg'], it['cond']]
         for k, v in enumerate(vals, 1):
             c = ws.cell(r, k, v)
             c.border = linha
@@ -195,8 +215,8 @@ def gerar(caminho, saida, titulo=''):
                 c.fill = fundo
         ws.cell(r, 5).font = f_cst
         ws.cell(r, 8).font = f_cond
-        lg = it['leg'].upper().replace(' ', '')
-        p = pills['S.T'] if lg in ('S.T', 'ST', 'S.T.') else pills['TRIBUTADO'] if lg.startswith('TRIBUT') else pills['ISENTO'] if lg.startswith('ISENT') else None
+        lg = 'DESPESA' if desp else it['leg'].upper().replace(' ', '')
+        p = pills['DESPESA'] if desp else pills['S.T'] if lg in ('S.T', 'ST', 'S.T.') else pills['TRIBUTADO'] if lg.startswith('TRIBUT') else pills['ISENTO'] if lg.startswith('ISENT') else None
         if p:
             ws.cell(r, 7).fill, ws.cell(r, 7).font = p
             ws.cell(r, 7).alignment = Alignment(horizontal='center')

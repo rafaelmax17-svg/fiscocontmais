@@ -3,6 +3,15 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.4
+
+- **Adaptação de planilhas · "Condição especial" sumindo.** Alguns sistemas gravam a dimensão da aba errada (por exemplo A1:G…), e o modo de leitura rápida do openpyxl cortava a última coluna (CONDICIONAL) inteira. Agora a leitura chama `ws.reset_dimensions()` e lê todas as colunas de verdade. Reproduzido com um arquivo de dimensão falsa e corrigido.
+- **Uso e consumo vira "Despesa".**
+  - **CFOP considerados:** 1407, 2407, 1556, 2556, 3556, 1557, 2557, 1653, 2653 e 3653.
+  - **Na planilha:** a Tributação aparece como **"Despesa"** (etiqueta roxa), no lugar de Tributado ou S.T, e a Conferência mostra "Despesa · uso e consumo".
+  - **No resumo:** a contagem de despesas aparece separada, e as despesas saem das contagens de S.T, Tributado e Isento.
+  - **Sem alteração:** a coluna "Condição especial" continua com o texto original.
+
 ## 2.3.3
 
 - **Adaptação de planilhas · em lote e com " - OK" no nome.**
