@@ -1803,3 +1803,11 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .pl-t tr.pl-x td{background:#fffbeb}.pl-t input[type=checkbox]{width:16px;height:16px;accent-color:#16a34a}
 .pl-prog{height:24px;border-radius:8px;background:#ecfdf5;position:relative;overflow:hidden}.pl-prog i{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,#86efac,#16a34a);transition:width .4s}
 .pl-prog span{position:relative;font-size:12px;font-weight:700;color:#14532d;line-height:24px;padding-left:10px}
+/* Acumulador 7000: notas de cada produto */
+.ac7-nfs{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.ac7-nf{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);background:#f8fafc;border-radius:8px;padding:3px 8px;font-size:11px;white-space:nowrap}
+.ac7-nf b{color:var(--ink)}.ac7-nf span{color:var(--ink2)}.ac7-nf em{font-style:normal;color:#0f766e;font-weight:700}
+.ac7-nf.hit{border-color:#e23d4c;background:#fff1f2}
+.ac7-mais{font-size:11px;font-weight:700;color:#e23d4c;padding:3px 6px;cursor:pointer;align-self:center}.ac7-mais:hover{text-decoration:underline}
+.ac7-exp{background:#fbfcfe;border:1px dashed var(--line);border-radius:10px;margin-top:6px;padding:4px 8px;max-height:260px;overflow:auto}
+.ac7-exp table{font-size:11.5px;width:100%}.ac7-exp th{padding:4px 6px;font-size:10.5px;position:static}.ac7-exp td{padding:3px 6px}.ac7-exp tr.hit td{background:#fff1f2}

@@ -3,6 +3,13 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.6
+
+- **Corretor · Acumulador 7000: número da nota em cada produto.**
+  - **Dados novos:** o `acumulador_despesa.analisar_texto` devolve `nfs` por produto, com número, série, fornecedor (nome do 0150), data (DT_DOC) e o valor do item naquela nota, agrupados por participante + série + número e em ordem de data (até 300 por produto). O `qtd_notas` passou a contar as notas por esse agrupamento.
+  - **Na tela:** até 4 etiquetas "NF nº · fornecedor · dd/mm · R$" embaixo do produto. Com mais notas aparece "+N notas ▾", que abre a lista completa com número, série, fornecedor, data e valor.
+  - **Busca:** aceita o número da nota, só com dígitos e com ou sem pontos e zeros à esquerda. A nota encontrada fica em vermelho e aparece primeiro entre as etiquetas.
+
 ## 2.3.5
 
 - **Liberação por usuário: Consulta NF-e por chave e Adaptação de planilhas.** Antes, marcar o módulo em Usuários › Módulos mostrava o item no menu, mas a tela dizia "Acesso restrito ao Admin", porque tanto a tela quanto o `main.js` (`_adm`) checavam só o perfil.

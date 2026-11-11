@@ -1595,7 +1595,22 @@ function bindFiscal() {
     $('#btnCorrDifal').addEventListener('click', () => difalAbrir());
 
     // ---- Acumulador 7000 (DESPESAS) → acumulador de despesa certo. Nada muda sozinho: só o que estiver marcado.
-    const AC = { an: null, sel: new Map(), marc: new Set(), filtro: 'todos', busca: '', mostrar: 200 };
+    const AC = { an: null, sel: new Map(), marc: new Set(), filtro: 'todos', busca: '', mostrar: 200, abertos: new Set() };
+    const acNum = (v) => { const d = String(v || '').replace(/^0+/, ''); return /^\d+$/.test(d) ? Number(d).toLocaleString('pt-BR') : (d || String(v || '')); };
+    // notas do produto: até 4 etiquetas (nº · fornecedor · data · valor do item); "+N notas" abre a lista completa
+    function acNotas(i, termoNum) {
+      const nfs = i.nfs || [];
+      if (!nfs.length) return '';
+      const hit = (n) => termoNum && String(n.num).replace(/^0+/, '').includes(termoNum);
+      const ab = AC.abertos.has(i.item);
+      const curtas = nfs.slice().sort((a, b) => (hit(b) ? 1 : 0) - (hit(a) ? 1 : 0)).slice(0, 4);
+      const chip = (n) => `<span class="ac7-nf${hit(n) ? ' hit' : ''}" title="${esc(n.forn)} · série ${esc(n.serie)} · ${esc(n.data)}"><b>NF ${esc(acNum(n.num))}</b><span>${esc((n.forn || '').slice(0, 22))} · ${esc((n.data || '').slice(0, 5))}</span><em>R$ ${acFm(n.valor)}</em></span>`;
+      const extra = nfs.length - curtas.length;
+      return `<div class="ac7-nfs">${ab ? '' : curtas.map(chip).join('')}${extra > 0 || ab ? `<span class="ac7-mais" data-ab="${esc(i.item)}">${ab ? '▴ ocultar' : `+${extra} nota${extra > 1 ? 's' : ''} ▾`}</span>` : ''}</div>
+        ${ab ? `<div class="ac7-exp"><table><thead><tr><th>Nota</th><th>Série</th><th>Fornecedor</th><th>Data</th><th style="text-align:right">Valor do item</th></tr></thead><tbody>
+          ${nfs.map((n) => `<tr${hit(n) ? ' class="hit"' : ''}><td><b>${esc(acNum(n.num))}</b></td><td>${esc(n.serie)}</td><td>${esc(n.forn)}</td><td>${esc(n.data)}</td><td style="text-align:right">${acFm(n.valor)}</td></tr>`).join('')}
+          </tbody></table></div>` : ''}`;
+    }
     const acFm = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     function acDesenhar() {
       const box = $('#corrAcum'), an = AC.an;
@@ -1610,9 +1625,11 @@ function bindFiscal() {
       const mx = Math.max(1, ...top.map((t) => t[1].v));
       const marcVal = itens.filter((i) => AC.marc.has(i.item)).reduce((s, i) => s + i.valor, 0);
       const marcLin = itens.filter((i) => AC.marc.has(i.item)).reduce((s, i) => s + i.linhas, 0);
-      const t = AC.busca.toLowerCase();
+      const t = AC.busca.toLowerCase().trim();
+      const tNum = /^[\d.\s]+$/.test(t) ? t.replace(/\D/g, '').replace(/^0+/, '') : '';
       const vis = itens.filter((i) => (AC.filtro === 'todos' || i.confianca === AC.filtro || (AC.filtro === 'nao' && !AC.marc.has(i.item)))
-        && (!t || (i.descr + ' ' + i.item + ' ' + i.ncm).toLowerCase().includes(t)));
+        && (!t || (i.descr + ' ' + i.item + ' ' + i.ncm).toLowerCase().includes(t)
+          || (tNum && (i.nfs || []).some((n) => String(n.num).replace(/^0+/, '').includes(tNum)))));
       const opts = (cur) => an.acumuladores.map((a) => `<option value="${a.cod}"${a.cod === cur ? ' selected' : ''}>${a.cod} · ${esc(a.nome)}</option>`).join('');
       const lbl = { memoria: ['Confirmado', 'k-ok'], alta: ['Sistema · descrição e NCM', 'k-ok'], media: ['Sistema · só descrição ou NCM', 'k-warn'], confirmar: ['Precisa de você', 'k-bad'] };
       box.innerHTML = `
@@ -1629,10 +1646,10 @@ function bindFiscal() {
           <div class="ac7-bars"><div class="ac7-h">Para onde vai cada valor</div>${top.map(([k, g]) => `<div class="ac7-br"><span>${k ? k + ' · ' + esc((nomes[k] || '').replace(/^DESP\.( COM| NA)? /, '')) : 'sem acumulador'}</span><i><em style="width:${(g.v / mx * 100).toFixed(1)}%"></em></i><b>R$ ${acFm(g.v)}</b></div>`).join('')}</div>
           <div class="ac7-tab">
             <div class="ac7-flt">${[['todos', `Todos (${itens.length})`], ['confirmar', `Precisa de você (${conf.confirmar || 0})`], ['memoria', `Confirmados (${conf.memoria || 0})`], ['alta', `Descrição e NCM (${conf.alta || 0})`], ['media', `Um dos dois (${conf.media || 0})`], ['nao', 'Desmarcados']].map(([k, tx]) => `<span class="ac7-ch${AC.filtro === k ? ' on' : ''}" data-f="${k}">${tx}</span>`).join('')}
-              <input id="ac7Busca" placeholder="Buscar produto, código ou NCM" value="${esc(AC.busca)}"></div>
+              <input id="ac7Busca" placeholder="Buscar produto, código, NCM ou nº da nota" value="${esc(AC.busca)}"></div>
             <div class="ac7-wrap"><table><thead><tr><th><input type="checkbox" id="ac7Todos" title="Marcar/desmarcar os visíveis"></th><th>Produto</th><th style="text-align:right">Valor</th><th>Acumulador (pode trocar)</th><th>Decisão</th></tr></thead><tbody>
             ${vis.slice(0, AC.mostrar).map((i) => `<tr><td><input type="checkbox" class="ac7-m" data-i="${esc(i.item)}"${AC.marc.has(i.item) ? ' checked' : ''}></td>
-              <td>${esc(i.descr || i.item)}<span class="ac7-mi">cód. ${esc(i.item)} · NCM ${esc(i.ncm || '—')} · CFOP ${esc(i.cfops.join('/'))} · ${i.linhas} item(ns) em ${i.qtd_notas} nota(s)</span></td>
+              <td>${esc(i.descr || i.item)}<span class="ac7-mi">cód. ${esc(i.item)} · NCM ${esc(i.ncm || '—')} · CFOP ${esc(i.cfops.join('/'))} · ${i.linhas} item(ns) em ${i.qtd_notas} nota(s)</span>${acNotas(i, tNum)}</td>
               <td style="text-align:right">${acFm(i.valor)}</td>
               <td><select class="ac7-s" data-i="${esc(i.item)}">${AC.sel.get(i.item) ? '' : '<option value="" selected>— escolha —</option>'}${opts(AC.sel.get(i.item))}</select><span class="ac7-mi">${esc(i.motivo)}</span></td>
               <td><span class="ac7-cf ${lbl[i.confianca] ? lbl[i.confianca][1] : ''}">${lbl[i.confianca] ? lbl[i.confianca][0] : i.confianca}</span></td></tr>`).join('')}
@@ -1652,6 +1669,9 @@ function bindFiscal() {
       box.querySelectorAll('.ac7-s').forEach((c) => c.addEventListener('change', () => { AC.sel.set(c.dataset.i, c.value); AC.marc.add(c.dataset.i); acDesenhar(); }));
       $('#ac7Todos').addEventListener('change', (ev) => { vis.slice(0, AC.mostrar).forEach((i) => { if (ev.target.checked) AC.marc.add(i.item); else AC.marc.delete(i.item); }); acDesenhar(); });
       const mais = $('#ac7Mais'); if (mais) mais.addEventListener('click', () => { AC.mostrar += 300; acDesenhar(); });
+      box.querySelectorAll('.ac7-mais').forEach((c) => c.addEventListener('click', () => {
+        const k = c.dataset.ab; if (AC.abertos.has(k)) AC.abertos.delete(k); else AC.abertos.add(k); acDesenhar();
+      }));
       $('#ac7Alta').addEventListener('click', () => { itens.forEach((i) => { if (AC.sel.get(i.item)) AC.marc.add(i.item); }); acDesenhar(); });
       $('#ac7Limpar').addEventListener('click', () => { AC.marc.clear(); acDesenhar(); });
       $('#ac7Aplicar').addEventListener('click', acAplicar);
@@ -1665,7 +1685,7 @@ function bindFiscal() {
       const box = $('#corrAcum');
       box.hidden = false;
       if (!r.res.itens.length) { AC.an = null; box.innerHTML = '<div class="dif-k">Nenhum item no acumulador 7000 neste arquivo.</div>'; return; }
-      AC.an = r.res; AC.sel = new Map(); AC.marc = new Set(); AC.filtro = 'todos'; AC.busca = ''; AC.mostrar = 200;
+      AC.an = r.res; AC.sel = new Map(); AC.marc = new Set(); AC.filtro = 'todos'; AC.busca = ''; AC.mostrar = 200; AC.abertos = new Set();
       r.res.itens.forEach((i) => { if (i.sugestao) { AC.sel.set(i.item, i.sugestao); AC.marc.add(i.item); } });
       acDesenhar();
       box.scrollIntoView({ behavior: 'smooth', block: 'start' });

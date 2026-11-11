@@ -136,6 +136,11 @@ def chave_memoria(descr, ncm):
     return hashlib.sha1(f'{d}|{n}'.encode('utf-8')).hexdigest()[:20]
 
 
+def _data_br(d):
+    d = (d or '').strip()
+    return f'{d[:2]}/{d[2:4]}/{d[4:8]}' if len(d) == 8 and d.isdigit() else d
+
+
 def _itens_7000(linhas):
     p200, p150 = {}, {}
     for l in linhas:
@@ -158,7 +163,9 @@ def _itens_7000(linhas):
             except ValueError:
                 v = 0.0
             out.append({'i': i, 'item': c[3], 'descr': d, 'ncm': n, 'cfop': c[11], 'valor': v,
-                        'nota': cur[8] if len(cur) > 8 else '', 'forn': p150.get(cur[4], cur[4]) if len(cur) > 4 else ''})
+                        'nota': cur[8] if len(cur) > 8 else '', 'forn': p150.get(cur[4], cur[4]) if len(cur) > 4 else '',
+                        'serie': cur[7] if len(cur) > 7 else '', 'data': cur[10] if len(cur) > 10 else '',
+                        'cod_part': cur[4] if len(cur) > 4 else ''})
     return out
 
 
@@ -172,11 +179,16 @@ def analisar_texto(texto, memoria=None):
     prod = {}
     for it in itens:
         p = prod.setdefault(it['item'], {'item': it['item'], 'descr': it['descr'], 'ncm': it['ncm'], 'linhas': 0, 'valor': 0.0,
-                                          'cfops': set(), 'notas': set()})
+                                          'cfops': set(), 'notas': set(), 'nfs': {}})
         p['linhas'] += 1
         p['valor'] += it['valor']
         p['cfops'].add(it['cfop'])
         p['notas'].add(it['nota'])
+        # cada nota (fornecedor + série + número) com a data e o valor do item nela — para localizar a nota no Domínio
+        k = (it['cod_part'], it['serie'], it['nota'])
+        nf = p['nfs'].setdefault(k, {'num': it['nota'], 'serie': it['serie'], 'forn': it['forn'], 'data': _data_br(it['data']),
+                                     'ord': it['data'][4:8] + it['data'][2:4] + it['data'][:2], 'valor': 0.0})
+        nf['valor'] += it['valor']
     lista = []
     for p in prod.values():
         cf = sorted(p['cfops'])
@@ -188,7 +200,9 @@ def analisar_texto(texto, memoria=None):
         else:
             ac, mot, conf = classifica(p['descr'], p['ncm'], cf[0] if len(cf) == 1 else '')
         lista.append({'chave': ch, 'item': p['item'], 'descr': p['descr'], 'ncm': p['ncm'], 'linhas': p['linhas'], 'valor': round(p['valor'], 2),
-                      'cfops': cf, 'notas': sorted(p['notas'])[:8], 'qtd_notas': len(p['notas']),
+                      'cfops': cf, 'notas': sorted(p['notas'])[:8], 'qtd_notas': len(p['nfs']),
+                      'nfs': [{**{k: v for k, v in n.items() if k != 'ord'}, 'valor': round(n['valor'], 2)}
+                              for n in sorted(p['nfs'].values(), key=lambda n: (n['ord'], n['num']))][:300],
                       'sugestao': ac, 'motivo': mot, 'confianca': conf})
     lista.sort(key=lambda x: -x['valor'])
     existentes = {l.split('|')[2] for l in linhas if l.startswith('|0400|')}
