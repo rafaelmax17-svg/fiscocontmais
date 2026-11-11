@@ -2121,7 +2121,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
     // ---- 🔎 Analisar tudo / Aplicar tudo
     const TD = { an: null, etapa: {}, marc: {}, val: {}, aberto: new Set(), gAberto: new Set(), lAberta: new Set(), busca: {}, lim: {}, modo: {}, e116: null };
     const TD_DICT = { cfop: 'difal', difal: 'difal', balcao: 'difal', frete: 'difal', cred: 'difal', desconto: 'desconto', icms: 'icms', valor: 'valor',
-      simples: 'simples', snd: 'simples', acum: 'acum', cad: 'cad' };
+      simples: 'simples', snd: 'simples', maca: 'maca', acum: 'acum', cad: 'cad' };
     const tdK = (g, l) => `${g}|${l.sel}`;
     function tdIniciar(an) {
       Object.assign(TD, { an, etapa: {}, marc: {}, val: {}, aberto: new Set(), gAberto: new Set(), lAberta: new Set(), busca: {}, lim: {}, modo: {} });
@@ -2219,7 +2219,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       $('#tdAplicar').addEventListener('click', () => tdAplicar());
     }
     function tdEscolhas() {
-      const esc2 = { etapas: { ...TD.etapa }, difal: {}, desconto: {}, icms: {}, valor: {}, simples: {}, acum: {}, cad: {} };
+      const esc2 = { etapas: { ...TD.etapa }, difal: {}, desconto: {}, icms: {}, valor: {}, simples: {}, maca: {}, acum: {}, cad: {} };
       if (TD.e116) esc2.e116 = TD.e116;
       TD.an.etapas.forEach((e) => e.grupos.forEach((g) => {
         const dic = TD_DICT[g.id];
@@ -2228,7 +2228,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
         (g.linhas || []).forEach((l) => {
           if (l.bloqueado) return;
           const k = tdK(g.id, l), on = !!TD.marc[k];
-          if (['cfop', 'cred', 'desconto', 'icms', 'valor', 'simples'].includes(g.id)) { if (!on) esc2[dic][l.sel] = false; return; }
+          if (['cfop', 'cred', 'desconto', 'icms', 'valor', 'simples', 'maca'].includes(g.id)) { if (!on) esc2[dic][l.sel] = false; return; }
           if (g.id === 'acum' || g.id === 'cad') { esc2[dic][l.sel] = on ? (TD.val[k] || l.padrao || false) : false; return; }
           if (g.id === 'snd') { esc2.simples[l.sel] = on; return; }
           if (!on) { esc2.difal[l.sel] = g.id === 'balcao' ? 'manter' : 'nao'; return; }
@@ -2273,6 +2273,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       if (z.icms) lin.push(`ICMS × XML: ${z.icms.notas} nota(s), crédito retirado R$ ${fmR(z.icms.credito_retirado)}`);
       if (z.valor) lin.push(`Valor e base × XML: ${z.valor.notas} nota(s)${z.valor.credito_retirado ? `, crédito retirado R$ ${fmR(z.valor.credito_retirado)}` : ''}`);
       if (z.simples) lin.push(`Crédito do Simples: ${z.simples.notas} nota(s), R$ ${fmR(z.simples.credito)}`);
+      if (z.maca) lin.push(`Crédito maçã e pera: ${z.maca.notas} nota(s), R$ ${fmR(z.maca.credito)}`);
       if (z.acum) lin.push(`Acumulador 7000: ${z.acum.itens} item(ns) reclassificados (${(z.acum.acumuladores || []).length} acumuladores)`);
       if (z.cad) lin.push(`Cadastro 0200: ${z.cad.produtos} produto(s) (${Object.entries(z.cad.por_tipo || {}).map(([k, v]) => `${v} → ${k}`).join(' · ')})`);
       out.innerHTML = `<div class="dif-done sn-done"><div class="dif-k">Corrigido: um arquivo novo com tudo o que estava marcado (o original não foi alterado)</div>

@@ -3,6 +3,15 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.8
+
+- **🔎 Analisar tudo · nova etapa "Crédito maçã e pera"** (6b, depois do Crédito do Simples; não precisa de XML). Usa o `credito_maca` com as mesmas regras do botão próprio.
+  - **Na lista:** notas com o crédito **faltando** ou **diferente** do calculado, já marcadas. As que já conferem não aparecem; só são contadas na descrição da etapa.
+  - **Notas bloqueadas:** origem estrangeira ou UF não identificada aparecem com "NÃO LANÇAR: <motivo>", sem caixa de marcar.
+  - **Identificação da nota:** pela chave, ou por nº|série|fornecedor quando não há chave, porque o id do `credito_maca` é a linha do C100 e ela muda depois das etapas anteriores.
+  - **Aplicação:** reanalisa o arquivo já corrigido pelas etapas anteriores e aplica só as notas marcadas (0460, C195 + C197 RO10000038, E110 campo 07, E116). Entra no resumo final como "Crédito maçã e pera: N nota(s), R$ X".
+  - **Testado com SPED de exemplo:** nota de SC com maçã e pera (CST 040) → R$ 105,00 lançado; nota de pera estrangeira (CST 240) → bloqueada; desmarcando a nota, nada é lançado.
+
 ## 2.3.7
 
 - **Corretor · "Combustível × uso e consumo"** (só Admin). Procura itens de entrada (C100 IND_OPER 0, sem as canceladas) com CFOP x.556 ou x.407 que sejam combustível ou lubrificante e troca o CFOP para **x.653** ("compra de combustível ou lubrificante por consumidor ou usuário final"), mantendo o 1º dígito (1/2/3).

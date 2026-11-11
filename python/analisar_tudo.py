@@ -9,6 +9,7 @@ Ordem (é também a ordem de aplicação, uma sobre a outra, no mesmo arquivo):
   4) ICMS creditado × XML ......... icms_xml
   5) Valor e base × XML ........... valor_xml
   6) Crédito de fornecedor do Simples  simples_ro
+  6b) Crédito maçã e pera ......... credito_maca (C195 + C197 RO10000038; não precisa de XML)
   7) Acumulador 7000 .............. acumulador_despesa
   8) Cadastro de produtos (0200) .. cadastro_0200
   (Estoque de mercadoria que saiu da ST precisa da planilha do estoque: fica no botão próprio.)
@@ -18,7 +19,7 @@ Escolhas (aplicar):
   {"etapas": {"difal": true, ...},                       etapa desmarcada não roda
    "difal": {"<id da decisão>": "incluir"|"nao"|..., "cfop:<id>": false, "cred:<id doc>": false, "cred_modo": "zerar"|"estorno"},
    "desconto": {"<chave>": false}, "icms": {"<chave>": false}, "valor": {"<chave>": false},
-   "simples": {"<chave>": false},
+   "simples": {"<chave>": false}, "maca": {"<chave da nota ou nº|série|fornecedor>": false},
    "acum": {"<COD_ITEM>": "70xx"|false}, "cad": {"<COD_ITEM>": "07"|"08"|false},
    "e116": {"venc": "ddmmaaaa", "cod_rec": "..."}}
 Gera arquivo NOVO; o original nunca é alterado.
@@ -36,6 +37,7 @@ import simples_ro as sr
 import desconto_xml as dx
 import acumulador_despesa as ad
 import cadastro_0200 as c2
+import credito_maca as cm
 from xml_entradas import ler_xmls
 
 
@@ -45,6 +47,10 @@ def _ch(s):
 
 def _num(s):
     return (s or '').lstrip('0') or (s or '')
+
+
+def _ch_maca(x):
+    return _ch(x.get('chave')) or f"{x.get('num', '')}|{x.get('serie', '')}|{x.get('fornecedor', '')}"
 
 
 def _fm(v):
@@ -203,6 +209,35 @@ def analisar(sped, xml_dir):
             etapas.append({'key': k, 'titulo': t, 'desc': 'precisa dos XMLs de entrada', 'qtd': 'sem XML', 'valor': '', 'badge': 'anexe os XMLs',
                            'tipo': 'sem_xml', 'grupos': []})
 
+    # 6b) crédito maçã e pera (RO10000038) — só pelo SPED, não precisa de XML
+    ma = cm.analisar_texto(corr)
+    lin = []
+    for x in ma['docs']:
+        if x['status'] == 'confere':
+            continue
+        nota = f"NF {_num(x['num'])} · {x['fornecedor']}" + (f" · {x['uf']}" if x['uf'] else '')
+        frutas = sorted({it['fruta'] for it in x['itens']})
+        if x['status'] == 'verificar' or not x['grupos']:
+            mot = '; '.join(sorted({it['verificar'] for it in x['itens'] if it['verificar']}))
+            lin.append({'sel': _ch_maca(x), 'nota': nota, 'det': f"{' e '.join(frutas)} · NÃO LANÇAR: {mot}", 'valor': 0.0,
+                        'marcado': False, 'bloqueado': True})
+            continue
+        al = ' / '.join(f"{_fm(g['aliq'])}% sobre R$ {_fm(g['base'])}" for g in x['grupos'])
+        det = (f"{' e '.join(frutas)} · {al} · " + ('crédito faltando' if x['status'] == 'falta' else f"lançado R$ {_fm(x['lancado'])} → R$ {_fm(x['credito'])}"))
+        if x['tem_verificar']:
+            det += ' · parte dos itens fica de fora (origem estrangeira ou UF não identificada)'
+        lin.append({'sel': _ch_maca(x), 'nota': nota, 'det': det, 'valor': round(x['credito'] - x['lancado'], 2), 'marcado': True})
+    n_ok = sum(1 for x in ma['docs'] if x['status'] == 'confere')
+    a_lancar = sum(l['valor'] for l in lin if not l.get('bloqueado'))
+    n_lin = sum(1 for l in lin if not l.get('bloqueado'))
+    etapas.append({'key': 'maca', 'titulo': 'Crédito maçã e pera', 'desc': 'maçã e pera de outro estado com isenção: crédito presumido pela alíquota interestadual · C195 + C197 RO10000038'
+                   + (f' · {n_ok} nota(s) já conferem' if n_ok else ''),
+                   'qtd': f'{len(lin)} nota(s)' if lin else ('nada a lançar' if n_ok else 'nada encontrado'),
+                   'valor': f"+ R$ {_fm(a_lancar)} crédito" if n_lin else '', 'badge': 'pode corrigir' if n_lin else ('não lançar' if lin else 'sem correção'),
+                   'tipo': 'auto' if n_lin else 'zero',
+                   'grupos': [{'id': 'maca', 'titulo': 'Notas de maçã e pera com crédito faltando ou diferente', 'sugestao': 'lançar o crédito presumido',
+                               'linhas': lin}] if lin else []})
+
     # 7) acumulador 7000
     aa = ad.analisar_texto(corr)
     nomes = {a['cod']: a['nome'] for a in aa['acumuladores']}
@@ -341,6 +376,22 @@ def aplicar(sped, xml_dir, escolhas):
                     final = novo
                     resumo['simples'] = {'notas': r.get('notas', 0), 'credito': r.get('credito_c197', 0.0)}
                     avisos += r.get('avisos') or []
+    # 6b) crédito maçã e pera
+    if liga('maca'):
+        em = esc.get('maca') or {}
+        ma = cm.analisar_texto(final)
+        ids = [x['id'] for x in ma['docs'] if x['status'] in ('falta', 'diferente') and x['grupos'] and em.get(_ch_maca(x), True) is not False]
+        if ids:
+            sel = {'docs': ids}
+            if e116:
+                sel['e116'] = e116
+            novo, r = cm.aplicar_texto(final, sel)
+            e = erro_de(r, 'Crédito maçã e pera')
+            if e:
+                return None, enc, e
+            final = novo
+            resumo['maca'] = {'notas': r.get('notas', 0), 'credito': r.get('credito', 0.0)}
+            avisos += r.get('avisos') or []
     # 7) acumulador 7000
     if liga('acum'):
         ea = esc.get('acum') or {}
