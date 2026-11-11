@@ -1245,6 +1245,7 @@
           <button class="act inv-export" id="btnCorrSpedVerOriginal" disabled>Ver todos os dados (original)</button>
           <button class="act inv-export" id="btnCorrUnid" disabled title="Inconsistência do portal (aba Estoque): unidade do C170 diferente da NF-e. Troca o código da unidade pelo da nota em todo o arquivo">Unidade × XML</button>
           <button class="act inv-export" id="btnCorrDesc" disabled title="Confere o desconto do C100 e de cada item (C170) com o XML; sem desconto no item do XML, divide em proporção ao valor de cada item">Desconto × XML</button>
+          <button class="act inv-export" id="btnCorrComb" disabled title="Combustível e lubrificante lançados como uso e consumo (CFOP 1.556/2.556 ou 1.407/2.407): passa para 1.653/2.653 no C170 e no C190">Combustível × uso e consumo</button>
           <button class="act inv-export" id="btnCorrDifal" disabled title="Confere CFOP 1.556/2.556 (e ativo) pela UF do fornecedor, o DIFAL de RO e o crédito de ICMS tomado indevidamente; aplica só o que você confirmar">Uso e consumo · DIFAL e crédito</button>
           <button class="act inv-export" id="btnCorrIcmsXml" disabled title="Confere o ICMS creditado nas entradas com o ICMS destacado no XML de cada nota e corrige o crédito tomado a mais">ICMS creditado × XML</button>
           <button class="act inv-export" id="btnCorrValXml" disabled title="Confere o valor do documento, a base de cálculo e o ICMS de cada nota de entrada com o XML (fora uso e consumo e ativo) e corrige pelo XML">Valor e base × XML</button>
@@ -1270,6 +1271,7 @@
         <div id="corrMaca" class="dif cm" hidden></div>
         <div id="corrDesc" class="dif ac7" hidden></div>
         <div id="corrUnid" class="dif ac7" hidden></div>
+        <div id="corrComb" class="dif ac7" hidden></div>
         <div id="corrTudo" class="dif tudo" hidden></div>
         <div id="corrIcmsXml" class="dif" hidden></div>
         <div id="corrValXml" class="dif" hidden></div>

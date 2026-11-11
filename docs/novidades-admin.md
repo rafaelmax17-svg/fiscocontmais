@@ -3,6 +3,18 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.7
+
+- **Corretor · "Combustível × uso e consumo"** (só Admin). Procura itens de entrada (C100 IND_OPER 0, sem as canceladas) com CFOP x.556 ou x.407 que sejam combustível ou lubrificante e troca o CFOP para **x.653** ("compra de combustível ou lubrificante por consumidor ou usuário final"), mantendo o 1º dígito (1/2/3).
+  - **Combustível, pelo NCM do 0200:** 2710.12, 2710.19.2, 2710.20, 2711 e 3826.00; etanol (2207) só com descrição de etanol ou álcool combustível.
+  - **Lubrificante:** 2710.19.3, 2710.19.9 e 3403.
+  - **Sem NCM:** reconhece pela descrição.
+  - **Fora:** filtro (8421), ARLA 32 (3102), aditivo (3811), galão e bico.
+  - **Alteração:** o CFOP no C170 e no C190. Se só parte dos itens de um C190 muda, o C190 é dividido: BC, ICMS, ST e IPI pelos C170, valor da operação e redução de base em proporção ao valor dos itens. Se já existir um C190 x.653 igual, os valores são somados nele. C190 com C191 (FCP) só muda quando todos os itens do grupo mudam.
+  - **Nota sem C170:** usa os itens do XML anexado. Se todos forem combustível ou lubrificante, troca o C190 inteiro; se estiverem misturados, vira pendência explicada.
+  - **Avisos:** nota com C197 RO40000002 (DIFAL de uso e consumo) e arquivo assinado. Nenhum valor de imposto nem o E110 muda; o Bloco 9 é recontado.
+  - **Testado com SPED de exemplo:** diesel + papel + filtro no mesmo C190 2.556 → o diesel foi para 2.653 (C190 dividido), papel e filtro ficaram; lubrificante 1.556 → 1.653.
+
 ## 2.3.6
 
 - **Corretor · Acumulador 7000: número da nota em cada produto.**

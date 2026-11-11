@@ -3037,6 +3037,40 @@ ipcMain.handle('admin:unidAplicar', async (_evt, { spedPath, usarCorrigido, xmls
     return { ok: true, resumo: res, origem: base.origem };
   } catch (e) { return { error: String(e.message || e) }; }
 });
+// Combustível/lubrificante como uso e consumo (só Admin): CFOP x.556/x.407 → x.653 no C170 e no C190
+ipcMain.handle('admin:combAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!spedPath) return { error: 'Selecione o SPED.' };
+  const base = _difalBase(spedPath, usarCorrigido);
+  const jsonOut = path.join(os.tmpdir(), `fc_comb_${Date.now()}.json`);
+  try {
+    await runFiscal(['combustivel-cfop', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--json', jsonOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    return { ok: true, res, origem: base.origem };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('admin:combAplicar', async (_evt, { spedPath, usarCorrigido, xmls, ids }) => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  if (!spedPath || !Array.isArray(ids) || !ids.length) return { error: 'Marque os itens que devem mudar de CFOP.' };
+  const base = _difalBase(spedPath, usarCorrigido);
+  const stamp = Date.now();
+  const idsJson = path.join(os.tmpdir(), `fc_comb_ids_${stamp}.json`);
+  const jsonOut = path.join(os.tmpdir(), `fc_comb_res_${stamp}.json`);
+  const saida = path.join(os.tmpdir(), `fc_comb_sped_${stamp}.txt`);
+  try {
+    fs.writeFileSync(idsJson, JSON.stringify(ids));
+    await runFiscal(['combustivel-cfop', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--json', jsonOut, '--aplicar', idsJson, '--saida', saida], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    for (const f of [jsonOut, idsJson]) fs.unlink(f, () => {});
+    if (res.erro) return { error: res.erro };
+    if (!fs.existsSync(saida)) return { error: 'O arquivo corrigido não foi gerado.' };
+    if (lastSpedCorrigidoPath && lastSpedCorrigidoPath !== base.arq) fs.unlink(lastSpedCorrigidoPath, () => {});
+    else if (lastSpedCorrigidoPath === base.arq && base.origem === 'corrigido') fs.unlink(base.arq, () => {});
+    lastSpedCorrigidoPath = saida;
+    return { ok: true, resumo: res, origem: base.origem };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
 ipcMain.handle('admin:descAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
   const bloq = _soAdmin(); if (bloq) return bloq;
   if (!spedPath || !xmls) return { error: 'Selecione o SPED e os XMLs de entrada.' };

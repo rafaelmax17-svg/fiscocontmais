@@ -3116,6 +3116,9 @@ def main(argv):
     if modo == 'analisar-tudo':
         import analisar_tudo as _tudo
         return _tudo.main_cli(argv[1:])
+    if modo == 'combustivel-cfop':
+        import combustivel_cfop as _cc
+        return _cc.main_cli(argv[1:])
     if modo == 'unidade-xml':
         import unidade_xml as _ux
         return _ux.main_cli(argv[1:])

@@ -1463,8 +1463,8 @@ function bindFiscal() {
     // ⚡ Automatizar correção → "Abrir no modo manual" de um cliente: escolhe o SPED (e a pasta de XMLs) como se fosse à mão
     window.__corrAbrirManual = (sped, xmls) => {
       corrSpedPath = sped; FISCAL.corrSpedPath = sped;
-      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad', '#btnCorrMaca', '#btnCorrTudo', '#btnCorrDesc', '#btnCorrUnid'].forEach((id) => { $(id).disabled = false; });
-      $('#corrUnid').hidden = true; $('#corrUnid').innerHTML = '';
+      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad', '#btnCorrMaca', '#btnCorrTudo', '#btnCorrDesc', '#btnCorrUnid', '#btnCorrComb'].forEach((id) => { $(id).disabled = false; });
+      $('#corrUnid').hidden = true; $('#corrUnid').innerHTML = ''; $('#corrComb').hidden = true; $('#corrComb').innerHTML = '';
       $('#corrMaca').hidden = true; $('#corrMaca').innerHTML = '';
       $('#corrTudo').hidden = true; $('#corrTudo').innerHTML = ''; $('#corrDesc').hidden = true; $('#corrDesc').innerHTML = '';
       $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = ''; $('#corrCad').hidden = true; $('#corrCad').innerHTML = '';
@@ -1490,7 +1490,8 @@ function bindFiscal() {
       $('#btnCorrAcum').disabled = false; $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = '';
       $('#btnCorrCad').disabled = false; $('#corrCad').hidden = true; $('#corrCad').innerHTML = '';
       $('#btnCorrMaca').disabled = false; $('#corrMaca').hidden = true; $('#corrMaca').innerHTML = '';
-      ['#btnCorrTudo', '#btnCorrDesc', '#btnCorrUnid'].forEach((id) => { $(id).disabled = false; });
+      ['#btnCorrTudo', '#btnCorrDesc', '#btnCorrUnid', '#btnCorrComb'].forEach((id) => { $(id).disabled = false; });
+      $('#corrComb').hidden = true; $('#corrComb').innerHTML = '';
       $('#corrTudo').hidden = true; $('#corrTudo').innerHTML = ''; $('#corrDesc').hidden = true; $('#corrDesc').innerHTML = '';
       $('#corrUnid').hidden = true; $('#corrUnid').innerHTML = '';
       corrFeito = false;
@@ -1895,7 +1896,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
 
     // ---- painéis do Corretor: esconde os outros ao abrir um
     const CORR_PAINEIS = ['#corrSpedEmpty', '#corrSpedFrame', '#corrSpedResumo', '#corrDifal', '#corrSimples', '#corrLote', '#corrIcmsXml',
-      '#corrValXml', '#corrEstST', '#corrAcum', '#corrCad', '#corrMaca', '#corrDesc', '#corrUnid', '#corrTudo'];
+      '#corrValXml', '#corrEstST', '#corrAcum', '#corrCad', '#corrMaca', '#corrDesc', '#corrUnid', '#corrComb', '#corrTudo'];
     const corrSoMostra = (id) => CORR_PAINEIS.forEach((x) => { const el = $(x); if (el) el.hidden = x !== id; });
     const fmR = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     async function corrPedeXmls() {
@@ -2047,6 +2048,75 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       $('#unBaixar').addEventListener('click', corrBaixar);
     }
     $('#btnCorrUnid').addEventListener('click', unAbrir);
+
+    // ---- Combustível e lubrificante lançados como uso e consumo: CFOP x.556 / x.407 → x.653 (C170 e C190)
+    const CB = { an: null, marc: new Set() };
+    const cbFm = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    function cbDesenhar() {
+      const box = $('#corrComb'), an = CB.an, rs = an.resumo;
+      const ids = [...new Set(an.itens.map((i) => i.id))];
+      const marcados = an.itens.filter((i) => CB.marc.has(i.id));
+      const porNota = {};
+      an.itens.forEach((i) => { (porNota[i.doc] = porNota[i.doc] || []).push(i); });
+      box.innerHTML = `
+        <div class="un-hero"><div><div class="dif-k">Corretor do SPED · Admin · Combustível × uso e consumo</div>
+          <h3>Combustível e lubrificante com CFOP de uso e consumo</h3>
+          <div class="dif-sub">Para combustível ou lubrificante comprado pelo consumidor ou usuário final o CFOP é o <b>1.653</b> (dentro do estado) ou <b>2.653</b> (de outro estado), e não o 1.556/2.556 nem o 1.407/2.407.
+          O produto é reconhecido pelo NCM (2710, 2711, 3826, 3403 e etanol 2207); filtro, ARLA e aditivo não entram. Muda só o CFOP no C170 e no C190: nenhum valor de imposto muda.</div></div>
+          <div class="sn-hbtn">${XMLS.path ? '' : '<button class="act inv-export" id="cbXmls" title="Para notas sem C170: o sistema usa os itens do XML">Anexar XMLs</button>'}<button class="act inv-export" id="cbFechar">Fechar</button></div></div>
+        <div class="dif-kpis un-k">
+          <div class="k-bad"><span>Itens com CFOP errado</span><b>${rs.itens}</b><small>em ${rs.notas} nota(s) · R$ ${cbFm(rs.valor)}</small></div>
+          <div><span>Combustível</span><b>${rs.combustivel}</b><small>gasolina, diesel, etanol, GLP…</small></div>
+          <div><span>Lubrificante</span><b>${rs.lubrificante}</b><small>óleo lubrificante e graxa</small></div>
+          <div class="${rs.pendencias ? 'k-warn' : 'k-ok'}"><span>Pendências</span><b>${rs.pendencias}</b><small>nota sem C170 com produtos misturados</small></div></div>
+        ${an.itens.length ? `<div class="un-card"><h4>Itens que mudam de CFOP <a class="td-lk" id="cbTodos">${CB.marc.size === ids.length ? 'desmarcar todos' : 'marcar todos'}</a></h4>
+          <div class="ac7-wrap"><table><thead><tr><th></th><th>Nota</th><th>Produto</th><th>Tipo</th><th>CFOP</th><th style="text-align:right">Valor</th></tr></thead><tbody>
+          ${Object.values(porNota).map((g) => g.map((i, j) => `<tr>
+            <td>${j === 0 || i.origem === 'C170' ? `<input type="checkbox" class="cb-m" data-id="${esc(i.id)}"${CB.marc.has(i.id) ? ' checked' : ''}>` : ''}</td>
+            <td>${j === 0 ? `<b>NF ${esc(Number(i.num).toLocaleString('pt-BR'))}</b><span class="ac7-mi">${esc(i.forn)} · ${esc(i.data)}</span>` : ''}</td>
+            <td>${esc(i.descr)}<span class="ac7-mi">cód. ${esc(i.cod)} · NCM ${esc(i.ncm || '—')} · ${esc(i.motivo)}${i.tem_difal ? ' · <b style="color:#b45309">nota com DIFAL de uso e consumo lançado</b>' : ''}</span></td>
+            <td><span class="ac7-cf ${i.tipo === 'combustivel' ? 'k-warn' : ''}">${i.tipo === 'combustivel' ? 'Combustível' : 'Lubrificante'}</span></td>
+            <td><s class="un-a">${esc(i.cfop_de)}</s> <b class="un-d">${esc(i.cfop_para)}</b></td>
+            <td style="text-align:right">${cbFm(i.valor)}</td></tr>`).join('')).join('')}
+          </tbody></table></div></div>
+          ${an.pendencias.length ? `<div class="dif-av"><b>${an.pendencias.length} nota(s) não alterada(s)</b>:<ul>${an.pendencias.map((p) => `<li>NF ${esc(p.num)} · ${esc(p.forn)}: ${esc(p.motivo)}</li>`).join('')}</ul></div>` : ''}
+          <div class="dif-acts"><button class="act inv-export sn-big" id="cbAplicar" style="background:#e23d4c;color:#fff;border-color:transparent"${marcados.length ? '' : ' disabled'}>Trocar o CFOP (${marcados.length} item(ns))</button></div>`
+        : `<div class="dif-av ok"><b>Nenhum combustível ou lubrificante com CFOP de uso e consumo</b>${XMLS.path ? '' : ' nas notas com C170 · anexe os XMLs para conferir também as notas sem C170'}.</div>
+          ${an.pendencias.length ? `<div class="dif-av"><ul>${an.pendencias.map((p) => `<li>NF ${esc(p.num)} · ${esc(p.forn)}: ${esc(p.motivo)}</li>`).join('')}</ul></div>` : ''}`}
+        <div id="cbRes"></div>`;
+      $('#cbFechar').addEventListener('click', () => { box.hidden = true; $('#corrSpedEmpty').hidden = false; });
+      const bx = $('#cbXmls'); if (bx) bx.addEventListener('click', async () => { if (await corrPedeXmls()) cbAbrir(); });
+      box.querySelectorAll('.cb-m').forEach((c) => c.addEventListener('change', () => { if (c.checked) CB.marc.add(c.dataset.id); else CB.marc.delete(c.dataset.id); cbDesenhar(); }));
+      const td = $('#cbTodos'); if (td) td.addEventListener('click', () => { if (CB.marc.size === ids.length) CB.marc.clear(); else ids.forEach((x) => CB.marc.add(x)); cbDesenhar(); });
+      const ap = $('#cbAplicar'); if (ap) ap.addEventListener('click', cbAplicar);
+    }
+    async function cbAbrir() {
+      if (!corrSpedPath) return;
+      corrSoMostra('#corrComb');
+      overlay(true, 'Procurando combustível e lubrificante com CFOP de uso e consumo…');
+      const r = await window.fiscocont.admin.combAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path });
+      overlay(false);
+      if (r.error) { toast(r.error, true); return; }
+      CB.an = r.res; CB.marc = new Set(r.res.itens.map((i) => i.id));
+      cbDesenhar();
+    }
+    async function cbAplicar() {
+      overlay(true, 'Trocando o CFOP para 1.653 / 2.653…');
+      const res = await window.fiscocont.admin.combAplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path, ids: [...CB.marc] });
+      overlay(false);
+      if (res.error) { toast(res.error, true); return; }
+      corrFeito = true;
+      const r = res.resumo || {};
+      $('#cbRes').innerHTML = `<div class="dif-done sn-done"><div class="dif-k">Corrigido: arquivo novo gerado (o original não foi alterado)</div>
+        <div class="dif-kpis"><div class="k-ok"><span>Itens com CFOP trocado</span><b>${r.itens || 0}</b><small>em ${r.notas || 0} nota(s)</small></div>
+          <div><span>C190 divididos</span><b>${r.c190_divididos || 0}</b><small>nota com combustível e outros produtos no mesmo resumo</small></div>
+          <div class="${r.restantes ? 'k-warn' : 'k-ok'}"><span>Ainda com CFOP de uso e consumo</span><b>${r.restantes || 0}</b><small>itens não marcados</small></div></div>
+        ${(r.avisos || []).length ? `<div class="dif-av"><ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+        <div class="dif-acts"><button class="act inv-export" id="cbReconf">Conferir de novo</button><button class="act inv-export sn-big" id="cbBaixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button></div></div>`;
+      $('#cbReconf').addEventListener('click', cbAbrir);
+      $('#cbBaixar').addEventListener('click', corrBaixar);
+    }
+    $('#btnCorrComb').addEventListener('click', cbAbrir);
 
     // ---- 🔎 Analisar tudo / Aplicar tudo
     const TD = { an: null, etapa: {}, marc: {}, val: {}, aberto: new Set(), gAberto: new Set(), lAberta: new Set(), busca: {}, lim: {}, modo: {}, e116: null };
