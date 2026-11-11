@@ -23,7 +23,7 @@
     const prob = (c.st_indevido || 0) + (c.trib_indevido || 0) + (c.isento_div || 0);
     raiz.innerHTML = `
       <div class="pl-hero"><div><span class="pl-tag">MÓDULO ADMIN · ADAPTAÇÃO DE PLANILHAS</span><h1>Planilha profissional para a equipe</h1>
-        <p>Escolha a planilha de auditoria de itens (colunas NF, DESCRICAO, NCM, CST, CFOP, LEGENDA e CONDICIONAL). O sistema confere se o CST de cada item combina com o tratamento do produto e devolve um <b>novo Excel</b>, fácil de ler: os problemas primeiro, cada grupo com a explicação, e os corretos recolhidos no fim. O arquivo original não é alterado.</p></div>
+        <p>Escolha a planilha de auditoria de itens (colunas NF, DESCRICAO, NCM, CST, CFOP, LEGENDA e CONDICIONAL). O sistema devolve um <b>novo Excel</b> com a mesma planilha (mesmas colunas, mesma ordem e os mesmos dados) com acabamento profissional: título, resumo, cabeçalho fixo com filtro, tributação em etiqueta colorida e a coluna <b>Conferência</b>, que aponta o CST divergente (linha em vermelho claro). O arquivo original não é alterado.</p></div>
         <div class="pl-bt"><button class="p" id="plEsc">📂 Escolher planilha</button></div></div>
       ${a ? `<div class="fc-card pl-res">
         <div class="pl-arq"><b>${e(a.nome)}</b><small>${n(a.itens)} itens · ${n(a.notas)} notas · aba “${e(a.aba)}”</small></div>

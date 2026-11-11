@@ -3,6 +3,21 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.2
+
+- **Adaptação de planilhas · Modelo 4** (escolhido pelo Rafael; substitui o Modelo B da 2.3.1).
+  - **Mesma planilha:** aba única "Relatório", com as mesmas 8 colunas, a mesma ordem dos itens e os mesmos dados (conferido linha a linha: 10.231 de 10.231).
+  - **Topo:**
+    - **Linha 1:** título.
+    - **Linha 2:** resumo (itens, notas, S.T, Tributado, Isento, com condição especial e quantos têm CST divergente).
+    - **Linha 3:** cabeçalho com nomes claros, fixo e com filtro.
+  - **Visual:** linhas zebradas; a Tributação em etiqueta colorida (S.T azul, Tributado laranja, Isento verde).
+  - **Coluna "Conferência":**
+    - **Valores:** ✔ OK, ✖ CST divergente (a linha toda em vermelho claro, com comentário explicando o que fazer), ◆ Ver condição e Entrada.
+    - **Regra:** a mesma da 2.3.1 (CST de ST = terminados em 10, 30, 60, 61 e 70).
+  - **Impressão:** paisagem, cabendo na largura, com o cabeçalho repetido em cada página e "Página X de Y".
+  - **Removido:** a aba "Base original", porque a própria planilha agora traz os dados intactos.
+
 ## 2.3.1
 
 - **Adaptação de planilhas** (só Admin, em "Módulos Admin · teste"). Lê a planilha de auditoria de itens (colunas NF, COD_ITEM, DESCRICAO, NCM, CST, CFOP, LEGENDA e CONDICIONAL; o cabeçalho pode estar em qualquer uma das 15 primeiras linhas) e gera um **novo** Excel no **Modelo B**: `<nome> - Profissional.xlsx`, ao lado do original, sem sobrescrever. O original não é tocado.
