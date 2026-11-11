@@ -3980,6 +3980,8 @@ function modulosPadrao(perfil) {
     || (perfil === 'contabil' && m.grupo === 'contabil')).map((m) => m.view);
 }
 let MODULOS = null;      // null = padrão do perfil
+// Módulo liberado para esta pessoa: Admin sempre; demais, se o Admin marcou o módulo em Usuários › Módulos.
+window._podeModulo = (id) => ROLE === 'admin' || (Array.isArray(MODULOS) && MODULOS.includes(id));
 function applyRole(role, modulos) {
   ROLE = role;
   if (modulos !== undefined) MODULOS = Array.isArray(modulos) ? modulos : null;

@@ -11,12 +11,12 @@
 
   function desenhar() {
     const raiz = $('#plRaiz');
-    if (typeof ROLE === 'undefined' || ROLE !== 'admin') { raiz.innerHTML = '<div class="lic-empty">Acesso restrito ao Admin.</div>'; return; }
+    if (!window._podeModulo || !window._podeModulo('admin-planilhas')) { raiz.innerHTML = '<div class="lic-empty">Este módulo não está liberado para você. Peça ao Admin para liberar em Usuários › Módulos.</div>'; return; }
     const ok = validos();
     const div = ok.reduce((s, x) => s + (x.divergentes || 0), 0);
     const itens = ok.reduce((s, x) => s + (x.itens || 0), 0);
     raiz.innerHTML = `
-      <div class="pl-hero"><div><span class="pl-tag">MÓDULO ADMIN · ADAPTAÇÃO DE PLANILHAS</span><h1>Planilhas prontas para a equipe</h1>
+      <div class="pl-hero"><div><span class="pl-tag">ADAPTAÇÃO DE PLANILHAS</span><h1>Planilhas prontas para a equipe</h1>
         <p>Escolha uma ou várias planilhas de auditoria de itens (colunas NF, DESCRICAO, NCM, CST, CFOP, LEGENDA e CONDICIONAL), ou uma pasta inteira. Para cada uma, o sistema gera um <b>novo Excel</b> com a mesma planilha (mesmas colunas, mesma ordem e os mesmos dados) com acabamento profissional e a coluna <b>Conferência</b>, que aponta o CST divergente. O novo arquivo fica ao lado do original, com <b>“ - OK”</b> no nome. Os originais não são alterados.</p></div>
         <div class="pl-bt"><button class="p" id="plEsc"${P.rodando ? ' disabled' : ''}>📂 Escolher planilhas</button><button id="plPasta"${P.rodando ? ' disabled' : ''}>🗂 Escolher pasta</button></div></div>
       ${P.lista.length ? `<div class="fc-card pl-res">

@@ -476,6 +476,18 @@ ipcMain.handle('auth:redefinirSenha', async (_evt, email) => auth.redefinirSenha
 ipcMain.handle('auth:primeiroAcesso', async (_evt, { email, senha } = {}) => auth.criarAdminInicial(email, senha));
 
 // Cadastro de usuários (só Admin)
+// Módulo liberado nas configurações do usuário (Usuários › Módulos): Admin sempre; demais só se o módulo estiver na lista.
+// Liberado = acesso completo ao módulo, igual ao Admin.
+const _podeModulo = (id) => {
+  if (sessionRole === 'admin') return true;
+  const s = auth.sessao() || {};
+  return Array.isArray(s.modulos) && s.modulos.includes(id);
+};
+const _mod = (id) => async (fn) => {
+  if (!_podeModulo(id)) return { error: 'Este módulo não está liberado para você. Peça ao Admin para liberar em Usuários › Módulos.' };
+  if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
+  try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String(e.message || e) }; }
+};
 const _adm = async (fn) => {
   if (sessionRole !== 'admin') return { error: 'Acesso restrito ao Admin.' };
   if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
@@ -1488,7 +1500,7 @@ ipcMain.handle('manif:exportar', (_evt, { formato, itens, titulo, html, nome }) 
 }));
 
 // ---------------------------------------------------------------------------
-// Consulta NF-e por chave · XML e PDF (2.2.27) — SÓ ADMIN por enquanto (em teste).
+// Consulta NF-e por chave · XML e PDF (2.2.27) — Admin e quem tiver o módulo "fiscal-nfechave" liberado.
 // Situação na SEFAZ autorizadora + XML pelo Ambiente Nacional (consulta por chave) com o certificado da empresa
 // escolhida (cadastrado nas Baixas DF-e) + DANFE. "Ciência da operação" só é enviada se o Admin marcar a opção.
 // Resultados guardados em nfe-chave-cache.json: nota já baixada, cancelada/denegada ou NFC-e não é consultada de novo
@@ -1504,7 +1516,7 @@ function _nfechCacheGravar(c) {
 // não consulta de novo: XML já baixado, cancelada/denegada (não mudam mais), ou autorizada sem download possível consultada há menos de 12 h
 const _nfechFinal = (it, em) => it && ((it.xml && fs.existsSync(it.xml)) || ['cancelada', 'denegada'].includes(it.situacao)
   || (it.situacao === 'autorizada' && it.modelo !== '55' && em && Date.now() - Date.parse(em) < 12 * 3600000));
-ipcMain.handle('nfech:empresas', () => _adm(async () => {
+ipcMain.handle('nfech:empresas', () => _mod('fiscal-nfechave')(async () => {
   let pasta = '';
   try { pasta = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase || ''; } catch (_) {}
   return {
@@ -1515,7 +1527,7 @@ ipcMain.handle('nfech:empresas', () => _adm(async () => {
     })).sort((a, b) => a.nome.localeCompare(b.nome)),
   };
 }));
-ipcMain.handle('nfech:importar', () => _adm(async () => {
+ipcMain.handle('nfech:importar', () => _mod('fiscal-nfechave')(async () => {
   const r = await dialog.showOpenDialog(mainWindow, { title: 'Arquivo com as chaves de acesso (SPED, planilha, texto ou XML)', properties: ['openFile'],
     filters: [{ name: 'SPED, texto, planilha ou XML', extensions: ['txt', 'csv', 'xlsx', 'xlsm', 'xml'] }] });
   if (r.canceled || !r.filePaths.length) return { cancelado: true };
@@ -1532,7 +1544,7 @@ ipcMain.handle('nfech:importar', () => _adm(async () => {
   } catch (_) {}
   return { chaves: res.chaves || [], cnpjArquivo, arquivo: path.basename(r.filePaths[0]) };
 }));
-ipcMain.handle('nfech:consultar', (_evt, { empresaId, chaves, baixar, ciencia, pdf, forcar }) => _adm(async () => {
+ipcMain.handle('nfech:consultar', (_evt, { empresaId, chaves, baixar, ciencia, pdf, forcar }) => _mod('fiscal-nfechave')(async () => {
   const indice = _lerIndiceCert();
   const empresa = (indice.empresas || []).find((e) => e.id === empresaId);
   if (!empresa) throw new Error('Escolha a empresa (certificado cadastrado nas Baixas DF-e).');
@@ -1583,12 +1595,12 @@ ipcMain.handle('nfech:consultar', (_evt, { empresaId, chaves, baixar, ciencia, p
   _nfechCacheGravar(cache);
   return { empresa: { nome: empresa.razaoSocial, cnpj: empresa.cnpj }, pasta, itens, consultadas: faltam.length, quando: new Date().toISOString() };
 }));
-ipcMain.handle('nfech:abrir', (_evt, { caminho, pasta }) => _adm(async () => {
+ipcMain.handle('nfech:abrir', (_evt, { caminho, pasta }) => _mod('fiscal-nfechave')(async () => {
   if (!caminho || !fs.existsSync(caminho)) throw new Error('Arquivo não encontrado (foi movido ou apagado?).');
   if (pasta) shell.showItemInFolder(caminho); else await shell.openPath(caminho);
   return {};
 }));
-ipcMain.handle('nfech:exportar', (_evt, { itens, titulo, nome }) => _adm(async () => {
+ipcMain.handle('nfech:exportar', (_evt, { itens, titulo, nome }) => _mod('fiscal-nfechave')(async () => {
   const r = await dialog.showSaveDialog(mainWindow, { title: 'Salvar resultado da consulta',
     defaultPath: `${(nome || 'Consulta_NFe').replace(/[\\/:*?"<>|]/g, '_')}.xlsx`, filters: [{ name: 'Planilha Excel', extensions: ['xlsx'] }] });
   if (r.canceled || !r.filePath) return { cancelado: true };
@@ -1604,7 +1616,7 @@ ipcMain.handle('nfech:exportar', (_evt, { itens, titulo, nome }) => _adm(async (
 }));
 
 // ---------------------------------------------------------------------------
-// Adaptação de planilhas — SÓ ADMIN. Lê uma ou várias planilhas de auditoria de itens e gera um NOVO Excel (Modelo 4)
+// Adaptação de planilhas — Admin e quem tiver o módulo "admin-planilhas" liberado. Lê uma ou várias planilhas de auditoria de itens e gera um NOVO Excel (Modelo 4)
 // ao lado de cada original ("<nome> - OK.xlsx"). Os originais nunca são alterados.
 // ---------------------------------------------------------------------------
 function _planAnalisar(arquivos) {
@@ -1621,14 +1633,14 @@ function _planAnalisar(arquivos) {
 }
 const _planGerada = (nome) => / - (OK|Profissional)( \(\d+\))?\.xls[xm]$/i.test(nome);
 // várias planilhas de uma vez (Ctrl/Shift na janela)
-ipcMain.handle('plan:escolher', () => _adm(async () => {
+ipcMain.handle('plan:escolher', () => _mod('admin-planilhas')(async () => {
   const r = await dialog.showOpenDialog(mainWindow, { title: 'Planilhas para adaptar (pode escolher várias)', properties: ['openFile', 'multiSelections'],
     filters: [{ name: 'Planilha Excel', extensions: ['xlsx', 'xlsm'] }] });
   if (r.canceled || !r.filePaths.length) return { cancelado: true };
   return _planAnalisar(r.filePaths);
 }));
 // uma pasta inteira: pega as planilhas da pasta (sem subpastas), ignorando as já geradas e os temporários do Excel
-ipcMain.handle('plan:pasta', () => _adm(async () => {
+ipcMain.handle('plan:pasta', () => _mod('admin-planilhas')(async () => {
   const r = await dialog.showOpenDialog(mainWindow, { title: 'Pasta com as planilhas', properties: ['openDirectory'] });
   if (r.canceled || !r.filePaths.length) return { cancelado: true };
   const dir = r.filePaths[0];
@@ -1637,7 +1649,7 @@ ipcMain.handle('plan:pasta', () => _adm(async () => {
   if (arqs.length > 200) throw new Error(`A pasta tem ${arqs.length} planilhas: escolha no máximo 200 por vez.`);
   return _planAnalisar(arqs);
 }));
-ipcMain.handle('plan:gerar', (_evt, { itens }) => _adm(async () => {
+ipcMain.handle('plan:gerar', (_evt, { itens }) => _mod('admin-planilhas')(async () => {
   const lista = (itens || []).filter((x) => x && x.arquivo && fs.existsSync(x.arquivo)).map((x) => ({ arquivo: x.arquivo, titulo: String(x.titulo || '') }));
   if (!lista.length) throw new Error('Nenhuma planilha para gerar (foram movidas ou apagadas?).');
   const tag = Date.now();
@@ -1656,7 +1668,7 @@ ipcMain.handle('plan:gerar', (_evt, { itens }) => _adm(async () => {
   if (res.erro) throw new Error(res.erro);
   return { itens: res.itens || [] };
 }));
-ipcMain.handle('plan:abrir', (_evt, { caminho, pasta }) => _adm(async () => {
+ipcMain.handle('plan:abrir', (_evt, { caminho, pasta }) => _mod('admin-planilhas')(async () => {
   if (!caminho || !fs.existsSync(caminho)) throw new Error('Arquivo não encontrado.');
   if (pasta) shell.showItemInFolder(caminho); else await shell.openPath(caminho);
   return {};

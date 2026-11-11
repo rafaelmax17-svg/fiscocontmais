@@ -38,7 +38,7 @@
 
   async function entrar() {
     const raiz = $('#ncRaiz');
-    if (typeof ROLE === 'undefined' || ROLE !== 'admin') { raiz.innerHTML = '<div class="lic-empty">Acesso restrito ao Admin.</div>'; return; }
+    if (!window._podeModulo || !window._podeModulo('fiscal-nfechave')) { raiz.innerHTML = '<div class="lic-empty">Este módulo não está liberado para você. Peça ao Admin para liberar em Usuários › Módulos.</div>'; return; }
     const r = await window.fiscocont.nfech.empresas();
     if (r && r.error) { raiz.innerHTML = `<div class="lic-empty">${e(r.error)}</div>`; return; }
     N.empresas = r.empresas || []; N.pasta = r.pasta || '';
@@ -70,7 +70,7 @@
     const k = (n, t) => `<div><b>${n}</b><span>${t}</span></div>`;
     $('#ncRaiz').innerHTML = `
       <div class="nc-hero">
-        <div><span class="nc-tag">SEFAZ · NF-e, NFC-e E CT-e <em>SÓ ADMIN · EM TESTE</em></span><h1>Consulta NF-e por chave · XML e PDF</h1>
+        <div><span class="nc-tag">SEFAZ · NF-e, NFC-e E CT-e <em>EM TESTE</em></span><h1>Consulta NF-e por chave · XML e PDF</h1>
           <p>Cole uma ou várias chaves (44 dígitos) de NF-e, NFC-e ou CT-e. O sistema confere a chave, descobre a SEFAZ do documento e traz a situação oficial: autorizada, cancelada ou denegada, com o protocolo e os eventos. Quando a empresa escolhida participa da nota, baixa o XML completo e gera o PDF (DANFE).</p>
           <div class="nc-ks">${k(c.autorizada, 'Autorizadas')}${k(c.cancelada, 'Canceladas')}${k(c.denegada, 'Denegadas')}${k(c.nao_encontrada + c.erro, 'Não encontradas / erro')}</div></div>
         <div class="nc-in">

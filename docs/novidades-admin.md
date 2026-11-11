@@ -3,6 +3,15 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.5
+
+- **Liberação por usuário: Consulta NF-e por chave e Adaptação de planilhas.** Antes, marcar o módulo em Usuários › Módulos mostrava o item no menu, mas a tela dizia "Acesso restrito ao Admin", porque tanto a tela quanto o `main.js` (`_adm`) checavam só o perfil.
+  - **Regra nova:** Admin, ou quem tem o módulo na lista liberada (`fiscal-nfechave` ou `admin-planilhas`), tem **acesso completo**, inclusive "Ciência da operação", importação e exportação.
+  - **Proteção nos dois lados:** no `main.js` pelo `_mod(id)`, que lê `auth.sessao().modulos` (atualizado na hora quando o Admin muda), e na tela pelo `window._podeModulo(id)`.
+  - **Etiquetas:** "SÓ ADMIN" saiu da tela da Consulta NF-e; continua "EM TESTE".
+  - **Sem liberação, nada muda:** quem não tem o módulo marcado continua sem ver o item no menu.
+  - **Certificados locais:** a Consulta NF-e usa os certificados das Baixas DF-e **do computador da pessoa** (índice local em userData). Sem certificado cadastrado ali, a lista de empresas vem vazia.
+
 ## 2.3.4
 
 - **Adaptação de planilhas · "Condição especial" sumindo.** Alguns sistemas gravam a dimensão da aba errada (por exemplo A1:G…), e o modo de leitura rápida do openpyxl cortava a última coluna (CONDICIONAL) inteira. Agora a leitura chama `ws.reset_dimensions()` e lê todas as colunas de verdade. Reproduzido com um arquivo de dimensão falsa e corrigido.
