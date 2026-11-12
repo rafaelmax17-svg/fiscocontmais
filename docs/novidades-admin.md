@@ -3,6 +3,31 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.11
+
+- **Corretor do SPED Fiscal · Análise Inteligente · nova etapa "ICMS-ST na entrada"** (`stent`, módulo `st_entrada_ro`). Está **EM TESTE**: só o Admin vê até você ligar para a equipe. Roda depois do uso e consumo e do combustível, antes do DIFAL.
+  - **Regra 1 · produto da ST de RO lançado como tributado** (RICMS/RO, Anexo VI, Parte 2, lista vigente de `st_ro_dados`, sem revogados).
+    - **Quando entra:** compra para revenda (x.102) ou para insumo (x.101) com CST x00/x20.
+    - **Correção:** x.102 → x.403, x.101 → x.401; CST → origem + 60; base, alíquota e ICMS zerados.
+    - **Apuração:** o crédito retirado sai do campo 06 do E110 e a obrigação 000 do E116 acompanha.
+    - **Como reconhece:**
+      - CEST do produto (0200 ou XML) na lista; ou
+      - NCM, só nas tabelas em que o NCM identifica o produto: bebidas (III, IV), cigarros (V), cimento (VI), pneus (XVI), alimentícios (XVII), perfumaria (XIX), sorvetes (XXII) e tintas (XXIII). Plástico (cap. 39) fica fora.
+      - Autopeças, lâmpadas, materiais de construção, materiais elétricos, medicamentos e veículos só pelo CEST.
+      - Café: só o torrado (0901.2x); o café cru (0901.1x) não entra.
+    - **Fora:** empresa industrial (0000 IND_ATIV 0) comprando para insumo (Convênio ICMS 142/2018, cláusula nona).
+  - **Regra 2 · x.403 / x.401 com CST tributado, conferido no XML.**
+    - **XML sem ST** → x.102 / x.101 (o CST fica).
+    - **XML com ST** (CST 10/30/60/70, CSOSN 201/202/203/500 ou vICMSST) → CST 60 sem crédito (o CFOP fica).
+    - **Produto da lista de ST:** segue a regra 1.
+    - **Fica de fora:** despesa (COD_NAT 7xxx, 0200 tipo 07 ou "USO E CONSUMO") e nota sem XML (contada na descrição da etapa).
+  - **C190:** refeito pela rotina do ICMS × XML (`icms_xml._refaz_c190`), que agora também troca o CFOP.
+  - **XML:** o leitor (`xml_entradas`) passou a ler o CEST do item.
+  - **Testado com SPED de exemplo:**
+    - Conveniência (set/2026): 385 itens de bebidas e sorvetes em 1.102/000 → 1.403/060. Crédito retirado R$ 8.723,74; ICMS a recolher de R$ 11.458,41 para R$ 20.158,42; C190 conferido com os C170.
+    - Simulação de 1.403/000: XML tributado → 1.102; XML com ST → CST 060.
+  - **Atenção antes de ligar para a equipe:** nos SPEDs de conveniência que você mandou, quase todas as bebidas entram como tributadas com crédito. Pela lista vigente (Tabela IV) elas são ST. Confira se algum desses clientes tem regime especial antes de liberar.
+
 ## 2.3.10
 
 - **Correção da EFD-Contribuições · nova regra "Crédito de PIS/COFINS em compra de pessoa física"** (categoria `pf`).

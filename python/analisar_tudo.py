@@ -5,6 +5,8 @@ Roda TODAS as conferências do Corretor sobre o mesmo SPED e devolve um painel �
 Ordem (é também a ordem de aplicação, uma sobre a outra, no mesmo arquivo):
   1) Validação do PVA ............ fiscal_core.corrigir_sped_fiscal + ajusta_campos_c197 (sempre aplicada)
   1a) Uso e consumo como revenda .. uso_consumo_cfop (produto "USO E CONSUMO" com CFOP de revenda/industrialização → x.556/x.407/x.557)
+  1c) ICMS-ST na entrada .......... st_entrada_ro (produto da ST de RO lançado como tributado → x.403/x.401 e CST 60;
+                                    x.403 com CST tributado → x.102 se o XML mostrar tributado de fato)
   1b) Combustível × uso e consumo  combustivel_cfop (x.556/x.407 → x.653; antes do DIFAL, que não vale para combustível)
   2) Uso e consumo · DIFAL e crédito  difal_ro (CFOP pela UF, DIFAL, balcão, frete, crédito em uso e consumo)
   3) Desconto × XML .............. desconto_xml
@@ -32,6 +34,7 @@ Escolhas (aplicar):
    "desconto": {"<chave>": false}, "icms": {"<chave>": false}, "valor": {"<chave>": false},
    "simples": {"<chave>": false}, "maca": {"<chave da nota ou nº|série|fornecedor>": false},
    "acum": {"<COD_ITEM>": "70xx"|false}, "cad": {"<COD_ITEM>": "07"|"08"|false}, "comb": {"<doc:item>": false}, "ucons": {"<doc:item>": false},
+   "stent": {"<doc:item>": false},
    "e116": {"venc": "ddmmaaaa", "cod_rec": "..."}}
 Gera arquivo NOVO; o original nunca é alterado.
 """
@@ -51,6 +54,7 @@ import cadastro_0200 as c2
 import credito_maca as cm
 import combustivel_cfop as cc
 import uso_consumo_cfop as uc
+import st_entrada_ro as se
 import unidade_xml as ux
 from xml_entradas import ler_xmls
 
@@ -85,7 +89,7 @@ def _todas(mod, texto, xmls):
 
 def _base_analise(corr, xmls, permitidas):
     """O arquivo que a análise usa depois das trocas de CFOP (uso e consumo, combustível)."""
-    for k, mod in (('ucons', uc), ('comb', cc)):
+    for k, mod in (('ucons', uc), ('comb', cc), ('stent', se)):
         if _pode(permitidas, k):
             corr = _todas(mod, corr, xmls)[0]
     return corr
@@ -149,6 +153,9 @@ def analisar(sped, xml_dir, permitidas=None):
         corr, ca_uc = _todas(uc, corr, xmls)         # as demais etapas olham o arquivo já com o CFOP de uso e consumo
     if pode('comb'):
         corr, ca_comb = _todas(cc, corr, xmls)       # … e com o combustível
+    ca_st = None
+    if pode('stent'):
+        corr, ca_st = _todas(se, corr, xmls)         # … e com a ST da entrada
     auto, dec, an, sn = ls.plano_empresa(corr, xmls, lidos)
     por_doc = {d['id']: d for d in an['docs']}
     itens_sped = _itens_sped(corr)
@@ -181,6 +188,26 @@ def analisar(sped, xml_dir, permitidas=None):
                        'tipo': 'auto' if r['itens'] else 'zero',
                        'grupos': [{'id': 'ucons', 'titulo': 'Itens de uso e consumo com CFOP de revenda ou industrialização', 'sugestao': 'CFOP de uso e consumo',
                                    'linhas': lin}] if lin else []})
+
+    # 1c) ICMS-ST na entrada (RICMS/RO, Anexo VI, Parte 2)
+    if ca_st is not None:
+        rot = {'st': 'produto da ST lançado como tributado', 'cst': 'CFOP de ST com CST tributado: o XML traz ST', 'trib': 'CFOP de ST, mas o XML traz tributado'}
+        lin = [{'sel': i['id'], 'nota': f"NF {_num(i['num'])} · {i['forn']}",
+                'det': f"{i['descr']} · NCM {i['ncm'] or '—'} · CFOP {i['cfop_de']} → {i['cfop_para']} · CST {i['cst_de']} → {i['cst_para']} · {rot[i['regra']]}: {i['motivo']}"
+                       + (f" · crédito de ICMS R$ {_fm(i['icms'])} sai" if i['regra'] in ('st', 'cst') and i['icms'] > 0.004 else ''),
+                'valor': i['valor'], 'marcado': True} for i in ca_st['itens']]
+        r = ca_st['resumo']
+        extra = []
+        if r['fora_industria']:
+            extra.append(f"{r['fora_industria']} item(ns) de insumo ficaram de fora: empresa industrial (Convênio ICMS 142/2018, cláusula nona)")
+        if r['sem_xml']:
+            extra.append(f"{r['sem_xml']} item(ns) com CFOP de ST e CST tributado sem o XML da nota: anexe os XMLs para conferir")
+        etapas.append({'key': 'stent', 'titulo': 'ICMS-ST na entrada', 'desc': 'produto da ST de RO (Anexo VI) lançado como tributado → 1.403 / 1.401 e CST 60; 1.403 com CST tributado → 1.102 quando o XML mostra tributado'
+                       + (' · ' + ' · '.join(extra) if extra else ''),
+                       'qtd': f"{r['itens']} item(ns) · {r['notas']} nota(s)" if r['itens'] else 'nada encontrado',
+                       'valor': f"crédito − R$ {_fm(r['credito'])}" if r['credito'] else '', 'badge': 'pode corrigir' if r['itens'] else 'sem correção',
+                       'tipo': 'auto' if r['itens'] else 'zero',
+                       'grupos': [{'id': 'stent', 'titulo': 'Itens com CFOP / CST de ST para acertar', 'sugestao': 'CFOP e CST da ST', 'linhas': lin}] if lin else []})
 
     # 1b) combustível e lubrificante com CFOP de uso e consumo → x.653 (antes do DIFAL)
     if ca_comb is not None:
@@ -382,6 +409,9 @@ def analisar(sped, xml_dir, permitidas=None):
         etapas.append({'key': 'estoque', 'titulo': 'Estoque de mercadoria que saiu da ST', 'desc': 'precisa da planilha do estoque: use o botão "Estoque ST"',
                        'qtd': '—', 'valor': '', 'badge': 'botão próprio', 'tipo': 'fora', 'grupos': []})
     etapas = [e for e in etapas if e['key'] == 'estoque' or pode(e['key'])]
+    ks = [e['key'] for e in etapas]                       # mesma ordem da aplicação: uso e consumo, combustível, ST da entrada
+    if 'stent' in ks and 'comb' in ks and ks.index('stent') < ks.index('comb'):
+        etapas.insert(ks.index('comb'), etapas.pop(ks.index('stent')))
     e110 = ls._e110(corr) or {}
     return {'arquivo': os.path.basename(sped), 'xmls': xml_dir, 'xml_lidos': lidos, 'xml_erros': erros,
             'empresa': {'nome': cab.get('nome', ''), 'cnpj': cab.get('cnpj', ''), 'dt_ini': cab.get('dt_ini', ''), 'dt_fin': cab.get('dt_fin', '')},
@@ -412,8 +442,22 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
             final, r = cc.aplicar_texto(final, ids, xmls)
             resumo['comb'] = {'itens': r['itens'], 'notas': r['notas'], 'c190': r['c190_divididos']}
             avisos += r.get('avisos') or []
-    auto, dec, an, sn = ls.plano_empresa(final, xmls, lidos)
     e116 = esc.get('e116') if isinstance(esc.get('e116'), dict) else None
+    # 1c) ICMS-ST na entrada (antes do DIFAL)
+    if liga('stent'):
+        es_ = esc.get('stent') or {}
+        ids = [i['id'] for i in se.analisar_texto(final, xmls)['itens'] if es_.get(i['id'], True) is not False]
+        if ids:
+            novo, r = se.aplicar_texto(final, ids, xmls, e116)
+            if r.get('erro'):
+                if 'E116' in r['erro'] and not e116:
+                    return None, enc, {'precisa_e116': True, 'etapa': 'ICMS-ST na entrada',
+                                       'erro': 'Com a correção a empresa passa a ter ICMS a recolher e o SPED não tem guia (E116). Informe o vencimento e o código de receita da guia.'}
+                return None, enc, {'erro': f"ICMS-ST na entrada: {r['erro']}", 'etapa': 'ICMS-ST na entrada'}
+            final = novo
+            resumo['stent'] = {'itens': r['itens'], 'notas': r['notas'], 'credito': round(r['credito_retirado'], 2), 'st': r['st'], 'cst': r['cst'], 'trib': r['trib']}
+            avisos += r.get('avisos') or []
+    auto, dec, an, sn = ls.plano_empresa(final, xmls, lidos)
     resumo['validacao'] = {'feito': sum((rc.get(k) or 0) for k in ('c191_removidos', 'e500_linhas_removidas', 'gtin_limpos', 'cest_limpos',
                                                                         'cod_nat_corrigidos', 'c197_campos_ajustados', 'c100_totais_corrigidos',
                                                                         'vl_merc_corrigidos', 'cod_sit_08')) + len(rc.get('registro_0400_criado') or [])}

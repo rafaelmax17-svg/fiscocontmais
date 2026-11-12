@@ -102,7 +102,7 @@ def ler_xml(texto):
         g = list(icms)[0] if icms is not None and len(list(icms)) else None
         ipi = imp.find('IPI/IPITrib')
         it = {
-            'n': det.get('nItem') or str(pos), 'cprod': _t(prod, 'cProd'), 'xprod': _t(prod, 'xProd'), 'ncm': _t(prod, 'NCM'),
+            'n': det.get('nItem') or str(pos), 'cprod': _t(prod, 'cProd'), 'xprod': _t(prod, 'xProd'), 'ncm': _t(prod, 'NCM'), 'cest': _t(prod, 'CEST'),
             'cfop': _t(prod, 'CFOP'), 'qcom': _fx(_t(prod, 'qCom')), 'ucom': _t(prod, 'uCom'),
             'vprod': _fx(_t(prod, 'vProd')), 'vdesc': _fx(_t(prod, 'vDesc')), 'vfrete': _fx(_t(prod, 'vFrete')),
             'vseg': _fx(_t(prod, 'vSeg')), 'voutro': _fx(_t(prod, 'vOutro')), 'vipi': _fx(_t(ipi, 'vIPI')),

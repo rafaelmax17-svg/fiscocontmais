@@ -288,10 +288,10 @@ def _refaz_c190(linhas, d, mudancas, remover, insercoes):
         acum = defaultdict(Decimal)
         for n_m, m in enumerate(ms):
             o, n = m['old'], m['novo']
-            kn = chave(n['cst'], o['cfop'], n['aliq'])
+            kn = chave(n['cst'], n.get('cfop') or o['cfop'], n['aliq'])     # o CFOP só muda quando a mudança traz 'cfop'
             if kn not in grupos:
                 c = list(go['c'])
-                c[2], c[4] = n['cst'], dr._f(_D(n['aliq']))
+                c[2], c[3], c[4] = n['cst'], n.get('cfop') or o['cfop'], dr._f(_D(n['aliq']))
                 if len(c) > 12:
                     c[12] = ''
                 grupos[kn] = {'i': None, 'c': c, 'v': {j: Decimal('0') for j in range(5, 12)}}
