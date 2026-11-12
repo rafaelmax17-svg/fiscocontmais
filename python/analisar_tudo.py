@@ -202,9 +202,12 @@ def analisar(sped, xml_dir, permitidas=None):
         extra = []
         if r['fora_industria']:
             extra.append(f"{r['fora_industria']} item(ns) de insumo ficaram de fora: empresa industrial (Convênio ICMS 142/2018, cláusula nona)")
-        if r['sem_xml']:
-            extra.append(f"{r['sem_xml']} item(ns) com CFOP de ST e CST tributado sem o XML da nota: anexe os XMLs para conferir")
-        etapas.append({'key': 'stent', 'titulo': 'ICMS-ST na entrada', 'desc': 'produto da ST de RO (Anexo VI) lançado como tributado → 1.403 / 1.401 e CST 60; 1.403 com CST tributado → 1.102 quando o XML mostra tributado'
+        if r['sem_retencao']:
+            extra.append(f"{r['sem_retencao']} item(ns) de produto da ST comprados SEM a ST retida pelo fornecedor (ICMS destacado R$ {_fm(r['sem_retencao_icms'])}) "
+                         "ficam como estão: o crédito só sai quando a ST já foi paga; sem retenção, a ST é recolhida na entrada (antecipação) ou a venda sai com débito")
+        if r['sem_xml'] or r['st_sem_xml']:
+            extra.append(f"{r['sem_xml'] + r['st_sem_xml']} item(ns) sem o XML da nota: anexe os XMLs para conferir")
+        etapas.append({'key': 'stent', 'titulo': 'ICMS-ST na entrada', 'desc': 'produto da ST de RO (Anexo VI) lançado como tributado, com a ST retida no XML → 1.403 / 1.401 e CST 60, sem crédito; 1.403 com CST tributado → 1.102 quando o XML mostra tributado'
                        + (' · ' + ' · '.join(extra) if extra else ''),
                        'qtd': f"{r['itens']} item(ns) · {r['notas']} nota(s)" if r['itens'] else 'nada encontrado',
                        'valor': f"crédito − R$ {_fm(r['credito'])}" if r['credito'] else '', 'badge': 'pode corrigir' if r['itens'] else 'sem correção',

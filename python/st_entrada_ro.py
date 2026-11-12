@@ -5,9 +5,14 @@
    Produto que está na lista de substituição tributária de Rondônia — RICMS/RO (Dec. 22.721/2018), Anexo VI, Parte 2,
    lista vigente em st_ro_dados.py (sem itens revogados nem redações anteriores) — comprado para revenda (x.102) ou para
    insumo (x.101) com CST de ICMS tributado (x00 ou x20). Ex.: café torrado (NCM 0901.2x, Tabela XVII, CEST 17.096).
-   Correção: CFOP x.102 → x.403 e x.101 → x.401; CST → origem + 60 (ICMS cobrado anteriormente por ST); sem base,
-   alíquota e ICMS — mercadoria da ST não dá crédito do ICMS próprio na entrada. O crédito retirado sai do campo 06
-   do E110 (e o E116 acompanha).
+   Correção — SÓ quando o XML da nota mostra a ST retida pelo fornecedor (vICMSST, CST 10/30/60/70 ou CSOSN
+   201/202/203/500): CFOP x.102 → x.403 e x.101 → x.401; CST → origem + 60 (ICMS cobrado anteriormente por ST); sem
+   base, alíquota e ICMS — com a ST já paga, a venda sai sem débito e o crédito do ICMS próprio não cabe. O crédito
+   retirado sai do campo 06 do E110 (e o E116 acompanha).
+   Fornecedor que tributou normal, sem reter a ST (XML com CST 00/20): NÃO mexe. Nesse caso o ICMS destacado não é
+   "crédito indevido" a estornar na apuração: ou a empresa paga a ST na entrada (antecipação, com o destacado abatendo
+   no cálculo), ou vende com débito — tirar o crédito sem tirar o débito da venda cobra o imposto duas vezes. Esses
+   itens aparecem só na descrição da etapa (quantos e quanto de ICMS). Sem XML: não mexe (pede os XMLs).
    Como o produto é reconhecido:
      • CEST do produto (0200 ou XML) que está na lista vigente; ou
      • NCM da lista, só nas tabelas em que o NCM identifica o produto sozinho: bebidas (III, IV), cigarros (V), cimento
@@ -126,7 +131,7 @@ def analisar_texto(texto, xmls=None):
     if fim is not None:
         linhas = linhas[:fim + 1]
     cab, part, docs, e110, p200, ind_ativ, natz = _estrutura(linhas)
-    itens, fora_ind, sem_xml = [], 0, 0
+    itens, fora_ind, sem_xml, st_sem_xml, sem_ret = [], 0, 0, 0, []
     for k, d in enumerate(docs):
         if d['oper'] != '0' or d['sit'] in CANC:
             continue
@@ -150,8 +155,15 @@ def analisar_texto(texto, xmls=None):
                 if cf[1:] == '101' and ind_ativ == '0':
                     fora_ind += 1
                     continue
+                if it is None:                      # sem o XML não dá para saber se a ST foi retida
+                    st_sem_xml += 1
+                    continue
+                if not _xml_st(it):                 # fornecedor tributou normal, sem reter a ST: o crédito do destacado não sai
+                    sem_ret.append({**base, 'motivo': f"produto da ST de RO ({mot}) comprado sem ST retida (CST {it.get('cst') or it.get('csosn')})"})
+                    continue
                 itens.append({**base, 'regra': 'st', 'cfop_para': cf[:1] + NOVO_ST[cf[1:]], 'cst_para': cst[:1] + '60',
-                              'motivo': f"produto da ST de RO: {mot}"})
+                              'motivo': f"produto da ST de RO: {mot}; o XML traz a ST retida (CST {it.get('cst') or it.get('csosn')}"
+                                        + (f", ICMS-ST R$ {it['vicmsst']:.2f}".replace('.', ',') if it.get('vicmsst') else '') + ')'})
             # 2) CFOP de ST com CST tributado — o XML decide
             elif cf[1:] in NOVO_TRIB and cst[-2:] in TRIBUTADO:
                 if _despesa(prod, natz.get(c['i'])):
@@ -160,8 +172,11 @@ def analisar_texto(texto, xmls=None):
                     sem_xml += 1
                     continue
                 r, mot = produto_st(prod.get('ncm') or it.get('ncm'), prod.get('cest') or it.get('cest'))
-                if r or _xml_st(it):
-                    why = f"produto da ST de RO: {mot}" if r else f"o XML traz ST no item (CST {it.get('cst') or it.get('csosn')}" + (
+                if r and not _xml_st(it):           # produto da ST comprado sem retenção: fica como está (ver regra 1)
+                    sem_ret.append({**base, 'motivo': f"produto da ST de RO ({mot}) comprado sem ST retida (CST {it.get('cst') or it.get('csosn')})"})
+                    continue
+                if _xml_st(it):
+                    why = f"o XML traz ST no item (CST {it.get('cst') or it.get('csosn')}" + (
                         f", ICMS-ST R$ {it['vicmsst']:.2f}".replace('.', ',') if it.get('vicmsst') else '') + ')'
                     itens.append({**base, 'regra': 'cst', 'cfop_para': cf, 'cst_para': cst[:1] + '60', 'motivo': why})
                 else:
@@ -175,7 +190,9 @@ def analisar_texto(texto, xmls=None):
                        'st': sum(1 for i in itens if i['regra'] == 'st'), 'cst': sum(1 for i in itens if i['regra'] == 'cst'),
                        'trib': sum(1 for i in itens if i['regra'] == 'trib'),
                        'credito': round(sum(i['icms'] for i in itens if i['regra'] in ('st', 'cst')), 2),
-                       'fora_industria': fora_ind, 'sem_xml': sem_xml}}
+                       'fora_industria': fora_ind, 'sem_xml': sem_xml, 'st_sem_xml': st_sem_xml,
+                       'sem_retencao': len(sem_ret), 'sem_retencao_icms': round(sum(x['icms'] for x in sem_ret), 2)},
+            'sem_retencao': sem_ret}
 
 
 def aplicar_texto(texto, ids, xmls=None, e116=None):

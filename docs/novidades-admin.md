@@ -3,6 +3,16 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.13
+
+- **ICMS-ST na entrada · o crédito só sai quando o XML mostra a ST retida** (pedido do Rafael, ICMS a recolher subindo demais no teste).
+  - **Produto da ST de RO lançado como tributado:**
+    - **XML com a ST retida** (vICMSST, CST 10/30/60/70 ou CSOSN 201/202/203/500) → 1.403/1.401, CST 60, sem crédito. Como na 2.3.11.
+    - **XML tributado, sem retenção** (CST 00/20) → **não mexe**. O ICMS destacado não é crédito indevido para estornar na apuração. Ou a empresa paga a ST na entrada (antecipação, com o destacado abatendo no cálculo), ou vende com débito; tirar o crédito sem tirar o débito da venda cobraria o imposto duas vezes. A descrição da etapa mostra quantos itens ficaram assim e o ICMS destacado deles.
+    - **Sem XML** → não mexe; a etapa pede os XMLs.
+  - **1.403 com CST tributado e produto da lista de ST:** a mesma regra. Só vai para CST 60 sem crédito se o XML mostrar a ST retida.
+  - **Testado:** conveniência set/2026 com XML simulado (metade das notas com ST retida). 236 itens corrigidos, crédito retirado R$ 5.688,21; 149 itens sem retenção ficaram (ICMS destacado R$ 3.035,53). Sem XML, nada muda e a etapa conta 385 itens sem XML.
+
 ## 2.3.12
 
 - **ICMS-ST na entrada · texto da regra 2 (1.403 com CST tributado e XML tributado).** A linha agora diz que só muda o CFOP (1.403 → 1.102). O valor do XML aparece como "ICMS destacado pelo fornecedor", e a linha mostra o crédito que o SPED tem no item:
