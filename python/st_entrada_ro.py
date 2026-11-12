@@ -166,8 +166,9 @@ def analisar_texto(texto, xmls=None):
                     itens.append({**base, 'regra': 'cst', 'cfop_para': cf, 'cst_para': cst[:1] + '60', 'motivo': why})
                 else:
                     itens.append({**base, 'regra': 'trib', 'cfop_para': cf[:1] + NOVO_TRIB[cf[1:]], 'cst_para': cst,
+                                  'icms_xml': round(it.get('vicms') or 0, 2),
                                   'motivo': f"o XML traz o item tributado, sem ST (CST {it.get('cst') or it.get('csosn')}"
-                                            + (f", ICMS R$ {it['vicms']:.2f}".replace('.', ',') if it.get('vicms') else '') + ')'})
+                                            + (f", ICMS destacado pelo fornecedor R$ {it['vicms']:.2f}".replace('.', ',') if it.get('vicms') else '') + ')'})
     notas = {i['doc'] for i in itens}
     return {'itens': itens,
             'resumo': {'itens': len(itens), 'notas': len(notas), 'valor': round(sum(i['valor'] for i in itens), 2),

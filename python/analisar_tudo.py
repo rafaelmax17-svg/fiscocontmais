@@ -194,7 +194,9 @@ def analisar(sped, xml_dir, permitidas=None):
         rot = {'st': 'produto da ST lançado como tributado', 'cst': 'CFOP de ST com CST tributado: o XML traz ST', 'trib': 'CFOP de ST, mas o XML traz tributado'}
         lin = [{'sel': i['id'], 'nota': f"NF {_num(i['num'])} · {i['forn']}",
                 'det': f"{i['descr']} · NCM {i['ncm'] or '—'} · CFOP {i['cfop_de']} → {i['cfop_para']} · CST {i['cst_de']} → {i['cst_para']} · {rot[i['regra']]}: {i['motivo']}"
-                       + (f" · crédito de ICMS R$ {_fm(i['icms'])} sai" if i['regra'] in ('st', 'cst') and i['icms'] > 0.004 else ''),
+                       + (f" · crédito de ICMS R$ {_fm(i['icms'])} sai" if i['regra'] in ('st', 'cst') and i['icms'] > 0.004 else '')
+                       + ((f" · só muda o CFOP: o crédito de R$ {_fm(i['icms'])} do SPED fica" if i['icms'] > 0.004
+                           else ' · só muda o CFOP: o SPED não tem crédito neste item e o sistema não lança') if i['regra'] == 'trib' else ''),
                 'valor': i['valor'], 'marcado': True} for i in ca_st['itens']]
         r = ca_st['resumo']
         extra = []

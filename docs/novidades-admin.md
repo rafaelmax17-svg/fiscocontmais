@@ -3,6 +3,14 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.12
+
+- **ICMS-ST na entrada · texto da regra 2 (1.403 com CST tributado e XML tributado).** A linha agora diz que só muda o CFOP (1.403 → 1.102). O valor do XML aparece como "ICMS destacado pelo fornecedor", e a linha mostra o crédito que o SPED tem no item:
+  - "o crédito de R$ X do SPED fica"; ou
+  - "o SPED não tem crédito neste item e o sistema não lança".
+
+  Antes o "ICMS R$ X" do XML parecia um crédito a incluir.
+
 ## 2.3.11
 
 - **Corretor do SPED Fiscal · Análise Inteligente · nova etapa "ICMS-ST na entrada"** (`stent`, módulo `st_entrada_ro`). Está **EM TESTE**: só o Admin vê até você ligar para a equipe. Roda depois do uso e consumo e do combustível, antes do DIFAL.
