@@ -46,6 +46,7 @@ TITULOS = {
     'cta_rec': ('Conta contábil em branco na receita (C175 · M400/M410 · M800/M810)', '#6d28d9'),
     'part_mun': ('Participante sem código do município (0150)', '#0891b2'),
     'avulsa': ('NF-e avulsa: CNPJ da chave diferente do participante (situação 08)', '#be123c'),
+    'pf': ('Crédito de PIS/COFINS em compra de pessoa física', '#c2410c'),
     'extemp': ('Crédito extemporâneo (1101/1501 e notas extemporâneas)', '#b45309'),
     'r0900': ('Composição das receitas do período (0900)', '#047857'),
     'contadores': ('Contadores do arquivo (9900, x990, 9999)', '#6b7392'),
@@ -1004,7 +1005,9 @@ def _fix_avulsa(L, acoes, pend, ctx):
     Regra do escritório (Rafael, 06/11/2026): situação do documento 08 (emitido com base em regime especial ou norma
     específica) e itens com CST 70 de PIS/COFINS (aquisição sem direito a crédito), sem base nem crédito."""
     blocos = {i: its for i, _pc, its in _blocos_c100(L)}
+    tirados_todos = []
     for f in det_avulsa(L):
+        tirados = []
         pc = _partes(L[f['i']]['txt'])
         antes = L[f['i']]['txt']
         pc[5] = '08'
@@ -1017,16 +1020,293 @@ def _fix_avulsa(L, acoes, pend, ctx):
             ja = q[24] == '70' and q[30] == '70' and _num(q[29]) == 0 and _num(q[35]) == 0
             if not ja:
                 antes_it = L[j]['txt']
+                tirados += _credito_do_c170(q)
                 _zera_pis_cofins(q, '70')
                 L[j]['txt'] = _monta(q)
                 itens_mudados += 1
                 acoes.append({'cat': 'avulsa', 'tipo': 'alterado', 'linha': L[j]['n'], 'registro': 'C170', 'antes': antes_it, 'depois': L[j]['txt'],
                               'motivo': f"NF-e avulsa {f['num']}: item {q[1]} com CST 70 (aquisição sem direito a crédito), sem base nem crédito."})
+        if tirados:
+            pc = _partes(L[f['i']]['txt'])
+            _baixa_c100(pc, tirados)
+            L[f['i']]['txt'] = _monta(pc)
+            tirados_todos += tirados
         c = f['cnpj_chave']
         acoes.append({'cat': 'avulsa', 'tipo': 'alterado', 'linha': L[f['i']]['n'], 'registro': 'C100', 'antes': antes, 'depois': L[f['i']]['txt'],
                       'motivo': f"NF-e avulsa {f['num']} (série {f['serie']}) · {f['part']}: a chave traz o CNPJ do Fisco "
                                 f"({c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}) → situação 08 (regime especial ou norma específica)."
                                 + (f' {itens_mudados} item(ns) passaram para CST 70.' if itens_mudados else ' Itens já estavam com CST 70.')})
+    return _tira_credito(L, tirados_todos, acoes, pend, ctx, 'avulsa')
+
+
+# ------------------------------------------------------------------ crédito em compra de pessoa física
+# Lei 10.637/2002 (PIS) e Lei 10.833/2003 (COFINS), art. 3º, §3º, I: o direito ao crédito aplica-se exclusivamente aos bens
+# e serviços adquiridos de PESSOA JURÍDICA domiciliada no País. Compra de pessoa física (produtor rural, NF-e avulsa da
+# SEFAZ, nota de produtor) não gera crédito básico (CST 50 a 56). Exceção: crédito presumido da agroindústria
+# (Lei 10.925/2004, art. 8º; IN RFB 2.121/2022), lançado com CST 60 a 66 — esse fica como está.
+_CST_BASICO = ('50', '51', '52', '53', '54', '55', '56')
+_CST_RATEIO = ('53', '54', '55', '56')
+_DIG_CRED = {'50': '1', '51': '2', '52': '3'}             # 1º dígito do COD_CRED do M100/M500 (receita tributada / não tributada / exportação)
+_CFOP_REVENDA = {'102', '403', '113', '117', '118', '121', '652'}
+
+
+def _nat_cfop(cfop):
+    """Natureza da base do crédito (M105/M505) pelo CFOP: 01 bens para revenda · 02 bens utilizados como insumo."""
+    return '01' if (cfop or '')[1:] in _CFOP_REVENDA else '02'
+
+
+def _credito_do_c170(q):
+    """Crédito básico (CST 50 a 56) do item C170 (partes) → [{trib, cst, nat, aliq, base, valor}]."""
+    out = []
+    for trib, k in (('PIS', 24), ('COFINS', 30)):
+        if len(q) > k + 5 and q[k] in _CST_BASICO and (_num(q[k + 1]) or _num(q[k + 5])):
+            out.append({'trib': trib, 'cst': q[k], 'nat': _nat_cfop(q[10]), 'aliq': _num(q[k + 2]), 'base': _num(q[k + 1]), 'valor': _num(q[k + 5])})
+    return out
+
+
+def _baixa_c100(pc, tirados):
+    """C100 (partes): VL_PIS / VL_COFINS menos o crédito que saiu dos itens."""
+    for trib, pos in (('PIS', 25), ('COFINS', 26)):
+        v = sum(t['valor'] for t in tirados if t['trib'] == trib)
+        if v and len(pc) > pos:
+            pc[pos] = _fmt(max(0.0, _num(pc[pos]) - v))
+
+
+def _participantes(L):
+    part = {}
+    for l in L:
+        if _reg(l) == '0150':
+            p = _partes(l['txt'])
+            if len(p) > 5:
+                part[p[1]] = (re.sub(r'\D', '', p[4]), re.sub(r'\D', '', p[5]), p[2])
+    return part
+
+
+def det_pf(L):
+    """Entradas de pessoa física (0150 com CPF e sem CNPJ; ou chave de NF-e emitida por CPF, séries 920 a 969) com
+    crédito básico de PIS/COFINS no item: C100/C170 e serviço tomado A100/A170."""
+    part = _participantes(L)
+    avulsa = {x['i'] for x in det_avulsa(L)}                 # essas a regra da NF-e avulsa já resolve (situação 08 + CST 70)
+    out = []
+    for i, pc, its in _blocos_c100(L):
+        if len(pc) < 9 or pc[1] != '0' or pc[5] in ('02', '03', '04', '05') or i in avulsa:
+            continue
+        cnpj, cpf, nome = part.get(pc[3], ('', '', ''))
+        ch = pc[8]
+        pf = (cpf and not cnpj) or (not cnpj and len(ch) == 44 and '920' <= ch[22:25] <= '969' and ch[6:9] == '000')
+        if not pf:
+            continue
+        itens = [j for j in its if _credito_do_c170(_partes(L[j]['txt']))]
+        if itens:
+            out.append({'i': i, 'reg': 'C100', 'num': pc[7], 'serie': pc[6], 'part': nome, 'cpf': cpf or ch[9:20], 'itens': itens})
+    for i, l in enumerate(L):
+        if _reg(l) != 'A100':
+            continue
+        p = _partes(l['txt'])
+        if len(p) < 18 or p[1] != '0' or p[4] in ('02', '03', '04', '05'):
+            continue
+        cnpj, cpf, nome = part.get(p[3], ('', '', ''))
+        if not cpf or cnpj:
+            continue
+        itens = []
+        for j in range(i + 1, len(L)):
+            r = _reg(L[j])
+            if r == 'A170':
+                q = _partes(L[j]['txt'])
+                if len(q) > 15 and (q[8] in _CST_BASICO or q[12] in _CST_BASICO) and (_num(q[11]) or _num(q[15]) or _num(q[9]) or _num(q[13])):
+                    itens.append(j)
+            elif r not in ('A110', 'A111', 'A120'):
+                break
+        if itens:
+            out.append({'i': i, 'reg': 'A100', 'num': p[7], 'serie': p[5], 'part': nome, 'cpf': cpf, 'itens': itens})
+    return out
+
+
+def _fix_pf(L, acoes, pend, ctx):
+    """Crédito básico de PIS/COFINS em compra de pessoa física sai: item com CST 70 (aquisição sem direito a crédito), sem
+    base nem crédito; total do C100/A100 acompanha; apuração (M105/M100/M200/M205 e M505/M500/M600/M605) refeita.
+    CST 60 a 66 (crédito presumido da agroindústria, Lei 10.925/2004, art. 8º) não é mexido."""
+    tirados_todos = []
+    for f in det_pf(L):
+        tirados = []
+        doc = 'NF' if f['reg'] == 'C100' else 'Nota de serviço'
+        for j in f['itens']:
+            q = _partes(L[j]['txt'])
+            antes = L[j]['txt']
+            if f['reg'] == 'C100':
+                t = _credito_do_c170(q)
+                for trib, k in (('PIS', 24), ('COFINS', 30)):
+                    if any(x['trib'] == trib for x in t):
+                        q[k] = '70'
+                        q[k + 1] = q[k + 5] = '0,00'
+                        q[k + 2] = '0,0000'
+                        q[k + 3] = q[k + 4] = ''
+                cst_antes = '/'.join(sorted({x['cst'] for x in t}))
+            else:
+                t = []
+                for trib, k in (('PIS', 8), ('COFINS', 12)):
+                    if q[k] in _CST_BASICO:
+                        t.append({'trib': trib, 'cst': q[k], 'nat': q[6] or '03', 'aliq': _num(q[k + 2]), 'base': _num(q[k + 1]), 'valor': _num(q[k + 3])})
+                        q[k] = '70'; q[k + 1] = q[k + 3] = '0,00'; q[k + 2] = '0,0000'
+                cst_antes = '/'.join(sorted({x['cst'] for x in t}))
+            L[j]['txt'] = _monta(q)
+            tirados += t
+            v = {x['trib']: x['valor'] for x in t}
+            acoes.append({'cat': 'pf', 'tipo': 'alterado', 'linha': L[j]['n'], 'registro': _reg(L[j]), 'antes': antes, 'depois': L[j]['txt'],
+                          'motivo': f"{doc} {f['num']} de pessoa física ({f['part']}, CPF {f['cpf']}): item {q[1]} com CST {cst_antes} → 70 "
+                                    f"(aquisição sem direito a crédito). Crédito retirado: PIS R$ {_brl(v.get('PIS', 0))} · COFINS R$ {_brl(v.get('COFINS', 0))}. "
+                                    'Lei 10.637/2002 e Lei 10.833/2003, art. 3º, §3º, I: só dá crédito o que é comprado de pessoa jurídica.'})
+        p = _partes(L[f['i']]['txt'])
+        antes = L[f['i']]['txt']
+        if f['reg'] == 'C100':
+            _baixa_c100(p, tirados)
+        else:
+            for trib, kb, kv in (('PIS', 14, 15), ('COFINS', 16, 17)):
+                b = sum(x['base'] for x in tirados if x['trib'] == trib)
+                v = sum(x['valor'] for x in tirados if x['trib'] == trib)
+                p[kb] = _fmt(max(0.0, _num(p[kb]) - b)); p[kv] = _fmt(max(0.0, _num(p[kv]) - v))
+        L[f['i']]['txt'] = _monta(p)
+        if L[f['i']]['txt'] != antes:
+            acoes.append({'cat': 'pf', 'tipo': 'alterado', 'linha': L[f['i']]['n'], 'registro': f['reg'], 'antes': antes, 'depois': L[f['i']]['txt'],
+                          'motivo': f"{doc} {f['num']}: total de PIS/COFINS do documento sem o crédito retirado dos itens."})
+        tirados_todos += tirados
+    return _tira_credito(L, tirados_todos, acoes, pend, ctx, 'pf')
+
+
+def _tira_credito(L, tirados, acoes, pend, ctx, cat):
+    """Refaz a apuração depois de retirar crédito básico de itens: M105/M505 (base por natureza e CST), M100/M500 (crédito,
+    disponível, descontado e saldo), M200/M600 (crédito descontado e contribuição a recolher), M205/M605 (DARF) e o 1100/1500
+    do próprio período. Com rateio (CST 53 a 56) a base se divide entre receitas e não dá para refazer com segurança no
+    arquivo: o item sai corrigido e fica pendência para gerar a apuração de novo."""
+    if not tirados:
+        return L
+    p0 = _partes(L[0]['txt']) if L and _reg(L[0]) == '0000' else []
+    per = (p0[5][2:8] if len(p0) > 5 and len(p0[5]) == 8 else '')
+    remover = set()
+    for trib in ('PIS', 'COFINS'):
+        lst = [t for t in tirados if t['trib'] == trib]
+        if not lst:
+            continue
+        r100, r105, r200, r205, r1100, cod = (('M100', 'M105', 'M200', 'M205', '1100', '6912') if trib == 'PIS'
+                                               else ('M500', 'M505', 'M600', 'M605', '1500', '5856'))
+        total = round(sum(t['valor'] for t in lst), 2)
+        if any(t['cst'] in _CST_RATEIO for t in lst):
+            pend.append({'cat': cat, 'linha': None, 'titulo': f'Apuração de {trib}: gerar de novo',
+                         'detalhe': f'Saiu R$ {_brl(total)} de crédito de {trib} de item com rateio (CST 53 a 56). Os itens já estão corrigidos; '
+                                    f'gere a apuração ({r100}/{r105}/{r200}) de novo no Domínio ou no PVA.'})
+            continue
+        # M100 e filhos
+        blocos = []
+        for i, l in enumerate(L):
+            r = _reg(l)
+            if r == r100:
+                blocos.append({'i': i, 'f': []})
+            elif blocos and r in (r105, 'M110' if trib == 'PIS' else 'M510', 'M115' if trib == 'PIS' else 'M515') and i == (blocos[-1]['f'][-1] if blocos[-1]['f'] else blocos[-1]['i']) + 1:
+                blocos[-1]['f'].append(i)
+        d105, d100, falha = {}, {}, ''
+        for t in lst:
+            dig = _DIG_CRED[t['cst']]
+            cand = [b for b in blocos if _partes(L[b['i']]['txt'])[1][:1] == dig and abs(_num(_partes(L[b['i']]['txt'])[4]) - t['aliq']) < 0.00005]
+            filhos = [(b, j) for b in cand for j in b['f'] if _reg(L[j]) == r105 and _partes(L[j]['txt'])[2] == t['cst']]
+            if len(filhos) > 1:
+                filhos = [x for x in filhos if _partes(L[x[1]]['txt'])[1] == t['nat']] or filhos
+            if len(filhos) != 1:
+                falha = f"não achei um único {r105} para CST {t['cst']}, natureza {t['nat']} e alíquota {_fmt(t['aliq'], 4)}"
+                break
+            b, j = filhos[0]
+            d105[j] = d105.get(j, 0.0) + t['base']
+            x = d100.setdefault(b['i'], {'base': 0.0, 'valor': 0.0, 'b': b})
+            x['base'] += t['base']; x['valor'] += t['valor']
+        if not falha:
+            for j, v in d105.items():
+                if _num(_partes(L[j]['txt'])[3]) + 0.005 < v:
+                    falha = f'a base do {r105} é menor que o crédito retirado'
+        if falha:
+            pend.append({'cat': cat, 'linha': None, 'titulo': f'Apuração de {trib}: gerar de novo',
+                         'detalhe': f'Saiu R$ {_brl(total)} de crédito de {trib} dos itens, mas {falha}. Os itens já estão corrigidos; '
+                                    f'gere a apuração ({r100}/{r105}/{r200}) de novo no Domínio ou no PVA.'})
+            continue
+        for j, v in d105.items():
+            q = _partes(L[j]['txt']); antes = L[j]['txt']
+            for k in (3, 5, 6):                                  # VL_BC_TOT, VL_BC_NC, VL_BC (sem rateio: tudo não cumulativo)
+                q[k] = _fmt(max(0.0, _num(q[k]) - v))
+            if _num(q[3]) == 0:
+                remover.add(j)
+                acoes.append({'cat': cat, 'tipo': 'removido', 'linha': L[j]['n'], 'registro': r105, 'antes': antes, 'depois': '(registro removido)',
+                              'motivo': f'Sem o crédito retirado, a natureza {q[1]} / CST {q[2]} ficou sem base.'})
+            else:
+                L[j]['txt'] = _monta(q)
+                acoes.append({'cat': cat, 'tipo': 'alterado', 'linha': L[j]['n'], 'registro': r105, 'antes': antes, 'depois': L[j]['txt'],
+                              'motivo': f'Base do crédito da natureza {q[1]} / CST {q[2]}: − R$ {_brl(v)}.'})
+        menos_desc = 0.0
+        for i, x in d100.items():
+            q = _partes(L[i]['txt']); antes = L[i]['txt']
+            disp_antes, desc_antes, sld_antes = _num(q[11]), _num(q[13]), _num(q[14])
+            q[3] = _fmt(max(0.0, _num(q[3]) - x['base']))
+            q[7] = _fmt(max(0.0, _num(q[7]) - x['valor']))
+            disp = round(_num(q[7]) + _num(q[8]) - _num(q[9]) - _num(q[10]), 2)
+            desc = round(min(desc_antes, max(0.0, disp)), 2)
+            q[11], q[13], q[14] = _fmt(max(0.0, disp)), _fmt(desc), _fmt(max(0.0, disp - desc))
+            menos_desc += desc_antes - desc
+            vivos = [j for j in x['b']['f'] if j not in remover]
+            if not vivos and all(_num(q[k]) == 0 for k in (3, 7, 8, 9, 11, 13, 14)):
+                remover.add(i)
+                acoes.append({'cat': cat, 'tipo': 'removido', 'linha': L[i]['n'], 'registro': r100, 'antes': antes, 'depois': '(registro removido)',
+                              'motivo': f'Sem o crédito retirado, o crédito {q[1]} ficou zerado.'})
+            else:
+                L[i]['txt'] = _monta(q)
+                acoes.append({'cat': cat, 'tipo': 'alterado', 'linha': L[i]['n'], 'registro': r100, 'antes': antes, 'depois': L[i]['txt'],
+                              'motivo': f"Crédito {q[1]} sem o valor retirado: crédito − R$ {_brl(x['valor'])}, descontado R$ {_brl(desc_antes)} → R$ {_brl(desc)}"
+                                        + (f", saldo R$ {_brl(sld_antes)} → R$ {_brl(_num(q[14]))}" if sld_antes or _num(q[14]) else '') + '.'})
+            # 1100/1500 deste período (crédito com saldo para os próximos meses)
+            if abs(_num(q[14]) - sld_antes) > 0.004 or abs(disp - disp_antes) > 0.004:
+                for k, l in enumerate(L):
+                    if _reg(l) != r1100:
+                        continue
+                    c = _partes(l['txt'])
+                    if len(c) < 18 or c[1] != per or c[4] != q[1]:
+                        continue
+                    antes_c = l['txt']
+                    dd = disp_antes - max(0.0, disp)
+                    for kk in (5, 7, 11):
+                        c[kk] = _fmt(max(0.0, _num(c[kk]) - dd))
+                    c[12] = _fmt(desc)
+                    c[17] = _fmt(max(0.0, _num(c[11]) - _num(c[12]) - sum(_num(c[kk]) for kk in (13, 14, 15, 16))))
+                    l['txt'] = _monta(c)
+                    acoes.append({'cat': cat, 'tipo': 'alterado', 'linha': l['n'], 'registro': r1100, 'antes': antes_c, 'depois': l['txt'],
+                                  'motivo': f'Controle do crédito {q[1]} de {per[:2]}/{per[2:]}: crédito apurado − R$ {_brl(dd)}, saldo final refeito.'})
+        menos_desc = round(menos_desc, 2)
+        if menos_desc > 0.004:
+            m = next((i for i, l in enumerate(L) if _reg(l) == r200), None)
+            if m is not None:
+                p = _partes(L[m]['txt']); antes = L[m]['txt']
+                p[2] = _fmt(max(0.0, _num(p[2]) - menos_desc))
+                p[4] = _fmt(_num(p[1]) - _num(p[2]) - _num(p[3]))
+                p[7] = _fmt(_num(p[4]) - _num(p[5]) - _num(p[6]))
+                p[12] = _fmt(_num(p[7]) + _num(p[11]))
+                L[m]['txt'] = _monta(p)
+                ctx.setdefault('recalc', []).append({'trib': trib, 'registro': r200, 'linha': L[m]['n'],
+                                                     'campos': [{'campo': 'VL_TOT_CRED_DESC', 'antes': _num(_partes(antes)[2]), 'depois': _num(p[2])},
+                                                                {'campo': 'VL_TOT_CONT_REC', 'antes': _num(_partes(antes)[12]), 'depois': _num(p[12])}],
+                                                     'antes': antes, 'depois': L[m]['txt'], 'motivo': f'Crédito de {trib} retirado: R$ {_brl(menos_desc)} a mais a recolher.'})
+                acoes.append({'cat': cat, 'tipo': 'alterado', 'linha': L[m]['n'], 'registro': r200, 'antes': antes, 'depois': L[m]['txt'],
+                              'motivo': f'O crédito de {trib} que deixou de ser descontado (R$ {_brl(menos_desc)}) volta para a contribuição a recolher.'})
+                alvos = [i for i, l in enumerate(L) if _reg(l) == r205]
+                if alvos:
+                    alvo = next((i for i in alvos if _partes(L[i]['txt'])[2].startswith(cod)), next((i for i in alvos if _partes(L[i]['txt'])[1] == '08'), alvos[0]))
+                    q = _partes(L[alvo]['txt']); antes2 = L[alvo]['txt']
+                    q[3] = _fmt(_num(q[3]) + menos_desc)
+                    L[alvo]['txt'] = _monta(q)
+                    acoes.append({'cat': cat, 'tipo': 'alterado', 'linha': L[alvo]['n'], 'registro': r205, 'antes': antes2, 'depois': L[alvo]['txt'],
+                                  'motivo': f'Débito a recolher do código {q[2]} acompanha o {r200}: + R$ {_brl(menos_desc)}.'})
+                else:
+                    sub = '691201' if trib == 'PIS' else '585601'
+                    L.insert(m + 1, {'n': None, 'txt': _monta([r205, '08', sub, _fmt(menos_desc)]), 'novo': True})
+                    remover = {k + 1 if k > m else k for k in remover}
+                    acoes.append({'cat': cat, 'tipo': 'incluido', 'linha': None, 'registro': r205, 'antes': '(não existia)', 'depois': L[m + 1]['txt'],
+                                  'motivo': f'Contribuição a recolher passou a existir: código {sub}, R$ {_brl(menos_desc)}.'})
+    if remover:
+        L = [l for k, l in enumerate(L) if k not in remover]
     return L
 
 
@@ -1587,24 +1867,24 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
         'natureza': det_natureza(L), 'm410': det_m410(L), 'cta': det_cta(L), 'contadores': det_contadores(L),
         'cta_item': det_cta_item(L), 'cta_m400': det_cta_m400(L), 'c100sem': det_c100sem(L), 'a100sem': det_a100sem(L),
         'cst_ent': det_cst_ent(L), 'cta_rec': det_cta_rec(L), 'part_mun': det_part_mun(L), 'avulsa': det_avulsa(L), 'r0900': [],
-        'vlmerc': det_vlmerc(L), 'extemp': det_extemp(L),
+        'vlmerc': det_vlmerc(L), 'extemp': det_extemp(L), 'pf': det_pf(L),
     }
     atencao = det_atencao_aliquota(L)
     n_antes = len(L)
     acoes, pend = [], []
     for fix in (_fix_extemp, _fix_cpf, _fix_c100, _fix_c175dup, _fix_mdup, _fix_msoma, _fix_natureza, _fix_m105, _fix_m410, _fix_cta,
                 _fix_0500, _fix_cta_itens, _fix_cta_m400, _fix_c100sem, _fix_a100sem,
-                _fix_vlmerc, _fix_cst_ent, _fix_cta_rec, _fix_part_mun, _fix_avulsa, _fix_0900):
+                _fix_vlmerc, _fix_cst_ent, _fix_cta_rec, _fix_part_mun, _fix_avulsa, _fix_pf, _fix_0900):
         L = fix(L, acoes, pend, ctx)
     L = _recontar(L, acoes)
     depois = {'cpf': det_cpf(L), 'c100': det_c100(L), 'c175dup': det_c175dup(L), 'mdup': det_mdup(L), 'msoma': det_msoma(L),
               'natureza': det_natureza(L), 'm410': det_m410(L), 'cta': det_cta(L), 'contadores': det_contadores(L),
               'cta_item': det_cta_item(L), 'cta_m400': det_cta_m400(L), 'c100sem': det_c100sem(L), 'a100sem': det_a100sem(L),
-              'cst_ent': det_cst_ent(L), 'cta_rec': det_cta_rec(L), 'part_mun': det_part_mun(L), 'avulsa': det_avulsa(L), 'r0900': [], 'vlmerc': det_vlmerc(L), 'extemp': det_extemp(L)}
+              'cst_ent': det_cst_ent(L), 'cta_rec': det_cta_rec(L), 'part_mun': det_part_mun(L), 'avulsa': det_avulsa(L), 'r0900': [], 'vlmerc': det_vlmerc(L), 'extemp': det_extemp(L), 'pf': det_pf(L)}
     pva_cat = (pva or {}).get('por_cat', {})
     dup_total = pva_cat.get('dup')
     cats = []
-    for cid in ('cpf', 'c100', 'c175dup', 'mdup', 'msoma', 'natureza', 'm105', 'm410', 'cta', 'cta_item', 'cta_m400', 'c100sem', 'a100sem', 'vlmerc', 'cst_ent', 'cta_rec', 'part_mun', 'avulsa', 'extemp', 'r0900', 'contadores'):
+    for cid in ('cpf', 'c100', 'c175dup', 'mdup', 'msoma', 'natureza', 'm105', 'm410', 'cta', 'cta_item', 'cta_m400', 'c100sem', 'a100sem', 'vlmerc', 'cst_ent', 'cta_rec', 'part_mun', 'avulsa', 'pf', 'extemp', 'r0900', 'contadores'):
         titulo, cor = TITULOS[cid]
         a_cat = [a for a in acoes if a['cat'] == cid]
         pendentes = sum(x.get('qtd', 1) for x in pend if x['cat'] == cid)
@@ -1638,6 +1918,8 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
             corrigidos = len([x for x in a_cat if x['registro'] in ('1101', '1102', '1501', '1502', 'C170')])
         elif cid == 'avulsa':
             achados, corrigidos = len(antes[cid]), len([x for x in a_cat if x['registro'] == 'C100'])
+        elif cid == 'pf':
+            achados, corrigidos = len(antes[cid]), len(antes[cid]) - len(depois[cid])
         elif cid == 'r0900':
             achados, corrigidos = len(a_cat), len(a_cat)
         else:
@@ -1664,6 +1946,7 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
         ('Conta em branco na receita (C175/M400/M410/M800/M810)', len(antes['cta_rec']), len(depois['cta_rec'])),
         ('Participante sem código do município', len(antes['part_mun']), len(depois['part_mun'])),
         ('NF-e avulsa com CNPJ da chave ≠ participante', len(antes['avulsa']), len(depois['avulsa'])),
+        ('Crédito de PIS/COFINS em compra de pessoa física', len(antes['pf']), len(depois['pf'])),
         ('Crédito extemporâneo (1101/1501 e notas situação 01)', len(antes['extemp']), len(depois['extemp'])),
         ('Contadores (9900/x990/9999) divergentes', len(antes['contadores']), len(depois['contadores'])),
     ]
@@ -1767,7 +2050,9 @@ _EXPLICA = {
     'part_mun': ('Participante do Brasil precisa do código do município (IBGE).',
                  'Participante genérico ("diversos") recebe o município da empresa. Os demais ficam como pendência para corrigir o cadastro.'),
     'avulsa': ('NF-e avulsa (série 890 a 899) é emitida pelo Fisco: a chave traz o CNPJ da SEFAZ, e o PVA acusa diferença com o participante.',
-               'Regra do escritório: a nota passa para a situação 08 (documento emitido com base em regime especial ou norma específica) e os itens ficam com CST 70 de PIS/COFINS (aquisição sem direito a crédito), sem base nem crédito.'),
+               'Regra do escritório: a nota passa para a situação 08 (documento emitido com base em regime especial ou norma específica) e os itens ficam com CST 70 de PIS/COFINS (aquisição sem direito a crédito), sem base nem crédito. Se havia crédito, a apuração (M105/M100/M200/M205 e M505/M500/M600/M605) é refeita.'),
+    'pf': ('Compra de pessoa física não gera crédito de PIS/COFINS: o crédito vale exclusivamente para bens e serviços adquiridos de pessoa jurídica domiciliada no País (Lei 10.637/2002 e Lei 10.833/2003, art. 3º, §3º, I). Vale para produtor rural com NF-e avulsa da SEFAZ (séries 890 a 899), NF-e emitida por CPF (séries 920 a 969), nota de produtor e serviço tomado de pessoa física.',
+           'O item com crédito básico (CST 50 a 56) passou para CST 70 (aquisição sem direito a crédito), sem base nem crédito; o total do documento e a apuração (M105/M100/M200/M205 e M505/M500/M600/M605, e o 1100/1500 do período) foram refeitos. Crédito presumido da agroindústria (CST 60 a 66, Lei 10.925/2004, art. 8º) é permitido na compra de pessoa física e não foi mexido. Com rateio (CST 53 a 56), os itens saem corrigidos e fica pendência para gerar a apuração de novo.'),
     'extemp': ('O PVA não valida nem permite registros de crédito extemporâneo (1101/1501) em escrituração a partir de 08/2013: a linha dá "Estrutura da linha inválida" e o bloco 1 e o total do arquivo deixam de bater. O crédito extemporâneo deve ser tomado pela retificação da escrituração do período da nota.',
                'Regra do escritório: o crédito extemporâneo sai deste arquivo. Os 1101/1501 são retirados, o 1100/1500 fica sem o valor extemporâneo, e o que tinha sido descontado aqui volta para a contribuição a recolher (M200/M600 e M205/M605). Nota de entrada extemporânea (situação 01) com crédito no C170 fica com CST 70, sem base nem crédito.'),
     'r0900': ('Escrituração entregue depois do prazo precisa do 0900 (composição das receitas do período).',
@@ -1775,7 +2060,7 @@ _EXPLICA = {
     'contadores': ('Depois das correções o número de linhas muda, então os contadores do arquivo ficam errados.',
                    'Os contadores 9900, x990 e 9999 foram refeitos. Não é um erro do PVA: é consequência das correções.'),
 }
-_CURTO = {'cpf': 'CPF', 'c100': 'C100', 'c175dup': 'C175 duplic.', 'mdup': 'M210/M610', 'msoma': 'M205/M605', 'natureza': 'Natureza 0400', 'm105': 'M105/M505', 'm410': 'M410/M810', 'cta': 'COD_CTA ajustes', 'cta_item': 'COD_CTA itens', 'cta_m400': 'Conta M400', 'c100sem': 'C100 s/ item', 'a100sem': 'A100 s/ item', 'vlmerc': 'VL_MERC', 'cst_ent': 'CST entrada', 'cta_rec': 'Conta receita', 'part_mun': 'Município 0150', 'avulsa': 'NF-e avulsa', 'extemp': 'Extemporâneo', 'r0900': '0900'}
+_CURTO = {'cpf': 'CPF', 'c100': 'C100', 'c175dup': 'C175 duplic.', 'mdup': 'M210/M610', 'msoma': 'M205/M605', 'natureza': 'Natureza 0400', 'm105': 'M105/M505', 'm410': 'M410/M810', 'cta': 'COD_CTA ajustes', 'cta_item': 'COD_CTA itens', 'cta_m400': 'Conta M400', 'c100sem': 'C100 s/ item', 'a100sem': 'A100 s/ item', 'vlmerc': 'VL_MERC', 'cst_ent': 'CST entrada', 'cta_rec': 'Conta receita', 'part_mun': 'Município 0150', 'avulsa': 'NF-e avulsa', 'pf': 'Compra de PF', 'extemp': 'Extemporâneo', 'r0900': '0900'}
 
 
 def _mix(hexc, alvo, f):

@@ -3,6 +3,28 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.10
+
+- **Correção da EFD-Contribuições · nova regra "Crédito de PIS/COFINS em compra de pessoa física"** (categoria `pf`).
+  - **Base legal:** Lei 10.637/2002 e Lei 10.833/2003, art. 3º, §3º, I. O crédito vale exclusivamente para bens e serviços comprados de pessoa jurídica domiciliada no País.
+  - **Como reconhece:** entrada (C100 IND_OPER 0, sem as canceladas) cujo participante no 0150 tem CPF e não tem CNPJ, ou cuja chave é de NF-e emitida por CPF (séries 920 a 969). Também o serviço tomado (A100/A170) de pessoa física. O que conta é o CPF, não a série: nota da série 892 com CNPJ (MEI) é pessoa jurídica e não entra.
+  - **O que faz:** item com crédito básico (CST 50 a 56) passa para CST 70, sem base nem crédito. O VL_PIS e o VL_COFINS do C100 (ou os totais do A100) acompanham.
+  - **Recálculo da apuração:** o sistema refaz M105/M505, M100/M500 (crédito, disponível, descontado e saldo), M200/M600, M205/M605 e o 1100/1500 do próprio período. O M105 é escolhido pelo CST, pela alíquota do M100 e pela natureza do CFOP (01 revenda: x.102, x.403…; 02 insumo: x.101, x.401…).
+  - **Com rateio (CST 53 a 56):** os itens saem corrigidos e fica pendência para gerar a apuração de novo no Domínio ou no PVA.
+  - **CST 60 a 66 não é mexido:** é o crédito presumido da agroindústria (Lei 10.925/2004, art. 8º; IN RFB 2.121/2022), permitido em compra de pessoa física.
+  - **Regra "NF-e avulsa" (de 06/11):** agora também refaz a apuração quando havia crédito. Nota que essa regra corrige não é contada de novo em "compra de pessoa física".
+  - **Testado:** SUDARIO set/2026 com crédito de CST 50 colocado em 2 notas série 891 de produtor (PIS R$ 34,41, COFINS R$ 158,48). Depois da correção, M100/M105/M200/M205 e M500/M505/M600/M605 voltaram exatamente aos valores originais. Com a situação 00, a regra da NF-e avulsa fez o mesmo. Com CST 60, nada foi alterado.
+- **Corretor do SPED Fiscal · Análise Inteligente · nova etapa "Uso e consumo lançado como revenda"** (`ucons`, **EM TESTE**: ligada só para o Admin até você ligar para a equipe).
+  - **Como reconhece:** item de entrada cujo produto (0200 DESCR_ITEM ou DESCR_COMPL do C170) diz "USO E CONSUMO", como o "PROD USO E CONSUMO" do Domínio, com CFOP de compra ou transferência (x.101, x.102, x.111, x.113, x.116 a x.118, x.120 a x.122, x.401, x.403, x.151, x.152, x.408, x.409).
+  - **Para qual CFOP vai:**
+    - com ST (x.401/x.403 ou CST do ICMS terminado em 10, 30, 60 ou 70) → 1.407 / 2.407;
+    - demais compras → 1.556 / 2.556 / 3.556;
+    - transferência → 1.557 / 2.557.
+  - **C190:** é dividido quando só parte do grupo muda, com a mesma rotina do combustível (`combustivel_cfop.troca_cfop`).
+  - **Ordem:** roda logo depois da Validação do PVA, antes do combustível e do DIFAL. Assim o crédito de ICMS em uso e consumo e o DIFAL de 2.556/2.407 já são tratados pela etapa "Uso e consumo · DIFAL e crédito".
+  - **COD_NAT (acumulador):** não muda.
+  - **Testado:** 3 notas simuladas com o produto 131479 em 1.102 / 1.403 → 1.556 / 1.407, C190 dividido e conferido com os C170. Os 2 itens com ICMS creditado (R$ 20,88) saíram pelo DIFAL e crédito.
+
 ## 2.3.9
 
 - **Corretor do SPED Fiscal · nova tela da "Análise Inteligente"** (o antigo "🔎 Analisar tudo").

@@ -168,6 +168,15 @@ def analisar_texto(texto, xmls=None):
 
 def aplicar_texto(texto, ids, xmls=None):
     """ids: lista de 'doc:NUM_ITEM' (C170) ou 'doc:*' (nota sem C170, pelo XML). -> (texto_novo, resumo)."""
+    aviso = ('Há nota com DIFAL de uso e consumo lançado (C197 RO40000002). Combustível e lubrificante não são '
+             'uso e consumo: confira esse DIFAL em "Uso e consumo · DIFAL e crédito".')
+    return troca_cfop(texto, ids, xmls, analisar_texto, lambda cf: cf[1:] in CFOP_ORIGEM, lambda cf, cst: _novo_cfop(cf), aviso, 'combustível')
+
+
+def troca_cfop(texto, ids, xmls, analisar, origem, novo_cfop, aviso_difal='', rotulo=''):
+    """Troca o CFOP dos itens escolhidos (C170) e refaz o C190 (divide quando só parte do grupo muda).
+    origem(cfop) diz se o CFOP do item pode mudar; novo_cfop(cfop, cst_icms) dá o CFOP novo — o mesmo para todo o
+    grupo do C190 (CST, CFOP, alíquota). Usado pelo combustível (x.653) e pelo uso e consumo (x.556/x.407/x.557)."""
     import fiscal_core as fc
     linhas, quebra, final_vazio = dr.dividir(texto)
     fim = next((i for i, l in enumerate(linhas) if l.startswith('|9999|')), None)
@@ -175,7 +184,7 @@ def aplicar_texto(texto, ids, xmls=None):
     if assinado:
         linhas = linhas[:fim + 1]
         final_vazio = True
-    an = analisar_texto(quebra.join(linhas) + quebra, xmls)
+    an = analisar(quebra.join(linhas) + quebra, xmls)
     validos = {i['id'] for i in an['itens']}
     ids = [x for x in ids if x in validos]
     _, _, docs = _estrutura(linhas)
@@ -189,8 +198,8 @@ def aplicar_texto(texto, ids, xmls=None):
         d = docs[k]
         if '*' in sel:                                  # nota sem C170: o C190 inteiro vai para x.653
             for i, c in d['c190']:
-                if len(c) > 3 and c[3][1:] in CFOP_ORIGEM:
-                    n = c[:]; n[3] = _novo_cfop(c[3]); trocas[i] = '|'.join(n)
+                if len(c) > 3 and origem(c[3]):
+                    n = c[:]; n[3] = novo_cfop(c[3], c[2]); trocas[i] = '|'.join(n)
             res['notas'] += 1
             res['itens'] += sum(1 for x in an['itens'] if x['doc'] == k)
             continue
@@ -202,7 +211,7 @@ def aplicar_texto(texto, ids, xmls=None):
             g = grupos[(c[10], c[11], _aliq(c[14]))]
             v = _f(c[7]) - _f(c[8])
             g['tot'] += v; g['n_tot'] += 1
-            if c[2] in sel and c[11][1:] in CFOP_ORIGEM:
+            if c[2] in sel and origem(c[11]):
                 g['mov'] += v; g['n_mov'] += 1
                 g['bc'] += _f(c[13]); g['icms'] += _f(c[15])
                 g['bcst'] += _f(c[16]) if len(c) > 16 else 0; g['st'] += _f(c[18]) if len(c) > 18 else 0
@@ -214,12 +223,12 @@ def aplicar_texto(texto, ids, xmls=None):
             g = grupos.get(key)
             if g and g['n_mov'] and g['n_mov'] < g['n_tot'] and i in d['c191']:
                 bloqueados.add(key)
-                res['avisos'].append(f'NF {d["c"][8]}: o resumo CST {c[2]}/CFOP {c[3]} tem C191 (FCP) e só parte dos itens é combustível; '
+                res['avisos'].append(f'NF {d["c"][8]}: o resumo CST {c[2]}/CFOP {c[3]} tem C191 (FCP) e só parte dos itens é {rotulo}; '
                                      'esses itens ficaram como estavam.')
         mudou = False
         for i, c in d['c170']:
-            if len(c) > 11 and c[2] in sel and c[11][1:] in CFOP_ORIGEM and (c[10], c[11], _aliq(c[14])) not in bloqueados:
-                n = c[:]; n[11] = _novo_cfop(c[11]); trocas[i] = '|'.join(n)
+            if len(c) > 11 and c[2] in sel and origem(c[11]) and (c[10], c[11], _aliq(c[14])) not in bloqueados:
+                n = c[:]; n[11] = novo_cfop(c[11], c[10]); trocas[i] = '|'.join(n)
                 res['itens'] += 1; mudou = True
         existentes = {(c[2], c[3], _aliq(c[4])): (i, c) for i, c in d['c190']}
         for i, c in d['c190']:
@@ -227,7 +236,7 @@ def aplicar_texto(texto, ids, xmls=None):
             g = grupos.get(key)
             if not g or not g['n_mov'] or key in bloqueados:
                 continue
-            novo_cf = _novo_cfop(c[3])
+            novo_cf = novo_cfop(c[3], c[2])
             destino = existentes.get((c[2], novo_cf, key[2]))
             if g['n_mov'] == g['n_tot'] and not destino:
                 n = c[:]; n[3] = novo_cf; trocas[i] = '|'.join(n)
@@ -270,12 +279,11 @@ def aplicar_texto(texto, ids, xmls=None):
     if res['itens']:
         linhas = fc._recalcula_fechamentos_bloco(linhas)
         linhas = fc._recalcula_bloco9_global(linhas)
-    if any(i['tem_difal'] for i in an['itens'] if i['id'] in set(ids)):
-        res['avisos'].append('Há nota com DIFAL de uso e consumo lançado (C197 RO40000002). Combustível e lubrificante não são '
-                             'uso e consumo: confira esse DIFAL em "Uso e consumo · DIFAL e crédito".')
+    if aviso_difal and any(i.get('tem_difal') for i in an['itens'] if i['id'] in set(ids)):
+        res['avisos'].append(aviso_difal)
     if assinado:
         res['avisos'].append('O arquivo estava assinado no PVA: a assinatura foi retirada (ela deixa de valer com a alteração). Valide e assine de novo no PVA.')
-    depois = analisar_texto(quebra.join(linhas) + quebra, xmls)
+    depois = analisar(quebra.join(linhas) + quebra, xmls)
     res['restantes'] = depois['resumo']['itens']
     return quebra.join(linhas) + (quebra if final_vazio else ''), res
 

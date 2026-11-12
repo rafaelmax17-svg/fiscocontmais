@@ -4,6 +4,7 @@
 Roda TODAS as conferências do Corretor sobre o mesmo SPED e devolve um painel único; nada muda até "Aplicar tudo".
 Ordem (é também a ordem de aplicação, uma sobre a outra, no mesmo arquivo):
   1) Validação do PVA ............ fiscal_core.corrigir_sped_fiscal + ajusta_campos_c197 (sempre aplicada)
+  1a) Uso e consumo como revenda .. uso_consumo_cfop (produto "USO E CONSUMO" com CFOP de revenda/industrialização → x.556/x.407/x.557)
   1b) Combustível × uso e consumo  combustivel_cfop (x.556/x.407 → x.653; antes do DIFAL, que não vale para combustível)
   2) Uso e consumo · DIFAL e crédito  difal_ro (CFOP pela UF, DIFAL, balcão, frete, crédito em uso e consumo)
   3) Desconto × XML .............. desconto_xml
@@ -30,7 +31,7 @@ Escolhas (aplicar):
    "difal": {"<id da decisão>": "incluir"|"nao"|..., "cfop:<id>": false, "cred:<id doc>": false, "cred_modo": "zerar"|"estorno"},
    "desconto": {"<chave>": false}, "icms": {"<chave>": false}, "valor": {"<chave>": false},
    "simples": {"<chave>": false}, "maca": {"<chave da nota ou nº|série|fornecedor>": false},
-   "acum": {"<COD_ITEM>": "70xx"|false}, "cad": {"<COD_ITEM>": "07"|"08"|false}, "comb": {"<doc:item>": false},
+   "acum": {"<COD_ITEM>": "70xx"|false}, "cad": {"<COD_ITEM>": "07"|"08"|false}, "comb": {"<doc:item>": false}, "ucons": {"<doc:item>": false},
    "e116": {"venc": "ddmmaaaa", "cod_rec": "..."}}
 Gera arquivo NOVO; o original nunca é alterado.
 """
@@ -49,6 +50,7 @@ import acumulador_despesa as ad
 import cadastro_0200 as c2
 import credito_maca as cm
 import combustivel_cfop as cc
+import uso_consumo_cfop as uc
 import unidade_xml as ux
 from xml_entradas import ler_xmls
 
@@ -73,12 +75,20 @@ def _pode(permitidas, k):
     return permitidas is None or k == 'validacao' or k in permitidas
 
 
-def _comb_todas(texto, xmls):
-    """Arquivo com todas as sugestões do combustível aplicadas (base do plano do DIFAL na análise)."""
-    a = cc.analisar_texto(texto, xmls)
+def _todas(mod, texto, xmls):
+    """Arquivo com todas as sugestões de uma troca de CFOP aplicadas (uso e consumo / combustível) — base das etapas seguintes."""
+    a = mod.analisar_texto(texto, xmls)
     if not a['itens']:
         return texto, a
-    return cc.aplicar_texto(texto, [i['id'] for i in a['itens']], xmls)[0], a
+    return mod.aplicar_texto(texto, [i['id'] for i in a['itens']], xmls)[0], a
+
+
+def _base_analise(corr, xmls, permitidas):
+    """O arquivo que a análise usa depois das trocas de CFOP (uso e consumo, combustível)."""
+    for k, mod in (('ucons', uc), ('comb', cc)):
+        if _pode(permitidas, k):
+            corr = _todas(mod, corr, xmls)[0]
+    return corr
 
 
 def _ids_notas(texto):
@@ -134,9 +144,11 @@ def analisar(sped, xml_dir, permitidas=None):
     cab = ls._cab(texto) or {}
     pode = lambda k: _pode(permitidas, k)
     corr_v = corr                                     # arquivo só com a validação (é o que a etapa 1 mostra)
-    ca_comb = None
+    ca_uc = ca_comb = None
+    if pode('ucons'):
+        corr, ca_uc = _todas(uc, corr, xmls)         # as demais etapas olham o arquivo já com o CFOP de uso e consumo
     if pode('comb'):
-        corr, ca_comb = _comb_todas(corr_v, xmls)     # as demais etapas olham o arquivo já com o combustível
+        corr, ca_comb = _todas(cc, corr, xmls)       # … e com o combustível
     auto, dec, an, sn = ls.plano_empresa(corr, xmls, lidos)
     por_doc = {d['id']: d for d in an['docs']}
     itens_sped = _itens_sped(corr)
@@ -155,6 +167,20 @@ def analisar(sped, xml_dir, permitidas=None):
     etapas.append({'key': 'validacao', 'titulo': 'Validação do PVA', 'desc': 'C191, E500, GTIN, CEST, COD_NAT, C197 com campo a mais, totais do C100',
                    'qtd': f'{n_val} correção(ões)' if n_val else 'nada encontrado', 'valor': '', 'badge': 'aplica sozinho' if n_val else 'sem correção',
                    'tipo': 'auto' if n_val else 'zero', 'fixo': True, 'grupos': [{'id': 'val', 'titulo': 'Correções de validação', 'linhas': linhas_val}] if n_val else []})
+
+    # 1a) produto de uso e consumo lançado como revenda / industrialização → x.556 / x.407 / x.557 (antes do DIFAL)
+    if ca_uc is not None:
+        lin = [{'sel': i['id'], 'nota': f"NF {_num(i['num'])} · {i['forn']}",
+                'det': f"{i['descr']} · CFOP {i['cfop_de']} → {i['cfop_para']} ({i['motivo']}, CST {i['cst']})"
+                       + (f" · ICMS creditado R$ {_fm(i['icms'])}: sai em DIFAL e crédito" if i['icms'] > 0.004 else ''),
+                'valor': i['valor'], 'marcado': True} for i in ca_uc['itens']]
+        r = ca_uc['resumo']
+        etapas.append({'key': 'ucons', 'titulo': 'Uso e consumo lançado como revenda', 'desc': 'produto "USO E CONSUMO" com CFOP de revenda ou industrialização → 1.556 / 2.556 (com ST: 1.407 / 2.407)',
+                       'qtd': f"{r['itens']} item(ns) · {r['notas']} nota(s)" if r['itens'] else 'nada encontrado',
+                       'valor': f"R$ {_fm(r['valor'])}" if r['itens'] else '', 'badge': 'pode corrigir' if r['itens'] else 'sem correção',
+                       'tipo': 'auto' if r['itens'] else 'zero',
+                       'grupos': [{'id': 'ucons', 'titulo': 'Itens de uso e consumo com CFOP de revenda ou industrialização', 'sugestao': 'CFOP de uso e consumo',
+                                   'linhas': lin}] if lin else []})
 
     # 1b) combustível e lubrificante com CFOP de uso e consumo → x.653 (antes do DIFAL)
     if ca_comb is not None:
@@ -369,8 +395,16 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
     liga = lambda k: _pode(permitidas, k) and (esc.get('etapas') or {}).get(k, True) is not False
     texto, enc, corr, rc, xmls, lidos, erros = _base(sped, xml_dir)
     final, resumo, avisos = corr, {}, []
+    base_an = _base_analise(corr, xmls, permitidas)                               # o que a análise usou
+    # 1a) uso e consumo lançado como revenda (antes do DIFAL)
+    if liga('ucons'):
+        eu = esc.get('ucons') or {}
+        ids = [i['id'] for i in uc.analisar_texto(final, xmls)['itens'] if eu.get(i['id'], True) is not False]
+        if ids:
+            final, r = uc.aplicar_texto(final, ids, xmls)
+            resumo['ucons'] = {'itens': r['itens'], 'notas': r['notas'], 'c190': r['c190_divididos']}
+            avisos += r.get('avisos') or []
     # 1b) combustível × uso e consumo (antes do DIFAL)
-    base_an = _comb_todas(corr, xmls)[0] if _pode(permitidas, 'comb') else corr     # o que a análise usou
     if liga('comb'):
         ec = esc.get('comb') or {}
         ids = [i['id'] for i in cc.analisar_texto(final, xmls)['itens'] if ec.get(i['id'], True) is not False]
