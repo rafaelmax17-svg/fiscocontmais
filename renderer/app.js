@@ -571,7 +571,7 @@ function switchView(name) {
   if (name === 'admin-integra') { $('#view-admin-integra').hidden = false; $('#empty').hidden = true; if (window._integraEntrar) window._integraEntrar(); return; }
   if (name === 'admin-lic') { $('#view-admin-lic').hidden = false; $('#empty').hidden = true; loadLicensePanel(); return; }
   if (name === 'admin-usuarios') { $('#view-admin-usuarios').hidden = false; $('#empty').hidden = true; loadUsuarios(); return; }
-  if (name === 'admin-corrigir-sped') { $('#view-admin-corrigir-sped').hidden = false; $('#empty').hidden = true; return; }
+  if (name === 'admin-corrigir-sped') { $('#view-admin-corrigir-sped').hidden = false; $('#empty').hidden = true; if (window._corrEntrar) window._corrEntrar(); return; }
   if (name === 'admin-corrigir-efd') { $('#view-admin-corrigir-efd').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-lmc') { $('#view-admin-lmc').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-audam') { $('#view-admin-audam').hidden = false; $('#empty').hidden = true; return; }
@@ -1463,7 +1463,7 @@ function bindFiscal() {
     // ⚡ Automatizar correção → "Abrir no modo manual" de um cliente: escolhe o SPED (e a pasta de XMLs) como se fosse à mão
     window.__corrAbrirManual = (sped, xmls) => {
       corrSpedPath = sped; FISCAL.corrSpedPath = sped;
-      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad', '#btnCorrMaca', '#btnCorrTudo', '#btnCorrDesc', '#btnCorrUnid', '#btnCorrComb'].forEach((id) => { $(id).disabled = false; });
+      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad', '#btnCorrMaca', '#btnCorrDesc', '#btnCorrUnid', '#btnCorrComb'].forEach((id) => { $(id).disabled = false; });
       $('#corrUnid').hidden = true; $('#corrUnid').innerHTML = ''; $('#corrComb').hidden = true; $('#corrComb').innerHTML = '';
       $('#corrMaca').hidden = true; $('#corrMaca').innerHTML = '';
       $('#corrTudo').hidden = true; $('#corrTudo').innerHTML = ''; $('#corrDesc').hidden = true; $('#corrDesc').innerHTML = '';
@@ -1474,13 +1474,27 @@ function bindFiscal() {
       $('#corrSpedResumo').hidden = true;
       $('#corrDifal').hidden = true; $('#corrDifal').innerHTML = '';
       $('#corrLote').hidden = true; $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true; $('#corrEstST').hidden = true; $('#btnCorrIcmsXml').disabled = false; $('#btnCorrValXml').disabled = false; $('#btnCorrEstST').disabled = false;
-      $('#corrSpedFrame').hidden = true; $('#corrSpedEmpty').hidden = false;
+      $('#corrSpedFrame').hidden = true; $('#corrSpedEmpty').hidden = false; corrChip();
       toast('Modo manual: ' + sped.split(/[\\/]/).pop() + (xmls ? ' (XMLs de entrada já anexados)' : ''));
     };
-    bCorrPick.addEventListener('click', async () => {
+    // selo da barra: arquivo (ou empresa e mês, depois da análise) e se os XMLs de entrada estão anexados
+    function corrChip(an) {
+      const el = $('#corrChip');
+      if (!corrSpedPath && !XMLS.path) { el.hidden = true; return; }
+      const nome = an && an.empresa && an.empresa.nome ? an.empresa.nome : (corrSpedPath ? corrSpedPath.split(/[\\/]/).pop() : 'SPED não escolhido');
+      const di = an && an.empresa && an.empresa.dt_ini;
+      const mes = di && di.length === 8 ? ` · ${di.slice(2, 4)}/${di.slice(4)}` : '';
+      const xml = XMLS.path ? (an && an.xml_lidos ? `${an.xml_lidos} XMLs` : 'XMLs anexados') : 'sem XMLs de entrada';
+      el.textContent = `${nome}${mes} · ${xml}`;
+      el.title = el.textContent;
+      el.classList.toggle('sem', !XMLS.path || !corrSpedPath);
+      el.hidden = false;
+    }
+    async function corrEscolherSped() {
       const pick = await window.fiscocont.fiscal.pickSped();
-      if (pick.canceled || !pick.path) return;
+      if (pick.canceled || !pick.path) return false;
       $('#corrLote').hidden = true;
+      const trocou = !!corrSpedPath && corrSpedPath !== pick.path;
       corrSpedPath = pick.path;
       FISCAL.corrSpedPath = pick.path;
       $('#btnCorrSpedVerOriginal').disabled = false;
@@ -1490,19 +1504,24 @@ function bindFiscal() {
       $('#btnCorrAcum').disabled = false; $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = '';
       $('#btnCorrCad').disabled = false; $('#corrCad').hidden = true; $('#corrCad').innerHTML = '';
       $('#btnCorrMaca').disabled = false; $('#corrMaca').hidden = true; $('#corrMaca').innerHTML = '';
-      ['#btnCorrTudo', '#btnCorrDesc', '#btnCorrUnid', '#btnCorrComb'].forEach((id) => { $(id).disabled = false; });
+      ['#btnCorrDesc', '#btnCorrUnid', '#btnCorrComb'].forEach((id) => { $(id).disabled = false; });
       $('#corrComb').hidden = true; $('#corrComb').innerHTML = '';
       $('#corrTudo').hidden = true; $('#corrTudo').innerHTML = ''; $('#corrDesc').hidden = true; $('#corrDesc').innerHTML = '';
       $('#corrUnid').hidden = true; $('#corrUnid').innerHTML = '';
       corrFeito = false;
-      SN.an = null; XMLS.path = null;
+      SN.an = null;
+      if (trocou) XMLS.path = null;   // outro SPED (outra empresa): os XMLs anexados eram do anterior
       $('#corrSimples').hidden = true; $('#corrSimples').innerHTML = '';
       $('#corrSpedResumo').hidden = true;
       $('#corrDifal').hidden = true; $('#corrDifal').innerHTML = '';
       $('#corrIcmsXml').hidden = true; $('#corrValXml').hidden = true; $('#corrEstST').hidden = true; $('#corrIcmsXml').innerHTML = ''; IX.an = null;
       $('#btnCorrIcmsXml').disabled = false; $('#btnCorrValXml').disabled = false; $('#btnCorrEstST').disabled = false;
+      $('#corrSpedFrame').hidden = true; $('#corrSpedEmpty').hidden = false;
+      corrChip();
       toast('SPED selecionado: ' + pick.path.split(/[\\/]/).pop());
-    });
+      return true;
+    }
+    bCorrPick.addEventListener('click', corrEscolherSped);
 
     $('#btnCorrSpedVerOriginal').addEventListener('click', async () => {
       if (!corrSpedPath) return;
@@ -2121,7 +2140,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
     // ---- 🔎 Analisar tudo / Aplicar tudo
     const TD = { an: null, etapa: {}, marc: {}, val: {}, aberto: new Set(), gAberto: new Set(), lAberta: new Set(), busca: {}, lim: {}, modo: {}, e116: null };
     const TD_DICT = { cfop: 'difal', difal: 'difal', balcao: 'difal', frete: 'difal', cred: 'difal', desconto: 'desconto', icms: 'icms', valor: 'valor',
-      simples: 'simples', snd: 'simples', maca: 'maca', acum: 'acum', cad: 'cad' };
+      simples: 'simples', snd: 'simples', maca: 'maca', acum: 'acum', cad: 'cad', comb: 'comb' };
     const tdK = (g, l) => `${g}|${l.sel}`;
     function tdIniciar(an) {
       Object.assign(TD, { an, etapa: {}, marc: {}, val: {}, aberto: new Set(), gAberto: new Set(), lAberta: new Set(), busca: {}, lim: {}, modo: {} });
@@ -2160,7 +2179,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
           ${its.map((i) => `<tr><td>${esc(i.cod)}</td><td>${esc(i.descr)}</td><td>${esc(i.cfop || '')}</td><td style="text-align:right">${fmR(i.valor)}</td></tr>`).join('') || '<tr><td colspan="4">Sem itens.</td></tr>'}</table></td></tr>`;
       };
       const temItens = (l) => (l.itens && l.itens.length) || ((l.extra || {}).itens || []).length;
-      const linhasVal = g.id === 'val';
+      const linhasVal = g.id === 'val' || g.id === 'unid';
       return `<div class="td-notas">
         ${(g.linhas || []).length > 8 && !linhasVal ? `<input class="td-busca" data-g="${esc(g.id)}" placeholder="Buscar por número, fornecedor ou produto" value="${esc(TD.busca[g.id] || '')}">` : ''}
         <table class="td-sub"><tbody>
@@ -2177,11 +2196,11 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       const ativas = an.etapas.filter((e) => !['zero', 'fora', 'sem_xml'].includes(e.tipo)).length;
       const bad = { auto: 'k-ok', decidir: 'k-warn', zero: '', fora: '', sem_xml: '' };
       box.innerHTML = `
-        <div class="dif-head"><div><div class="dif-k">Corretor do SPED · Admin · Analisar tudo</div>
+        <div class="dif-head"><div><div class="dif-k">✨ Análise Inteligente</div>
           <h3>${esc(an.empresa.nome || an.arquivo)}</h3>
-          <div class="dif-sub">Tudo o que o Corretor confere, num painel só. O que é certo já vem marcado; o que depende de decisão vem com a sugestão marcada para você revisar. Nada muda até clicar em <b>Aplicar tudo</b>. O arquivo original nunca é alterado.</div></div>
+          <div class="dif-sub">Todas as conferências num painel só. O que é certo já vem marcado; o que depende de decisão vem com a sugestão marcada para você revisar. Nada muda até clicar em <b>Aplicar tudo</b>. O arquivo original nunca é alterado.</div></div>
           <div class="sn-hbtn"><button class="act inv-export" id="tdXmls">${XMLS.path ? 'Trocar XMLs' : 'Anexar XMLs de entrada'}</button><button class="act inv-export" id="tdFechar">Fechar</button></div></div>
-        ${XMLS.path ? `<div class="dif-av ok dif-xmlbar"><b>XMLs de entrada anexados:</b> ${an.xml_lidos || 0} lido(s).</div>` : '<div class="dif-av"><b>Sem XMLs de entrada:</b> Desconto, ICMS × XML, Valor e base × XML e Simples não rodam. Anexe os XMLs para incluir essas conferências.</div>'}
+        ${XMLS.path ? `<div class="dif-av ok dif-xmlbar"><b>XMLs de entrada anexados:</b> ${an.xml_lidos || 0} lido(s).</div>` : '<div class="dif-av"><b>Sem XMLs de entrada:</b> Desconto, ICMS × XML, Valor e base × XML, Simples e Unidade não rodam. Anexe os XMLs para incluir essas conferências.</div>'}
         <div class="dif-kpis">
           <div><span>Conferências</span><b>${an.etapas.length}</b><small>${ativas} com correção</small></div>
           <div class="k-ok"><span>Marcadas</span><b>${ct.marc}</b><small>serão aplicadas</small></div>
@@ -2197,7 +2216,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
               const gab = TD.gAberto.has(g.id), qs = (g.linhas || []).length;
               const nm = (g.linhas || []).filter((l) => TD.marc[tdK(g.id, l)]).length;
               return `<div class="td-g"><div class="td-gh"><a class="td-lk" data-g="${esc(g.id)}">${gab ? '▴' : '▾'} ${esc(g.titulo)}</a>
-                <span>${qs} ${g.id === 'acum' || g.id === 'cad' ? 'produto(s)' : (g.id === 'val' ? 'tipo(s)' : 'nota(s)')}${g.id === 'val' ? '' : ` · ${nm} marcada(s)`}</span><span class="ac7-mi">sugestão: ${esc(g.sugestao || '—')}</span>
+                <span>${qs} ${g.id === 'acum' || g.id === 'cad' ? 'produto(s)' : (g.id === 'val' ? 'tipo(s)' : (g.id === 'unid' ? 'unidade(s)' : (g.id === 'comb' ? 'item(ns)' : 'nota(s)')))}${g.id === 'val' || g.id === 'unid' ? '' : ` · ${nm} marcado(s)`}</span><span class="ac7-mi">sugestão: ${esc(g.sugestao || '—')}</span>
                 ${g.modo ? `<select class="ac7-s td-modo" data-g="${esc(g.id)}">${g.modo.opcoes.map((o) => `<option value="${o.v}"${TD.modo[g.id] === o.v ? ' selected' : ''}>${esc(o.rot)}</option>`).join('')}</select>` : ''}</div>
                 ${gab ? tdLinhas(e, g) : ''}</div>`; }).join('')}</div>` : ''}</div>`; }).join('')}</div>
         <div class="dif-acts"><span class="ac7-mi" style="margin-right:auto">As correções são aplicadas nesta ordem, uma sobre a outra, no mesmo arquivo. No fim: um resumo e um arquivo só para baixar.</span>
@@ -2219,7 +2238,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       $('#tdAplicar').addEventListener('click', () => tdAplicar());
     }
     function tdEscolhas() {
-      const esc2 = { etapas: { ...TD.etapa }, difal: {}, desconto: {}, icms: {}, valor: {}, simples: {}, maca: {}, acum: {}, cad: {} };
+      const esc2 = { etapas: { ...TD.etapa }, difal: {}, desconto: {}, icms: {}, valor: {}, simples: {}, maca: {}, acum: {}, cad: {}, comb: {} };
       if (TD.e116) esc2.e116 = TD.e116;
       TD.an.etapas.forEach((e) => e.grupos.forEach((g) => {
         const dic = TD_DICT[g.id];
@@ -2228,7 +2247,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
         (g.linhas || []).forEach((l) => {
           if (l.bloqueado) return;
           const k = tdK(g.id, l), on = !!TD.marc[k];
-          if (['cfop', 'cred', 'desconto', 'icms', 'valor', 'simples', 'maca'].includes(g.id)) { if (!on) esc2[dic][l.sel] = false; return; }
+          if (['cfop', 'cred', 'desconto', 'icms', 'valor', 'simples', 'maca', 'comb'].includes(g.id)) { if (!on) esc2[dic][l.sel] = false; return; }
           if (g.id === 'acum' || g.id === 'cad') { esc2[dic][l.sel] = on ? (TD.val[k] || l.padrao || false) : false; return; }
           if (g.id === 'snd') { esc2.simples[l.sel] = on; return; }
           if (!on) { esc2.difal[l.sel] = g.id === 'balcao' ? 'manter' : 'nao'; return; }
@@ -2242,11 +2261,12 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
     async function tdAbrir() {
       if (!corrSpedPath) return;
       corrSoMostra('#corrTudo');
-      overlay(true, 'Rodando todas as conferências do Corretor…');
+      overlay(true, 'Fazendo a Análise Inteligente…');
       const r = await window.fiscocont.admin.tudoAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path });
       overlay(false);
       if (r.error) { toast(r.error, true); return; }
       TD.e116 = null;
+      corrChip(r.res);
       tdIniciar(r.res);
       tdDesenhar();
       $('#corrTudo').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2268,6 +2288,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       const r = res.resumo || {}, z = r.resumo || {};
       const lin = [];
       if (z.validacao && z.validacao.feito) lin.push(`Validação do PVA: ${z.validacao.feito} correção(ões)`);
+      if (z.comb) lin.push(`Combustível × uso e consumo: ${z.comb.itens} item(ns) em ${z.comb.notas} nota(s) passaram para x.653${z.comb.c190 ? ` · ${z.comb.c190} C190 dividido(s)` : ''}`);
       if (z.difal) lin.push(`DIFAL e crédito: ${z.difal.notas} nota(s) com DIFAL · CFOP em ${z.difal.cfop} nota(s)${z.difal.credito ? ` · crédito de uso e consumo R$ ${fmR(z.difal.credito)}` : ''}`);
       if (z.desconto) lin.push(`Desconto × XML: ${z.desconto.notas} nota(s), ${z.desconto.itens} item(ns), R$ ${fmR(z.desconto.desconto)}`);
       if (z.icms) lin.push(`ICMS × XML: ${z.icms.notas} nota(s), crédito retirado R$ ${fmR(z.icms.credito_retirado)}`);
@@ -2276,6 +2297,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       if (z.maca) lin.push(`Crédito maçã e pera: ${z.maca.notas} nota(s), R$ ${fmR(z.maca.credito)}`);
       if (z.acum) lin.push(`Acumulador 7000: ${z.acum.itens} item(ns) reclassificados (${(z.acum.acumuladores || []).length} acumuladores)`);
       if (z.cad) lin.push(`Cadastro 0200: ${z.cad.produtos} produto(s) (${Object.entries(z.cad.por_tipo || {}).map(([k, v]) => `${v} → ${k}`).join(' · ')})`);
+      if (z.unid) lin.push(`Unidade × XML: ${z.unid.itens} item(ns) com a unidade da nota`);
       out.innerHTML = `<div class="dif-done sn-done"><div class="dif-k">Corrigido: um arquivo novo com tudo o que estava marcado (o original não foi alterado)</div>
         <div class="dif-kpis"><div><span>ICMS a recolher antes</span><b>R$ ${fmR(r.icms_antes)}</b></div><div class="k-ok"><span>ICMS a recolher depois</span><b>R$ ${fmR(r.icms_depois)}</b></div>
           <div><span>Saldo credor depois</span><b>R$ ${fmR(r.credor_depois)}</b></div></div>
@@ -2286,7 +2308,40 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       $('#tdBaixar').addEventListener('click', corrBaixar);
       out.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-    $('#btnCorrTudo').addEventListener('click', tdAbrir);
+    // ✨ Fazer a Análise Inteligente: sem SPED escolhido, pede o arquivo e já analisa
+    $('#btnCorrIA').addEventListener('click', async () => {
+      if (!corrSpedPath && !(await corrEscolherSped())) return;
+      tdAbrir();
+    });
+    $('#btnCorrXmls').addEventListener('click', async () => {
+      if (!(await corrPedeXmls())) return;
+      corrChip();
+      toast('XMLs de entrada anexados.');
+      if (!$('#corrTudo').hidden && corrSpedPath) tdAbrir();
+    });
+
+    // Admin × equipe: a equipe vê só a Análise Inteligente; o Admin vê também as ferramentas e o que a equipe recebe
+    async function corrEquipeCarregar() {
+      const box = $('#corrEquipeLista');
+      const r = await window.fiscocont.admin.equipeLer();
+      if (r.error) { box.innerHTML = `<div class="ai-eq-load">${esc(r.error)}</div>`; return; }
+      box.innerHTML = r.etapas.map((e) => `<label class="${e.teste ? 't' : ''}${e.fixo ? ' fx' : ''}" title="${e.fixo ? 'Sempre roda: é a base das outras conferências' : (e.teste ? 'Em teste: a equipe só recebe quando você ligar' : '')}">
+        <span>${esc(e.nome)}${e.teste ? '<em>EM TESTE</em>' : ''}</span><input type="checkbox" data-k="${esc(e.key)}"${e.ligada ? ' checked' : ''}${e.fixo ? ' disabled' : ''}></label>`).join('');
+      box.querySelectorAll('input[data-k]').forEach((c) => c.addEventListener('change', async () => {
+        c.disabled = true;
+        const res = await window.fiscocont.admin.equipeSalvar(c.dataset.k, c.checked);
+        c.disabled = false;
+        if (res.error) { c.checked = !c.checked; toast(res.error, true); return; }
+        toast(`${c.closest('label').querySelector('span').firstChild.textContent}: ${c.checked ? 'ligada' : 'desligada'} para a equipe.`);
+      }));
+    }
+    window._corrEntrar = () => {
+      const adm = ROLE === 'admin';
+      $('#corrAdm').hidden = !adm;
+      $('#corrEquipe').hidden = !adm;
+      $('#corrSpedEmpty').classList.toggle('adm', adm);
+      if (adm) corrEquipeCarregar();
+    };
     $('#btnCorrSimples').addEventListener('click', () => snAbrir());
 
     const DIF = { an: null, origem: null };

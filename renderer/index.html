@@ -1235,32 +1235,44 @@
       </div>
 
       <div class="view" id="view-admin-corrigir-sped" hidden>
-        <div class="fiscal-bar" style="border-color:rgba(226,61,76,.3)">
-          <button class="act inv-export" id="btnCorrSpedPick">
+        <div class="fiscal-bar ai-bar">
+          <button class="act inv-export ai-pick" id="btnCorrSpedPick">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
             SPED Fiscal (.txt)
           </button>
-          <button class="act inv-export btn-auto" id="btnCorrLote" hidden title="Corrige os SPEDs de todos os clientes do mês de uma vez — você só decide as exceções">⚡ Automatizar correção</button>
+          <button class="act inv-export" id="btnCorrXmls" title="XMLs das notas de entrada (.zip): entram no Desconto, ICMS, Valor e base, Simples e Unidade">📎 XMLs de entrada</button>
+          <button class="act inv-export btn-auto" id="btnCorrLote" hidden title="Corrige os SPEDs de todos os clientes do mês de uma vez — você só decide as exceções">⚡ Automatizar correção (lote)</button>
           <span class="fiscal-spacer"></span>
-          <button class="act inv-export" id="btnCorrSpedVerOriginal" disabled>Ver todos os dados (original)</button>
-          <button class="act inv-export" id="btnCorrUnid" disabled title="Inconsistência do portal (aba Estoque): unidade do C170 diferente da NF-e. Troca o código da unidade pelo da nota em todo o arquivo">Unidade × XML</button>
-          <button class="act inv-export" id="btnCorrDesc" disabled title="Confere o desconto do C100 e de cada item (C170) com o XML; sem desconto no item do XML, divide em proporção ao valor de cada item">Desconto × XML</button>
-          <button class="act inv-export" id="btnCorrComb" disabled title="Combustível e lubrificante lançados como uso e consumo (CFOP 1.556/2.556 ou 1.407/2.407): passa para 1.653/2.653 no C170 e no C190">Combustível × uso e consumo</button>
-          <button class="act inv-export" id="btnCorrDifal" disabled title="Confere CFOP 1.556/2.556 (e ativo) pela UF do fornecedor, o DIFAL de RO e o crédito de ICMS tomado indevidamente; aplica só o que você confirmar">Uso e consumo · DIFAL e crédito</button>
-          <button class="act inv-export" id="btnCorrIcmsXml" disabled title="Confere o ICMS creditado nas entradas com o ICMS destacado no XML de cada nota e corrige o crédito tomado a mais">ICMS creditado × XML</button>
-          <button class="act inv-export" id="btnCorrValXml" disabled title="Confere o valor do documento, a base de cálculo e o ICMS de cada nota de entrada com o XML (fora uso e consumo e ativo) e corrige pelo XML">Valor e base × XML</button>
-          <button class="act inv-export" id="btnCorrEstST" disabled title="Mercadoria que saiu da substituição tributária: calcula o crédito do estoque (RICMS/RO, Anexo VI, arts. 46 a 48) e inclui o inventário (H005/H010/H020) e o ajuste RO020033 no SPED">Estoque que saiu da ST</button>
-          <button class="act inv-export" id="btnCorrAcum" disabled title="Itens lançados no acumulador genérico 7000 (DESPESAS): sugere o acumulador de despesa certo (7001–7040) pela descrição e pelo NCM; aplica só o que você marcar">Acumulador 7000</button>
-          <button class="act inv-export" id="btnCorrCad" disabled title="Produtos cadastrados no 0200 como revenda (tipo 00) que só entraram como uso e consumo ou ativo: sugere o tipo 07 ou 08; aplica só o que você marcar">Cadastro de produtos (0200)</button>
-          <button class="act inv-export" id="btnCorrMaca" disabled title="Maçã e pera de outro estado com isenção (CST x40): crédito presumido pela alíquota interestadual (RICMS/RO, Anexo IV, Parte 2, item 19) — C195 + C197 RO10000038">Crédito maçã e pera</button>
-          <button class="act inv-export" id="btnCorrSimples" disabled title="Confere e lança o crédito de ICMS de fornecedor do Simples Nacional (C195 + C197 RO00000001) com os XMLs de entrada">Crédito Simples Nacional</button>
-          <button class="act inv-export" id="btnCorrTudo" disabled style="background:#1e3a8a;color:#fff;border-color:transparent" title="Roda todas as conferências do Corretor de uma vez; você revisa e aplica tudo num arquivo só">🔎 Analisar tudo</button>
-          <button class="act inv-export" id="btnCorrSpedRodar" disabled style="background:#e23d4c;color:#fff;border-color:transparent">Corrigir SPED</button>
+          <span class="ai-chip" id="corrChip" hidden></span>
         </div>
-        <div class="fiscal-empty" id="corrSpedEmpty">
-          <svg viewBox="0 0 24 24"><path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M10.3 4.2L2.9 17a1.8 1.8 0 001.55 2.7h15.1A1.8 1.8 0 0021.1 17L13.7 4.2a1.8 1.8 0 00-3.4 0z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-          <h2>Correção do SPED Fiscal — acesso restrito ao Admin</h2>
-          <p>Corrige automaticamente erros comuns de validação: C191 indevido (CST do C190 pai fora de 00/10/20/51/70/90), bloco E500/E510/E520 quando não há IPI, código de barras "SEM GTIN", CEST fora da tabela oficial (lista conhecida: 1705500, 0000000, 2007910 — cresce conforme repassado), COD_NAT ausente no C170 (mapeado pelo CFOP), totais do C100 diferentes da soma do C190 e o campo 06 do E110 (créditos) diferente da soma das notas — com o E110 e o E116 recalculados. Recalcula o Bloco 9 (contagens) no final. <b>Isso gera um arquivo novo</b> — o original nunca é alterado.</p>
+        <div class="ai-hero" id="corrSpedEmpty">
+          <div class="ai-ring"><b></b><b></b><b></b><i>✨</i></div>
+          <span class="ai-pill">✨ ANÁLISE INTELIGENTE</span>
+          <h1>Encontre os erros do SPED<br class="ai-br"> antes que eles virem problema</h1>
+          <button class="ai-glow" id="btnCorrIA" type="button"><span>✨ Fazer a Análise Inteligente</span></button>
+          <div class="ai-trust"><span>Arquivo original intacto</span><span>Impacto em R$ antes de aplicar</span><span>Você confirma tudo</span></div>
+        </div>
+        <details class="ai-adm" id="corrAdm" open hidden>
+          <summary>🛠 Ferramentas do Admin <small>· cada conferência separada · a equipe não vê</small><i class="ai-rec"></i></summary>
+          <div class="ai-adm-b">
+            <button class="act inv-export" id="btnCorrSpedVerOriginal" disabled>Ver todos os dados (original)</button>
+            <button class="act inv-export" id="btnCorrUnid" disabled title="Inconsistência do portal (aba Estoque): unidade do C170 diferente da NF-e. Troca o código da unidade pelo da nota em todo o arquivo">Unidade × XML</button>
+            <button class="act inv-export" id="btnCorrDesc" disabled title="Confere o desconto do C100 e de cada item (C170) com o XML; sem desconto no item do XML, divide em proporção ao valor de cada item">Desconto × XML</button>
+            <button class="act inv-export" id="btnCorrComb" disabled title="Combustível e lubrificante lançados como uso e consumo (CFOP 1.556/2.556 ou 1.407/2.407): passa para 1.653/2.653 no C170 e no C190">Combustível × uso e consumo</button>
+            <button class="act inv-export" id="btnCorrDifal" disabled title="Confere CFOP 1.556/2.556 (e ativo) pela UF do fornecedor, o DIFAL de RO e o crédito de ICMS tomado indevidamente; aplica só o que você confirmar">Uso e consumo · DIFAL e crédito</button>
+            <button class="act inv-export" id="btnCorrIcmsXml" disabled title="Confere o ICMS creditado nas entradas com o ICMS destacado no XML de cada nota e corrige o crédito tomado a mais">ICMS creditado × XML</button>
+            <button class="act inv-export" id="btnCorrValXml" disabled title="Confere o valor do documento, a base de cálculo e o ICMS de cada nota de entrada com o XML (fora uso e consumo e ativo) e corrige pelo XML">Valor e base × XML</button>
+            <button class="act inv-export" id="btnCorrEstST" disabled title="Mercadoria que saiu da substituição tributária: calcula o crédito do estoque (RICMS/RO, Anexo VI, arts. 46 a 48) e inclui o inventário (H005/H010/H020) e o ajuste RO020033 no SPED">Estoque que saiu da ST</button>
+            <button class="act inv-export" id="btnCorrAcum" disabled title="Itens lançados no acumulador genérico 7000 (DESPESAS): sugere o acumulador de despesa certo (7001–7040) pela descrição e pelo NCM; aplica só o que você marcar">Acumulador 7000</button>
+            <button class="act inv-export" id="btnCorrCad" disabled title="Produtos cadastrados no 0200 como revenda (tipo 00) que só entraram como uso e consumo ou ativo: sugere o tipo 07 ou 08; aplica só o que você marcar">Cadastro de produtos (0200)</button>
+            <button class="act inv-export" id="btnCorrMaca" disabled title="Maçã e pera de outro estado com isenção (CST x40): crédito presumido pela alíquota interestadual (RICMS/RO, Anexo IV, Parte 2, item 19) — C195 + C197 RO10000038">Crédito maçã e pera</button>
+            <button class="act inv-export" id="btnCorrSimples" disabled title="Confere e lança o crédito de ICMS de fornecedor do Simples Nacional (C195 + C197 RO00000001) com os XMLs de entrada">Crédito Simples Nacional</button>
+            <button class="act inv-export" id="btnCorrSpedRodar" disabled style="background:#e23d4c;color:#fff;border-color:transparent">Corrigir SPED</button>
+          </div>
+        </details>
+        <div class="ai-eq" id="corrEquipe" hidden>
+          <div class="ai-eq-h">👥 O que a equipe recebe na Análise Inteligente <small>· você liga cada conferência quando confirmar que está boa · vale na hora, sem nova versão</small></div>
+          <div class="ai-eq-g" id="corrEquipeLista"><div class="ai-eq-load">Carregando…</div></div>
         </div>
         <div id="corrLote" class="dif lote" hidden></div>
         <div id="corrSpedResumo" hidden></div>

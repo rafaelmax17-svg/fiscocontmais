@@ -3,6 +3,19 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.9
+
+- **Corretor do SPED Fiscal · nova tela da "Análise Inteligente"** (o antigo "🔎 Analisar tudo").
+  - **Equipe (Corretor liberado em Usuários › Módulos):** vê só o cartão "Encontre os erros do SPED antes que eles virem problema" com o botão **✨ Fazer a Análise Inteligente**, mais os botões SPED e XMLs de entrada. Sem SPED escolhido, o botão pede o arquivo e já analisa. O painel de revisão e o "Aplicar tudo" são os mesmos de antes.
+  - **Admin:** o mesmo cartão (compacto), **🛠 Ferramentas do Admin** (recolhível, com todos os botões avulsos de antes) e **👥 O que a equipe recebe na Análise Inteligente**, com uma chave por conferência.
+  - **Chaves da equipe:** gravadas no Firestore `config_equipe/corretor` (`etapas: {chave: true/false}`) e valem na hora, sem nova versão. Sem nada gravado, todas ficam ligadas. Conferência nova cadastrada com `teste: true` em `CORR_ETAPAS` (main.js) aparece como **EM TESTE** e fica desligada para a equipe até você ligar. A Validação do PVA sempre roda (é a base das outras). O Estoque que saiu da ST fica só para o Admin.
+  - **Regras do Firestore:** nova coleção `config_equipe` (equipe ativa lê, só o Admin grava), publicada pelo workflow do Firebase.
+  - **Novas etapas na Análise Inteligente:** **Combustível × uso e consumo** (1b, logo depois da Validação e antes do DIFAL, porque combustível não é uso e consumo) e **Unidade × XML** (9, no fim, precisa dos XMLs; troca todas as unidades sugeridas).
+  - **IDs do DIFAL:** o combustível pode dividir C190 e mudar a linha do C100. A análise monta o plano do DIFAL com todas as sugestões de combustível aplicadas; na aplicação, se o combustível foi aplicado diferente (item desmarcado ou etapa desligada), as escolhas do DIFAL são traduzidas pela nota (chave ou nº|série|participante|data).
+  - **Trava no processo principal:** quem não é Admin chama só `tudoAnalisar` / `tudoAplicar` (com `--etapas` = as conferências ligadas para a equipe). Os botões avulsos do Corretor (DIFAL, Simples, ICMS × XML, Valor e base, Desconto, Unidade, Combustível, Acumulador, 0200, maçã e pera, Estoque ST, lote) passaram a exigir perfil Admin, mesmo com algum módulo admin liberado.
+  - **"⚡ Automatizar correção (lote)"** continua escondido, como desde a 2.1.34.
+  - **Testado com SPED de exemplo:** 37 itens de lubrificante 1.556 → 1.653 em 24 notas (11 C190 divididos) antes do DIFAL; desmarcando um DIFAL com o combustível desligado, a mesma nota ficou de fora (ID 7493 → 7483 traduzido); com `--etapas difal,acum`, só Validação, DIFAL e Acumulador rodam.
+
 ## 2.3.8
 
 - **🔎 Analisar tudo · nova etapa "Crédito maçã e pera"** (6b, depois do Crédito do Simples; não precisa de XML). Usa o `credito_maca` com as mesmas regras do botão próprio.

@@ -2262,6 +2262,63 @@ function _soAdmin() {
   if (sessionLocked) return { error: 'Sessão travada por inatividade: digite a senha para continuar.' };
   return null;
 }
+// Ferramentas avulsas do Corretor do SPED (DIFAL, Simples, ICMS × XML, lote…): só o Admin, mesmo com o Corretor
+// liberado para a pessoa — a equipe usa só a Análise Inteligente (admin:tudoAnalisar / admin:tudoAplicar).
+function _soAdminCorretor() {
+  if (sessionRole !== 'admin') return { error: 'Esta ferramenta do Corretor é só do Admin. Use a Análise Inteligente.' };
+  if (sessionLocked) return { error: 'Sessão travada por inatividade: digite a senha para continuar.' };
+  return null;
+}
+
+// ✨ Análise Inteligente: o que a equipe recebe. O Admin liga/desliga cada conferência (Firestore config_equipe/corretor,
+// vale na hora para todo mundo). Conferência nova entra com teste: true — fica desligada para a equipe até o Admin ligar.
+// A Validação do PVA é a base das outras e sempre roda. O Estoque que saiu da ST fica fora (só o Admin, botão próprio).
+const CORR_ETAPAS = [
+  { key: 'validacao', nome: 'Validação do PVA', fixo: true },
+  { key: 'comb', nome: 'Combustível × uso e consumo' },
+  { key: 'difal', nome: 'Uso e consumo · DIFAL e crédito' },
+  { key: 'desconto', nome: 'Desconto × XML' },
+  { key: 'icms', nome: 'ICMS creditado × XML' },
+  { key: 'valor', nome: 'Valor e base × XML' },
+  { key: 'simples', nome: 'Crédito do Simples' },
+  { key: 'maca', nome: 'Crédito maçã e pera' },
+  { key: 'acum', nome: 'Acumulador 7000' },
+  { key: 'cad', nome: 'Cadastro de produtos (0200)' },
+  { key: 'unid', nome: 'Unidade × XML' },
+];
+const CORR_DOC = ['config_equipe', 'corretor'];
+async function _corrEquipeCfg() {
+  const db = auth.db(); const f = auth.fsMod();
+  if (!db) throw new Error('Entre com o seu usuário para usar a Análise Inteligente.');
+  const snap = await f.getDoc(f.doc(db, ...CORR_DOC));
+  return snap.exists() ? (snap.data().etapas || {}) : {};
+}
+const _corrLigada = (cfg, e) => e.fixo || (cfg[e.key] !== undefined ? !!cfg[e.key] : !e.teste);
+// lista de --etapas para quem não é Admin (Admin: sem limite)
+async function _corrPermitidas() {
+  if (sessionRole === 'admin') return null;
+  const cfg = await _corrEquipeCfg();
+  return CORR_ETAPAS.filter((e) => _corrLigada(cfg, e)).map((e) => e.key);
+}
+function _soCorretor() {
+  if (!_podeModulo('admin-corrigir-sped')) return { error: 'O Corretor do SPED não está liberado para você. Peça ao Admin para liberar em Usuários › Módulos.' };
+  if (sessionLocked) return { error: 'Sessão travada por inatividade: digite a senha para continuar.' };
+  return null;
+}
+ipcMain.handle('corr:equipeLer', () => _adm(async () => {
+  const cfg = await _corrEquipeCfg();
+  return { etapas: CORR_ETAPAS.map((e) => ({ ...e, ligada: _corrLigada(cfg, e) })) };
+}));
+ipcMain.handle('corr:equipeSalvar', (_evt, { key, ligada }) => _adm(async () => {
+  const e = CORR_ETAPAS.find((x) => x.key === key);
+  if (!e) throw new Error('Conferência desconhecida.');
+  if (e.fixo) throw new Error('A Validação do PVA sempre roda: é a base das outras conferências.');
+  const db = auth.db(); const f = auth.fsMod();
+  const s = auth.sessao() || {};
+  await f.setDoc(f.doc(db, ...CORR_DOC), { etapas: { [key]: !!ligada }, atualizadoEm: f.serverTimestamp(), atualizadoPor: s.nome || s.email || '' }, { merge: true });
+  return { key, ligada: !!ligada };
+}));
+
 function _jsonUser(nome, padrao) {
   try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), nome), 'utf-8')); } catch (_) { return padrao; }
 }
@@ -2871,7 +2928,7 @@ function _difalBase(spedPath, usarCorrigido) {
   return { arq: spedPath, origem: 'original' };
 }
 ipcMain.handle('admin:difalAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const jsonOut = path.join(os.tmpdir(), `fc_difal_${Date.now()}.json`);
@@ -2885,7 +2942,7 @@ ipcMain.handle('admin:difalAnalisar', async (_evt, { spedPath, usarCorrigido, xm
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:difalAplicar', async (_evt, { spedPath, usarCorrigido, selecao, xmls }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const stamp = Date.now();
@@ -2931,7 +2988,7 @@ async function _memAcumGravar(lista) {
   if (Object.keys(upd).length) await f.setDoc(f.doc(db, 'memoria_admin', 'acum7000'), { m: upd }, { merge: true });
 }
 ipcMain.handle('admin:acum7000Analisar', async (_evt, { spedPath, usarCorrigido }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const jsonOut = path.join(os.tmpdir(), `fc_acum_${Date.now()}.json`);
@@ -2946,7 +3003,7 @@ ipcMain.handle('admin:acum7000Analisar', async (_evt, { spedPath, usarCorrigido 
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:acum7000Aplicar', async (_evt, { spedPath, usarCorrigido, selecao }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const stamp = Date.now();
@@ -2970,20 +3027,22 @@ ipcMain.handle('admin:acum7000Aplicar', async (_evt, { spedPath, usarCorrigido, 
 
 // 🔎 Analisar tudo / Aplicar tudo (todas as conferências do Corretor num painel só) e Desconto × XML — só Admin
 ipcMain.handle('admin:tudoAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const jsonOut = path.join(os.tmpdir(), `fc_tudo_${Date.now()}.json`);
   try {
+    const perm = await _corrPermitidas();
     const regimes = await _regimesJson([base.arq]);
-    await runFiscal(['analisar-tudo', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--regimes', regimes, '--json', jsonOut], jsonOut);
+    await runFiscal(['analisar-tudo', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--regimes', regimes, '--json', jsonOut,
+      ...(perm ? ['--etapas', perm.join(',')] : [])], jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {}); fs.unlink(regimes, () => {});
     if (res.erro) return { error: res.erro };
     return { ok: true, res, origem: base.origem };
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:tudoAplicar', async (_evt, { spedPath, usarCorrigido, xmls, escolhas }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const stamp = Date.now();
@@ -2992,9 +3051,10 @@ ipcMain.handle('admin:tudoAplicar', async (_evt, { spedPath, usarCorrigido, xmls
   const saida = path.join(os.tmpdir(), `fc_tudo_sped_${stamp}.txt`);
   try {
     fs.writeFileSync(escJson, JSON.stringify(escolhas || {}), 'utf-8');
+    const perm = await _corrPermitidas();
     const regimes = await _regimesJson([base.arq]);
     await runFiscal(['analisar-tudo', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--regimes', regimes, '--json', jsonOut,
-      '--aplicar', escJson, '--saida', saida], jsonOut);
+      '--aplicar', escJson, '--saida', saida, ...(perm ? ['--etapas', perm.join(',')] : [])], jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
     for (const f of [jsonOut, escJson, regimes]) fs.unlink(f, () => {});
     if (res.precisa_e116) return { precisa_e116: true, error: res.erro };
@@ -3008,7 +3068,7 @@ ipcMain.handle('admin:tudoAplicar', async (_evt, { spedPath, usarCorrigido, xmls
 });
 // Unidade × XML (só Admin): o código da unidade do C170 ("1") vira a unidade da nota ("UN") — inconsistência do portal, aba Estoque
 ipcMain.handle('admin:unidAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath || !xmls) return { error: 'Selecione o SPED e os XMLs das notas.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const jsonOut = path.join(os.tmpdir(), `fc_unid_${Date.now()}.json`);
@@ -3020,7 +3080,7 @@ ipcMain.handle('admin:unidAnalisar', async (_evt, { spedPath, usarCorrigido, xml
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:unidAplicar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath || !xmls) return { error: 'Selecione o SPED e os XMLs das notas.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const stamp = Date.now();
@@ -3039,7 +3099,7 @@ ipcMain.handle('admin:unidAplicar', async (_evt, { spedPath, usarCorrigido, xmls
 });
 // Combustível/lubrificante como uso e consumo (só Admin): CFOP x.556/x.407 → x.653 no C170 e no C190
 ipcMain.handle('admin:combAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const jsonOut = path.join(os.tmpdir(), `fc_comb_${Date.now()}.json`);
@@ -3051,7 +3111,7 @@ ipcMain.handle('admin:combAnalisar', async (_evt, { spedPath, usarCorrigido, xml
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:combAplicar', async (_evt, { spedPath, usarCorrigido, xmls, ids }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath || !Array.isArray(ids) || !ids.length) return { error: 'Marque os itens que devem mudar de CFOP.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const stamp = Date.now();
@@ -3072,7 +3132,7 @@ ipcMain.handle('admin:combAplicar', async (_evt, { spedPath, usarCorrigido, xmls
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:descAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath || !xmls) return { error: 'Selecione o SPED e os XMLs de entrada.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const jsonOut = path.join(os.tmpdir(), `fc_desc_${Date.now()}.json`);
@@ -3084,7 +3144,7 @@ ipcMain.handle('admin:descAnalisar', async (_evt, { spedPath, usarCorrigido, xml
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:descAplicar', async (_evt, { spedPath, usarCorrigido, xmls, selecao }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath || !xmls) return { error: 'Selecione o SPED e os XMLs de entrada.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const stamp = Date.now();
@@ -3107,7 +3167,7 @@ ipcMain.handle('admin:descAplicar', async (_evt, { spedPath, usarCorrigido, xmls
 
 // Cadastro de produtos (0200): tipo 00 (revenda) que só entrou como uso e consumo / ativo → 07 / 08, revisado pelo Admin — só Admin
 ipcMain.handle('admin:cad0200Analisar', async (_evt, { spedPath, usarCorrigido }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const jsonOut = path.join(os.tmpdir(), `fc_cad_${Date.now()}.json`);
@@ -3119,7 +3179,7 @@ ipcMain.handle('admin:cad0200Analisar', async (_evt, { spedPath, usarCorrigido }
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:cad0200Aplicar', async (_evt, { spedPath, usarCorrigido, selecao }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const stamp = Date.now();
@@ -3142,7 +3202,7 @@ ipcMain.handle('admin:cad0200Aplicar', async (_evt, { spedPath, usarCorrigido, s
 
 // Crédito presumido de maçã e pera de outra UF (RICMS/RO, Anexo IV, Parte 2, item 19: C195 + C197 RO10000038) — só Admin
 ipcMain.handle('admin:macaAnalisar', async (_evt, { spedPath, usarCorrigido }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const jsonOut = path.join(os.tmpdir(), `fc_maca_${Date.now()}.json`);
@@ -3154,7 +3214,7 @@ ipcMain.handle('admin:macaAnalisar', async (_evt, { spedPath, usarCorrigido }) =
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:macaAplicar', async (_evt, { spedPath, usarCorrigido, selecao }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const stamp = Date.now();
@@ -3177,7 +3237,7 @@ ipcMain.handle('admin:macaAplicar', async (_evt, { spedPath, usarCorrigido, sele
 
 // Crédito de fornecedor do Simples Nacional (RO: C195 + C197 RO00000001, campo 07 do E110) — só Admin
 ipcMain.handle('admin:simplesAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   if (!xmls) return { error: 'Selecione os XMLs de entrada (.zip).' };
   const base = _difalBase(spedPath, usarCorrigido);
@@ -3191,7 +3251,7 @@ ipcMain.handle('admin:simplesAnalisar', async (_evt, { spedPath, usarCorrigido, 
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:simplesAplicar', async (_evt, { spedPath, usarCorrigido, xmls, selecao }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const stamp = Date.now();
@@ -3214,7 +3274,7 @@ ipcMain.handle('admin:simplesAplicar', async (_evt, { spedPath, usarCorrigido, x
 
 // ICMS creditado no SPED × ICMS destacado no XML da entrada (icms_xml.py) — só Admin
 ipcMain.handle('admin:icmsXmlAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   if (!xmls) return { error: 'Selecione os XMLs de entrada (pasta ou .zip).' };
   const base = _difalBase(spedPath, usarCorrigido);
@@ -3228,7 +3288,7 @@ ipcMain.handle('admin:icmsXmlAnalisar', async (_evt, { spedPath, usarCorrigido, 
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:icmsXmlAplicar', async (_evt, { spedPath, usarCorrigido, xmls, selecao }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const stamp = Date.now();
@@ -3250,14 +3310,14 @@ ipcMain.handle('admin:icmsXmlAplicar', async (_evt, { spedPath, usarCorrigido, x
 });
 // Estoque de mercadoria que saiu da ST: crédito (Anexo VI, arts. 46 a 48) + inventário H005/H010/H020
 ipcMain.handle('admin:estoqueStPlanilha', async () => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   const r = await dialog.showOpenDialog(mainWindow, { title: 'Planilha do estoque (código, descrição, quantidade, valor unitário)',
     filters: [{ name: 'Planilha', extensions: ['xlsx', 'csv'] }], properties: ['openFile'] });
   if (r.canceled || !r.filePaths.length) return { canceled: true };
   return { path: r.filePaths[0] };
 });
 async function _estoqueSt({ spedPath, usarCorrigido, planilha, xmls, params }, aplicar) {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   if (!planilha) return { error: 'Selecione a planilha do estoque.' };
   if (!xmls) return { error: 'Selecione os XMLs das notas de entrada.' };
@@ -3287,7 +3347,7 @@ ipcMain.handle('admin:estoqueStAplicar', (_evt, p) => _estoqueSt(p || {}, true))
 
 // Valor do documento e base do ICMS × XML (entradas com crédito)
 ipcMain.handle('admin:valorXmlAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   if (!xmls) return { error: 'Selecione os XMLs de entrada (pasta ou .zip).' };
   const base = _difalBase(spedPath, usarCorrigido);
@@ -3301,7 +3361,7 @@ ipcMain.handle('admin:valorXmlAnalisar', async (_evt, { spedPath, usarCorrigido,
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:valorXmlAplicar', async (_evt, { spedPath, usarCorrigido, xmls, selecao }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const stamp = Date.now();
@@ -3577,7 +3637,7 @@ ipcMain.handle('admin:monoAplicar', async (_evt, { efdPath, grupos }) => {
 // ⚡ Automatizar correção — SPED Fiscal de todos os clientes do mês (lote_sped.py; só Admin)
 let loteSaidaDir = null;
 ipcMain.handle('admin:lotePickPasta', async (_evt, { titulo } = {}) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   let inicial;
   try { inicial = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase; } catch (_) {}
   if (!inicial && fs.existsSync(PASTA_PADRAO_NFSE)) inicial = PASTA_PADRAO_NFSE;
@@ -3589,7 +3649,7 @@ ipcMain.handle('admin:lotePickPasta', async (_evt, { titulo } = {}) => {
   return { path: r.filePaths[0] };
 });
 ipcMain.handle('admin:loteAnalisar', async (_evt, { pasta, pastaXmls }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!pasta || !fs.existsSync(pasta)) return { error: 'Escolha a pasta do mês.' };
   const jsonOut = path.join(os.tmpdir(), `fc_lote_an_${Date.now()}.json`);
   try {
@@ -3602,7 +3662,7 @@ ipcMain.handle('admin:loteAnalisar', async (_evt, { pasta, pastaXmls }) => {
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:loteAplicar', async (_evt, { plano }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   const stamp = Date.now();
   const planoJson = path.join(os.tmpdir(), `fc_lote_plano_${stamp}.json`);
   const jsonOut = path.join(os.tmpdir(), `fc_lote_res_${stamp}.json`);
@@ -3620,7 +3680,7 @@ ipcMain.handle('admin:loteAplicar', async (_evt, { plano }) => {
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('admin:loteSalvar', async (_evt, { arquivo }) => {
-  const bloq = _soAdmin(); if (bloq) return bloq;
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
   if (!arquivo || !fs.existsSync(arquivo) || !loteSaidaDir || !path.resolve(arquivo).startsWith(path.resolve(loteSaidaDir))) {
     return { error: 'Arquivo não encontrado. Rode a correção automática de novo.' };
   }

@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""🔎 Analisar tudo / Aplicar tudo — Corretor do SPED Fiscal (só Admin), um arquivo por vez.
+"""✨ Análise Inteligente (antigo "Analisar tudo") — Corretor do SPED Fiscal, um arquivo por vez.
 
 Roda TODAS as conferências do Corretor sobre o mesmo SPED e devolve um painel único; nada muda até "Aplicar tudo".
 Ordem (é também a ordem de aplicação, uma sobre a outra, no mesmo arquivo):
   1) Validação do PVA ............ fiscal_core.corrigir_sped_fiscal + ajusta_campos_c197 (sempre aplicada)
+  1b) Combustível × uso e consumo  combustivel_cfop (x.556/x.407 → x.653; antes do DIFAL, que não vale para combustível)
   2) Uso e consumo · DIFAL e crédito  difal_ro (CFOP pela UF, DIFAL, balcão, frete, crédito em uso e consumo)
   3) Desconto × XML .............. desconto_xml
   4) ICMS creditado × XML ......... icms_xml
@@ -12,15 +13,24 @@ Ordem (é também a ordem de aplicação, uma sobre a outra, no mesmo arquivo):
   6b) Crédito maçã e pera ......... credito_maca (C195 + C197 RO10000038; não precisa de XML)
   7) Acumulador 7000 .............. acumulador_despesa
   8) Cadastro de produtos (0200) .. cadastro_0200
+  9) Unidade × XML ................ unidade_xml (troca o código da unidade pelo da nota; precisa dos XMLs)
   (Estoque de mercadoria que saiu da ST precisa da planilha do estoque: fica no botão próprio.)
 O plano padrão é o mesmo do antigo "Automatizar correção" (lote_sped), agora com escolha nota a nota.
+
+Equipe × Admin: "permitidas" (lista de chaves) limita as conferências — a equipe recebe só as que o Admin ligou no painel
+"O que a equipe recebe na Análise Inteligente" (config_equipe/corretor no Firestore). Admin: None = todas.
+A Validação do PVA é a base de todas e sempre roda.
+
+IDs do DIFAL: são o índice da linha do C100/D100. Como o passo do combustível pode dividir C190 (linhas a mais), a análise
+monta o plano do DIFAL sobre o arquivo com TODAS as sugestões de combustível aplicadas; na aplicação, se o combustível
+foi aplicado diferente (item desmarcado, etapa desligada), os IDs são traduzidos pela nota (chave ou nº|série|participante).
 
 Escolhas (aplicar):
   {"etapas": {"difal": true, ...},                       etapa desmarcada não roda
    "difal": {"<id da decisão>": "incluir"|"nao"|..., "cfop:<id>": false, "cred:<id doc>": false, "cred_modo": "zerar"|"estorno"},
    "desconto": {"<chave>": false}, "icms": {"<chave>": false}, "valor": {"<chave>": false},
    "simples": {"<chave>": false}, "maca": {"<chave da nota ou nº|série|fornecedor>": false},
-   "acum": {"<COD_ITEM>": "70xx"|false}, "cad": {"<COD_ITEM>": "07"|"08"|false},
+   "acum": {"<COD_ITEM>": "70xx"|false}, "cad": {"<COD_ITEM>": "07"|"08"|false}, "comb": {"<doc:item>": false},
    "e116": {"venc": "ddmmaaaa", "cod_rec": "..."}}
 Gera arquivo NOVO; o original nunca é alterado.
 """
@@ -38,6 +48,8 @@ import desconto_xml as dx
 import acumulador_despesa as ad
 import cadastro_0200 as c2
 import credito_maca as cm
+import combustivel_cfop as cc
+import unidade_xml as ux
 from xml_entradas import ler_xmls
 
 
@@ -55,6 +67,48 @@ def _ch_maca(x):
 
 def _fm(v):
     return f'{float(v or 0):,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+
+
+def _pode(permitidas, k):
+    return permitidas is None or k == 'validacao' or k in permitidas
+
+
+def _comb_todas(texto, xmls):
+    """Arquivo com todas as sugestões do combustível aplicadas (base do plano do DIFAL na análise)."""
+    a = cc.analisar_texto(texto, xmls)
+    if not a['itens']:
+        return texto, a
+    return cc.aplicar_texto(texto, [i['id'] for i in a['itens']], xmls)[0], a
+
+
+def _ids_notas(texto):
+    """{índice da linha do C100/D100: identificação estável da nota}."""
+    linhas, _, _ = dr.dividir(texto)
+    _, part, _, docs, _, _ = dr._estrutura(linhas)
+    m = {}
+    for d in docs:
+        m[d['i']] = 'C|' + (_ch(d['chave']) or f"{d['num']}|{d['serie']}|{d['part']}|{d['dt']}")
+    for t in dr._estrutura_d(linhas):
+        m[t['i']] = 'D|' + (_ch(t['chave']) or f"{t['num']}|{t['serie']}|{t['part']}|{t['dt']}")
+    return m
+
+
+def _traduz_ids(ed, de_texto, para_texto):
+    """Escolhas do DIFAL ('pfx:ID') feitas sobre de_texto → IDs de para_texto."""
+    if not ed or de_texto == para_texto:
+        return ed
+    a, b = _ids_notas(de_texto), _ids_notas(para_texto)
+    inv = {}
+    for i, k in b.items():
+        inv.setdefault(k, i)
+    out = {}
+    for k, v in ed.items():
+        m = re.match(r'^([a-z]+):(\d+)$', k)
+        if m and int(m.group(2)) in a and a[int(m.group(2))] in inv:
+            out[f"{m.group(1)}:{inv[a[int(m.group(2))]]}"] = v
+        else:
+            out[k] = v
+    return out
 
 
 def _itens_sped(corr):
@@ -75,9 +129,14 @@ def _base(sped, xml_dir):
 
 
 # ------------------------------------------------------------------ análise
-def analisar(sped, xml_dir):
+def analisar(sped, xml_dir, permitidas=None):
     texto, enc, corr, rc, xmls, lidos, erros = _base(sped, xml_dir)
     cab = ls._cab(texto) or {}
+    pode = lambda k: _pode(permitidas, k)
+    corr_v = corr                                     # arquivo só com a validação (é o que a etapa 1 mostra)
+    ca_comb = None
+    if pode('comb'):
+        corr, ca_comb = _comb_todas(corr_v, xmls)     # as demais etapas olham o arquivo já com o combustível
     auto, dec, an, sn = ls.plano_empresa(corr, xmls, lidos)
     por_doc = {d['id']: d for d in an['docs']}
     itens_sped = _itens_sped(corr)
@@ -96,6 +155,22 @@ def analisar(sped, xml_dir):
     etapas.append({'key': 'validacao', 'titulo': 'Validação do PVA', 'desc': 'C191, E500, GTIN, CEST, COD_NAT, C197 com campo a mais, totais do C100',
                    'qtd': f'{n_val} correção(ões)' if n_val else 'nada encontrado', 'valor': '', 'badge': 'aplica sozinho' if n_val else 'sem correção',
                    'tipo': 'auto' if n_val else 'zero', 'fixo': True, 'grupos': [{'id': 'val', 'titulo': 'Correções de validação', 'linhas': linhas_val}] if n_val else []})
+
+    # 1b) combustível e lubrificante com CFOP de uso e consumo → x.653 (antes do DIFAL)
+    if ca_comb is not None:
+        lin = [{'sel': i['id'], 'nota': f"NF {_num(i['num'])} · {i['forn']}",
+                'det': f"{i['descr']} · NCM {i['ncm'] or '—'} · CFOP {i['cfop_de']} → {i['cfop_para']}"
+                       + (' · nota com DIFAL lançado: confira' if i['tem_difal'] else ''),
+                'valor': i['valor'], 'marcado': True} for i in ca_comb['itens']]
+        lin += [{'sel': f"pend:{n}", 'nota': f"NF {_num(p['num'])} · {p['forn']}", 'det': 'NÃO ALTERAR: ' + p['motivo'], 'valor': None,
+                 'marcado': False, 'bloqueado': True} for n, p in enumerate(ca_comb['pendencias'])]
+        r = ca_comb['resumo']
+        etapas.append({'key': 'comb', 'titulo': 'Combustível × uso e consumo', 'desc': 'combustível e lubrificante com CFOP x.556 / x.407 → x.653 no C170 e no C190',
+                       'qtd': f"{r['itens']} item(ns) · {r['notas']} nota(s)" if r['itens'] else ('nada a trocar' if lin else 'nada encontrado'),
+                       'valor': f"R$ {_fm(r['valor'])}" if r['itens'] else '', 'badge': 'pode corrigir' if r['itens'] else ('não alterar' if lin else 'sem correção'),
+                       'tipo': 'auto' if r['itens'] else 'zero',
+                       'grupos': [{'id': 'comb', 'titulo': 'Itens de combustível e lubrificante como uso e consumo', 'sugestao': 'CFOP 1.653 / 2.653',
+                                   'linhas': lin}] if lin else []})
 
     # 2) DIFAL e crédito
     g_cfop = [{'sel': f"cfop:{a['id']}", 'nota': a['nota'], 'det': f"{a['de']} → {a['para']}", 'valor': None, 'marcado': True}
@@ -262,8 +337,25 @@ def analisar(sped, xml_dir):
                    'tipo': 'auto' if ca['resumo']['podem'] else 'zero',
                    'grupos': [{'id': 'cad', 'titulo': 'Produtos tipo 00 usados como uso e consumo / ativo', 'sugestao': '07 uso e consumo / 08 ativo',
                                'linhas': lin}] if lin else []})
-    etapas.append({'key': 'estoque', 'titulo': 'Estoque de mercadoria que saiu da ST', 'desc': 'precisa da planilha do estoque: use o botão "Estoque ST"',
-                   'qtd': '—', 'valor': '', 'badge': 'botão próprio', 'tipo': 'fora', 'grupos': []})
+
+    # 9) unidade × XML (código da unidade do C170 pelo da nota; o 0190/0220 acompanha)
+    if xmls:
+        ua = ux.analisar_texto(corr, xmls)
+        r = ua['resumo']
+        lin = [{'sel': u['de'], 'txt': f"{u['de']}{' (' + u['descr_de'] + ')' if u['descr_de'] else ''} → {u['para']}{' (' + u['descr_para'] + ')' if u['descr_para'] else ''}"
+                + (' · a nota usa mais de uma unidade para esse código: fica a mais comum' if u['conflito'] else ''), 'qtd': u['itens']} for u in ua['unidades']]
+        etapas.append({'key': 'unid', 'titulo': 'Unidade × XML', 'desc': 'unidade do C170 diferente da NF-e: troca o código pelo da nota em todo o arquivo'
+                       + (f" · {r['pendencias']} item(ns) com quantidade ou valor diferente ficam como estão" if r['pendencias'] else ''),
+                       'qtd': f"{r['itens_unid']} item(ns) · {r['codigos']} unidade(s)" if lin else 'nada encontrado', 'valor': '',
+                       'badge': 'pelo XML' if lin else 'sem correção', 'tipo': 'auto' if lin else 'zero',
+                       'grupos': [{'id': 'unid', 'titulo': 'Unidades trocadas pela da nota', 'sugestao': 'unidade do XML', 'linhas': lin}] if lin else []})
+    else:
+        etapas.append({'key': 'unid', 'titulo': 'Unidade × XML', 'desc': 'precisa dos XMLs de entrada', 'qtd': 'sem XML', 'valor': '', 'badge': 'anexe os XMLs',
+                       'tipo': 'sem_xml', 'grupos': []})
+    if permitidas is None:
+        etapas.append({'key': 'estoque', 'titulo': 'Estoque de mercadoria que saiu da ST', 'desc': 'precisa da planilha do estoque: use o botão "Estoque ST"',
+                       'qtd': '—', 'valor': '', 'badge': 'botão próprio', 'tipo': 'fora', 'grupos': []})
+    etapas = [e for e in etapas if e['key'] == 'estoque' or pode(e['key'])]
     e110 = ls._e110(corr) or {}
     return {'arquivo': os.path.basename(sped), 'xmls': xml_dir, 'xml_lidos': lidos, 'xml_erros': erros,
             'empresa': {'nome': cab.get('nome', ''), 'cnpj': cab.get('cnpj', ''), 'dt_ini': cab.get('dt_ini', ''), 'dt_fin': cab.get('dt_fin', '')},
@@ -272,12 +364,21 @@ def analisar(sped, xml_dir):
 
 
 # ------------------------------------------------------------------ aplicação
-def aplicar(sped, xml_dir, escolhas):
+def aplicar(sped, xml_dir, escolhas, permitidas=None):
     esc = escolhas or {}
-    liga = lambda k: (esc.get('etapas') or {}).get(k, True)
+    liga = lambda k: _pode(permitidas, k) and (esc.get('etapas') or {}).get(k, True) is not False
     texto, enc, corr, rc, xmls, lidos, erros = _base(sped, xml_dir)
-    auto, dec, an, sn = ls.plano_empresa(corr, xmls, lidos)
     final, resumo, avisos = corr, {}, []
+    # 1b) combustível × uso e consumo (antes do DIFAL)
+    base_an = _comb_todas(corr, xmls)[0] if _pode(permitidas, 'comb') else corr     # o que a análise usou
+    if liga('comb'):
+        ec = esc.get('comb') or {}
+        ids = [i['id'] for i in cc.analisar_texto(final, xmls)['itens'] if ec.get(i['id'], True) is not False]
+        if ids:
+            final, r = cc.aplicar_texto(final, ids, xmls)
+            resumo['comb'] = {'itens': r['itens'], 'notas': r['notas'], 'c190': r['c190_divididos']}
+            avisos += r.get('avisos') or []
+    auto, dec, an, sn = ls.plano_empresa(final, xmls, lidos)
     e116 = esc.get('e116') if isinstance(esc.get('e116'), dict) else None
     resumo['validacao'] = {'feito': sum((rc.get(k) or 0) for k in ('c191_removidos', 'e500_linhas_removidas', 'gtin_limpos', 'cest_limpos',
                                                                         'cod_nat_corrigidos', 'c197_campos_ajustados', 'c100_totais_corrigidos',
@@ -293,7 +394,7 @@ def aplicar(sped, xml_dir, escolhas):
 
     # 2) DIFAL e crédito
     if liga('difal'):
-        ed = esc.get('difal') or {}
+        ed = _traduz_ids(esc.get('difal') or {}, base_an, final)
         auto_f = dict(auto)
         auto_f['cfop'] = [a for a in auto['cfop'] if ed.get(f"cfop:{a['id']}", True) is not False]
         auto_f['simples'] = []
@@ -353,13 +454,12 @@ def aplicar(sped, xml_dir, escolhas):
         # 6) Simples
         if liga('simples'):
             ex = esc.get('simples') or {}
-            ed = esc.get('difal') or {}
             sn_sel = {}
             for a in auto['simples']:
                 if ex.get(a['chave'], True) is not False:
                     sn_sel[a['chave']] = {'zerar': a['zerar'], 'c197': True}
             for d in dec:
-                if d['tipo'] == 'simples_sem' and ed.get(d['id'], True) is not False and (esc.get('simples') or {}).get(d['id'], True) is not False:
+                if d['tipo'] == 'simples_sem' and _traduz_ids(esc.get('difal') or {}, base_an, final).get(d['id'], True) is not False and (esc.get('simples') or {}).get(d['id'], True) is not False:
                     sn_sel[d['id'].split(':', 1)[1]] = {'zerar': d.get('zerar', True), 'c197': True}
             if sn_sel:
                 s2 = sr.analisar_texto(final, xmls, lidos)
@@ -420,6 +520,13 @@ def aplicar(sped, xml_dir, escolhas):
             final, r = c2.aplicar_texto(final, {'itens': mapa})
             resumo['cad'] = {'produtos': r['alterados'], 'por_tipo': r['por_tipo']}
             avisos += [a for a in r.get('avisos') or [] if 'assinado' not in a]
+    # 9) unidade × XML
+    if xmls and liga('unid'):
+        novo, r = ux.aplicar_texto(final, xmls)
+        if r.get('itens'):
+            final = novo
+            resumo['unid'] = {'itens': r['itens']}
+            avisos += r.get('avisos') or []
     antes = ls._e110(texto) or {}
     depois = ls._e110(final) or {}
     avisos2 = []
@@ -441,15 +548,17 @@ def main_cli(argv):
         print('uso: analisar-tudo --sped ARQ.txt [--xmls PASTA] [--regimes R.json] --json saida.json [--aplicar esc.json --saida novo.txt]')
         return 1
     dr.carrega_regimes(opt('--regimes'))
+    perm = opt('--etapas')
+    perm = None if perm is None else {k for k in perm.split(',') if k}
     try:
         if opt('--aplicar'):
             with open(opt('--aplicar'), 'r', encoding='utf-8') as fh:
                 esc = json.load(fh)
-            final, enc, res = aplicar(sped, opt('--xmls'), esc)
+            final, enc, res = aplicar(sped, opt('--xmls'), esc, perm)
             if final is not None and res.get('ok'):
                 fc._grava_sped(opt('--saida'), final, enc)
         else:
-            res = analisar(sped, opt('--xmls'))
+            res = analisar(sped, opt('--xmls'), perm)
     except Exception as e:  # pragma: no cover
         import traceback
         res = {'erro': f'Falha ao processar: {e}', 'detalhe': traceback.format_exc()[-1500:]}

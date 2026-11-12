@@ -1811,3 +1811,55 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .ac7-mais{font-size:11px;font-weight:700;color:#e23d4c;padding:3px 6px;cursor:pointer;align-self:center}.ac7-mais:hover{text-decoration:underline}
 .ac7-exp{background:#fbfcfe;border:1px dashed var(--line);border-radius:10px;margin-top:6px;padding:4px 8px;max-height:260px;overflow:auto}
 .ac7-exp table{font-size:11.5px;width:100%}.ac7-exp th{padding:4px 6px;font-size:10.5px;position:static}.ac7-exp td{padding:3px 6px}.ac7-exp tr.hit td{background:#fff1f2}
+
+/* ---------- ✨ Análise Inteligente (Correção do SPED Fiscal, 2.3.9) ---------- */
+.ai-bar{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}
+.ai-pick{border-color:#e23d4c !important;color:#e23d4c !important}
+.ai-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#166534;background:#ecfdf5;border:1px solid #bbf7d0;border-radius:999px;padding:5px 11px;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ai-chip:before{content:'✓';font-weight:800}
+.ai-chip.sem{color:#92400e;background:#fffbeb;border-color:#fde68a}.ai-chip.sem:before{content:'•'}
+.ai-hero{border-radius:22px;padding:42px 40px 34px;text-align:center;position:relative;overflow:hidden;background:#fbfbff;border:1px solid #ece9ff;margin-bottom:12px}
+.ai-hero:before{content:'';position:absolute;inset:-40% -10% auto -10%;height:400px;pointer-events:none;filter:blur(10px);
+  background:radial-gradient(40% 60% at 22% 40%,rgba(56,189,248,.28),transparent 70%),radial-gradient(40% 60% at 75% 30%,rgba(167,139,250,.40),transparent 70%),radial-gradient(30% 50% at 50% 85%,rgba(244,114,182,.22),transparent 70%);
+  animation:aiAurora 14s ease-in-out infinite alternate}
+@keyframes aiAurora{0%{transform:translateX(-3%) scale(1)}100%{transform:translateX(3%) scale(1.06)}}
+.ai-hero>*{position:relative}
+.ai-ring{position:relative;width:92px;height:92px;margin:0 auto}
+.ai-ring b{position:absolute;inset:0;border-radius:50%;border:2px solid rgba(124,58,237,.28);animation:aiPulso 3.2s ease-out infinite}
+.ai-ring b:nth-child(2){inset:-14px;border-color:rgba(124,58,237,.16);animation-delay:.5s}
+.ai-ring b:nth-child(3){inset:-28px;border-color:rgba(124,58,237,.08);animation-delay:1s}
+@keyframes aiPulso{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.05);opacity:.55}}
+.ai-ring i{position:absolute;inset:14px;border-radius:22px;display:grid;place-items:center;font-style:normal;font-size:28px;color:#fff;background:linear-gradient(135deg,#4338ca,#7c3aed);box-shadow:0 18px 30px -12px #6d28d9;animation:aiFlutua 4s ease-in-out infinite}
+@keyframes aiFlutua{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+.ai-pill{display:inline-block;margin-top:30px;font-size:11px;font-weight:800;letter-spacing:.12em;color:#6d28d9;background:#fff;border:1px solid #e9e5ff;border-radius:999px;padding:6px 12px}
+.ai-hero h1{margin:12px 0 0;font-size:34px;line-height:1.15;letter-spacing:-.02em;background:linear-gradient(90deg,#1e1b4b,#6d28d9 60%,#db2777);-webkit-background-clip:text;background-clip:text;color:transparent}
+.ai-glow{display:inline-block;margin-top:26px;padding:3px;border:0;border-radius:16px;cursor:pointer;background:conic-gradient(from var(--ai-a,200deg),#22d3ee,#7c3aed,#db2777,#f59e0b,#22d3ee);box-shadow:0 18px 34px -16px #6d28d9;transition:transform .15s,box-shadow .15s;font:inherit}
+.ai-glow:hover{transform:translateY(-2px);box-shadow:0 22px 40px -16px #6d28d9}
+.ai-glow:active{transform:translateY(0)}
+.ai-glow span{display:block;position:relative;overflow:hidden;background:linear-gradient(135deg,#4338ca,#7c3aed);color:#fff;font-weight:800;padding:13px 28px;border-radius:13px;font-size:15px}
+.ai-glow span:after{content:'';position:absolute;top:0;bottom:0;left:-40px;width:36px;transform:skewX(-20deg);background:rgba(255,255,255,.3);animation:aiBrilho 3.6s ease-in-out infinite}
+@keyframes aiBrilho{0%,55%{left:-40px}100%{left:110%}}
+.ai-trust{display:flex;justify-content:center;flex-wrap:wrap;gap:8px 26px;margin-top:18px;font-size:12px;color:#6b7280}
+.ai-trust span:before{content:'✓ ';color:#16a34a;font-weight:800}
+.ai-hero.adm{padding:30px 40px 26px}.ai-hero.adm .ai-ring{transform:scale(.8)}.ai-hero.adm .ai-pill{margin-top:20px}
+.ai-hero.adm h1{font-size:28px}.ai-hero.adm .ai-br{display:none}.ai-hero.adm .ai-glow{margin-top:18px}.ai-hero.adm .ai-trust{display:none}
+.ai-adm{background:var(--panel);border:1px solid #fed7aa;border-radius:14px;overflow:hidden;margin-bottom:12px}
+.ai-adm summary{display:flex;align-items:center;gap:10px;padding:10px 14px;background:linear-gradient(90deg,#fff7ed,var(--panel));font-size:13px;font-weight:800;color:#9a3412;cursor:pointer;list-style:none}
+.ai-adm summary::-webkit-details-marker{display:none}
+.ai-adm summary small{font-weight:600;color:#a16207;font-size:11.5px}
+.ai-rec{margin-left:auto;font-style:normal;font-size:12px}.ai-rec:after{content:'▾ abrir'}.ai-adm[open] .ai-rec:after{content:'▴ recolher'}
+.ai-adm-b{display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px;border-top:1px solid #ffedd5}
+.ai-eq{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin-bottom:12px}
+#corrSpedEmpty[hidden]~.ai-eq{display:none !important}
+.ai-eq-h{font-size:13px;font-weight:800;margin-bottom:8px}.ai-eq-h small{font-weight:600;color:var(--ink2);font-size:11.5px}
+.ai-eq-g{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.ai-eq-g label{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:10px;padding:7px 10px;font-size:12.5px;cursor:pointer}
+.ai-eq-g label.t{background:#faf5ff;border-color:#ddd6fe}
+.ai-eq-g label.fx{cursor:default;opacity:.85}
+.ai-eq-g label em{font-style:normal;font-size:9.5px;font-weight:800;background:#7c3aed;color:#fff;border-radius:5px;padding:1px 5px;margin-left:6px}
+.ai-eq-g input{appearance:none;-webkit-appearance:none;width:32px;height:18px;border-radius:12px;background:#cbd5e1;position:relative;flex:none;cursor:pointer;margin:0;transition:background .15s}
+.ai-eq-g input:after{content:'';position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .15s}
+.ai-eq-g input:checked{background:#16a34a}.ai-eq-g input:checked:after{left:16px}
+.ai-eq-g input:disabled{cursor:default}
+.ai-eq-load{grid-column:1/-1;font-size:12px;color:var(--ink2)}
+@media (max-width:1100px){.ai-eq-g{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-hero h1{font-size:28px}}
