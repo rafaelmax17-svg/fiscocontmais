@@ -474,7 +474,7 @@
       </div>
       <div class="fc-prog" id="drProg" hidden><i></i><span></span></div>
       ${R.semCert ? '<div class="fc-alerta" style="margin:12px 0 0"><b>O certificado do contador não está instalado neste computador.</b> Você está vendo a última consulta salva. Para atualizar os pagos ou baixar extratos, use um computador com o e-CPF do contador instalado.</div>' : ''}
-      ${!meta ? `<div class="fc-vazio" style="margin-top:14px"><b>Nenhuma consulta de pagos em ${e(mesTxt(P.mes))} ainda.</b> Clique em “Atualizar pagos”: o sistema entra no Conta Corrente do Portal do Contribuinte com o e-CPF do contador, consulta o mês de cada empresa com Tipo de Lançamento “Todos” e separa só os lançamentos “00 - PAGO” (leva alguns minutos). Escolha uma empresa no filtro para consultar só ela.</div>` : `
+      ${!meta ? `<div class="fc-vazio" style="margin-top:14px"><b>Nenhuma consulta de pagos em ${e(mesTxt(P.mes))} ainda.</b> Clique em “Atualizar pagos”: o sistema entra no Conta Corrente do Portal do Contribuinte com o e-CPF do contador, consulta o mês de cada empresa com Tipo de Lançamento “Todos” e separa só os lançamentos “00 - PAGO” (leva alguns minutos). Escolha uma empresa no filtro para consultar só ela. A consulta automática dos pagos roda em dias úteis às 12:30 e às 18:00.</div>` : `
       <div class="dp-ks">
         <div class="dp-k" style="--c:#16a34a"><span>Total pago no período</span><b>${brl(soma(vis))}</b><i>${vis.length} lançamento${vis.length === 1 ? '' : 's'} · ${empsVis.size} empresa${empsVis.size === 1 ? '' : 's'}</i></div>
         <div class="dp-k" style="--c:#0ea5e9"><span>Pagos em dia</span><b>${ed.length}</b><i>${brl(soma(ed))}</i></div>
@@ -487,7 +487,7 @@
         <table class="fc-tab dp-tab"><thead><tr><th>Lançamento</th><th>Receita</th><th>Vencimento</th><th>Pago em</th><th class="dr-n">Valor lançado</th><th class="dr-n">Valor pago</th><th class="dr-n">Acréscimo</th><th>Situação</th><th>Extrato</th></tr></thead>
         <tbody>${g.l.map(linha).join('')}</tbody></table></div>`).join('')
         : `<div class="fc-sub" style="padding:18px 4px">${L.length ? 'Nenhum DARE pago com esses filtros.' : `Nenhum DARE pago em ${e(mesTxt(P.mes))} nas empresas consultadas.`}</div>`}
-      <div class="fc-sub dr-pasta">Última consulta dos pagos de ${e(mesTxt(P.mes))}: ${e(quando)}${meta.por ? ' · ' + e(meta.por) : ''} · “Pago em” é a Data Atual. e “Valor pago” é o Valor Atualizado do Conta Corrente. O número copiado é o Nr. Lançamento.</div>`}`;
+      <div class="fc-sub dr-pasta">Última consulta dos pagos de ${e(mesTxt(P.mes))}: ${e(quando)}${meta.por ? ' · ' + e(meta.por) : ''} · “Pago em” é a Data Atual. e “Valor pago” é o Valor Atualizado do Conta Corrente. O número copiado é o Nr. Lançamento.<br>Consulta automática dos pagos em dias úteis: 12:30 · 18:00 (mês atual e, até o 10º dia útil, também o mês anterior).</div>`}`;
     ligarPagos(L, vis);
   }
 

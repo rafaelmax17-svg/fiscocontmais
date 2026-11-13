@@ -665,7 +665,7 @@ let _lendoPg = false;
 async function lerPagos(mes, opc = {}) {
   _exige();
   const { ini, fim } = _periodo(mes);
-  P.ocupar(); _lendoPg = true; P.limpaLog();
+  P.ocupar(); _lendoPg = true; P.silencioso(!!opc.auto); P.limpaLog();
   const inicio = Date.now(), lid = new Date().toISOString();
   try {
     await _entrar();
@@ -696,7 +696,7 @@ async function lerPagos(mes, opc = {}) {
       await fs_.setDoc(fs_.doc(db, COL, `pg_${mes}_${_so(ie)}`), doc, { merge: true });
       await P.vai(URL_CC, 45000);
     }
-    const meta = { ultimaLeitura: lid, por: ses.nome || ses.email || '', mes, duracaoSeg: Math.round((Date.now() - inicio) / 1000) };
+    const meta = { ultimaLeitura: lid, por: opc.auto ? 'Consulta automática' : (ses.nome || ses.email || ''), auto: !!opc.auto, mes, duracaoSeg: Math.round((Date.now() - inicio) / 1000) };
     if (!opc.ie) Object.assign(meta, { empresas: ies.length, comPago, qtd, total: Math.round(total * 100) / 100, falhas });
     await fs_.setDoc(fs_.doc(db, COL, `_pg_${mes}`), meta, { merge: true });
     _prog('', { fim: true });
@@ -704,7 +704,7 @@ async function lerPagos(mes, opc = {}) {
   } catch (e) {
     P.log(`pagos: parou · ${e.message || e}`); _prog('', { fim: true });
     throw e;
-  } finally { _lendoPg = false; P.liberar(true); }
+  } finally { _lendoPg = false; P.silencioso(false); P.liberar(true); }
 }
 
 // pagos salvos do mês + quais lançamentos o sistema gerou o DARE (para marcar "gerado pelo sistema")
