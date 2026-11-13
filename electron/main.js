@@ -2279,6 +2279,7 @@ function _soAdminCorretor() {
 const CORR_ETAPAS = [
   { key: 'validacao', nome: 'Validação do PVA', fixo: true },
   { key: 'chave', nome: 'Chave de acesso × XML', teste: true },
+  { key: 'ncm', nome: 'NCM × XML das entradas', teste: true },
   { key: 'ucons', nome: 'Uso e consumo lançado como revenda', teste: true },
   { key: 'comb', nome: 'Combustível × uso e consumo' },
   { key: 'stent', nome: 'ICMS-ST na entrada', teste: true },

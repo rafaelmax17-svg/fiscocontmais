@@ -3,6 +3,21 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.20
+
+- **Corretor do SPED Fiscal · Análise Inteligente · nova etapa "NCM × XML das entradas"** (`ncm`, módulo `ncm_xml`). Está **EM TESTE**: só o Admin vê até você ligar para a equipe.
+  - **O que compara:** o NCM do cadastro do produto (0200, campo 08 COD_NCM) com o NCM do item na NF-e do fornecedor. Cada C170 de entrada é ligado ao item do XML pela chave, pelo número do item e pelo valor, o mesmo casamento das outras etapas.
+  - **Corrige pelo XML:** quando todas as notas trazem o mesmo NCM, troca o do 0200 por ele. Produto sem NCM, ou com NCM inválido, é preenchido. Quando os fornecedores divergem, fica o NCM da maioria das notas.
+  - **Fica como está, com o motivo na tela:**
+    - o NCM do SPED já é o da maioria das notas;
+    - o item ligado na nota é outro produto, sem nenhuma palavra em comum com a descrição (ex.: "CHUCHU" ligado a "REPOLHO ROXO");
+    - o NCM do XML é de outro capítulo e só uma nota traz, que é provável erro do fornecedor (ex.: "MEIO DA ASA DE FRANGO" com o NCM 0406.90.90, de queijo);
+    - o código é usado para vários produtos, com mais de 3 NCMs nas notas.
+  - **ST de RO:** mostra quando o NCM novo faz o produto entrar, sair ou mudar de tabela da ST. A etapa roda antes da ICMS-ST na entrada, que já usa o NCM corrigido.
+  - **"ver notas":** número, fornecedor, data e o NCM de cada XML. Em laranja aparece o NCM que diverge do escolhido.
+  - **Limite:** o NCM do XML é a classificação do fornecedor. Se a maioria das notas vier errada, o sistema segue a maioria. No teste do Espaço do Espeto (09/2026), "OVOS" (0407.21.00, que é o certo) iria para 0407.11.00, que é o de ovos para incubação, e esse produto precisa ser desmarcado.
+  - O 0200 vale para o arquivo inteiro (entradas, saídas e H010). O cadastro no sistema da empresa também precisa ser ajustado.
+
 ## 2.3.17
 
 - **Análise Inteligente · Acumulador 7000 com o número da NF.** O número já aparecia no botão avulso do Acumulador 7000 (2.3.6), mas não na etapa da Análise Inteligente.

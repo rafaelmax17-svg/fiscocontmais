@@ -5,6 +5,7 @@ Roda TODAS as conferências do Corretor sobre o mesmo SPED e devolve um painel �
 Ordem (é também a ordem de aplicação, uma sobre a outra, no mesmo arquivo):
   1) Validação do PVA ............ fiscal_core.corrigir_sped_fiscal + ajusta_campos_c197 (sempre aplicada)
   1·) Chave de acesso × XML ........ chave_xml (C100 CHV_NFE de NF-e/NFC-e, entradas e saídas, pela do XML da nota)
+  1·) NCM × XML das entradas ....... ncm_xml (0200 COD_NCM pelo NCM do item na NF-e do fornecedor; antes da ICMS-ST)
   1a) Uso e consumo como revenda .. uso_consumo_cfop (produto "USO E CONSUMO" com CFOP de revenda/industrialização → x.556/x.407/x.557)
   1c) ICMS-ST na entrada .......... st_entrada_ro (produto da ST de RO lançado como tributado → x.403/x.401 e CST 60;
                                     x.403 com CST tributado → x.102 se o XML mostrar tributado de fato)
@@ -35,7 +36,7 @@ Escolhas (aplicar):
    "desconto": {"<chave>": false}, "icms": {"<chave>": false}, "valor": {"<chave>": false},
    "simples": {"<chave>": false}, "maca": {"<chave da nota ou nº|série|fornecedor>": false},
    "acum": {"<COD_ITEM>": "70xx"|false}, "cad": {"<COD_ITEM>": "07"|"08"|false}, "comb": {"<doc:item>": false}, "ucons": {"<doc:item>": false},
-   "stent": {"<doc:item>": false}, "chave": {"<nota>": false},
+   "stent": {"<doc:item>": false}, "chave": {"<nota>": false}, "ncm": {"<COD_ITEM>": false},
    "e116": {"venc": "ddmmaaaa", "cod_rec": "..."}}
 Gera arquivo NOVO; o original nunca é alterado.
 """
@@ -56,6 +57,7 @@ import credito_maca as cm
 import combustivel_cfop as cc
 import uso_consumo_cfop as uc
 import chave_xml as ck
+import ncm_xml as nx
 import st_entrada_ro as se
 import unidade_xml as ux
 from xml_entradas import ler_xmls
@@ -91,7 +93,7 @@ def _todas(mod, texto, xmls):
 
 def _base_analise(corr, xmls, permitidas):
     """O arquivo que a análise usa depois das trocas de CFOP (uso e consumo, combustível)."""
-    for k, mod in (('chave', ck), ('ucons', uc), ('comb', cc), ('stent', se)):
+    for k, mod in (('chave', ck), ('ncm', nx), ('ucons', uc), ('comb', cc), ('stent', se)):
         if _pode(permitidas, k):
             corr = _todas(mod, corr, xmls)[0]
     return corr
@@ -153,6 +155,9 @@ def analisar(sped, xml_dir, permitidas=None):
     ca_uc = ca_comb = ca_ch = None
     if pode('chave'):
         corr, ca_ch = _todas(ck, corr, xmls)         # as demais etapas acham o XML pela chave já corrigida
+    ca_ncm = None
+    if pode('ncm') and xmls:
+        corr, ca_ncm = _todas(nx, corr, xmls)        # a ICMS-ST na entrada usa o NCM já corrigido pelo XML
     if pode('ucons'):
         corr, ca_uc = _todas(uc, corr, xmls)         # as demais etapas olham o arquivo já com o CFOP de uso e consumo
     if pode('comb'):
@@ -200,6 +205,42 @@ def analisar(sped, xml_dir, permitidas=None):
                        'valor': '', 'badge': 'pode corrigir' if r['corrigir'] else ('precisa do XML' if r['pendencias'] else 'sem correção'),
                        'tipo': 'auto' if r['corrigir'] else 'zero',
                        'grupos': [{'id': 'chave', 'titulo': 'Notas com a chave errada', 'sugestao': 'chave do XML', 'linhas': lin}] if lin else []})
+
+    # 1·) NCM × XML das entradas (0200 COD_NCM)
+    if ca_ncm is not None:
+        r = ca_ncm['resumo']
+        rg = {'troca': 'troca', 'preenche': 'preenche', 'maioria': 'maioria'}
+        lin = [{'sel': i['cod'], 'nota': i['descr'] or i['cod'],
+                'det': f"cód. {i['cod']} · NCM {i['ncm_sped'] or '(em branco)'} → {i['ncm_xml']} · {i['itens']} item(ns) em {i['notas']} nota(s) · {i['motivo']}"
+                       + (f" · {i['efeito_txt']}" if i['efeito_txt'] else ''),
+                'valor': i['valor'], 'marcado': True, 'nfs': i['nfs'], 'busca': ' '.join(str(n['num']) for n in i['nfs']) + ' ' + i['ncm_xml'] + ' ' + (i['ncm_sped'] or ''),
+                'origem': 'muda a ST' if i['efeito'] in ('entra', 'sai', 'muda') else None}
+               for i in ca_ncm['itens']]
+        lin += [{'sel': f"fica:{i['cod']}", 'nota': i['descr'] or i['cod'],
+                 'det': f"cód. {i['cod']} · NCM {i['ncm_sped']} · fica como está: {i['motivo']}", 'valor': i['valor'], 'marcado': False, 'bloqueado': True,
+                 'nfs': i['nfs'], 'busca': ' '.join(str(n['num']) for n in i['nfs'])} for i in ca_ncm['fica']]
+        extra = [f"{r['conferidos']} item(ns) de entrada conferidos com o XML"]
+        if r['muda_st']:
+            extra.append(f"{r['muda_st']} produto(s) mudam a ST de RO com o NCM do XML (a etapa ICMS-ST na entrada já usa o NCM novo)")
+        fm = r['fica'] - r['generico'] - r['outro'] - r['capitulo']
+        if fm:
+            extra.append(f"{fm} produto(s) com fornecedores divergentes ficam como estão (o NCM do SPED é o da maioria das notas)")
+        if r['outro']:
+            extra.append(f"{r['outro']} produto(s) em que o item ligado na nota é outro produto: o NCM do SPED fica")
+        if r['capitulo']:
+            extra.append(f"{r['capitulo']} produto(s) com NCM do XML de outro capítulo em uma nota só (provável erro do fornecedor): o NCM do SPED fica")
+        if r['generico']:
+            extra.append(f"{r['generico']} código(s) usados para vários produtos (mais de 3 NCMs nas notas): ficam como estão")
+        if r['sem_xml']:
+            extra.append(f"{r['sem_xml']} nota(s) de entrada sem XML anexado")
+        extra.append('o 0200 vale para o arquivo inteiro (entradas, saídas e H010): ajuste também o cadastro no sistema da empresa')
+        etapas.append({'key': 'ncm', 'titulo': 'NCM × XML das entradas', 'desc': 'NCM do cadastro do produto (0200, campo 08) comparado com o NCM do item na NF-e do fornecedor · ' + ' · '.join(extra),
+                       'qtd': (f"{r['produtos']} produto(s)" + (f" ({r['preenche']} sem NCM)" if r['preenche'] else '')) if r['produtos'] else ('tudo confere' if r['conferidos'] else 'nada encontrado'),
+                       'valor': '', 'badge': 'pelo XML' if r['produtos'] else 'sem correção', 'tipo': 'auto' if r['produtos'] else 'zero',
+                       'grupos': [{'id': 'ncm', 'titulo': 'Produtos com o NCM diferente do XML', 'sugestao': 'NCM do XML', 'linhas': lin}] if lin else []})
+    elif pode('ncm'):
+        etapas.append({'key': 'ncm', 'titulo': 'NCM × XML das entradas', 'desc': 'precisa dos XMLs de entrada', 'qtd': 'sem XML', 'valor': '', 'badge': 'anexe os XMLs',
+                       'tipo': 'sem_xml', 'grupos': []})
 
     # 1a) produto de uso e consumo lançado como revenda / industrialização → x.556 / x.407 / x.557 (antes do DIFAL)
     if ca_uc is not None:
@@ -468,6 +509,13 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
         if ids:
             final, r = ck.aplicar_texto(final, ids, xmls)
             resumo['chave'] = {'itens': r['itens'], 'entradas': r['entradas'], 'saidas': r['saidas']}
+    # 1·) NCM × XML das entradas (antes da ICMS-ST, que usa o NCM)
+    if xmls and liga('ncm'):
+        en = esc.get('ncm') or {}
+        cods = [i['cod'] for i in nx.analisar_texto(final, xmls)['itens'] if en.get(i['cod'], True) is not False]
+        if cods:
+            final, r = nx.aplicar_texto(final, cods, xmls)
+            resumo['ncm'] = {'produtos': r['produtos']}
     # 1a) uso e consumo lançado como revenda (antes do DIFAL)
     if liga('ucons'):
         eu = esc.get('ucons') or {}
