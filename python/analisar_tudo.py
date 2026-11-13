@@ -400,8 +400,12 @@ def analisar(sped, xml_dir, permitidas=None):
     # 7) acumulador 7000
     aa = ad.analisar_texto(corr)
     nomes = {a['cod']: a['nome'] for a in aa['acumuladores']}
-    lin = [{'sel': i['item'], 'nota': i['descr'] or i['item'], 'det': f"cód. {i['item']} · NCM {i['ncm'] or '—'} · {i['motivo']}", 'valor': i['valor'],
-            'confianca': i['confianca'], 'padrao': i['sugestao'] or '', 'marcado': bool(i['sugestao'])} for i in aa['itens']]
+    def _nfs(i):
+        ns = [_num(n['num']) for n in (i.get('nfs') or [])]
+        return ('NF ' + ', '.join(ns[:4]) + (f' (+{len(ns) - 4})' if len(ns) > 4 else '')) if ns else 'NF —'
+    lin = [{'sel': i['item'], 'nota': i['descr'] or i['item'], 'det': f"{_nfs(i)} · cód. {i['item']} · NCM {i['ncm'] or '—'} · {i['motivo']}", 'valor': i['valor'],
+            'confianca': i['confianca'], 'padrao': i['sugestao'] or '', 'marcado': bool(i['sugestao']), 'nfs': i.get('nfs') or [],
+            'busca': ' '.join(_num(n['num']) for n in (i.get('nfs') or []))} for i in aa['itens']]
     n_media = sum(1 for i in aa['itens'] if i['confianca'] != 'alta')
     etapas.append({'key': 'acum', 'titulo': 'Acumulador 7000', 'desc': 'acumulador de despesa certo (7001 a 7040) por produto',
                    'qtd': f'{len(lin)} produto(s)' if lin else 'nada encontrado', 'valor': f"R$ {_fm(aa['resumo']['valor'])}" if lin else '',

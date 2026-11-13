@@ -2160,7 +2160,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
     }
     function tdLinhas(e, g) {
       const q = (TD.busca[g.id] || '').toLowerCase();
-      const L = (g.linhas || []).filter((l) => !q || `${l.nota} ${l.det || ''} ${l.sel}`.toLowerCase().includes(q));
+      const L = (g.linhas || []).filter((l) => !q || `${l.nota} ${l.det || ''} ${l.sel} ${l.busca || ''}`.toLowerCase().includes(q));
       const lim = TD.lim[g.id] || 100;
       const sel = (l) => {
         const k = tdK(g.id, l);
@@ -2172,13 +2172,15 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       const itens = (l) => {
         const k = tdK(g.id, l);
         if (!TD.lAberta.has(k)) return '';
+        if (l.nfs && l.nfs.length) return `<tr><td></td><td colspan="5"><table class="td-sub"><tr><th>Nota</th><th>Série</th><th>Fornecedor</th><th>Data</th><th style="text-align:right">Valor do produto</th></tr>
+          ${l.nfs.map((n) => `<tr><td><b>${esc(String(+n.num || n.num))}</b></td><td>${esc(n.serie || '')}</td><td>${esc(n.forn || '')}</td><td>${esc(n.data || '')}</td><td style="text-align:right">${fmR(n.valor)}</td></tr>`).join('')}</table></td></tr>`;
         if (l.itens) return `<tr><td></td><td colspan="5"><table class="td-sub"><tr><th>Item</th><th>Produto</th><th style="text-align:right">Valor</th><th style="text-align:right">Desc. SPED</th><th style="text-align:right">Desc. XML</th><th style="text-align:right">Desc. novo</th><th>De onde vem</th></tr>
           ${l.itens.map((i) => `<tr><td>${esc(i.num)}</td><td>${esc(i.descr || i.cod)}</td><td style="text-align:right">${fmR(i.vl_item)}</td><td style="text-align:right">${fmR(i.antes)}</td><td style="text-align:right">${i.xml == null ? '—' : fmR(i.xml)}</td><td style="text-align:right"><b>${fmR(i.novo)}</b></td><td>${esc(i.origem)}</td></tr>`).join('')}</table></td></tr>`;
         const its = (l.extra || {}).itens || [];
         return `<tr><td></td><td colspan="5"><table class="td-sub"><tr><th>Código</th><th>Produto</th><th>CFOP</th><th style="text-align:right">Valor</th></tr>
           ${its.map((i) => `<tr><td>${esc(i.cod)}</td><td>${esc(i.descr)}</td><td>${esc(i.cfop || '')}</td><td style="text-align:right">${fmR(i.valor)}</td></tr>`).join('') || '<tr><td colspan="4">Sem itens.</td></tr>'}</table></td></tr>`;
       };
-      const temItens = (l) => (l.itens && l.itens.length) || ((l.extra || {}).itens || []).length;
+      const temItens = (l) => (l.itens && l.itens.length) || (l.nfs && l.nfs.length) || ((l.extra || {}).itens || []).length;
       const linhasVal = g.id === 'val' || g.id === 'unid';
       return `<div class="td-notas">
         ${(g.linhas || []).length > 8 && !linhasVal ? `<input class="td-busca" data-g="${esc(g.id)}" placeholder="Buscar por número, fornecedor ou produto" value="${esc(TD.busca[g.id] || '')}">` : ''}
@@ -2188,7 +2190,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
           <td><b>${esc(linhasVal ? l.txt : l.nota)}</b>${l.det ? `<span class="ac7-mi">${esc(l.det)}</span>` : ''}</td>
           <td style="text-align:right">${linhasVal ? l.qtd : (l.valor == null ? '—' : fmR(l.valor))}</td>
           <td>${l.confianca ? `<span class="ac7-cf ${l.confianca === 'alta' ? 'k-ok' : 'k-warn'}">${l.confianca === 'alta' ? 'Alta' : 'Média'}</span>` : (l.origem ? `<span class="ac7-cf ${l.origem === 'item do XML' ? 'k-ok' : 'k-warn'}">${esc(l.origem)}</span>` : '')}</td>
-          <td>${sel(l)}</td><td>${temItens(l) ? `<a class="td-lk" data-li="${esc(k)}">${TD.lAberta.has(k) ? 'fechar itens' : 'ver itens'}</a>` : ''}</td></tr>${itens(l)}`; }).join('')}
+          <td>${sel(l)}</td><td>${temItens(l) ? `<a class="td-lk" data-li="${esc(k)}">${TD.lAberta.has(k) ? (l.nfs ? 'fechar notas' : 'fechar itens') : (l.nfs ? 'ver notas' : 'ver itens')}</a>` : ''}</td></tr>${itens(l)}`; }).join('')}
         </tbody></table>${L.length > lim ? `<button class="act inv-export td-mais" data-g="${esc(g.id)}">Mostrar mais (${L.length - lim})</button>` : ''}</div>`;
     }
     function tdDesenhar() {

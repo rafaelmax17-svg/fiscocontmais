@@ -3,6 +3,13 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.17
+
+- **Análise Inteligente · Acumulador 7000 com o número da NF.** O número já aparecia no botão avulso do Acumulador 7000 (2.3.6), mas não na etapa da Análise Inteligente.
+  - **Na linha:** cada produto mostra "NF 141252, 141422, 141824" (até 4 números, e "+N" se tiver mais).
+  - **"ver notas":** abre a tabela com nota, série, fornecedor, data e valor do produto em cada nota.
+  - **Busca:** encontra pelo número da nota.
+
 ## 2.3.16
 
 - **Chave de acesso × XML · sem XML, a etapa agora explica de onde veio a chave errada** (caso do Auto Posto Patrão Cacoal, 10/2026, com os erros de chave da importação no Domínio).
