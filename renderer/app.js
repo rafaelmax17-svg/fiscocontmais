@@ -3701,6 +3701,14 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
 
   // ---- Substituir LMC de Combustíveis (Admin) ----
   const bLmcSemPick = $('#btnLmcSemPick');
+  // quadro do arquivo escolhido: ✓ verde e o nome do arquivo
+  function lmcMarca(btn, info, caminho) {
+    const b = $(btn);
+    b.classList.add('ok');
+    b.querySelector('i').textContent = '✓';
+    $(info).textContent = caminho.split(/[\\/]/).pop();
+    $(info).title = caminho;
+  }
   if (bLmcSemPick) {
     bLmcSemPick.addEventListener('click', async () => {
       const pick = await window.fiscocont.fiscal.pickSped();
@@ -3708,6 +3716,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       FISCAL.lmcSemPath = pick.path;
       $('#btnLmcComPick').disabled = false;
       $('#lmcResumo').hidden = true;
+      lmcMarca('#btnLmcSemPick', '#lmcSemInfo', pick.path);
       toast('SPED do Domínio selecionado: ' + pick.path.split(/[\\/]/).pop());
     });
 
@@ -3717,12 +3726,13 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       FISCAL.lmcComPath = pick.path;
       $('#btnLmcRodar').disabled = false;
       $('#lmcResumo').hidden = true;
+      lmcMarca('#btnLmcComPick', '#lmcComInfo', pick.path);
       toast('SPED do cliente selecionado: ' + pick.path.split(/[\\/]/).pop());
     });
 
     $('#btnLmcRodar').addEventListener('click', async () => {
       if (!FISCAL.lmcSemPath || !FISCAL.lmcComPath) return;
-      overlay(true, 'Trocando o bloco de LMC (1300‑1390)…');
+      overlay(true, 'Trocando o LMC…');
       const res = await window.fiscocont.fiscal.substituirLmc(FISCAL.lmcSemPath, FISCAL.lmcComPath);
       overlay(false);
       if (res.error) { toast(res.error, true); return; }
@@ -3761,6 +3771,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
         toast('SPED com LMC substituído salvo.');
         window.fiscocont.openPath(res3.path);
       });
+      box.scrollIntoView({ behavior: 'smooth', block: 'start' });
       toast('LMC substituído — confira o resumo.');
     });
   }

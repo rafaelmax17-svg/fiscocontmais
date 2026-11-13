@@ -3,6 +3,15 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.14
+
+- **Substituir LMC · tela nova (modelo A5).**
+  - **Fundo:** lilás e azul claros, com o desenho de um posto (cobertura "POSTO · LMC" e bombas 1300/1310/1320) e uma linha tracejada do cartão até a bomba. Sem carro e sem animação.
+  - **Cartão:** de vidro fosco, só com o título, sem a descrição.
+  - **Escolha dos arquivos:** os quadros "1 · SPED do Domínio" e "2 · SPED do cliente" são os botões de escolher. Ao escolher, o quadro fica com ✓ verde e mostra o nome do arquivo.
+  - **Botão "⛽ Substituir LMC":** fica apagado até os dois arquivos estarem escolhidos.
+  - **Resultado:** aparece embaixo, como antes; a tela rola até ele. Em telas estreitas, o desenho fica mais suave atrás do cartão.
+
 ## 2.3.13
 
 - **ICMS-ST na entrada · o crédito só sai quando o XML mostra a ST retida** (pedido do Rafael, ICMS a recolher subindo demais no teste).

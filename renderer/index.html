@@ -1293,24 +1293,38 @@
 
       <!-- Fiscal: Substituir LMC de Combustíveis (Admin) -->
       <div class="view" id="view-admin-lmc" hidden>
-        <div class="fiscal-bar" style="border-color:rgba(226,61,76,.3)">
-          <button class="act inv-export" id="btnLmcSemPick">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            1 · SPED do Domínio (sem LMC certo)
-          </button>
-          <button class="act inv-export" id="btnLmcComPick" disabled>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            2 · SPED do cliente (com LMC certo)
-          </button>
-          <span class="fiscal-spacer"></span>
-          <button class="act inv-export" id="btnLmcRodar" disabled style="background:#e23d4c;color:#fff;border-color:transparent">Substituir LMC</button>
-        </div>
-        <div class="fiscal-empty" id="lmcEmpty">
-          <svg viewBox="0 0 24 24"><path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M10.3 4.2L2.9 17a1.8 1.8 0 001.55 2.7h15.1A1.8 1.8 0 0021.1 17L13.7 4.2a1.8 1.8 0 00-3.4 0z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-          <h2>Substituir LMC de Combustíveis — acesso restrito ao Admin</h2>
-          <p>Pra posto de gasolina: o cliente manda o SPED com o LMC (registros 1300‑1390) certo, mas o Domínio exporta com
-          esse bloco errado ou incompleto. Selecione os 2 arquivos (1º o do Domínio, 2º o do cliente) — o sistema troca o
-          bloco inteiro pelo do cliente e recalcula os fechamentos. <b>Isso gera um arquivo novo</b> — os originais nunca são alterados.</p>
+        <div class="lmc-hero" id="lmcEmpty">
+          <svg class="lmc-cena" viewBox="0 0 1180 640" preserveAspectRatio="xMaxYMax slice" aria-hidden="true">
+            <defs>
+              <linearGradient id="lmcCob" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ef4444"/><stop offset="1" stop-color="#c81e3a"/></linearGradient>
+              <linearGradient id="lmcLuz" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff7d6" stop-opacity=".2"/><stop offset="1" stop-color="#fff7d6" stop-opacity="0"/></linearGradient>
+            </defs>
+            <g fill="#fff" opacity=".9">
+              <g transform="translate(200,70)"><ellipse cx="60" cy="30" rx="60" ry="22"/><ellipse cx="100" cy="20" rx="45" ry="26"/><ellipse cx="30" cy="22" rx="30" ry="18"/></g>
+              <g transform="translate(760,48) scale(.8)"><ellipse cx="60" cy="30" rx="60" ry="22"/><ellipse cx="100" cy="20" rx="45" ry="26"/><ellipse cx="30" cy="22" rx="30" ry="18"/></g>
+            </g>
+            <rect x="0" y="520" width="1180" height="120" fill="#eef0f8"/>
+            <rect x="0" y="520" width="1180" height="3" fill="#dfe3f0"/>
+            <polygon points="560,210 1160,210 1220,560 500,560" fill="url(#lmcLuz)"/>
+            <rect x="540" y="168" width="640" height="44" rx="6" fill="url(#lmcCob)"/>
+            <rect x="560" y="208" width="600" height="6" rx="3" fill="#fffbe6"/>
+            <text x="860" y="198" text-anchor="middle" font-family="Inter, Segoe UI, sans-serif" font-weight="800" font-size="18" fill="#fff" letter-spacing="6">POSTO · LMC</text>
+            <rect x="600" y="212" width="16" height="308" fill="#b8c1dc"/><rect x="1120" y="212" width="16" height="308" fill="#b8c1dc"/>
+            <g transform="translate(700,380)"><rect width="90" height="140" rx="10" fill="#fff" stroke="#e2e8f0"/><rect x="10" y="12" width="70" height="40" rx="5" fill="#0b1224"/><text x="45" y="38" text-anchor="middle" class="lmc-dig">1300</text><rect width="90" height="10" rx="5" fill="#e23d4c"/><rect x="30" y="70" width="30" height="40" rx="6" fill="#f1f5f9"/></g>
+            <g transform="translate(860,380)"><rect width="90" height="140" rx="10" fill="#fff" stroke="#e2e8f0"/><rect x="10" y="12" width="70" height="40" rx="5" fill="#0b1224"/><text x="45" y="38" text-anchor="middle" class="lmc-dig">1310</text><rect width="90" height="10" rx="5" fill="#f97316"/><rect x="30" y="70" width="30" height="40" rx="6" fill="#f1f5f9"/></g>
+            <g transform="translate(1020,380)"><rect width="90" height="140" rx="10" fill="#fff" stroke="#e2e8f0"/><rect x="10" y="12" width="70" height="40" rx="5" fill="#0b1224"/><text x="45" y="38" text-anchor="middle" class="lmc-dig">1320</text><rect width="90" height="10" rx="5" fill="#22c55e"/><rect x="30" y="70" width="30" height="40" rx="6" fill="#f1f5f9"/></g>
+            <path d="M500 330 C 600 330, 640 300, 700 420" stroke="#e23d4c" stroke-width="3" fill="none" stroke-dasharray="6 10" stroke-linecap="round"/><circle cx="700" cy="420" r="5" fill="#e23d4c"/>
+          </svg>
+          <div class="lmc-card">
+            <span class="lmc-adm">ADMIN · COMBUSTÍVEIS</span>
+            <h1>Substituir o LMC<br>do SPED do posto</h1>
+            <div class="lmc-slots">
+              <button type="button" class="lmc-slot" id="btnLmcSemPick"><i>1</i><span>SPED do Domínio<small id="lmcSemInfo">o arquivo que vai ser corrigido</small></span></button>
+              <button type="button" class="lmc-slot" id="btnLmcComPick" disabled><i>2</i><span>SPED do cliente<small id="lmcComInfo">com o LMC certo</small></span></button>
+            </div>
+            <button type="button" class="lmc-go" id="btnLmcRodar" disabled>⛽ Substituir LMC</button>
+            <div class="lmc-foot">Gera um arquivo novo. Os originais nunca são alterados.</div>
+          </div>
         </div>
         <div id="lmcResumo" hidden></div>
         <iframe id="lmcFrame" class="fiscal-frame" hidden></iframe>
