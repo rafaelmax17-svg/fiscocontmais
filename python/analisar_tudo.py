@@ -194,10 +194,12 @@ def analisar(sped, xml_dir, permitidas=None):
         if r['xml_sem_nota']:
             extra.append(f"{r['xml_sem_nota']} XML(s) sem nota no SPED ({r['xml_sem_nota_ent']} de entrada, {r['xml_sem_nota_sai']} de saída)")
         etapas.append({'key': 'chave', 'titulo': 'Chave de acesso × XML', 'desc': 'NF-e e NFC-e, entradas e saídas: chave do C100 conferida com o XML da nota · ' + ' · '.join(extra),
-                       'qtd': f"{r['corrigir']} nota(s) ({r['entradas']} entrada · {r['saidas']} saída)" if r['corrigir'] else ('nada a trocar' if lin else 'tudo confere'),
-                       'valor': '', 'badge': 'pode corrigir' if r['corrigir'] else ('ver avisos' if lin else 'sem correção'),
+                       'qtd': (f"{r['corrigir']} nota(s) ({r['entradas']} entrada · {r['saidas']} saída)" if r['corrigir'] else '')
+                              + (f"{' · ' if r['corrigir'] else ''}{r['pendencias']} com chave errada sem XML" if r['pendencias'] else '')
+                              or 'tudo confere',
+                       'valor': '', 'badge': 'pode corrigir' if r['corrigir'] else ('precisa do XML' if r['pendencias'] else 'sem correção'),
                        'tipo': 'auto' if r['corrigir'] else 'zero',
-                       'grupos': [{'id': 'chave', 'titulo': 'Notas com a chave diferente da do XML', 'sugestao': 'chave do XML', 'linhas': lin}] if lin else []})
+                       'grupos': [{'id': 'chave', 'titulo': 'Notas com a chave errada', 'sugestao': 'chave do XML', 'linhas': lin}] if lin else []})
 
     # 1a) produto de uso e consumo lançado como revenda / industrialização → x.556 / x.407 / x.557 (antes do DIFAL)
     if ca_uc is not None:

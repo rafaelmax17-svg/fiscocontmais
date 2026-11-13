@@ -3,6 +3,15 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.16
+
+- **Chave de acesso × XML · sem XML, a etapa agora explica de onde veio a chave errada** (caso do Auto Posto Patrão Cacoal, 10/2026, com os erros de chave da importação no Domínio).
+  - **Chave copiada de outra nota do arquivo:** a linha diz "a chave é da NFC-e 106550 (linha 36117) e foi copiada para esta nota". Exemplo: a entrada da Rondolimp, NF-e 100657, estava com a chave de uma NFC-e do próprio posto.
+  - **Mesma nota lançada duas vezes** (mesma chave e mesmo número em dois C100): a linha mostra as duas linhas e os dois valores. Se faltar um número na sequência das notas próprias, diz qual deve ser. Exemplo: a NFC-e 115102 aparece duas vezes, e pela sequência a segunda deve ser a 115104, que não está no arquivo.
+  - **Nota cancelada:** chave com dígito verificador inválido aparece marcada como "(nota cancelada)".
+  - **Etapa sem XML:** mostra "N com chave errada sem XML" e o selo "precisa do XML".
+  - **Por que não troca sozinho sem o XML:** os 8 dígitos do código numérico da chave são aleatórios, então só o XML traz a chave certa.
+
 ## 2.3.15
 
 - **Substituir LMC:** o selo do cartão passou a ser só "COMBUSTÍVEIS", sem o "ADMIN".

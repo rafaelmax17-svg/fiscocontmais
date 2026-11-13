@@ -52,6 +52,32 @@ def _brl(v):
     return f'{v:,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
 
 
+def _nome_mod(m):
+    return 'NFC-e' if m == '65' else 'NF-e'
+
+
+def _vl(d):
+    try:
+        return float((d['vl'] or '0').replace('.', '').replace(',', '.'))
+    except ValueError:
+        return 0.0
+
+
+def _bate(d, ch):
+    """A chave é desta nota? (modelo, série e número dentro da chave = os do C100)"""
+    return len(ch) == 44 and ch[20:22] == d['mod'] and int(ch[22:25]) == _int(d['serie']) and int(ch[25:34]) == _int(d['num'])
+
+
+def _buraco(docs, d):
+    """Nota própria: número que falta na sequência perto desta (ex.: 115102 lançada duas vezes e a 115104 sumida)."""
+    if d['emit'] != '0':
+        return ''
+    nums = {_int(x['num']) for x in docs if x['emit'] == '0' and x['mod'] == d['mod'] and _int(x['serie']) == _int(d['serie'])}
+    n = _int(d['num'])
+    faltam = [k for k in range(n - 5, n + 6) if k > 0 and k not in nums and min(nums) < k < max(nums)]
+    return str(faltam[0]) if len(faltam) == 1 else ''
+
+
 def _estrutura(linhas):
     cnpj, part, docs = '', {}, []
     for i, l in enumerate(linhas):
@@ -87,6 +113,7 @@ def analisar_texto(texto, xmls=None):
     por_id = {}
     for ch, x in xmls.items():
         por_id.setdefault((_dig(x.get('emit_cnpj')).zfill(14), x.get('mod'), _int(x.get('serie')), _int(x.get('num'))), []).append(ch)
+    docs_i = {d['i']: d for d in docs}
     chaves_sped = {}
     for d in docs:
         if d['chave']:
@@ -133,9 +160,25 @@ def analisar_texto(texto, xmls=None):
             cont['entrada' if quem == 'entrada' else 'saida'] += 1
             continue
         cont['sem_xml'] += 1
-        # sem XML: confere a chave em si
+        # sem XML: confere a chave em si e de quem ela é dentro do próprio arquivo
         ch = d['chave']
         prob = ''
+        outros = [o for o in chaves_sped.get(ch, []) if o != d['i']] if ch else []
+        dono = next((docs_i[o] for o in outros if _bate(docs_i[o], ch)), None)
+        canc = ' (nota cancelada)' if d['sit'] in CANC else ''
+        if dono is not None and not _bate(d, ch):
+            pend.append({**base, 'motivo': f"a chave é da {_nome_mod(dono['mod'])} {_int(dono['num'])} (linha {dono['i'] + 1}) e foi copiada "
+                                            f"para esta nota{canc} — anexe o XML desta nota para pôr a chave certa", 'chave_xml': ''})
+            continue
+        if outros and _bate(d, ch) and any(_bate(docs_i[o], ch) for o in outros):
+            prim = min([d['i']] + [o for o in outros if _bate(docs_i[o], ch)])
+            if d['i'] != prim:
+                falta = _buraco(docs, d)
+                pend.append({**base, 'motivo': f"a mesma {_nome_mod(d['mod'])} {_int(d['num'])} está lançada duas vezes (linhas {prim + 1} e {d['i'] + 1})"
+                                                + (f" com valores diferentes (R$ {_brl(_vl(docs_i[prim]))} × R$ {_brl(vl)})" if abs(_vl(docs_i[prim]) - vl) > 0.005 else ' com o mesmo valor')
+                                                + (f"; pela sequência, esta deve ser a {falta}, que não aparece no arquivo" if falta else '')
+                                                + ' — anexe o XML para conferir', 'chave_xml': ''})
+            continue
         if d['mod'] == '55' and not ch and d['sit'] not in CANC:
             prob = 'chave vazia e sem XML da nota'
         elif ch and not dv_ok(ch):
@@ -148,7 +191,7 @@ def analisar_texto(texto, xmls=None):
             elif emit_doc.strip('0') and ch[6:20] != emit_doc and d['emit'] == '0':
                 prob = 'o CNPJ dentro da chave não é o da empresa (nota própria)'
         if prob:
-            pend.append({**base, 'motivo': prob + ' — anexe o XML para corrigir', 'chave_xml': ''})
+            pend.append({**base, 'motivo': prob + canc + ' — anexe o XML para corrigir', 'chave_xml': ''})
     sobra = []
     for ch, x in xmls.items():
         if ch in usados or ch in chaves_sped:
