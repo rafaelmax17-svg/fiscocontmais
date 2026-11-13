@@ -599,6 +599,9 @@ ipcMain.handle('dare:novoCodigo', () => _dare(() => dare.novoCodigo()));
 ipcMain.handle('dare:emitir', (_evt, o) => _dare(() => dare.emitir(o || {})));
 ipcMain.handle('dare:cancelar', () => _dare(() => dare.cancelar()));
 ipcMain.handle('dare:extrato', (_evt, x) => _dare(() => dare.extrato(x)));
+ipcMain.handle('dare:lerPagos', (_evt, mes, opc) => _dare(() => dare.lerPagos(mes, opc || {})));
+ipcMain.handle('dare:dadosPagos', (_evt, mes) => _dare(() => dare.dadosPagos(mes)));
+ipcMain.handle('dare:extratoPago', (_evt, x) => _dare(() => dare.extratoPago(x)));
 // abre o PDF salvo ou a pasta da empresa (só caminhos dentro da pasta dos DAREs)
 ipcMain.handle('dare:abrir', (_evt, arq) => _dare(async () => {
   const alvo = path.resolve(String(arq || ''));

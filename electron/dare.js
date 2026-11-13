@@ -536,4 +536,226 @@ async function emitir({ data, codigo, comExtrato }) {
 }
 function cancelar() { if (_prep) _fechaPrep(); return { ok: true }; }
 
-module.exports = { init, podeUsar, ler, resumo, dados, previa, preparar, novoCodigo, emitir, cancelar, extrato, PASTA_PADRAO };
+// ------------------------------------------------------------------ DAREs pagos (Conta Corrente do Portal do Contribuinte)
+// Tela "CONTA CORRENTE": Inscrição Estadual, Data Inicial, Data Final, Tipo de Lançamento (Todos) → "Consultar Conta Corrente".
+// O resultado ("Extrato do conta corrente") traz duas tabelas com as mesmas colunas: "Débitos na Inscrição Estadual" e
+// "Débitos no CNPJ". Ficam só as linhas com Situação "00 - PAGO" (em aberto, parcelados, contestados etc. não entram).
+//   Pago em = Data Atual. · Valor pago = Valor Atualizado · acréscimo = Valor Atualizado − Valor Lanç.
+// Nuvem: dare/pg_<AAAAMM>_<IE> (uma empresa no mês) e dare/_pg_<AAAAMM> (resumo da última consulta do mês).
+const URL_CC = 'https://portalcontribuinte.sefin.ro.gov.br/app/contacorrente/';
+
+const JS_CC_FORM = `(() => { ${JS_LIMPA} ${JS_SEL_IE}
+  const txt = document.body ? document.body.innerText : '';
+  if (!/data\\s*inicial/i.test(txt) || !/consultar\\s+conta\\s+corrente/i.test(txt + ' ' + [...document.querySelectorAll('input')].map((i) => i.value).join(' '))) return null;
+  const s = selIE(); if (!s) return null;
+  const ies = [...s.options].map((o) => ({ v: o.value, t: limpa(o.textContent) })).filter((o) => /^\\d{8,14}\\s*-/.test(o.t));
+  return ies.length ? { ies } : null; })()`;
+
+const jsConsultarCC = (v, ini, fim) => `(() => { ${JS_LIMPA} ${JS_SEL_IE}
+  window.__alerta = ''; window.alert = (m) => { window.__alerta = String(m); };
+  const setv = (el, val) => { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); el.dispatchEvent(new Event('blur', { bubbles: true })); };
+  const s = selIE(); if (!s) return { erro: 'a lista de inscrições não apareceu' };
+  if (s.value !== ${JSON.stringify(v)}) setv(s, ${JSON.stringify(v)});
+  const txts = () => [...document.querySelectorAll('input')].filter((x) => !x.type || /^(text|tel|search|date)$/i.test(x.type));
+  // a linha mais interna com o rótulo (a tabela de fora também contém o texto de todas as linhas)
+  const daLinha = (re) => { const tr = [...document.querySelectorAll('tr')].filter((t) => re.test(limpa(t.innerText)) && t.querySelector('input'))
+      .sort((a, b) => limpa(a.innerText).length - limpa(b.innerText).length)[0];
+    return tr && tr.querySelector('input:not([type=button]):not([type=submit]):not([type=hidden])'); };
+  const ini = daLinha(/data\\s*inicial/i) || txts().find((i) => /ini/i.test((i.name || '') + (i.id || '')));
+  const fim = daLinha(/data\\s*final/i) || txts().find((i) => /fin|fim/i.test((i.name || '') + (i.id || '')));
+  if (!ini || !fim) return { erro: 'os campos de data não apareceram' };
+  setv(ini, ${JSON.stringify(ini)}); setv(fim, ${JSON.stringify(fim)});
+  const tipo = [...document.querySelectorAll('select')].find((x) => x !== s && [...x.options].some((o) => /^\\s*todos\\s*$/i.test(o.textContent)));
+  if (tipo) { const o = [...tipo.options].find((x) => /^\\s*todos\\s*$/i.test(x.textContent)); if (tipo.value !== o.value) setv(tipo, o.value); }
+  const b = [...document.querySelectorAll('input[type=submit], input[type=button], button, a')].find((x) => /consultar\\s+conta\\s+corrente/i.test(x.value || x.innerText || ''))
+    || [...document.querySelectorAll('input[type=submit], input[type=button], button')].find((x) => /consultar/i.test(x.value || x.innerText || ''));
+  if (!b) return { erro: 'o botão Consultar Conta Corrente não apareceu' };
+  b.click(); return { ok: true }; })()`;
+
+// lê as duas tabelas do extrato do conta corrente (IE e CNPJ)
+const JS_CC_RES = `(() => { ${JS_LIMPA}
+  if (window.__alerta) return { erro: window.__alerta };
+  const txt = document.body ? document.body.innerText : '';
+  if (!/extrato do conta corrente/i.test(txt)) return null;
+  const cab = { cnpj: (txt.match(/C\\.N\\.P\\.J:?\\s*([\\d./-]{14,18})/) || [])[1] || '', razao: limpa((txt.match(/Raz[aã]o Social:?\\s*([^\\n\\t]+)/) || [])[1]),
+    ie: (txt.match(/Inscri[cç][aã]o Estadual:?\\s*(\\d{8,14})/) || [])[1] || '' };
+  const hds = [...document.querySelectorAll('tr')].filter((tr) => { const t = limpa(tr.innerText); return tr.children.length >= 6 && /Nr\\.?\\s*Lan[cç]amento/i.test(t) && /Receita/i.test(t); });
+  const linhas = [];
+  hds.forEach((hd, k) => {
+    // de qual quadro é a tabela: o texto antes do cabeçalho diz "Débitos na Inscrição Estadual" ou "Débitos no CNPJ"
+    let orig = k === 0 ? 'ie' : 'cnpj', el = hd.closest('table');
+    for (let n = 0; n < 4 && el; n++) { const t = limpa((el.previousElementSibling || {}).innerText || '') + ' ' + limpa((el.querySelector('tr') || {}).innerText || '');
+      if (/D[eé]bitos no CNPJ/i.test(t)) { orig = 'cnpj'; break; } if (/D[eé]bitos na Inscri/i.test(t)) { orig = 'ie'; break; } el = el.parentElement && el.parentElement.closest('table'); }
+    const nomes = [...hd.children].map((c) => limpa(c.innerText).toLowerCase());
+    const col = (re) => nomes.findIndex((n) => re.test(n));
+    const C = { ext: col(/^extrato/), nr: col(/lan[cç]amento/), parc: col(/^parc/), ref: col(/refer/), comp: col(/complem/), rec: col(/receita/), sit: col(/situa/),
+      venc: col(/venc/), val: col(/valor\\s*lan/), dat: col(/data\\s*atual/), atu: col(/valor\\s*atualiz/) };
+    const pai = hd.parentElement;
+    const corpo = pai.tagName === 'THEAD' ? [...hd.closest('table').tBodies].flatMap((b) => [...b.rows]) : [...pai.children].slice([...pai.children].indexOf(hd) + 1);
+    for (const r of corpo) {
+      const td = [...r.children]; if (td.length < 6) { if (/D[eé]bitos no CNPJ/i.test(limpa(r.innerText))) break; continue; }
+      const g = (c) => (C[c] >= 0 && td[C[c]] ? limpa(td[C[c]].innerText) : '');
+      const nr = g('nr'); if (!/^\\d{6,}$/.test(nr)) continue;
+      linhas.push({ orig, nr, parc: g('parc'), ref: g('ref'), comp: g('comp'), rec: g('rec'), sit: g('sit'), venc: g('venc'), valor: g('val'), pagoEm: g('dat'), valorAtu: g('atu'),
+        temExt: !!(C.ext >= 0 && td[C.ext] && td[C.ext].querySelector('a, button, input[type=button]')) });
+    }
+  });
+  return { pronto: true, linhas, cab, tabelas: hds.length }; })()`;
+
+// clica no "Exibir" do lançamento na tela do conta corrente (procura nas duas tabelas)
+const jsClicaCC = (nr, parc) => `(() => { ${JS_LIMPA}
+  const hds = [...document.querySelectorAll('tr')].filter((tr) => { const t = limpa(tr.innerText); return tr.children.length >= 6 && /Nr\\.?\\s*Lan[cç]amento/i.test(t) && /Receita/i.test(t); });
+  for (const hd of hds) {
+    const nomes = [...hd.children].map((c) => limpa(c.innerText).toLowerCase());
+    const iNr = nomes.findIndex((n) => /lan[cç]amento/.test(n)), iP = nomes.findIndex((n) => /^parc/.test(n)), iE = nomes.findIndex((n) => /^extrato/.test(n));
+    const pai = hd.parentElement;
+    const corpo = pai.tagName === 'THEAD' ? [...hd.closest('table').tBodies].flatMap((b) => [...b.rows]) : [...pai.children].slice([...pai.children].indexOf(hd) + 1);
+    const r = corpo.find((tr) => { const td = [...tr.children]; return td[iNr] && limpa(td[iNr].innerText) === ${JSON.stringify(nr)} && (iP < 0 || !td[iP] || limpa(td[iP].innerText) === ${JSON.stringify(parc)}); });
+    const a = r && iE >= 0 && r.children[iE] && r.children[iE].querySelector('a, button, input[type=button]');
+    if (a) { a.click(); return { ok: true }; }
+  }
+  return { erro: 'o portal não oferece o extrato desse lançamento' }; })()`;
+
+const _pad = (n) => String(n).padStart(2, '0');
+function _periodo(mes) {                       // 'AAAAMM' → datas do mês
+  const m = String(mes || '').match(/^(\d{4})(\d{2})$/);
+  if (!m) throw new Error('Período inválido.');
+  const ult = new Date(+m[1], +m[2], 0).getDate();
+  return { ini: `01/${m[2]}/${m[1]}`, fim: `${_pad(ult)}/${m[2]}/${m[1]}` };
+}
+const _mesmaIE = (a, b) => _so(a).replace(/^0+/, '') === _so(b).replace(/^0+/, '');
+
+async function _abrirCC() {
+  let f = await _jsF(JS_CC_FORM);
+  if (f) return f;
+  for (let k = 0; k < 3 && !f; k++) { await P.vai(URL_CC, 45000); f = await _espera(JS_CC_FORM, 25000); }
+  if (!f) { await _print('dare_contacorrente.png'); throw new Error('a tela do Conta Corrente não abriu no portal'); }
+  return f;
+}
+async function _consultarCC(ie, ini, fim) {
+  const f = await _abrirCC();
+  const op = f.r.ies.find((x) => x.t.startsWith(ie)) || f.r.ies.find((x) => _mesmaIE(x.t.split('-')[0], ie));
+  if (!op) throw new Error('a inscrição não está na lista do Conta Corrente');
+  const r = await _noFrame(f.fr, jsConsultarCC(op.v, ini, fim));
+  if (r && r.erro) throw new Error(r.erro);
+  await _sleep(1200);
+  const res = await _espera(JS_CC_RES, 40000, 800);
+  if (!res) throw new Error('o portal não devolveu o extrato do conta corrente');
+  if (res.r.erro) throw new Error(`o portal respondeu: ${res.r.erro}`);
+  if (res.r.cab.ie && !_mesmaIE(res.r.cab.ie, ie)) throw new Error(`o portal mostrou outra inscrição (${res.r.cab.ie})`);
+  return res;
+}
+
+// só "00 - PAGO"; a mesma linha nas duas tabelas entra uma vez
+const PAGO = /^\s*0*0\s*-\s*PAGO\b/i;
+function _soPagos(linhas) {
+  const vistos = new Set(), out = [];
+  for (const l of linhas) {
+    if (!PAGO.test(l.sit)) continue;
+    const k = `${l.nr}|${l.parc || '00'}`;
+    if (vistos.has(k)) continue;
+    vistos.add(k);
+    const valorN = _num(l.valor), pagoN = _num(l.valorAtu);
+    out.push({ ...l, valorN, pagoN, acresc: Math.round((pagoN - valorN) * 100) / 100 });
+  }
+  return out;
+}
+
+let _lendoPg = false;
+async function lerPagos(mes, opc = {}) {
+  _exige();
+  const { ini, fim } = _periodo(mes);
+  P.ocupar(); _lendoPg = true; P.limpaLog();
+  const inicio = Date.now(), lid = new Date().toISOString();
+  try {
+    await _entrar();
+    _prog('Abrindo o Conta Corrente…');
+    const f = await _abrirCC();
+    let ies = f.r.ies;
+    if (opc.ie) ies = ies.filter((x) => _mesmaIE(x.t.split('-')[0], opc.ie));
+    if (!ies.length) throw new Error(opc.ie ? 'Essa inscrição não está na lista do Conta Corrente do contador.' : 'A lista de inscrições do Conta Corrente veio vazia no portal.');
+    const { db, f: fs_ } = _fs();
+    const ses = auth.sessao() || {};
+    let comPago = 0, total = 0, falhas = 0, qtd = 0;
+    for (let i = 0; i < ies.length; i++) {
+      const m = ies[i].t.match(/^(\d{8,14})\s*-\s*(.+)$/);
+      const ie = m ? m[1] : _so(ies[i].t), nome = m ? m[2].trim() : ies[i].t;
+      _prog(`Pagos de ${ini.slice(3)} · ${i + 1} de ${ies.length} · ${nome}`, { i: i + 1, n: ies.length });
+      let doc;
+      try {
+        let res;
+        try { res = await _consultarCC(ie, ini, fim); } catch (e1) { P.log(`${ie}: ${e1.message} · tentando de novo`); await P.vai(URL_CC, 45000); res = await _consultarCC(ie, ini, fim); }
+        const pagos = _soPagos(res.r.linhas);
+        doc = { ie, nome, razao: res.r.cab.razao || nome, cnpj: _so(res.r.cab.cnpj), mes, pagos, lidoEm: lid, erro: '' };
+        if (pagos.length) { comPago++; qtd += pagos.length; total += pagos.reduce((s, l) => s + l.pagoN, 0); }
+        P.log(`${ie} ${nome}: ${res.r.linhas.length} lançamento(s) no conta corrente · ${pagos.length} pago(s)`);
+      } catch (e) {
+        falhas++; P.log(`${ie} ${nome}: ${e.message || e}`);
+        doc = { ie, nome, mes, lidoEm: lid, erro: String(e.message || e).slice(0, 200) };
+      }
+      await fs_.setDoc(fs_.doc(db, COL, `pg_${mes}_${_so(ie)}`), doc, { merge: true });
+      await P.vai(URL_CC, 45000);
+    }
+    const meta = { ultimaLeitura: lid, por: ses.nome || ses.email || '', mes, duracaoSeg: Math.round((Date.now() - inicio) / 1000) };
+    if (!opc.ie) Object.assign(meta, { empresas: ies.length, comPago, qtd, total: Math.round(total * 100) / 100, falhas });
+    await fs_.setDoc(fs_.doc(db, COL, `_pg_${mes}`), meta, { merge: true });
+    _prog('', { fim: true });
+    return { ok: true, ...meta, comPago, qtd, total: Math.round(total * 100) / 100, falhas };
+  } catch (e) {
+    P.log(`pagos: parou · ${e.message || e}`); _prog('', { fim: true });
+    throw e;
+  } finally { _lendoPg = false; P.liberar(true); }
+}
+
+// pagos salvos do mês + quais lançamentos o sistema gerou o DARE (para marcar "gerado pelo sistema")
+async function dadosPagos(mes) {
+  _exige();
+  _periodo(mes);
+  const { db, f } = _fs();
+  const emps = [], gerados = {};
+  let meta = null;
+  (await f.getDocs(f.collection(db, COL))).forEach((d) => {
+    const x = d.data();
+    if (d.id === `_pg_${mes}`) meta = x;
+    else if (d.id.startsWith(`pg_${mes}_`)) emps.push(x);
+    else if (/^\d{4}_/.test(d.id) && x.gerados) Object.entries(x.gerados).forEach(([k, g]) => { if (g && (g.arquivo || g.extrato)) gerados[`${_so(x.ie).replace(/^0+/, '')}|${k}`] = { em: g.em || '', data: g.data || '', arquivo: g.arquivo || '' }; });
+  });
+  return { mes, emps, meta, gerados, pasta: pasta(), rodando: _lendoPg || _lendo || !!_prep };
+}
+
+// extrato de um lançamento pago (link "Exibir" do conta corrente) → mesma pasta e nome dos extratos dos débitos
+async function extratoPago(x) {
+  _exige();
+  const { ini, fim } = _periodo(x.mes);
+  P.ocupar(); P.limpaLog();
+  try {
+    const n = _nomes(x);
+    _garantePasta(n.dir);
+    await _entrar();
+    _prog(`Baixando o extrato do lançamento ${x.nr}…`);
+    const res = await _consultarCC(x.ie, ini, fim);
+    _abriu = null;
+    const antes = P.win().webContents.getURL();
+    const c = await _noFrame(res.fr, jsClicaCC(x.nr, x.parc || '00'));
+    if (c && c.erro) throw new Error(c.erro);
+    let mudou = false;
+    const ate = Date.now() + 20000;
+    while (Date.now() < ate && !mudou) {
+      await _sleep(500);
+      if (_abriu) { const u = _abriu; _abriu = null; await P.vai(u, 45000); mudou = true; }
+      else if (P.win().webContents.getURL() !== antes) { await _sleep(1500); mudou = true; }
+    }
+    // o extrato do lançamento mostra o número e não traz mais as duas tabelas do conta corrente
+    const ok = await _espera(`(() => { const t = document.body ? document.body.innerText : ''; return t.includes(${JSON.stringify(x.nr)}) && !/D[eé]bitos no CNPJ/i.test(t) || null; })()`, 30000);
+    if (!ok) { await _print('dare_extrato_pago.png'); throw new Error('o extrato não abriu no portal'); }
+    await _salvaPdf(n.extrato, true);
+    const ses = auth.sessao() || {};
+    const { db, f } = _fs();
+    await f.setDoc(f.doc(db, COL, `pg_${x.mes}_${_so(x.ie)}`), { extratos: { [`${x.nr}_${x.parc || '00'}`]: { arquivo: n.extrato, em: new Date().toISOString(), por: ses.nome || ses.email || '' } } }, { merge: true });
+    _prog('', { fim: true });
+    return { ok: true, arquivo: n.extrato };
+  } catch (e) { P.log(`extrato pago ${x.nr}: ${e.message || e}`); _prog('', { fim: true }); throw e; }
+  finally { P.liberar(true); }
+}
+
+module.exports = { init, podeUsar, ler, resumo, dados, previa, preparar, novoCodigo, emitir, cancelar, extrato, lerPagos, dadosPagos, extratoPago, PASTA_PADRAO };

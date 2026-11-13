@@ -4,7 +4,7 @@
 // Usa o mesmo e-CPF do contador escolhido no Fisconforme.
 (function () {
   const e = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const R = { ano: String(new Date().getFullYear()), d: null, filtro: 'todos', emp: '', rec: '', busca: '', dia: '', grp: '', anim: false, sel: new Set(), mostrar: 150, semCert: false, est: null };
+  const R = { aba: 'aberto', nAberto: null, pg: null, ano: String(new Date().getFullYear()), d: null, filtro: 'todos', emp: '', rec: '', busca: '', dia: '', grp: '', anim: false, sel: new Set(), mostrar: 150, semCert: false, est: null };
   const brl = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const fmtCnpj = (c) => String(c || '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
   const hoje0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -32,6 +32,7 @@
   }
 
   async function carregar() {
+    if (R.aba === 'pagos') { carregarPagos(); return; }
     const d = await window.fiscocont.dare.dados(R.ano);
     if (d && d.error) { $('#drRaiz').innerHTML = `<div class="lic-empty">${e(d.error)}</div>`; return; }
     R.d = d; R.anim = true;
@@ -40,19 +41,20 @@
     desenhar();
   }
 
-  function cabecalho(dir) {
+  function cabecalho(dir, subt) {
     const est = (R.est && R.est.escolhido) || (R.d && R.d.meta && R.d.meta.contador) || { nome: 'contador' };
     return `<div class="fc-hd"><div class="fc-tit"><div class="dr-logo">${ICONE}</div><div><span class="fc-tag">SEFIN-RO · PORTAL DO CONTRIBUINTE</span><h2>Débitos e DARE</h2>
-      <p>Débitos em aberto de todas as empresas vinculadas ao contador · ${e(est.nome || 'contador')} (e-CPF) · exercício ${e(R.ano)}</p></div></div>${dir || ''}</div>`;
+      <p>${subt ? e(subt) : 'Débitos em aberto de todas as empresas vinculadas ao contador'} · ${e(est.nome || 'contador')} (e-CPF)${subt ? '' : ` · exercício ${e(R.ano)}`}</p></div></div>${dir || ''}</div>`;
   }
 
   function semCertificado() {
     const est = R.est;
-    $('#drRaiz').innerHTML = `${cabecalho()}<div class="fc-alerta"><b>${est.certs.length ? 'Escolha o certificado do contador no Fisconforme' : 'Certificado do contador não encontrado neste computador'}</b>
+    $('#drRaiz').innerHTML = `${cabecalho()}${abas()}<div class="fc-alerta"><b>${est.certs.length ? 'Escolha o certificado do contador no Fisconforme' : 'Certificado do contador não encontrado neste computador'}</b>
       <p>${est.certs.length ? 'Há mais de um e-CPF instalado. Abra o módulo Fisconforme, escolha o do contador e volte aqui.'
         : 'O sistema consulta o Portal do Contribuinte com o <b>e-CPF do contador</b> instalado no Windows. Instale o certificado neste computador e abra o módulo de novo.'} Nada foi consultado.</p>
       <button class="act inv-export" id="drRever">Conferir de novo</button></div>`;
     $('#drRever').onclick = entrar;
+    ligaAbas();
   }
 
   // ------------------------------------------------------------------ dados → linhas
@@ -149,7 +151,7 @@
           <div class="dr-lg">${faixas.map((f) => `<div><span><i style="background:${f.c}"></i>${f.t}</span><b>${brl(f.v)}</b></div>`).join('')}</div>
           <small>Última consulta ${e(quando)}${meta.por ? ' · ' + e(meta.por) : ''}<br>Consulta automática em dias úteis: 07:45 · 10:45 · 13:45 · 16:45</small></div>` : ''}</div></div>`;
 
-    $('#drRaiz').innerHTML = `${heroTopo}
+    $('#drRaiz').innerHTML = `${abas(L.length)}${heroTopo}
       <div class="fc-prog" id="drProg" hidden><i></i><span></span></div>
       ${R.semCert ? '<div class="fc-alerta" style="margin-bottom:12px"><b>O certificado do contador não está instalado neste computador.</b> Você está vendo a última consulta salva. Para consultar de novo ou gerar DARE e extrato, use um computador com o e-CPF do contador instalado.</div>' : ''}
       ${!meta ? `<div class="fc-vazio"><b>Nenhuma consulta em ${e(R.ano)} ainda.</b> Clique em “Consultar débitos”: o sistema entra no Portal do Contribuinte com o e-CPF do contador e consulta o exercício de todas as empresas da lista (leva alguns minutos).</div>` : `
@@ -206,6 +208,7 @@
   }
 
   function ligar(L, raiz) {
+    ligaAbas();
     $('#drLer').onclick = consultar;
     $('#drAno').onchange = (ev) => { R.ano = ev.target.value; R.sel.clear(); carregar(); };
     if (!R.d.meta) return;
@@ -360,6 +363,186 @@
     o.querySelector('.dr-mh h2').textContent = M.feitos.length > 1 ? 'DAREs gerados' : 'DARE gerado';
     o.querySelectorAll('[data-abrir]').forEach((b) => b.onclick = async () => { const r = await window.fiscocont.dare.abrir(b.dataset.abrir); if (r && r.error) toast(r.error, true); });
     $('#drFim').onclick = fecha;
+  }
+
+  // ------------------------------------------------------------------ abas: Em aberto | Pagos
+  function abas(nAberto) {
+    if (nAberto != null) R.nAberto = nAberto;
+    const nPg = R.pg && R.pg.d ? pgLinhas().length : null;
+    const b = (k, t, n) => `<button class="dr-aba ${R.aba === k ? 'on' : ''}" data-aba="${k}">${t}${n != null ? `<i>${n}</i>` : ''}</button>`;
+    return `<div class="dr-abas">${b('aberto', 'Em aberto', R.nAberto)}${b('pagos', 'Pagos', nPg)}</div>`;
+  }
+  function ligaAbas() {
+    document.querySelectorAll('#drRaiz [data-aba]').forEach((b) => b.onclick = () => {
+      if (R.aba === b.dataset.aba) return;
+      R.aba = b.dataset.aba; carregar();
+    });
+  }
+
+  // ------------------------------------------------------------------ DAREs pagos (Conta Corrente · "00 - PAGO")
+  // Pago em = Data Atual. do conta corrente · Valor pago = Valor Atualizado · o número copiado é o Nr. Lançamento.
+  const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  const mesTxt = (m) => `${MESES[+m.slice(4) - 1]}/${m.slice(0, 4)}`;
+  const semZero = (ie) => String(ie || '').replace(/\D/g, '').replace(/^0+/, '');
+  const chPg = (x) => `${x.ie}|${x.nr}|${x.parc || '00'}`;
+  function mesPadrao() { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`; }
+  function mesesOpc() {
+    const out = [], d = new Date(); d.setDate(1);
+    for (let k = 0; k < 13; k++) { out.push(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`); d.setMonth(d.getMonth() - 1); }
+    return out;
+  }
+  function pgSit(x) {
+    if (x.parc && !/^0+$/.test(x.parc)) return [`parcela ${+x.parc}`, 'pc'];
+    const p = dt(x.pagoEm), v = dt(x.venc);
+    if (p && v && p > v) { const n = Math.round((p - v) / 864e5); return [`em atraso · ${n} dia${n === 1 ? '' : 's'}`, 'at']; }
+    return ['em dia', 'ed'];
+  }
+  function pgLinhas() {
+    const d = R.pg.d, out = [];
+    (d.emps || []).forEach((m) => (m.pagos || []).forEach((x) => {
+      const k = `${x.nr}_${x.parc || '00'}`;
+      out.push({ ...x, ie: m.ie, nome: m.nome, razao: m.razao, cnpj: m.cnpj, mes: m.mes,
+        ger: (d.gerados || {})[`${semZero(m.ie)}|${k}`] || null, ext: (m.extratos || {})[k] || null });
+    }));
+    return out;
+  }
+  const pgPassa = (x) => {
+    const P = R.pg;
+    if (P.emp && x.ie !== P.emp) return false;
+    if (P.rec && x.rec !== P.rec) return false;
+    if (P.sit) { const c = pgSit(x)[1]; if (P.sit === 'ger' ? !x.ger : c !== P.sit) return false; }
+    if (P.busca) { const b = P.busca.toLowerCase(); if (![x.nome, x.ie, x.nr, x.comp, x.cnpj, x.rec].join(' ').toLowerCase().includes(b)) return false; }
+    return true;
+  };
+
+  async function carregarPagos() {
+    if (!R.pg) R.pg = { mes: mesPadrao(), d: null, emp: '', rec: '', sit: '', busca: '', cop: new Set() };
+    $('#drRaiz').innerHTML = `${cabecalho('', 'Lançamentos com situação "00 - PAGO" no Conta Corrente de todas as empresas vinculadas ao contador')}${abas()}<div class="lic-empty">Carregando os pagos de ${e(mesTxt(R.pg.mes))}…</div>`;
+    ligaAbas();
+    const d = await window.fiscocont.dare.dadosPagos(R.pg.mes);
+    if (R.aba !== 'pagos') return;
+    if (d && d.error) { $('#drRaiz').innerHTML = `<div class="lic-empty">${e(d.error)}</div>`; return; }
+    R.pg.d = d;
+    desenharPagos();
+  }
+
+  function desenharPagos() {
+    const P = R.pg, d = P.d, meta = d.meta;
+    const L = pgLinhas();
+    const vis = L.filter(pgPassa);
+    const soma = (a, k = 'pagoN') => a.reduce((s, x) => s + (x[k] || 0), 0);
+    const ed = vis.filter((x) => pgSit(x)[1] === 'ed'), at = vis.filter((x) => pgSit(x)[1] === 'at'), pc = vis.filter((x) => pgSit(x)[1] === 'pc');
+    const empsVis = new Set(vis.map((x) => x.ie));
+    const listaEmp = [...new Map((d.emps || []).filter((m) => (m.pagos || []).length).map((m) => [m.ie, m.nome])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    const recs = [...new Set(L.map((x) => x.rec))].sort();
+    const falhas = (d.emps || []).filter((m) => m.erro);
+    const podeSefin = !R.semCert;
+    const quando = meta && meta.ultimaLeitura ? new Date(meta.ultimaLeitura).toLocaleString('pt-BR').slice(0, 17).replace(',', '') : '';
+    const empSel = P.emp ? listaEmp.find(([ie]) => ie === P.emp) : null;
+    const pcTxt = pc.length === 1 ? `parcela ${+pc[0].parc} · ${brl(pc[0].pagoN)}` : `${brl(soma(pc))}`;
+
+    // por empresa, na ordem do nome; dentro, por vencimento
+    const porE = new Map();
+    vis.forEach((x) => { if (!porE.has(x.ie)) porE.set(x.ie, { nome: x.razao || x.nome, ie: x.ie, cnpj: x.cnpj, l: [] }); porE.get(x.ie).l.push(x); });
+    const grupos = [...porE.values()].sort((a, b) => a.nome.localeCompare(b.nome));
+    grupos.forEach((g) => g.l.sort((a, b) => (dt(a.venc) || 0) - (dt(b.venc) || 0) || a.nr.localeCompare(b.nr)));
+    const fmtV = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const linha = (x) => {
+      const [st, cl] = pgSit(x), k = chPg(x), cop = P.cop.has(k);
+      return `<tr>
+        <td><span class="dp-nr"><b>${e(x.nr)}</b><button class="dp-cp ${cop ? 'ok' : ''}" data-cp="${e(k)}" title="Copiar o número do DARE (Nr. Lançamento)">${cop ? '✓ copiado' : '⧉ copiar'}</button></span>
+          <small>parc. ${e(x.parc || '00')} · ref. ${e(x.ref)}</small></td>
+        <td><b>${e(x.rec)}</b></td><td>${e(x.venc)}</td><td><b>${e(x.pagoEm)}</b></td>
+        <td class="dr-n">${fmtV(x.valorN)}</td><td class="dr-n"><b>${fmtV(x.pagoN)}</b></td>
+        <td class="dr-n ${x.acresc > 0 ? 'dp-ac' : ''}">${x.acresc > 0 ? '+ ' + fmtV(x.acresc) : '—'}</td>
+        <td><span class="dp-st ${cl}">${st}</span>${x.ger ? '<small class="dp-ger">✓ gerado pelo sistema</small>' : ''}</td>
+        <td>${x.temExt ? `<button class="dr-bt ex" data-pext="${e(k)}"${podeSefin ? '' : ' disabled'}>Exibir</button>` : '<span class="fc-sub">—</span>'}
+          ${x.ext && x.ext.arquivo ? `<small class="dr-ok"><a href="#" data-abrir="${e(x.ext.arquivo)}">✓ salvo</a></small>` : ''}</td></tr>`;
+    };
+
+    $('#drRaiz').innerHTML = `${cabecalho('', 'Lançamentos com situação "00 - PAGO" no Conta Corrente de todas as empresas vinculadas ao contador')}${abas()}
+      <div class="dp-flt">
+        <label class="dp-f">Período: <select id="dpMes">${mesesOpc().map((m) => `<option value="${m}" ${m === P.mes ? 'selected' : ''}>${mesTxt(m)}</option>`).join('')}</select></label>
+        <label class="dp-f">Empresa: <select id="dpEmp"><option value="">todas</option>${listaEmp.map(([ie, n]) => `<option value="${e(ie)}" ${P.emp === ie ? 'selected' : ''}>${e(n)} · IE ${e(ie)}</option>`).join('')}</select></label>
+        <label class="dp-f">Receita: <select id="dpRec"><option value="">todas</option>${recs.map((r) => `<option ${P.rec === r ? 'selected' : ''}>${e(r)}</option>`).join('')}</select></label>
+        <label class="dp-f">Situação: <select id="dpSit">${[['', 'todos os pagos'], ['ed', 'em dia'], ['at', 'em atraso'], ['pc', 'parcelamentos'], ['ger', 'gerados pelo sistema']].map(([v, t]) => `<option value="${v}" ${P.sit === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        <input class="dp-f dp-bu" id="dpBusca" placeholder="Buscar empresa, IE ou nº" value="${e(P.busca)}">
+        <span class="dp-sp"></span>
+        <button class="dp-b o" id="dpCopTodos"${vis.length ? '' : ' disabled'}>⧉ Copiar todos os números</button>
+        <button class="dp-b" id="dpLer"${podeSefin ? '' : ' disabled title="Precisa do e-CPF do contador instalado neste computador"'}>↻ ${empSel ? 'Atualizar pagos desta empresa' : 'Atualizar pagos'}</button>
+      </div>
+      <div class="fc-prog" id="drProg" hidden><i></i><span></span></div>
+      ${R.semCert ? '<div class="fc-alerta" style="margin:12px 0 0"><b>O certificado do contador não está instalado neste computador.</b> Você está vendo a última consulta salva. Para atualizar os pagos ou baixar extratos, use um computador com o e-CPF do contador instalado.</div>' : ''}
+      ${!meta ? `<div class="fc-vazio" style="margin-top:14px"><b>Nenhuma consulta de pagos em ${e(mesTxt(P.mes))} ainda.</b> Clique em “Atualizar pagos”: o sistema entra no Conta Corrente do Portal do Contribuinte com o e-CPF do contador, consulta o mês de cada empresa com Tipo de Lançamento “Todos” e separa só os lançamentos “00 - PAGO” (leva alguns minutos). Escolha uma empresa no filtro para consultar só ela.</div>` : `
+      <div class="dp-ks">
+        <div class="dp-k" style="--c:#16a34a"><span>Total pago no período</span><b>${brl(soma(vis))}</b><i>${vis.length} lançamento${vis.length === 1 ? '' : 's'} · ${empsVis.size} empresa${empsVis.size === 1 ? '' : 's'}</i></div>
+        <div class="dp-k" style="--c:#0ea5e9"><span>Pagos em dia</span><b>${ed.length}</b><i>${brl(soma(ed))}</i></div>
+        <div class="dp-k" style="--c:#dc2626"><span>Pagos em atraso</span><b>${at.length}</b><i>${brl(soma(at, 'acresc'))} de juros e multa</i></div>
+        <div class="dp-k" style="--c:#7c3aed"><span>Parcelamentos</span><b>${pc.length}</b><i>${pc.length ? pcTxt : '—'}</i></div>
+      </div>
+      ${falhas.length ? `<div class="fc-aviso" style="margin:12px 0 0">Não consegui consultar ${falhas.length} empresa(s) na última consulta: ${falhas.slice(0, 6).map((m) => e(m.nome)).join(', ')}${falhas.length > 6 ? '…' : ''}. Clique em “Atualizar pagos” para tentar de novo.</div>` : ''}
+      ${grupos.length ? grupos.map((g) => `<div class="dp-emp"><div class="dp-eh"><div><b>${e(g.nome)}</b><small>IE ${e(g.ie)}${g.cnpj ? ' · CNPJ ' + fmtCnpj(g.cnpj) : ''}</small></div>
+          <div class="dp-et"><button class="fc-b" data-cpemp="${e(g.ie)}">⧉ copiar números desta empresa</button>pago no período <b>${brl(soma(g.l))}</b></div></div>
+        <table class="fc-tab dp-tab"><thead><tr><th>Lançamento</th><th>Receita</th><th>Vencimento</th><th>Pago em</th><th class="dr-n">Valor lançado</th><th class="dr-n">Valor pago</th><th class="dr-n">Acréscimo</th><th>Situação</th><th>Extrato</th></tr></thead>
+        <tbody>${g.l.map(linha).join('')}</tbody></table></div>`).join('')
+        : `<div class="fc-sub" style="padding:18px 4px">${L.length ? 'Nenhum DARE pago com esses filtros.' : `Nenhum DARE pago em ${e(mesTxt(P.mes))} nas empresas consultadas.`}</div>`}
+      <div class="fc-sub dr-pasta">Última consulta dos pagos de ${e(mesTxt(P.mes))}: ${e(quando)}${meta.por ? ' · ' + e(meta.por) : ''} · “Pago em” é a Data Atual. e “Valor pago” é o Valor Atualizado do Conta Corrente. O número copiado é o Nr. Lançamento.</div>`}`;
+    ligarPagos(L, vis);
+  }
+
+  function ligarPagos(L, vis) {
+    const P = R.pg;
+    ligaAbas();
+    const por = new Map(L.map((x) => [chPg(x), x]));
+    $('#dpMes').onchange = (ev) => { P.mes = ev.target.value; P.d = null; carregarPagos(); };
+    $('#dpEmp').onchange = (ev) => { P.emp = ev.target.value; desenharPagos(); };
+    $('#dpRec').onchange = (ev) => { P.rec = ev.target.value; desenharPagos(); };
+    $('#dpSit').onchange = (ev) => { P.sit = ev.target.value; desenharPagos(); };
+    const bu = $('#dpBusca');
+    let t; bu.oninput = () => { clearTimeout(t); t = setTimeout(() => { P.busca = bu.value.trim(); desenharPagos(); const n = $('#dpBusca'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); };
+    $('#dpLer').onclick = atualizarPagos;
+    const copia = async (lista, msg) => {
+      if (!lista.length) return;
+      try { await navigator.clipboard.writeText(lista.map((x) => x.nr).join('\n')); } catch (_) { toast('Não consegui copiar para a área de transferência.', true); return; }
+      lista.forEach((x) => P.cop.add(chPg(x)));
+      toast(msg);
+    };
+    document.querySelectorAll('#drRaiz [data-cp]').forEach((b) => b.onclick = async () => {
+      const x = por.get(b.dataset.cp); if (!x) return;
+      try { await navigator.clipboard.writeText(x.nr); } catch (_) { toast('Não consegui copiar para a área de transferência.', true); return; }
+      P.cop.add(b.dataset.cp); b.classList.add('ok'); b.textContent = '✓ copiado';
+    });
+    $('#dpCopTodos').onclick = () => copia(vis, `${vis.length} número${vis.length === 1 ? '' : 's'} de DARE copiado${vis.length === 1 ? '' : 's'} (um por linha).`).then(desenharPagos);
+    document.querySelectorAll('#drRaiz [data-cpemp]').forEach((b) => b.onclick = () => {
+      const l = vis.filter((x) => x.ie === b.dataset.cpemp);
+      copia(l, `${l.length} número${l.length === 1 ? '' : 's'} de DARE copiado${l.length === 1 ? '' : 's'} (um por linha).`).then(desenharPagos);
+    });
+    document.querySelectorAll('#drRaiz [data-pext]').forEach((b) => b.onclick = () => extratoPago(por.get(b.dataset.pext)));
+    document.querySelectorAll('#drRaiz [data-abrir]').forEach((a) => a.onclick = async (ev) => { ev.preventDefault(); const r = await window.fiscocont.dare.abrir(a.dataset.abrir); if (r && r.error) toast(r.error, true); });
+  }
+
+  async function atualizarPagos() {
+    if (R.semCert) return;
+    const P = R.pg, btn = $('#dpLer'); btn.disabled = true;
+    const prog = $('#drProg'); if (prog) { prog.hidden = false; prog.querySelector('span').textContent = 'Entrando no portal da SEFIN…'; }
+    const r = await window.fiscocont.dare.lerPagos(P.mes, P.emp ? { ie: P.emp } : {});
+    if (prog) prog.hidden = true;
+    if (r && r.error) { btn.disabled = false; toast(r.error, true); return; }
+    toast(P.emp ? `Pagos atualizados: ${r.qtd} lançamento(s) pago(s) em ${mesTxt(P.mes)}.`
+      : `Consulta concluída: ${r.qtd} DARE(s) pago(s) em ${r.comPago} empresa(s) · ${brl(r.total)}${r.falhas ? ` · ${r.falhas} sem resposta` : ''}.`);
+    if (R.aba === 'pagos') carregarPagos();
+  }
+
+  async function extratoPago(x) {
+    if (!x || R.semCert) return;
+    const prog = $('#drProg'); if (prog) { prog.hidden = false; prog.querySelector('span').textContent = 'Baixando o extrato…'; }
+    const r = await window.fiscocont.dare.extratoPago({ ie: x.ie, nome: x.nome, nr: x.nr, parc: x.parc || '00', rec: x.rec, mes: x.mes });
+    if (prog) prog.hidden = true;
+    if (r && r.error) { toast(r.error, true); return; }
+    toast('Extrato salvo na pasta da empresa.');
+    window.fiscocont.dare.abrir(r.arquivo);
+    if (R.aba === 'pagos') carregarPagos();
   }
 
   // ------------------------------------------------------------------ PDF do painel (filtros da tela)
