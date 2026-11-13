@@ -1484,7 +1484,7 @@ function bindFiscal() {
       const nome = an && an.empresa && an.empresa.nome ? an.empresa.nome : (corrSpedPath ? corrSpedPath.split(/[\\/]/).pop() : 'SPED não escolhido');
       const di = an && an.empresa && an.empresa.dt_ini;
       const mes = di && di.length === 8 ? ` · ${di.slice(2, 4)}/${di.slice(4)}` : '';
-      const xml = XMLS.path ? (an && an.xml_lidos ? `${an.xml_lidos} XMLs` : 'XMLs anexados') : 'sem XMLs de entrada';
+      const xml = XMLS.path ? (an && an.xml_lidos ? `${an.xml_lidos} XMLs` : 'XMLs anexados') : 'sem XMLs das notas';
       el.textContent = `${nome}${mes} · ${xml}`;
       el.title = el.textContent;
       el.classList.toggle('sem', !XMLS.path || !corrSpedPath);
@@ -2140,7 +2140,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
     // ---- 🔎 Analisar tudo / Aplicar tudo
     const TD = { an: null, etapa: {}, marc: {}, val: {}, aberto: new Set(), gAberto: new Set(), lAberta: new Set(), busca: {}, lim: {}, modo: {}, e116: null };
     const TD_DICT = { cfop: 'difal', difal: 'difal', balcao: 'difal', frete: 'difal', cred: 'difal', desconto: 'desconto', icms: 'icms', valor: 'valor',
-      simples: 'simples', snd: 'simples', maca: 'maca', acum: 'acum', cad: 'cad', comb: 'comb', ucons: 'ucons', stent: 'stent' };
+      simples: 'simples', snd: 'simples', maca: 'maca', acum: 'acum', cad: 'cad', comb: 'comb', ucons: 'ucons', stent: 'stent', chave: 'chave' };
     const tdK = (g, l) => `${g}|${l.sel}`;
     function tdIniciar(an) {
       Object.assign(TD, { an, etapa: {}, marc: {}, val: {}, aberto: new Set(), gAberto: new Set(), lAberta: new Set(), busca: {}, lim: {}, modo: {} });
@@ -2199,8 +2199,8 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
         <div class="dif-head"><div><div class="dif-k">✨ Análise Inteligente</div>
           <h3>${esc(an.empresa.nome || an.arquivo)}</h3>
           <div class="dif-sub">Todas as conferências num painel só. O que é certo já vem marcado; o que depende de decisão vem com a sugestão marcada para você revisar. Nada muda até clicar em <b>Aplicar tudo</b>. O arquivo original nunca é alterado.</div></div>
-          <div class="sn-hbtn"><button class="act inv-export" id="tdXmls">${XMLS.path ? 'Trocar XMLs' : 'Anexar XMLs de entrada'}</button><button class="act inv-export" id="tdFechar">Fechar</button></div></div>
-        ${XMLS.path ? `<div class="dif-av ok dif-xmlbar"><b>XMLs de entrada anexados:</b> ${an.xml_lidos || 0} lido(s).</div>` : '<div class="dif-av"><b>Sem XMLs de entrada:</b> Desconto, ICMS × XML, Valor e base × XML, Simples e Unidade não rodam. Anexe os XMLs para incluir essas conferências.</div>'}
+          <div class="sn-hbtn"><button class="act inv-export" id="tdXmls">${XMLS.path ? 'Trocar XMLs' : 'Anexar XMLs das notas'}</button><button class="act inv-export" id="tdFechar">Fechar</button></div></div>
+        ${XMLS.path ? `<div class="dif-av ok dif-xmlbar"><b>XMLs anexados:</b> ${an.xml_lidos || 0} lido(s).</div>` : '<div class="dif-av"><b>Sem XMLs das notas:</b> Desconto, ICMS × XML, Valor e base × XML, Simples, Unidade e a chave de acesso não rodam. Anexe os XMLs para incluir essas conferências.</div>'}
         <div class="dif-kpis">
           <div><span>Conferências</span><b>${an.etapas.length}</b><small>${ativas} com correção</small></div>
           <div class="k-ok"><span>Marcadas</span><b>${ct.marc}</b><small>serão aplicadas</small></div>
@@ -2238,7 +2238,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       $('#tdAplicar').addEventListener('click', () => tdAplicar());
     }
     function tdEscolhas() {
-      const esc2 = { etapas: { ...TD.etapa }, difal: {}, desconto: {}, icms: {}, valor: {}, simples: {}, maca: {}, acum: {}, cad: {}, comb: {}, ucons: {}, stent: {} };
+      const esc2 = { etapas: { ...TD.etapa }, difal: {}, desconto: {}, icms: {}, valor: {}, simples: {}, maca: {}, acum: {}, cad: {}, comb: {}, ucons: {}, stent: {}, chave: {} };
       if (TD.e116) esc2.e116 = TD.e116;
       TD.an.etapas.forEach((e) => e.grupos.forEach((g) => {
         const dic = TD_DICT[g.id];
@@ -2247,7 +2247,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
         (g.linhas || []).forEach((l) => {
           if (l.bloqueado) return;
           const k = tdK(g.id, l), on = !!TD.marc[k];
-          if (['cfop', 'cred', 'desconto', 'icms', 'valor', 'simples', 'maca', 'comb', 'ucons', 'stent'].includes(g.id)) { if (!on) esc2[dic][l.sel] = false; return; }
+          if (['cfop', 'cred', 'desconto', 'icms', 'valor', 'simples', 'maca', 'comb', 'ucons', 'stent', 'chave'].includes(g.id)) { if (!on) esc2[dic][l.sel] = false; return; }
           if (g.id === 'acum' || g.id === 'cad') { esc2[dic][l.sel] = on ? (TD.val[k] || l.padrao || false) : false; return; }
           if (g.id === 'snd') { esc2.simples[l.sel] = on; return; }
           if (!on) { esc2.difal[l.sel] = g.id === 'balcao' ? 'manter' : 'nao'; return; }
@@ -2288,6 +2288,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       const r = res.resumo || {}, z = r.resumo || {};
       const lin = [];
       if (z.validacao && z.validacao.feito) lin.push(`Validação do PVA: ${z.validacao.feito} correção(ões)`);
+      if (z.chave) lin.push(`Chave de acesso × XML: ${z.chave.itens} nota(s) com a chave do XML (${z.chave.entradas} entrada · ${z.chave.saidas} saída)`);
       if (z.ucons) lin.push(`Uso e consumo lançado como revenda: ${z.ucons.itens} item(ns) em ${z.ucons.notas} nota(s) passaram para o CFOP de uso e consumo${z.ucons.c190 ? ` · ${z.ucons.c190} C190 dividido(s)` : ''}`);
       if (z.stent) lin.push(`ICMS-ST na entrada: ${z.stent.itens} item(ns) em ${z.stent.notas} nota(s)${z.stent.st ? ` · ${z.stent.st} produto(s) da ST → 1.403/1.401 e CST 60` : ''}${z.stent.cst ? ` · ${z.stent.cst} com CST 60 pelo XML` : ''}${z.stent.trib ? ` · ${z.stent.trib} de 1.403 para 1.102 (tributado no XML)` : ''}${z.stent.credito ? ` · crédito retirado R$ ${z.stent.credito.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''}`);
       if (z.comb) lin.push(`Combustível × uso e consumo: ${z.comb.itens} item(ns) em ${z.comb.notas} nota(s) passaram para x.653${z.comb.c190 ? ` · ${z.comb.c190} C190 dividido(s)` : ''}`);
@@ -2318,7 +2319,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
     $('#btnCorrXmls').addEventListener('click', async () => {
       if (!(await corrPedeXmls())) return;
       corrChip();
-      toast('XMLs de entrada anexados.');
+      toast('XMLs das notas anexados.');
       if (!$('#corrTudo').hidden && corrSpedPath) tdAbrir();
     });
 

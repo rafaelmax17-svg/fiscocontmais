@@ -4,6 +4,7 @@
 Roda TODAS as conferências do Corretor sobre o mesmo SPED e devolve um painel único; nada muda até "Aplicar tudo".
 Ordem (é também a ordem de aplicação, uma sobre a outra, no mesmo arquivo):
   1) Validação do PVA ............ fiscal_core.corrigir_sped_fiscal + ajusta_campos_c197 (sempre aplicada)
+  1·) Chave de acesso × XML ........ chave_xml (C100 CHV_NFE de NF-e/NFC-e, entradas e saídas, pela do XML da nota)
   1a) Uso e consumo como revenda .. uso_consumo_cfop (produto "USO E CONSUMO" com CFOP de revenda/industrialização → x.556/x.407/x.557)
   1c) ICMS-ST na entrada .......... st_entrada_ro (produto da ST de RO lançado como tributado → x.403/x.401 e CST 60;
                                     x.403 com CST tributado → x.102 se o XML mostrar tributado de fato)
@@ -34,7 +35,7 @@ Escolhas (aplicar):
    "desconto": {"<chave>": false}, "icms": {"<chave>": false}, "valor": {"<chave>": false},
    "simples": {"<chave>": false}, "maca": {"<chave da nota ou nº|série|fornecedor>": false},
    "acum": {"<COD_ITEM>": "70xx"|false}, "cad": {"<COD_ITEM>": "07"|"08"|false}, "comb": {"<doc:item>": false}, "ucons": {"<doc:item>": false},
-   "stent": {"<doc:item>": false},
+   "stent": {"<doc:item>": false}, "chave": {"<nota>": false},
    "e116": {"venc": "ddmmaaaa", "cod_rec": "..."}}
 Gera arquivo NOVO; o original nunca é alterado.
 """
@@ -54,6 +55,7 @@ import cadastro_0200 as c2
 import credito_maca as cm
 import combustivel_cfop as cc
 import uso_consumo_cfop as uc
+import chave_xml as ck
 import st_entrada_ro as se
 import unidade_xml as ux
 from xml_entradas import ler_xmls
@@ -89,7 +91,7 @@ def _todas(mod, texto, xmls):
 
 def _base_analise(corr, xmls, permitidas):
     """O arquivo que a análise usa depois das trocas de CFOP (uso e consumo, combustível)."""
-    for k, mod in (('ucons', uc), ('comb', cc), ('stent', se)):
+    for k, mod in (('chave', ck), ('ucons', uc), ('comb', cc), ('stent', se)):
         if _pode(permitidas, k):
             corr = _todas(mod, corr, xmls)[0]
     return corr
@@ -148,7 +150,9 @@ def analisar(sped, xml_dir, permitidas=None):
     cab = ls._cab(texto) or {}
     pode = lambda k: _pode(permitidas, k)
     corr_v = corr                                     # arquivo só com a validação (é o que a etapa 1 mostra)
-    ca_uc = ca_comb = None
+    ca_uc = ca_comb = ca_ch = None
+    if pode('chave'):
+        corr, ca_ch = _todas(ck, corr, xmls)         # as demais etapas acham o XML pela chave já corrigida
     if pode('ucons'):
         corr, ca_uc = _todas(uc, corr, xmls)         # as demais etapas olham o arquivo já com o CFOP de uso e consumo
     if pode('comb'):
@@ -174,6 +178,26 @@ def analisar(sped, xml_dir, permitidas=None):
     etapas.append({'key': 'validacao', 'titulo': 'Validação do PVA', 'desc': 'C191, E500, GTIN, CEST, COD_NAT, C197 com campo a mais, totais do C100',
                    'qtd': f'{n_val} correção(ões)' if n_val else 'nada encontrado', 'valor': '', 'badge': 'aplica sozinho' if n_val else 'sem correção',
                    'tipo': 'auto' if n_val else 'zero', 'fixo': True, 'grupos': [{'id': 'val', 'titulo': 'Correções de validação', 'linhas': linhas_val}] if n_val else []})
+
+    # 1·) chave de acesso × XML (NF-e e NFC-e, entradas e saídas)
+    if ca_ch is not None:
+        r = ca_ch['resumo']
+        lin = [{'sel': i['id'], 'nota': f"{'NFC-e' if i['mod'] == '65' else 'NF-e'} {_num(i['num'])} · série {i['serie']} · {i['quem']} · {i['nome']}",
+                'det': f"chave {i['chave_sped'] or '(vazia)'} → {i['chave_xml']} · {i['motivo']}", 'valor': i['valor'], 'marcado': True}
+               for i in ca_ch['itens']]
+        lin += [{'sel': f"pend:{n}", 'nota': f"{'NFC-e' if p['mod'] == '65' else 'NF-e'} {_num(p['num'])} · série {p['serie']} · {p['quem']} · {p['nome']}",
+                 'det': 'NÃO ALTERAR: ' + p['motivo'], 'valor': p['valor'], 'marcado': False, 'bloqueado': True}
+                for n, p in enumerate(ca_ch['pendencias'])]
+        extra = [f"{r['ok']} chave(s) conferem com o XML"]
+        if r['sem_xml']:
+            extra.append(f"{r['sem_xml']} nota(s) sem XML anexado")
+        if r['xml_sem_nota']:
+            extra.append(f"{r['xml_sem_nota']} XML(s) sem nota no SPED ({r['xml_sem_nota_ent']} de entrada, {r['xml_sem_nota_sai']} de saída)")
+        etapas.append({'key': 'chave', 'titulo': 'Chave de acesso × XML', 'desc': 'NF-e e NFC-e, entradas e saídas: chave do C100 conferida com o XML da nota · ' + ' · '.join(extra),
+                       'qtd': f"{r['corrigir']} nota(s) ({r['entradas']} entrada · {r['saidas']} saída)" if r['corrigir'] else ('nada a trocar' if lin else 'tudo confere'),
+                       'valor': '', 'badge': 'pode corrigir' if r['corrigir'] else ('ver avisos' if lin else 'sem correção'),
+                       'tipo': 'auto' if r['corrigir'] else 'zero',
+                       'grupos': [{'id': 'chave', 'titulo': 'Notas com a chave diferente da do XML', 'sugestao': 'chave do XML', 'linhas': lin}] if lin else []})
 
     # 1a) produto de uso e consumo lançado como revenda / industrialização → x.556 / x.407 / x.557 (antes do DIFAL)
     if ca_uc is not None:
@@ -431,6 +455,13 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
     texto, enc, corr, rc, xmls, lidos, erros = _base(sped, xml_dir)
     final, resumo, avisos = corr, {}, []
     base_an = _base_analise(corr, xmls, permitidas)                               # o que a análise usou
+    # 1·) chave de acesso × XML
+    if liga('chave'):
+        ek = esc.get('chave') or {}
+        ids = [i['id'] for i in ck.analisar_texto(final, xmls)['itens'] if ek.get(i['id'], True) is not False]
+        if ids:
+            final, r = ck.aplicar_texto(final, ids, xmls)
+            resumo['chave'] = {'itens': r['itens'], 'entradas': r['entradas'], 'saidas': r['saidas']}
     # 1a) uso e consumo lançado como revenda (antes do DIFAL)
     if liga('ucons'):
         eu = esc.get('ucons') or {}

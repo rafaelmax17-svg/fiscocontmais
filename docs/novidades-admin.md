@@ -3,6 +3,23 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.15
+
+- **Substituir LMC:** o selo do cartão passou a ser só "COMBUSTÍVEIS", sem o "ADMIN".
+- **Corretor do SPED Fiscal · Análise Inteligente · nova etapa "Chave de acesso × XML"** (`chave`, módulo `chave_xml`). Está **EM TESTE**: só o Admin vê até você ligar para a equipe.
+  - **O que confere:** a chave do C100 (campo 09) de toda NF-e (55) e NFC-e (65), de entrada e de saída, com os XMLs anexados.
+  - **Como acha o XML quando a chave do SPED está errada:** pela identidade da nota, que é única: CNPJ/CPF do emitente + modelo + série + número (Ajuste SINIEF 07/2005).
+    - Nota de terceiros: o emitente é o participante (0150).
+    - Nota própria e NFC-e: o emitente é a empresa (0000).
+  - **Corrige:** chave vazia, chave com dígito verificador inválido, chave de outra nota ou chave que não é a do XML. Troca pela do XML e avisa se o valor do XML é diferente do VL_DOC.
+  - **Não corrige, só mostra:**
+    - a chave certa já está em outro C100 (nota lançada duas vezes);
+    - nota sem XML cuja chave não bate com o C100 (dígito verificador, modelo, série, número ou CNPJ da empresa).
+  - **Na descrição da etapa:** quantas chaves conferem, quantas notas estão sem XML e quantos XMLs não têm nota no SPED (de entrada e de saída).
+  - **Ordem:** roda logo depois da Validação do PVA, para as outras etapas acharem o XML pela chave já corrigida.
+  - **XMLs:** o botão virou "📎 XMLs das notas" e aceita entradas e saídas juntas no mesmo .zip ou pasta. O leitor de XML passou a guardar série, data de emissão e documento do destinatário.
+  - **Testado:** Elton AM set/2026 com os 96 XMLs de saída. As 96 notas conferem (12 sem XML). Com três chaves estragadas de propósito (dígito trocado, vazia, chave de outra nota), as três foram achadas e corrigidas, e o arquivo voltou idêntico ao original.
+
 ## 2.3.14
 
 - **Substituir LMC · tela nova (modelo A5).**
