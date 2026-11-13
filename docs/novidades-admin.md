@@ -3,6 +3,14 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.21
+
+- **NCM × XML das entradas · ficou só "SPED diferente do XML → opção de alterar"** (pedido do Rafael). As regras automáticas da 2.3.20 saíram: maioria, "outro produto", "outro capítulo" e "código genérico".
+  - **O que aparece:** todo produto em que o NCM do 0200 é diferente do NCM do XML em alguma nota de entrada.
+  - **Como altera:** os produtos vêm **desmarcados**. Você marca os que quer alterar, e há "marcar todos" e "desmarcar todos".
+  - **Mais de um NCM nas notas:** o campo "Alterar para" lista todos os NCMs do XML. Vem selecionado o que aparece em mais notas.
+  - **Só para informação:** a linha mostra a descrição do produto no XML e quando o NCM novo muda a ST de RO. "ver notas" mostra o produto e o NCM de cada nota.
+
 ## 2.3.20
 
 - **Corretor do SPED Fiscal · Análise Inteligente · nova etapa "NCM × XML das entradas"** (`ncm`, módulo `ncm_xml`). Está **EM TESTE**: só o Admin vê até você ligar para a equipe.
