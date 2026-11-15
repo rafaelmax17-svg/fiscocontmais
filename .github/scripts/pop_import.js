@@ -5,9 +5,12 @@
 'use strict';
 const fs = require('fs');
 const crypto = require('crypto');
-const admin = require('../../functions/node_modules/firebase-admin');
-admin.initializeApp({ projectId: 'fiscocontmais' });
-const db = admin.firestore();
+const path = require('path');
+const req = require('module').createRequire(path.resolve(__dirname, '../../functions/package.json'));
+const { initializeApp } = req('firebase-admin/app');
+const { getFirestore } = req('firebase-admin/firestore');
+initializeApp({ projectId: 'fiscocontmais' });
+const db = getFirestore();
 (async () => {
   const etapa = process.argv[2];
   if (etapa === 'chave') {
