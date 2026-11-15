@@ -1241,6 +1241,10 @@
             SPED Fiscal (.txt)
           </button>
           <button class="act inv-export" id="btnCorrXmls" title="XMLs das notas (.zip ou pasta) — de entrada e, se quiser, de saída, juntos: entram no Desconto, ICMS, Valor e base, Simples, Unidade e na conferência da chave de acesso">📎 XMLs das notas</button>
+          <label class="pop-sw" id="popSw" hidden title="Ativar a IA: com o SPED carregado, ela confere o arquivo item a item do POP e explica cada apontamento. Desligada, nada roda.">
+            <input type="checkbox" id="popIAOn"><span class="pop-sw-ic" aria-hidden="true"><i></i><svg viewBox="0 0 24 24"><path d="M12 2.5l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="#fff"/><path d="M19 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" fill="#fde68a"/></svg></span>
+            <span class="pop-sw-tx" id="popSwTx">Ativar IA</span><span class="pop-sw-k" aria-hidden="true"></span>
+          </label>
           <button class="act inv-export btn-auto" id="btnCorrLote" hidden title="Corrige os SPEDs de todos os clientes do mês de uma vez — você só decide as exceções">⚡ Automatizar correção (lote)</button>
           <span class="fiscal-spacer"></span>
           <span class="ai-chip" id="corrChip" hidden></span>
@@ -1251,12 +1255,6 @@
           <h1>Encontre os erros do SPED<br class="ai-br"> antes que eles virem problema</h1>
           <button class="ai-glow" id="btnCorrIA" type="button"><span>✨ Fazer a Análise Inteligente</span></button>
           <div class="ai-trust"><span>Arquivo original intacto</span><span>Impacto em R$ antes de aplicar</span><span>Você confirma tudo</span></div>
-        </div>
-        <div class="pop-card" id="corrPopCard" hidden>
-          <div class="pop-ic" aria-hidden="true"><span class="pop-ic-r"></span><span class="pop-ic-c"><svg viewBox="0 0 32 32"><path d="M16 3.5l2.6 7.9 7.9 2.6-7.9 2.6L16 24.5l-2.6-7.9L5.5 14l7.9-2.6z" fill="#fff"/><path d="M25.5 20.5l1 3 3 1-3 1-1 3-1-3-3-1 3-1z" fill="#fde68a"/><path d="M7 21.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" fill="#a5f3fc"/></svg></span><i></i><i></i><i></i></div>
-          <div class="pop-tx"><b>Análise ampla pelo POP <em>EM TESTE</em></b><small>Confere o SPED item a item do POP — EFD ICMS/IPI, com os XMLs, os DAREs pagos e o Fisconforme. Só roda quando você clicar.</small>
-            <span class="pop-meta"><span id="popInfo">POP: carregando…</span> · <a href="#" id="popTrocar">carregar o POP</a> · <a href="#" id="popAnt">SPED do mês anterior (opcional)</a> <span id="popAntInfo"></span></span></div>
-          <button class="pop-go" id="btnPopIA" type="button" disabled><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="currentColor"/><path d="M19 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" fill="currentColor" opacity=".75"/></svg>Analisar com IA</span></button>
         </div>
         <details class="ai-adm" id="corrAdm" open hidden>
           <summary>🛠 Ferramentas do Admin <small>· cada conferência separada · a equipe não vê</small><i class="ai-rec"></i></summary>

@@ -1988,3 +1988,20 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 [data-theme="dark"] .pop-par,[data-theme="dark"] .pop-ia{background:rgba(99,102,241,.12);border-color:rgba(99,102,241,.35);color:#e0e7ff}
 [data-theme="dark"] .pop-b{background:transparent;color:#c7d2fe;border-color:rgba(99,102,241,.4)}
 @media (max-width:1200px){.pop-ks{grid-template-columns:repeat(3,1fr)}.pop-g{grid-template-columns:1fr}.pop-cl{position:static;max-height:none}}
+/* ✦ botão "Ativar IA" (Corretor do SPED Fiscal · só Admin) */
+.pop-sw{position:relative;display:inline-flex;align-items:center;gap:8px;padding:5px 8px 5px 5px;border-radius:999px;cursor:pointer;user-select:none;font-size:12.5px;font-weight:800;color:#312e81;
+  background:linear-gradient(#fff,#fff) padding-box,conic-gradient(from var(--popa,0deg),#22d3ee,#a78bfa,#f472b6,#fbbf24,#22d3ee) border-box;border:2px solid transparent;box-shadow:0 6px 16px -10px #7c3aed;transition:box-shadow .2s}
+.pop-sw:hover{box-shadow:0 8px 20px -8px #7c3aed}
+.pop-sw input{position:absolute;opacity:0;pointer-events:none}
+.pop-sw-ic{position:relative;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#6366f1,#7c3aed 60%,#db2777);box-shadow:0 0 10px rgba(167,139,250,.7)}
+.pop-sw-ic svg{width:15px;height:15px;position:relative;z-index:1}
+.pop-sw-ic i{position:absolute;inset:-3px;border-radius:50%;border:2px solid transparent;border-top-color:#22d3ee;border-right-color:#f472b6;animation:popGira 2.4s linear infinite;opacity:.9}
+.pop-sw-k{width:30px;height:17px;border-radius:999px;background:#e5e7eb;position:relative;transition:background .2s}
+.pop-sw-k:after{content:'';position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .2s}
+.pop-sw.on{color:#fff;background:linear-gradient(135deg,#4338ca,#7c3aed) padding-box,conic-gradient(from var(--popa,0deg),#22d3ee,#a78bfa,#f472b6,#fbbf24,#22d3ee) border-box}
+.pop-sw.on .pop-sw-k{background:#22d3ee}.pop-sw.on .pop-sw-k:after{left:15px}
+.pop-sw.on .pop-sw-ic{animation:popPulso 2.4s ease-in-out infinite}
+.pop-sw.run .pop-sw-ic i{animation-duration:.9s}
+.pop-sw-tx{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pop-fs a{color:#4338ca;font-weight:800}
+[data-theme="dark"] .pop-sw:not(.on){background:linear-gradient(var(--panel),var(--panel)) padding-box,conic-gradient(from 0deg,#22d3ee,#a78bfa,#f472b6,#fbbf24,#22d3ee) border-box;color:#c7d2fe}

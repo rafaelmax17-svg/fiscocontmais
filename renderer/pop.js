@@ -6,7 +6,7 @@
   const e = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const brl = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const num = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const P = { res: null, sel: null, ant: null, antTxt: '', pop: null, mais: 0, aviso: '' };
+  const P = { res: null, sel: null, ant: null, antTxt: '', mais: 0, aviso: '', rodando: false };
   const ETAPAS = { 1: 'Etapa 1 · Coleta e escrituração', 2: 'Etapa 2 · Conferência', 3: 'Etapa 3 · Conferência do SPED gerado' };
   const SIMB = { ok: '✓', x: '✕', av: '!', in: 'i', na: '–' };
   const COLS = { nota: 'Nota', data: 'Data', forn: 'Fornecedor', prod: 'Produto', ncm: 'NCM', de: 'Está', para: 'Correto', obs: 'Observação',
@@ -15,56 +15,49 @@
 
   function toastP(m, erro) { if (window.toast) window.toast(m, erro); }
 
-  async function estadoPop() {
-    const r = await window.fiscocont.pop.estado();
-    if (r && r.error) { $('#popInfo').textContent = 'POP: sem acesso'; return; }
-    P.pop = r.pop;
-    $('#popInfo').innerHTML = P.pop ? `POP: <b>${e(P.pop.nome)}</b> (${P.pop.paginas} pág.)` : '<b style="color:#b45309">POP ainda não carregado</b>';
-    $('#popTrocar').textContent = P.pop ? 'trocar o POP' : 'carregar o POP';
+  // ✦ Botão "Ativar IA" (só Admin): ligado, analisa sozinho o SPED carregado (e refaz quando trocar o SPED ou os
+  // XMLs). Desligado, nada roda. Começa sempre desligado ao abrir o sistema.
+  const sw = () => $('#popIAOn');
+  function estadoSw(t) {
+    $('#popSwTx').textContent = t || (sw().checked ? 'IA ativada' : 'Ativar IA');
+    $('#popSw').classList.toggle('on', sw().checked);
+    $('#popSw').classList.toggle('run', !!P.rodando);
   }
 
   window._popEntrar = (adm) => {
-    $('#corrPopCard').hidden = !adm;
-    if (adm) estadoPop();
+    $('#popSw').hidden = !adm;
+    if (!adm) { sw().checked = false; estadoSw(); }
   };
+  window._popSped = () => { if (sw().checked) analisar(); };
 
-  $('#popTrocar').addEventListener('click', async (ev) => {
-    ev.preventDefault();
-    const r = await window.fiscocont.pop.carregar();
-    if (!r || r.canceled) return;
-    if (r.error) { toastP(r.error, true); return; }
-    toastP('POP carregado na nuvem (só o Admin acessa).');
-    estadoPop();
+  sw().addEventListener('change', () => {
+    estadoSw();
+    if (!sw().checked) { const p = $('#corrPop'); p.hidden = true; return; }
+    const c = window._corrCtx ? window._corrCtx() : {};
+    if (!c.sped) { toastP('IA ativada: escolha o SPED Fiscal e ela analisa sozinha.'); return; }
+    analisar();
   });
-  $('#popAnt').addEventListener('click', async (ev) => {
-    ev.preventDefault();
-    const r = await window.fiscocont.pop.pickSpedAnt();
-    if (!r || r.canceled) return;
-    if (r.error) { toastP(r.error, true); return; }
-    P.ant = r.path; P.antTxt = r.periodo;
-    $('#popAntInfo').textContent = `✓ ${r.periodo}`;
-  });
-  window.fiscocont.pop.onProgresso((t) => { const o = $('#ovTxt'); if (o) o.textContent = t; });
+  window.fiscocont.pop.onProgresso((t) => { estadoSw(t.length > 46 ? t.slice(0, 44) + '…' : t); const o = $('#ovTxt'); if (o) o.textContent = t; });
 
   async function analisar() {
     const c = window._corrCtx ? window._corrCtx() : {};
-    if (!c.sped) { toastP('Escolha o SPED Fiscal primeiro.', true); return; }
-    if (!P.pop) { await estadoPop(); if (!P.pop) { toastP('Carregue o POP antes (link "carregar o POP").', true); return; } }
-    if (!c.xmls && !(await c.pedirXmls())) { /* segue sem XML: os itens que dependem dele ficam como "faltou documento" */ }
-    const x = window._corrCtx();
+    if (!c.sped || P.rodando) return;
+    P.rodando = true; estadoSw('Analisando…');
     c.soMostra('#corrPop');
-    window.overlay && window.overlay(true, 'Conferindo o SPED item a item do POP…');
-    const r = await window.fiscocont.pop.analisar({ spedPath: x.sped, usarCorrigido: x.feito, xmls: x.xmls, spedAnt: P.ant });
-    window.overlay && window.overlay(false);
-    if (r.error) { toastP(r.error, true); $('#corrPop').hidden = true; return; }
+    $('#corrPop').innerHTML = `<div class="pop-hd"><div class="pop-ic sm" aria-hidden="true"><span class="pop-ic-r"></span><span class="pop-ic-c"><svg viewBox="0 0 32 32"><path d="M16 3.5l2.6 7.9 7.9 2.6-7.9 2.6L16 24.5l-2.6-7.9L5.5 14l7.9-2.6z" fill="#fff"/></svg></span></div>
+      <div><h1>A IA está analisando o SPED pelo POP…</h1><p>Conferindo item a item, com os XMLs, os DAREs pagos e o Fisconforme. Leva de 1 a 3 minutos.</p></div></div>`;
+    $('#corrPop').hidden = false;
+    let r;
+    try { r = await window.fiscocont.pop.analisar({ spedPath: c.sped, usarCorrigido: c.feito, xmls: c.xmls, spedAnt: P.ant }); }
+    finally { P.rodando = false; estadoSw(); }
+    if (!sw().checked) { $('#corrPop').hidden = true; return; }      // desligou enquanto analisava
+    if (r.error) { $('#corrPop').innerHTML = `<div class="pop-av">${e(r.error)}</div>`; toastP(r.error, true); return; }
     P.res = r.res; P.aviso = r.avisoIa || '';
     const pri = (P.res.prioridades || []).find((n) => P.res.itens.some((i) => i.n === n && i.status === 'x'));
     P.sel = pri || (P.res.itens.find((i) => i.status === 'x') || P.res.itens[0] || {}).n;
     P.mais = 0;
     desenhar();
-    $('#corrPop').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
-  $('#btnPopIA').addEventListener('click', analisar);
 
   function celula(k, v) {
     if (k === 'valor' || k === 'base') return `<td class="pop-n">${typeof v === 'number' ? num(v) : e(v)}</td>`;
@@ -100,11 +93,11 @@
     const c = window._corrCtx ? window._corrCtx() : {};
     $('#corrPop').innerHTML = `
       <div class="pop-hd"><div class="pop-ic sm" aria-hidden="true"><span class="pop-ic-r"></span><span class="pop-ic-c"><svg viewBox="0 0 32 32"><path d="M16 3.5l2.6 7.9 7.9 2.6-7.9 2.6L16 24.5l-2.6-7.9L5.5 14l7.9-2.6z" fill="#fff"/></svg></span></div>
-        <div><h1>Análise ampla pelo POP — EFD ICMS/IPI <em>EM TESTE</em></h1><p>${e((r.cab || {}).nome)} · ${e(r.periodo)} · ${e(P.pop ? P.pop.nome : '')}</p></div>
+        <div><h1>Análise ampla pelo POP — EFD ICMS/IPI <em>EM TESTE</em></h1><p>${e((r.cab || {}).nome)} · ${e(r.periodo)} · POP — EFD ICMS/IPI</p></div>
         <span class="pop-sp"></span><button class="pop-b w" id="popWord">📝 Word de observação ao cliente</button><button class="pop-b" id="popDe">✦ Analisar de novo</button><button class="pop-b" id="popFechar">Fechar</button></div>
       <div class="pop-fs"><span class="${'ok'}">SPED · ${e(r.periodo)}</span><span class="${r.tem_xml ? 'ok' : 'no'}">XMLs · ${r.xml_lidos || 0} lido(s): ${r.n_ent_xml} de entrada · ${r.n_sai_xml} emitidos · ${r.n_cte_xml} CT-e</span>
         <span class="${(r.itens.find((i) => i.n === '1.28') || {}).status === 'av' ? 'no' : 'ok'}">DAREs pagos</span><span class="${(r.itens.find((i) => i.n === '1.15') || {}).status === 'av' ? 'no' : 'ok'}">Fisconforme</span>
-        <span class="${r.tem_sped_ant ? 'ok' : 'no'}">SPED do mês anterior${P.antTxt ? ' · ' + e(P.antTxt) : ''}</span></div>
+        <span class="${r.tem_sped_ant ? 'ok' : 'no'}">SPED do mês anterior${P.antTxt ? ' · ' + e(P.antTxt) : ''} · <a href="#" id="popAnt">${P.ant ? 'trocar' : 'anexar'}</a></span></div>
       ${P.aviso ? `<div class="pop-av">A conferência rodou, mas a parte da IA não respondeu: ${e(P.aviso)}. Os apontamentos abaixo são do sistema; clique em "Analisar de novo" para tentar a IA outra vez.</div>` : ''}
       <div class="pop-ks"><div style="--c:#4338ca"><span>Itens do POP conferidos</span><b>${conf}</b><i>os outros são telas do Domínio</i></div>
         <div style="--c:#16a34a"><span>Sem apontamento</span><b>${ct.ok || 0}</b><i>conferidos e corretos</i></div>
@@ -122,6 +115,14 @@
     const cr = $('#popCorr'); if (cr) cr.addEventListener('click', () => c.abrirTudo && c.abrirTudo());
     $('#popDe').addEventListener('click', analisar);
     $('#popFechar').addEventListener('click', () => { $('#corrPop').hidden = true; });
+    $('#popAnt').addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      const a = await window.fiscocont.pop.pickSpedAnt();
+      if (!a || a.canceled) return;
+      if (a.error) { toastP(a.error, true); return; }
+      P.ant = a.path; P.antTxt = a.periodo;
+      analisar();
+    });
     $('#popWord').addEventListener('click', async () => {
       const w = await window.fiscocont.pop.word(P.res);
       if (!w || w.canceled) return;

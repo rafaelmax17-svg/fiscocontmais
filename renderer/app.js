@@ -1463,7 +1463,7 @@ function bindFiscal() {
     // ⚡ Automatizar correção → "Abrir no modo manual" de um cliente: escolhe o SPED (e a pasta de XMLs) como se fosse à mão
     window.__corrAbrirManual = (sped, xmls) => {
       corrSpedPath = sped; FISCAL.corrSpedPath = sped;
-      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad', '#btnCorrMaca', '#btnCorrDesc', '#btnCorrUnid', '#btnCorrComb', '#btnPopIA'].forEach((id) => { $(id).disabled = false; });
+      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad', '#btnCorrMaca', '#btnCorrDesc', '#btnCorrUnid', '#btnCorrComb'].forEach((id) => { $(id).disabled = false; });
       $('#corrUnid').hidden = true; $('#corrUnid').innerHTML = ''; $('#corrComb').hidden = true; $('#corrComb').innerHTML = '';
       $('#corrMaca').hidden = true; $('#corrMaca').innerHTML = '';
       $('#corrTudo').hidden = true; $('#corrTudo').innerHTML = ''; $('#corrDesc').hidden = true; $('#corrDesc').innerHTML = '';
@@ -1504,7 +1504,7 @@ function bindFiscal() {
       $('#btnCorrAcum').disabled = false; $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = '';
       $('#btnCorrCad').disabled = false; $('#corrCad').hidden = true; $('#corrCad').innerHTML = '';
       $('#btnCorrMaca').disabled = false; $('#corrMaca').hidden = true; $('#corrMaca').innerHTML = '';
-      ['#btnCorrDesc', '#btnCorrUnid', '#btnCorrComb', '#btnPopIA'].forEach((id) => { $(id).disabled = false; });
+      ['#btnCorrDesc', '#btnCorrUnid', '#btnCorrComb'].forEach((id) => { $(id).disabled = false; });
       $('#corrComb').hidden = true; $('#corrComb').innerHTML = '';
       $('#corrPop').hidden = true; $('#corrPop').innerHTML = '';
       $('#corrTudo').hidden = true; $('#corrTudo').innerHTML = ''; $('#corrDesc').hidden = true; $('#corrDesc').innerHTML = '';
@@ -1520,6 +1520,7 @@ function bindFiscal() {
       $('#corrSpedFrame').hidden = true; $('#corrSpedEmpty').hidden = false;
       corrChip();
       toast('SPED selecionado: ' + pick.path.split(/[\\/]/).pop());
+      if (window._popSped) window._popSped();   // ✦ IA ativada (Admin): analisa o SPED novo sozinha
       return true;
     }
     bCorrPick.addEventListener('click', corrEscolherSped);
@@ -2331,6 +2332,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       corrChip();
       toast('XMLs das notas anexados.');
       if (!$('#corrTudo').hidden && corrSpedPath) tdAbrir();
+      if (window._popSped) window._popSped();   // ✦ IA ativada: refaz com os XMLs
     });
 
     // Admin × equipe: a equipe vê só a Análise Inteligente; o Admin vê também as ferramentas e o que a equipe recebe

@@ -3,6 +3,14 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.23
+
+- **Análise ampla pelo POP: virou só o botão "Ativar IA"** (pedido do Rafael). É um botão pequeno e destacado na barra do Corretor do SPED Fiscal, ao lado de "XMLs das notas", e só aparece para o Admin.
+  - **Desligado** (é assim que o sistema abre): nada roda.
+  - **Ligado:** analisa sozinha o SPED carregado e refaz quando você troca o SPED ou anexa os XMLs. Não pergunta nada.
+  - **O cartão grande e o "carregar o POP" saíram.** O POP que você mandou na conversa já está na nuvem (segredos_admin/pop_icms, 21 páginas). Ele foi enviado cifrado por uma rotina de uso único, e a chave e a rotina foram apagadas depois.
+  - **SPED do mês anterior:** continua opcional, com o link "anexar" no resultado.
+
 ## 2.3.22
 
 - **Corretor do SPED Fiscal · "Análise ampla pelo POP" (EM TESTE, só Admin).** Fica no cartão "Análise ampla pelo POP" acima das Ferramentas do Admin e só roda quando você clica em **✦ Analisar com IA**. O ícone de IA é animado.

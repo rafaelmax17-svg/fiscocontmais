@@ -200,7 +200,7 @@ exports.analisePop = onCall({ timeoutSeconds: 300, memory: '512MiB' }, async (re
   if (limpo.length > 180000) throw new HttpsError('invalid-argument', 'Análise grande demais para enviar de uma vez.');
   const pop = await db.doc('segredos_admin/pop_icms').get();
   const textoPop = pop.exists ? String(pop.data().texto || '') : '';
-  if (!textoPop) throw new HttpsError('failed-precondition', 'O POP ainda não foi carregado (botão "POP" na Análise ampla).');
+  if (!textoPop) throw new HttpsError('failed-precondition', 'O POP ainda não está na nuvem.');
   const cfg = await db.doc('config/chat_ia').get();
   const chave = cfg.exists ? cfg.data().anthropic_key : null;
   if (!chave) throw new HttpsError('failed-precondition', 'Chave ainda não configurada na nuvem (config/chat_ia).');
