@@ -17,7 +17,7 @@ time.sleep(30)
 v = requests.get('https://texttospeech.googleapis.com/v1/voices?languageCode=pt-BR', headers=H).json()
 chirp = [x for x in v.get('voices', []) if 'Chirp3-HD' in x['name']]
 log.append('vozes: ' + ', '.join(f"{x['name']}({x['ssmlGender']})" for x in chirp))
-pref = ['Aoede', 'Kore', 'Leda', 'Charon', 'Orus', 'Puck']
+pref = ['Leda']
 esc = [x for p in pref for x in chirp if x['name'].endswith('-' + p)] or chirp[:6]
 T = json.load(open('voz/textos.json', encoding='utf-8'))
 os.makedirs('voz/saida', exist_ok=True)
