@@ -103,6 +103,16 @@ def _monofasico(n):
     return ''
 
 
+# Anexo I, item "Peixes e carnes de peixes", alínea c: posição 03.04, exceto salmonídeos, atuns, bacalhaus, hadoque e
+# saithe (das subposições 0304.4, 0304.5, 0304.7, 0304.8 e 0304.9). Os NCM abaixo são os dessas espécies.
+_PEIXE_0304_FORA = ('030441', '030444', '03045200', '03045300', '030471', '03047200', '03047300', '030481', '03048700', '030495')
+
+
+def peixe_0304(n):
+    """Filé e carne de peixe da posição 03.04 que está na Cesta Básica (Anexo I)."""
+    return n.startswith('0304') and not n.startswith(_PEIXE_0304_FORA)
+
+
 def classifica_ncm(ncm):
     """('fora', motivo) | ('confirmar', motivo) | ('entra', '')"""
     n = ''.join(ch for ch in str(ncm or '') if ch.isdigit())
@@ -110,6 +120,8 @@ def classifica_ncm(ncm):
         return 'confirmar', 'produto sem NCM no 0200'
     if n in _I:
         return 'fora', f'Cesta Básica Nacional (LC 214/2025, Anexo I) · {_I[n]}'
+    if peixe_0304(n):
+        return 'fora', 'Cesta Básica Nacional (LC 214/2025, Anexo I) · Peixes e carnes de peixe (posição 03.04)'
     if n in _XV:
         return 'fora', f'LC 214/2025, Anexo XV · {_XV[n]}'
     m = _monofasico(n)

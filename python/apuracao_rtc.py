@@ -22,6 +22,7 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict, Counter
 
 import cclasstrib_dados as TAB
+import beneficios_rtc as BEN
 
 NS = '{http://www.portalfiscal.inf.br/nfe}'
 TOL = 0.011
@@ -421,6 +422,7 @@ def analisar(caminhos, cnpj='', regime='', sped=''):
                       'motivos': [{'sit': s, 'texto': t, 'qtd': q} for (s, t), q in p['motivos'].most_common()]})
     ordem = {'Divergente': 0, 'Verificar': 1, 'Sem IBS/CBS': 2, 'Confere': 3}
     prods.sort(key=lambda x: (ordem[x['sit']], x['papel'], -(x['ibs'] + x['cbs'])))
+    reducoes = _reducoes(prods, regime)
     cls = Counter((i['cst'], i['cclass']) for i in itens_out if i['cclass'])
     classes = [{'cst': c, 'cclass': k, 'itens': q, 'nome': TAB.CCLASS.get(k, {}).get('nome', 'não existe na tabela'),
                 'red': TAB.CCLASS.get(k, {}).get('pred_cbs', 0), 'artigo': TAB.CCLASS.get(k, {}).get('artigo', '')}
@@ -434,7 +436,7 @@ def analisar(caminhos, cnpj='', regime='', sped=''):
         'painel': painel, 'simulacao': {'cenarios': CENARIOS, 'bases': {k: r2(v) for k, v in sim.items()}},
         'por_cfop': sorted([{'papel': k[0], 'cfop': k[1], 'bc': r2(v['bc']), 'ibs': r2(v['ibs']), 'cbs': r2(v['cbs']),
                              'itens': int(v['itens'])} for k, v in por_cfop.items()], key=lambda x: (x['papel'] != 'debito', -x['bc'])),
-        'documentos': docs_out, 'produtos': prods, 'classes': classes, 'itens': itens_out,
+        'documentos': docs_out, 'produtos': prods, 'classes': classes, 'itens': itens_out, 'reducoes': reducoes,
         'pontos': pontos, 'simples_sem_grupo': sem_grupo_simples, 'xml_sped': xs,
         'tabela': {'versao': TAB.VERSAO, 'atualizacao': TAB.ATUALIZACAO, 'codigos': len(TAB.CCLASS),
                    'revogados': sum(1 for v in TAB.CCLASS.values() if v['fim'])},
@@ -442,6 +444,64 @@ def analisar(caminhos, cnpj='', regime='', sped=''):
                                 if v['cst'] == '200' and (v['nfe'] or v['nfce']) and not v['fim'] and v['pred_cbs'] < 100
                                 and any(w in v['nome'].lower() for w in ('bares', 'hotel', 'turismo', 'profiss', 'imóve', 'transporte'))],
     }
+
+
+# ------------------------------------------------------------------------------------------------- reduções por produto
+def _reducoes(prods, regime):
+    """Faixa de redução de cada produto (pelo cClassTrib do XML) e conferência com a redução que a LC 214/2025 dá ao NCM
+    (beneficios_rtc). Nas saídas de empresa com regime específico (ex.: bares e restaurantes, art. 275), vale o regime.
+      benef: 'nao_aplicado' (o NCM tem redução e a nota saiu sem ela / com menos) · 'sem_direito' (redução maior que a da
+             lei para o NCM) · 'condicional' (a redução depende de algo que o NCM não mostra) · 'ok' · '' (sem redução e
+             sem direito a ela)."""
+    reg = TAB.CCLASS.get(regime) if regime else None
+    fx = defaultdict(lambda: {'n': 0, 'bc': 0.0, 'ibs': 0.0, 'cbs': 0.0})
+    cont = Counter()
+    a_mais = a_menos = 0.0
+    for p in prods:
+        red = float(TAB.CCLASS.get(p['cclass'], {}).get('pred_cbs', 0) or 0) if p['cclass'] else None
+        p['red'] = red
+        p['faixa'] = 'Sem IBS/CBS no XML' if red is None else BEN.faixa(red)
+        f = fx[p['faixa']]
+        f['n'] += 1
+        f['bc'] += p['bc']
+        f['ibs'] += p['ibs']
+        f['cbs'] += p['cbs']
+        p['benef'], p['lc'], p['dif'] = '', None, 0.0
+        if red is None:
+            continue
+        if p['papel'] == 'debito' and reg:
+            b = {'red': float(reg.get('pred_cbs') or 0), 'nome': reg.get('nome', ''), 'lei': f"LC 214/2025, {reg.get('artigo', '')}",
+                 'cclass': regime, 'cond': '', 'certo': True}
+        else:
+            b = BEN.classifica(p['ncm'], p['desc'])
+        trib = p['ibs'] + p['cbs']
+        cheio = trib / (1 - red / 100) if red < 100 else p['bc'] * 0.01      # 2026: CBS 0,9% + IBS 0,1%
+        if b:
+            p['lc'] = {'red': b['red'], 'nome': b['nome'], 'lei': b['lei'], 'cclass': b['cclass'], 'cond': b['cond']}
+        if b and red + 0.01 < b['red']:
+            if b['certo']:
+                p['benef'] = 'nao_aplicado'
+                p['dif'] = round(cheio * (b['red'] - red) / 100, 2)
+                a_mais += p['dif']
+            else:
+                p['benef'] = 'condicional'
+        elif b and red > b['red'] + 0.01:
+            p['benef'] = 'sem_direito'
+            p['dif'] = round(cheio * (red - b['red']) / 100, 2)
+            a_menos += p['dif']
+        elif not b and red > 0 and p['cclass'] in BEN.COBERTOS and not (p['papel'] == 'debito' and reg):
+            p['benef'] = 'sem_direito'
+            p['dif'] = round(cheio * red / 100, 2)
+            a_menos += p['dif']
+        elif b:
+            p['benef'] = 'ok'
+        cont[p['benef']] += 1
+    ordem_fx = lambda k: (k == 'Sem IBS/CBS no XML', -1 if k == 'Sem redução' else 200 - float(re.sub(r'\D', '', k) or 0))
+    return {'faixas': [{'faixa': k, 'n': v['n'], 'bc': round(v['bc'], 2), 'ibs': round(v['ibs'], 2), 'cbs': round(v['cbs'], 2)}
+                       for k, v in sorted(fx.items(), key=lambda kv: ordem_fx(kv[0]))],
+            'nao_aplicado': cont['nao_aplicado'], 'sem_direito': cont['sem_direito'], 'condicional': cont['condicional'],
+            'ok': cont['ok'], 'com_reducao': sum(1 for p in prods if p.get('red')), 'a_mais': round(a_mais, 2), 'a_menos': round(a_menos, 2),
+            'regime': bool(reg)}
 
 
 def _br8(d):
@@ -541,12 +601,33 @@ def gerar_xlsx(res, destino):
              x['vnf'], x['bc'], x['ibs'], x['cbs'], x['sit'], x['chave']] for x in res['documentos']],
            [9, 8, 10, 11, 34, 17, 14, 14, 11, 11, 13, 47], (6, 7, 8, 9))
     w = wb.create_sheet('Classificação')
-    tabela(w, 1, ['Tipo', 'Código', 'Produto', 'NCM', 'CST', 'cClassTrib', 'Classificação na tabela oficial', 'Artigo',
+    tabela(w, 1, ['Tipo', 'Código', 'Produto', 'NCM', 'CST', 'cClassTrib', 'Classificação na tabela oficial', 'Redução', 'Artigo',
                   'Itens', 'Base', 'IBS', 'CBS', 'Situação', 'Motivo', 'Fundamento (texto da lei)'],
            [['Débito' if x['papel'] == 'debito' else 'Crédito', x['cod'], x['desc'], x['ncm'], x['cst'], x['cclass'], x['nome'],
-             x['artigo'], x['itens'], x['bc'], x['ibs'], x['cbs'], x['sit'],
+             x.get('faixa', ''), x['artigo'], x['itens'], x['bc'], x['ibs'], x['cbs'], x['sit'],
              ' · '.join(f"{m['texto']} ({m['qtd']})" for m in x['motivos']), x['texto']] for x in res['produtos']],
-           [9, 10, 34, 11, 6, 10, 34, 10, 7, 13, 11, 11, 13, 60, 70], (9, 10, 11))
+           [9, 10, 34, 11, 6, 10, 34, 20, 10, 7, 13, 11, 11, 13, 60, 70], (10, 11, 12))
+    rd = res.get('reducoes') or {}
+    if rd:
+        w = wb.create_sheet('Reduções e benefícios', 1)
+        BEN_T = {'nao_aplicado': 'Benefício não aplicado', 'sem_direito': 'Redução sem direito', 'condicional': 'Condicional',
+                 'ok': 'Redução correta'}
+        ordem = {'nao_aplicado': 0, 'sem_direito': 1, 'condicional': 2, 'ok': 3}
+        tabela(w, 1, ['Faixa de redução (no XML)', 'Produtos', 'Base', 'IBS', 'CBS'],
+               [[f['faixa'], f['n'], f['bc'], f['ibs'], f['cbs']] for f in rd['faixas']], [28, 10, 16, 14, 14], (2, 3, 4))
+        r0 = len(rd['faixas']) + 4
+        w.cell(r0 - 1, 1, f"{rd['nao_aplicado']} benefício(s) não aplicado(s): R$ {rd['a_mais']:,.2f} de IBS/CBS a mais · "
+                          f"{rd['sem_direito']} redução(ões) sem direito: R$ {rd['a_menos']:,.2f} a menos"
+                          .replace(',', 'X').replace('.', ',').replace('X', '.')).font = Font(bold=True, size=11, color=TINTA)
+        lst = sorted((x for x in res['produtos'] if x.get('benef')), key=lambda x: (ordem[x['benef']], -(x.get('dif') or 0)))
+        tabela(w, r0, ['Apontamento', 'Tipo', 'Código', 'Produto', 'NCM', 'cClassTrib no XML', 'Redução no XML', 'Redução pela LC 214/2025',
+                       'Fundamento', 'Condição', 'cClassTrib esperado', 'Base', 'IBS + CBS', 'Diferença'],
+               [[BEN_T[x['benef']], 'Débito' if x['papel'] == 'debito' else 'Crédito', x['cod'], x['desc'], x['ncm'], x['cclass'],
+                 x.get('faixa', ''), BEN.faixa(x['lc']['red']) if x.get('lc') else 'Sem redução',
+                 (x['lc']['lei'] + ' — ' + x['lc']['nome']) if x.get('lc') else 'NCM fora do anexo aplicado',
+                 (x['lc'] or {}).get('cond', '') if x.get('lc') else '', (x['lc'] or {}).get('cclass', '') if x.get('lc') else '',
+                 x['bc'], round(x['ibs'] + x['cbs'], 2), x.get('dif') or 0] for x in lst],
+               [22, 9, 10, 34, 11, 10, 18, 22, 52, 30, 12, 13, 12, 12], (11, 12, 13))
     w = wb.create_sheet('Pontos de atenção')
     tabela(w, 1, ['Situação', 'Tipo', 'Nota', 'Data', 'Item', 'Produto', 'NCM', 'CST', 'cClassTrib', 'O que foi encontrado', 'Chave'],
            [[x['sit'], 'Débito' if x['papel'] == 'debito' else 'Crédito', x['num'], _br(x['data']), x['item'], x['desc'], x['ncm'],
@@ -596,7 +677,7 @@ def _mes(m):
 def gerar_html(res):
     dados = {k: res[k] for k in ('cnpj', 'empresa', 'regime', 'regime_nome', 'meses', 'notas', 'itens_total', 'situacao',
                                  'painel', 'simulacao', 'por_cfop', 'classes', 'simples_sem_grupo', 'xml_sped', 'tabela',
-                                 'ignorados', 'canceladas', 'xmls_lidos')}
+                                 'ignorados', 'canceladas', 'xmls_lidos', 'reducoes')}
     dados['produtos'] = res['produtos'][:5000]
     dados['documentos'] = res['documentos'][:8000]
     dados['pontos'] = res['pontos'][:8000]
@@ -608,39 +689,59 @@ def gerar_html(res):
 
 HTML = r'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Apuração Assistida IBS/CBS</title><style>
-:root{--papel:#f4f1ea;--card:#fff;--linha:#e7e2d8;--tinta:#1c1917;--suave:#57534e;--fraco:#78716c;--lar:#e2552d;--verde:#0f766e;--ouro:#fbbf24}
-*{box-sizing:border-box}body{margin:0;font-family:"Segoe UI",Arial,sans-serif;background:var(--papel);color:var(--tinta)}
-.wrap{padding:24px 28px;max-width:1500px;margin:0 auto}
-.hd{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;border-bottom:2px solid var(--tinta);padding-bottom:12px;flex-wrap:wrap}
-.hd h1{margin:0;font-size:26px;font-weight:800;letter-spacing:-.5px}
-.rt{font-size:11px;font-weight:800;letter-spacing:1.2px;padding:4px 10px;border-radius:4px;background:var(--lar);color:#fff;margin-left:10px;vertical-align:middle}
-.hd .m{font-size:12.5px;color:var(--suave);text-align:right;line-height:1.5}
-.tabs{display:flex;gap:22px;margin:14px 0 18px;font-size:13.5px;font-weight:600;color:var(--fraco);flex-wrap:wrap}
-.tabs span{cursor:pointer;padding-bottom:4px;border-bottom:3px solid transparent}.tabs span.on{color:var(--tinta);border-color:var(--lar)}
-.pg{display:none;animation:sobe .45s ease}.pg.on{display:block}
+:root{--bg:#f6f7fb;--card:#fff;--linha:#e5e7eb;--linha2:#f1f2f6;--tinta:#111827;--suave:#4b5563;--fraco:#6b7280;--roxo:#4338ca;--roxo2:#7c3aed;--verde:#16a34a;--teal:#0f766e;--laranja:#ea580c;--verm:#dc2626}
+*{box-sizing:border-box}body{margin:0;font-family:"Segoe UI",Inter,Arial,sans-serif;background:var(--bg);color:var(--tinta)}
+.app{display:grid;grid-template-columns:232px 1fr;gap:18px;padding:20px 22px;max-width:1600px;margin:0 auto;min-height:100vh}
+.side{background:var(--card);border:1px solid var(--linha);border-radius:18px;padding:16px 12px;align-self:start;position:sticky;top:20px}
+.lg{display:flex;gap:10px;align-items:center;padding:2px 8px 14px;border-bottom:1px solid var(--linha2);margin-bottom:10px}
+.lg i{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,var(--roxo2),#2563eb);display:grid;place-items:center;flex:none}
+.lg b{font-size:14px;display:block}.lg small{display:block;font-size:10.5px;color:var(--fraco);margin-top:1px}
+.nv{display:flex;align-items:center;gap:6px;padding:10px 12px;border-radius:10px;font-size:13px;font-weight:600;color:var(--suave);margin:2px 0;cursor:pointer;user-select:none}
+.nv:hover{background:#f5f6fb}.nv.on{background:#eef2ff;color:var(--roxo);font-weight:800}
+.nv em{font-style:normal;font-size:9.5px;font-weight:900;background:var(--roxo);color:#fff;border-radius:5px;padding:1px 5px}.nv u{text-decoration:none;margin-left:auto;font-size:11px;font-weight:800;color:var(--fraco)}
+.side .rod{font-size:10.5px;color:var(--fraco);line-height:1.5;padding:12px 8px 0;border-top:1px solid var(--linha2);margin-top:10px}
+.top{display:flex;align-items:flex-end;gap:12px;margin-bottom:16px;flex-wrap:wrap}.top h1{margin:0;font-size:26px;letter-spacing:-.02em}.top p{margin:4px 0 0;color:var(--fraco);font-size:13px}
+.hero{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:12px;margin-bottom:16px}
+.h{background:var(--card);border:1px solid var(--linha);border-radius:16px;padding:15px 18px;animation:sobe .45s both}.h span{font-size:12px;color:var(--fraco);font-weight:600}
+.h b{display:block;font-size:26px;letter-spacing:-.02em;margin:4px 0}.h i{font-style:normal;font-size:12px;color:var(--fraco)}
+.h.big{background:linear-gradient(135deg,var(--roxo),var(--roxo2));color:#fff;border:0;box-shadow:0 14px 30px -18px var(--roxo)}.h.big span,.h.big i{color:#e0e7ff}
+.h.alerta b{color:var(--laranja)}
+.pg{display:none;animation:sobe .4s ease}.pg.on{display:block}
 @keyframes sobe{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-.bento{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:14px}
-.c{background:var(--card);border:1px solid var(--linha);border-radius:16px;padding:16px 18px}
-.c h3{margin:0 0 4px;font-size:11.5px;text-transform:uppercase;letter-spacing:1px;color:var(--fraco)}
-.big{font-size:34px;font-weight:800;letter-spacing:-1px}.lbl{font-size:12px;color:var(--suave)}
-.dark{background:var(--tinta);color:var(--papel);border:0}.dark h3{color:#a8a29e}
-.chip{display:inline-block;font-size:11px;padding:3px 9px;border-radius:20px;margin:4px 4px 0 0;background:#44403c;color:#fde68a}
-.legend{display:flex;gap:14px;font-size:11.5px;color:var(--suave);margin-top:6px;flex-wrap:wrap}.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
-.aj{display:flex;justify-content:space-between;font-size:12.5px;padding:7px 0;border-top:1px dashed var(--linha)}.aj b{white-space:nowrap}
-table{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border:1px solid var(--linha);border-radius:14px;overflow:hidden;font-size:12.5px}
-th{text-align:left;padding:9px 10px;background:#efeae0;color:var(--suave);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;position:sticky;top:0}
-td{padding:8px 10px;border-top:1px solid #efeae0;vertical-align:top}td.n,th.n{text-align:right;white-space:nowrap}
-.code{font-family:Consolas,monospace;font-weight:700}.sm{font-size:11px;color:var(--fraco)}
-.tg{font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:700;white-space:nowrap}
-.t-Confere{background:#ccfbf1;color:#0f766e}.t-Verificar{background:#fde68a;color:#78350f}.t-Divergente{background:#fecaca;color:#991b1b}.t-Sem{background:#e7e5e4;color:#44403c}
-.bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
-.st{background:#fff;border:1px solid var(--linha);border-radius:12px;padding:8px 14px;font-size:12px;color:var(--suave);cursor:pointer}.st b{display:block;font-size:20px;color:var(--tinta)}.st.on{outline:2px solid var(--tinta)}
-input.q{border:1px solid var(--linha);border-radius:10px;padding:8px 12px;font-size:13px;min-width:260px;background:#fff}
-.lei{font-size:11.5px;color:var(--suave);max-width:520px}.lei details summary{cursor:pointer;color:var(--verde);font-weight:600}
-.foot{font-size:11px;color:var(--fraco);margin-top:14px;line-height:1.5}
-.sim td input{width:70px;border:1px solid var(--linha);border-radius:6px;padding:4px 6px;text-align:right}
-.vazio{padding:30px;text-align:center;color:var(--fraco);background:#fff;border-radius:14px;border:1px dashed var(--linha)}
+.c{background:var(--card);border:1px solid var(--linha);border-radius:16px;padding:16px 18px;margin-bottom:14px}
+.c h3{margin:0 0 10px;font-size:15px}.c .s{font-size:12px;color:var(--fraco);margin:-6px 0 12px}
+.bento{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:14px}.bento .c{margin:0}
+.lbl{font-size:12px;color:var(--fraco)}
+.dark{background:#111827;color:#f9fafb;border:0}.dark h3{color:#c7d2fe}
+.chip{display:inline-block;font-size:11px;padding:3px 9px;border-radius:20px;margin:4px 4px 0 0;background:#1f2937;color:#c7d2fe}
+.legend{display:flex;gap:14px;font-size:11.5px;color:var(--suave);margin-top:6px;flex-wrap:wrap}.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.aj{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:7px 0;border-top:1px dashed var(--linha)}.aj b{white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+.tw{background:var(--card);border:1px solid var(--linha);border-radius:16px;padding:6px 14px 10px;margin-bottom:14px;overflow:auto}
+th{text-align:left;padding:10px 8px;color:var(--fraco);font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--linha2);background:var(--card);position:sticky;top:0}
+td{padding:9px 8px;border-bottom:1px solid #f6f7fb;vertical-align:top}td.n,th.n{text-align:right;white-space:nowrap}
+tr:hover td{background:#fafbff}
+.code{font-family:Consolas,monospace;font-weight:700;font-size:12px}.sm{font-size:11px;color:var(--fraco)}
+.tg,.pill{display:inline-block;font-size:11px;padding:3px 9px;border-radius:999px;font-weight:800;white-space:nowrap}
+.t-Confere{background:#dcfce7;color:#166534}.t-Verificar{background:#fef3c7;color:#92400e}.t-Divergente{background:#fee2e2;color:#991b1b}.t-Sem{background:#f3f4f6;color:#4b5563}
+.p0{background:#f3f4f6;color:#4b5563}.p100{background:#e0e7ff;color:#3730a3}.p60{background:#dcfce7;color:#166534}.pm{background:#e0f2fe;color:#075985}.pn{background:#f3f4f6;color:#9ca3af}
+.le{display:block;font-size:11px;font-weight:700;color:var(--roxo);margin-top:3px}.ar{color:var(--laranja);font-weight:800}.av{color:var(--verm);font-weight:800}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.st{background:var(--card);border:1px solid var(--linha);border-radius:12px;padding:8px 14px;font-size:12px;color:var(--suave);cursor:pointer}.st b{display:block;font-size:19px;color:var(--tinta)}.st.on{border-color:var(--roxo);box-shadow:0 0 0 2px #e0e7ff}
+.seg{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 10px}.seg span{font-size:12px;font-weight:700;padding:7px 12px;border-radius:999px;background:#f3f4f6;color:var(--suave);cursor:pointer}.seg span.on{background:var(--tinta);color:#fff}
+select.q,input.q{border:1px solid var(--linha);border-radius:10px;padding:8px 12px;font-size:13px;min-width:270px;background:#fff;outline:0}select.q:focus,input.q:focus{border-color:var(--roxo)}
+.lei{font-size:11.5px;color:var(--suave);max-width:520px}.lei details summary{cursor:pointer;color:var(--roxo);font-weight:700}
+.sim td input{width:70px;border:1px solid var(--linha);border-radius:8px;padding:5px 6px;text-align:right}
+.vazio{padding:30px;text-align:center;color:var(--fraco);background:#fff;border-radius:16px;border:1px dashed var(--linha)}
 .mais{margin-top:8px;font-size:12px;color:var(--fraco)}
+.stk{display:flex;height:18px;border-radius:999px;overflow:hidden;margin:6px 0 14px;background:#f3f4f6}.stk div{height:100%;cursor:pointer;transition:filter .2s,width 1s cubic-bezier(.2,.8,.2,1)}.stk div:hover{filter:brightness(1.1)}
+.lgd{display:flex;gap:26px;flex-wrap:wrap;font-size:12.5px}.lgd div{cursor:pointer;padding:4px 8px;margin:-4px -8px;border-radius:10px}.lgd div.on{background:#eef2ff}.lgd i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}.lgd b{display:block;font-size:16px;margin-top:2px}.lgd small{color:var(--fraco);font-size:11px;margin-left:4px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.al{border-radius:16px;padding:16px 18px;display:flex;gap:14px;align-items:center;cursor:pointer;border:1px solid transparent}.al .ic{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;font-size:21px;flex:none}
+.al b{font-size:19px}.al p{margin:3px 0 0;font-size:12.5px;color:var(--suave);line-height:1.45}
+.al.o{background:#fff7ed}.al.o .ic{background:#ffedd5}.al.r{background:#fef2f2}.al.r .ic{background:#fee2e2}.al.on{border-color:currentColor}.al.o.on{color:#c2410c}.al.r.on{color:#b91c1c}.al b,.al p{color:inherit}.al p{opacity:.85}
+.nota{font-size:12px;color:var(--suave);background:#f8fafc;border:1px solid var(--linha);border-radius:12px;padding:10px 14px;margin-bottom:14px;line-height:1.5}
+.foot{font-size:11px;color:var(--fraco);margin-top:6px;line-height:1.5}
 .gw{transform-box:fill-box;transform-origin:50% 100%;animation:cresce .9s cubic-bezier(.2,.8,.2,1) both}
 .gx{transform-box:fill-box;transform-origin:0 50%;animation:estica .8s cubic-bezier(.2,.8,.2,1) both}
 .rib{animation:flui .9s ease both}.fd{animation:surge .6s ease both}
@@ -649,61 +750,82 @@ input.q{border:1px solid var(--linha);border-radius:10px;padding:8px 12px;font-s
 @keyframes estica{from{transform:scaleX(0);opacity:0}to{transform:scaleX(1);opacity:1}}
 @keyframes flui{from{opacity:0;clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
 @keyframes surge{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-@media (prefers-reduced-motion:reduce){.gw,.gx,.rib,.fd,.pg{animation:none}.anel .arco{transition:none}}
-@media (max-width:900px){.bento{grid-template-columns:1fr}}
-</style></head><body><div class="wrap">
-<div class="hd"><div><h1>Apuração Assistida<span class="rt">REFORMA TRIBUTÁRIA</span></h1></div><div class="m" id="cab"></div></div>
-<div class="tabs" id="tabs"><span data-p="painel" class="on">Painel</span><span data-p="apur">Apuração</span><span data-p="clas">Classificação CST / cClassTrib</span><span data-p="pont">Pontos de atenção</span><span data-p="sim">Simulação até 2033</span><span data-p="xs">XML × SPED</span></div>
-<div class="pg on" id="pg-painel"></div><div class="pg" id="pg-apur"></div><div class="pg" id="pg-clas"></div><div class="pg" id="pg-pont"></div><div class="pg" id="pg-sim"></div><div class="pg" id="pg-xs"></div>
-<div class="foot" id="foot"></div></div>
+@media (prefers-reduced-motion:reduce){.gw,.gx,.rib,.fd,.pg,.h{animation:none}.anel .arco{transition:none}}
+@media (max-width:1100px){.app{grid-template-columns:1fr}.side{position:static}.hero,.bento,.two{grid-template-columns:1fr 1fr}}
+</style></head><body><div class="app">
+<div class="side"><div class="lg"><i><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 3v18M5 21h14M6 7h12M6 7l-3 7a3 3 0 006 0zM18 7l-3 7a3 3 0 006 0z" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></i><div><b>Apuração Assistida</b><small>IBS e CBS · LC 214/2025</small></div></div>
+<div id="nav"></div><div class="rod" id="rod"></div></div>
+<div><div class="top"><div><h1 id="tit">Painel</h1><p id="cab"></p></div></div>
+<div class="hero" id="hero"></div>
+<div class="pg on" id="pg-painel"></div><div class="pg" id="pg-apur"></div><div class="pg" id="pg-red"></div><div class="pg" id="pg-clas"></div><div class="pg" id="pg-pont"></div><div class="pg" id="pg-sim"></div><div class="pg" id="pg-xs"></div>
+<div class="foot" id="foot"></div></div></div>
 <script>
 const D=/*DADOS*/;
 const $=s=>document.querySelector(s);
 const m=v=>(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const R=v=>'R$ '+m(v);
 const e=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const br=d=>d&&d.length>=10?d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4):(d||'');
 const tg=s=>`<span class="tg t-${s.split(' ')[0].replace('/','')}">${e(s)}</span>`;
-const tp=p=>p==='debito'?'Saída':'Entrada';
-const P=D.painel;
-$('#cab').innerHTML=`${e(D.empresa||'')} · CNPJ ${e(D.cnpj)}<br>competência ${D.meses.map(x=>x.slice(5)+'/'+x.slice(0,4)).join(', ')} · ${D.notas.debito} notas de saída · ${D.notas.credito} de entrada`+(D.regime?`<br>regime específico informado: ${e(D.regime_nome)} (${e(D.regime)})`:'');
-$('#foot').innerHTML=`Base legal: LC 214/2025 — art. 46 (apuração assistida), art. 47 (créditos), art. 57 (uso ou consumo pessoal), art. 343 e seguintes (ano de teste 2026). Classificação conferida com a tabela oficial cClassTrib ${e(D.tabela.versao)} (atualizada em ${br(D.tabela.atualizacao)}; ${D.tabela.codigos} códigos, ${D.tabela.revogados} com vigência encerrada). ${D.xmls_lidos} arquivos lidos · ${D.canceladas} cancelamento(s) no lote${Object.entries(D.ignorados).map(([k,v])=>` · ${v} ${k}`).join('')}.`;
-document.querySelectorAll('#tabs span').forEach(t=>t.onclick=()=>{document.querySelectorAll('#tabs span').forEach(x=>x.classList.toggle('on',x===t));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('on',x.id==='pg-'+t.dataset.p));if(t.dataset.p==='painel')painel();});
-// ---------- Painel (animado: barras crescem, fluxo aparece, números contam, anel gira)
+const tp=p=>p==='debito'?'venda':'compra';
+const ncmF=n=>n&&n.length===8?n.slice(0,4)+'.'+n.slice(4,6)+'.'+n.slice(6):(n||'');
+const pl=r=>r==null?'<span class="pill pn">sem IBS/CBS</span>':r>=100?'<span class="pill p100">Alíquota zero</span>':r>0?`<span class="pill ${r>=60?'p60':'pm'}">Redução de ${String(r).replace('.0','')}%</span>`:'<span class="pill p0">Sem redução</span>';
+const P=D.painel,X=D.reducoes||{faixas:[]};
+const ABAS=[['painel','Painel'],['apur','Apuração'],['red','Reduções e benefícios',1],['clas','Produtos'],['pont','Pontos a corrigir'],['sim','Simulação 2026–2033'],['xs','XML × SPED']];
+const QTD={red:X.nao_aplicado+X.sem_direito||'',clas:D.produtos.length,pont:((D.situacao.Divergente||0)+(D.situacao.Verificar||0))||''};
+$('#nav').innerHTML=ABAS.map(([k,t,n])=>`<div class="nv${k==='painel'?' on':''}" data-p="${k}">${t}${n?'<em>NOVO</em>':''}${QTD[k]?`<u>${QTD[k].toLocaleString('pt-BR')}</u>`:''}</div>`).join('');
+const vai=k=>{document.querySelectorAll('.nv').forEach(x=>x.classList.toggle('on',x.dataset.p===k));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('on',x.id==='pg-'+k));$('#tit').textContent=ABAS.find(a=>a[0]===k)[1];if(k==='painel')painel();window.scrollTo(0,0);};
+document.querySelectorAll('.nv').forEach(t=>t.onclick=()=>vai(t.dataset.p));
+$('#cab').innerHTML=`${e(D.empresa||'')} · CNPJ ${e(D.cnpj)} · competência ${D.meses.map(x=>x.slice(5)+'/'+x.slice(0,4)).join(', ')} · ${D.notas.debito} notas de saída · ${D.notas.credito} de entrada`+(D.regime?` · regime: ${e(D.regime_nome)} (${e(D.regime)})`:'');
+$('#rod').innerHTML=`Tabela cClassTrib oficial ${e(D.tabela.versao)}<br>${D.xmls_lidos} arquivo(s) lido(s) · ${D.itens_total.toLocaleString('pt-BR')} itens`;
+const sal=P.saldo.total;
+$('#hero').innerHTML=`<div class="h big"><span>${sal>=0?'Saldo a recolher':'Saldo credor'} (IBS + CBS)</span><b>${R(Math.abs(sal))}</b><i>CBS ${m(P.saldo.cbs)} · IBS ${m(P.saldo.ibs)}</i></div>
+<div class="h"><span>Débitos (vendas)</span><b>${R(P.debito.total)}</b><i>${D.notas.debito} nota(s) de saída</i></div>
+<div class="h"><span>Créditos (compras)</span><b>${R(P.credito.total)}</b><i>CBS ${m(P.credito.cbs)} · IBS ${m(P.credito.ibs)}</i></div>
+<div class="h alerta" style="cursor:pointer" onclick="vai('red')"><span>Benefício não aplicado</span><b>${R(X.a_mais)}</b><i>${X.nao_aplicado} produto(s) · ${X.sem_direito} com redução sem direito</i></div>`;
+$('#foot').innerHTML=`Base legal: LC 214/2025 — art. 46 (apuração assistida), art. 47 (créditos), art. 57 (uso ou consumo pessoal), art. 343 e seguintes (ano de teste 2026); reduções dos arts. 125, 133, 135, 136, 138, 147 e 148 (Anexos I, VII, VIII, IX e XV). Classificação conferida com a tabela oficial cClassTrib ${e(D.tabela.versao)} (atualizada em ${br(D.tabela.atualizacao)}; ${D.tabela.codigos} códigos, ${D.tabela.revogados} com vigência encerrada). ${D.canceladas} cancelamento(s) no lote${Object.entries(D.ignorados).map(([k,v])=>` · ${v} ${k}`).join('')}.`;
+// ---------- Painel
 function painel(){
- const deb=P.debito.total,cred=Math.max(0,P.credito.total),sal=P.saldo.total,H=250,y0=30;
+ const deb=P.debito.total,cred=Math.max(0,P.credito.total),H=250,y0=30;
  const temC=cred>0.004&&deb>0;
  const hc=temC?Math.max(18,Math.min(H-40,H*Math.min(cred,deb)/deb)):0,hs=H-hc,pct=deb>0?Math.round(100*Math.min(cred,deb)/deb):0;
  const ys=y0+(temC?hc+24:8),hsal=temC?Math.max(hs,40):H;
- const cnt=(v,cls='')=>`<tspan class="cnt ${cls}" data-v="${v}">0,00</tspan>`;
- const fl=`<svg width="100%" viewBox="0 0 470 320" class="fluxo"><rect class="gw" style="animation-delay:.05s" x="10" y="${y0}" width="120" height="${H}" rx="10" fill="#e2552d"/>
+ const cnt=v=>`<tspan class="cnt" data-v="${v}">0,00</tspan>`;
+ const so=deb<=0.004&&cred>0.004;
+ const fl=so?`<svg width="100%" viewBox="0 0 470 320"><rect class="gw" style="animation-delay:.05s" x="10" y="${y0}" width="120" height="${H}" rx="12" fill="#16a34a"/>
+ <text class="fd" style="animation-delay:.5s" x="70" y="${y0+H/2-6}" fill="#fff" font-size="13" text-anchor="middle" font-weight="700">Créditos</text><text class="fd" style="animation-delay:.5s" x="70" y="${y0+H/2+16}" fill="#fff" font-size="16" text-anchor="middle" font-weight="800">${cnt(cred)}</text>
+ <path class="rib" style="animation-delay:.6s" d="M130 ${y0} C200 ${y0},200 ${y0+8},270 ${y0+8} L270 ${y0+H-8} C200 ${y0+H-8},200 ${y0+H},130 ${y0+H} Z" fill="#16a34a" opacity=".35"/>
+ <rect class="gx" style="animation-delay:.95s" x="270" y="${y0+8}" width="190" height="${H-16}" rx="12" fill="#111827"/>
+ <text class="fd" style="animation-delay:1.3s" x="365" y="${y0+H/2-6}" fill="#fff" font-size="12.5" text-anchor="middle" font-weight="700">saldo credor</text><text class="fd" style="animation-delay:1.3s" x="365" y="${y0+H/2+16}" fill="#c4b5fd" font-size="17" text-anchor="middle" font-weight="800">${cnt(Math.abs(sal))}</text>
+ <text class="fd" style="animation-delay:1.3s" x="240" y="${y0+H+26}" fill="#6b7280" font-size="11" text-anchor="middle">sem vendas no período: os créditos viram saldo credor</text></svg>`:`<svg width="100%" viewBox="0 0 470 320"><rect class="gw" style="animation-delay:.05s" x="10" y="${y0}" width="120" height="${H}" rx="12" fill="#4338ca"/>
  <text class="fd" style="animation-delay:.5s" x="70" y="${y0+H/2-6}" fill="#fff" font-size="13" text-anchor="middle" font-weight="700">Débitos</text><text class="fd" style="animation-delay:.5s" x="70" y="${y0+H/2+16}" fill="#fff" font-size="16" text-anchor="middle" font-weight="800">${cnt(deb)}</text>
- ${temC?`<path class="rib" style="animation-delay:.55s" d="M130 ${y0} C200 ${y0},200 ${y0+8},270 ${y0+8} L270 ${y0+8+hc} C200 ${y0+8+hc},200 ${y0+hc},130 ${y0+hc} Z" fill="#0f766e" opacity=".85"/>
- <rect class="gx" style="animation-delay:.9s" x="270" y="${y0+8}" width="190" height="${hc}" rx="10" fill="#0f766e"/>
+ ${temC?`<path class="rib" style="animation-delay:.55s" d="M130 ${y0} C200 ${y0},200 ${y0+8},270 ${y0+8} L270 ${y0+8+hc} C200 ${y0+8+hc},200 ${y0+hc},130 ${y0+hc} Z" fill="#16a34a" opacity=".8"/>
+ <rect class="gx" style="animation-delay:.9s" x="270" y="${y0+8}" width="190" height="${hc}" rx="12" fill="#16a34a"/>
  ${hc>=44?`<text class="fd" style="animation-delay:1.2s" x="365" y="${y0+8+hc/2-6}" fill="#fff" font-size="12.5" text-anchor="middle" font-weight="700">compensado por créditos</text><text class="fd" style="animation-delay:1.2s" x="365" y="${y0+8+hc/2+16}" fill="#fff" font-size="17" text-anchor="middle" font-weight="800">${cnt(cred)}</text>`
  :`<text class="fd" style="animation-delay:1.2s" x="365" y="${y0+8+hc/2+5}" fill="#fff" font-size="12" text-anchor="middle" font-weight="700">créditos ${cnt(cred)}</text>`}`:''}
- <path class="rib" style="animation-delay:.75s" d="M130 ${temC?y0+hc:y0} C200 ${temC?y0+hc:y0},200 ${ys},270 ${ys} L270 ${ys+hsal} C200 ${ys+hsal},200 ${y0+H},130 ${y0+H} Z" fill="#1c1917" opacity=".9"/>
- <rect class="gx" style="animation-delay:1.1s" x="270" y="${ys}" width="190" height="${hsal}" rx="10" fill="#1c1917"/>
- <text class="fd" style="animation-delay:1.4s" x="365" y="${ys+hsal/2-4}" fill="#fff" font-size="12.5" text-anchor="middle" font-weight="700">${sal>=0?'saldo a recolher':'saldo credor'}</text><text class="fd" style="animation-delay:1.4s" x="365" y="${ys+hsal/2+16}" fill="#fbbf24" font-size="17" text-anchor="middle" font-weight="800">${cnt(Math.abs(sal))}</text>
- ${temC?'':`<text class="fd" style="animation-delay:1.4s" x="365" y="${y0}" fill="#78716c" font-size="11" text-anchor="middle">sem créditos destacados no período</text>`}</svg>`;
+ <path class="rib" style="animation-delay:.75s" d="M130 ${temC?y0+hc:y0} C200 ${temC?y0+hc:y0},200 ${ys},270 ${ys} L270 ${ys+hsal} C200 ${ys+hsal},200 ${y0+H},130 ${y0+H} Z" fill="#111827" opacity=".9"/>
+ <rect class="gx" style="animation-delay:1.1s" x="270" y="${ys}" width="190" height="${hsal}" rx="12" fill="#111827"/>
+ <text class="fd" style="animation-delay:1.4s" x="365" y="${ys+hsal/2-4}" fill="#fff" font-size="12.5" text-anchor="middle" font-weight="700">${sal>=0?'saldo a recolher':'saldo credor'}</text><text class="fd" style="animation-delay:1.4s" x="365" y="${ys+hsal/2+16}" fill="#c4b5fd" font-size="17" text-anchor="middle" font-weight="800">${cnt(Math.abs(sal))}</text>
+ ${temC?'':`<text class="fd" style="animation-delay:1.4s" x="365" y="${y0}" fill="#6b7280" font-size="11" text-anchor="middle">sem créditos destacados no período</text>`}</svg>`;
  const tot=Math.abs(P.saldo.cbs)+Math.abs(P.saldo.ibs)||1,fc=100*Math.abs(P.saldo.cbs)/tot;
  const S=D.situacao,nd=S.Divergente||0,nv=S.Verificar||0;
  const chips=(D.chips||[]).slice(0,5).map(([k,v])=>`<span class="chip fd" style="animation-delay:.9s">${v.toLocaleString('pt-BR')} · ${e(k)}</span>`).join('');
  const b=D.simulacao.bases,cen=D.simulacao.cenarios,vals=cen.map(c=>({a:c.ano,cbs:((b.debito_cbs||0)-(b.credito_cbs||0))*c.cbs/100,ibs:((b.debito_ibs||0)-(b.credito_ibs||0))*c.ibs/100}));
- const mx=Math.max(...vals.map(v=>Math.max(0,v.cbs)+Math.max(0,v.ibs)),1);
- const bars=vals.map((v,i)=>{const x=20+i*75,h1=110*Math.max(0,v.cbs)/mx,hi=110*Math.max(0,v.ibs)/mx,top=150-h1-hi,k=v.cbs+v.ibs,d=.25+i*.12;
-  return `<rect class="gw" style="animation-delay:${d}s" x="${x}" y="${150-h1}" width="48" height="${h1}" fill="#e2552d"/><rect class="gw" style="animation-delay:${d+.45}s" x="${x}" y="${top}" width="48" height="${hi}" fill="#0f766e"/><text x="${x+24}" y="167" text-anchor="middle" font-size="10.5" fill="#57534e">${v.a}</text><text class="fd" style="animation-delay:${d+.8}s" x="${x+24}" y="${top-6}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#1c1917">${k>=1000?(k/1000).toLocaleString('pt-BR',{maximumFractionDigits:1})+' mil':m(k)}</text>`}).join('');
+ const mx=Math.max(...vals.map(v=>Math.abs(v.cbs)+Math.abs(v.ibs)),1),neg=vals.every(v=>v.cbs+v.ibs<=0);
+ const bars=vals.map((v,i)=>{const x=20+i*75,h1=110*Math.abs(v.cbs)/mx,hi=110*Math.abs(v.ibs)/mx,top=150-h1-hi,k=v.cbs+v.ibs,d=.25+i*.12;
+  return `<rect class="gw" style="animation-delay:${d}s" x="${x}" y="${150-h1}" width="48" height="${h1}" rx="3" fill="#4338ca"/><rect class="gw" style="animation-delay:${d+.45}s" x="${x}" y="${top}" width="48" height="${hi}" rx="3" fill="#a78bfa"/><text x="${x+24}" y="167" text-anchor="middle" font-size="10.5" fill="#4b5563">${v.a}</text><text class="fd" style="animation-delay:${d+.8}s" x="${x+24}" y="${top-6}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#111827">${Math.abs(k)>=1000?(Math.abs(k)/1000).toLocaleString('pt-BR',{maximumFractionDigits:1})+' mil':m(Math.abs(k))}</text>`}).join('');
  $('#pg-painel').innerHTML=`<div class="bento">
- <div class="c" style="grid-row:span 2"><h3>Do débito ao saldo</h3><div class="lbl">IBS + CBS destacados nos XMLs do período</div>${fl}
- <div class="legend"><span><i style="background:#e2552d"></i>saídas</span><span><i style="background:#0f766e"></i>créditos das entradas (${pct}% do débito)</span><span><i style="background:#1c1917"></i>saldo</span></div>
+ <div class="c" style="grid-row:span 2"><h3>Do débito ao saldo</h3><div class="s">IBS + CBS destacados nos XMLs do período</div>${fl}
+ <div class="legend"><span><i style="background:#4338ca"></i>vendas</span><span><i style="background:#16a34a"></i>créditos das compras${so?'':` (${pct}% do débito)`}</span><span><i style="background:#111827"></i>saldo</span></div>
  <div style="margin-top:10px"><div class="aj"><span>Crédito estimado (fornecedor do regime normal sem IBS/CBS no XML)</span><b class="cnt" data-v="${P.estimado.total}">0,00</b></div>
  <div class="aj"><span>Crédito a confirmar — art. 57 (uso pessoal × atividade)</span><b class="cnt" data-v="${P.art57.total}">0,00</b></div>
  <div class="aj"><span>Saldo se os dois forem confirmados</span><b class="cnt" data-v="${P.saldo_com_ajustes}">0,00</b></div>
  ${P.simples.notas?`<div class="aj"><span>${P.simples.notas} nota(s) de fornecedor do Simples sem IBS/CBS — sem crédito</span><b></b></div>`:''}</div></div>
- <div class="c"><h3>Saldo por tributo</h3><div style="display:flex;align-items:center;gap:14px"><svg width="118" height="118" viewBox="0 0 42 42" class="anel"><circle cx="21" cy="21" r="15.9" fill="none" stroke="#f4f1ea" stroke-width="6"/><circle class="arco" data-a="${fc}" cx="21" cy="21" r="15.9" fill="none" stroke="#e2552d" stroke-width="6" stroke-dasharray="0 100" stroke-dashoffset="25"/><circle class="arco" data-a="${100-fc}" cx="21" cy="21" r="15.9" fill="none" stroke="#0f766e" stroke-width="6" stroke-dasharray="0 100" stroke-dashoffset="${25-fc}"/></svg>
- <div><div class="lbl">CBS</div><div class="cnt" data-v="${P.saldo.cbs}" style="font-size:21px;font-weight:800;color:#e2552d">0,00</div><div class="lbl" style="margin-top:6px">IBS (UF ${m(P.debito.ibsuf-P.credito.ibsuf)} · município ${m(P.debito.ibsmun-P.credito.ibsmun)})</div><div class="cnt" data-v="${P.saldo.ibs}" style="font-size:21px;font-weight:800;color:#0f766e">0,00</div></div></div></div>
- <div class="c dark"><h3>Pontos de atenção</h3><div class="big cnt" data-v="${nd+nv}" data-int="1" style="color:#fbbf24">0</div><div style="font-size:12.5px;color:#d6d3d1">${nd.toLocaleString('pt-BR')} itens divergentes · ${nv.toLocaleString('pt-BR')} para verificar · ${(S.Confere||0).toLocaleString('pt-BR')} conferem</div><div style="margin-top:6px">${chips}</div></div>
+ <div class="c"><h3>Saldo por tributo</h3><div style="display:flex;align-items:center;gap:14px"><svg width="118" height="118" viewBox="0 0 42 42" class="anel"><circle cx="21" cy="21" r="15.9" fill="none" stroke="#eef2ff" stroke-width="6"/><circle class="arco" data-a="${fc}" cx="21" cy="21" r="15.9" fill="none" stroke="#4338ca" stroke-width="6" stroke-dasharray="0 100" stroke-dashoffset="25"/><circle class="arco" data-a="${100-fc}" cx="21" cy="21" r="15.9" fill="none" stroke="#a78bfa" stroke-width="6" stroke-dasharray="0 100" stroke-dashoffset="${25-fc}"/></svg>
+ <div><div class="lbl">CBS</div><div class="cnt" data-v="${P.saldo.cbs}" style="font-size:21px;font-weight:800;color:#4338ca">0,00</div><div class="lbl" style="margin-top:6px">IBS (UF ${m(P.debito.ibsuf-P.credito.ibsuf)} · município ${m(P.debito.ibsmun-P.credito.ibsmun)})</div><div class="cnt" data-v="${P.saldo.ibs}" style="font-size:21px;font-weight:800;color:#7c3aed">0,00</div></div></div></div>
+ <div class="c dark"><h3>Pontos a corrigir</h3><div class="cnt" data-v="${nd+nv}" data-int="1" style="font-size:34px;font-weight:800;color:#c4b5fd">0</div><div style="font-size:12.5px;color:#d1d5db">${nd.toLocaleString('pt-BR')} itens divergentes · ${nv.toLocaleString('pt-BR')} para verificar · ${(S.Confere||0).toLocaleString('pt-BR')} conferem</div><div style="margin-top:6px">${chips}</div></div>
  <div class="c" style="grid-column:span 2"><h3>Transição até 2033 — simulação com a mesma movimentação</h3><svg width="100%" viewBox="0 0 620 175">${bars}</svg>
- <div class="legend"><span><i style="background:#e2552d"></i>CBS</span><span><i style="background:#0f766e"></i>IBS</span><span>alíquotas na aba Simulação · não são valores oficiais</span></div></div></div>`;
+ <div class="legend"><span><i style="background:#4338ca"></i>CBS</span><span><i style="background:#a78bfa"></i>IBS</span><span>${neg?'saldo credor em todos os anos · ':''}alíquotas na aba Simulação · não são valores oficiais</span></div></div></div>`;
  conta($('#pg-painel'));
  requestAnimationFrame(()=>requestAnimationFrame(()=>document.querySelectorAll('#pg-painel .arco').forEach((c,i)=>{c.style.transitionDelay=(.3+i*.9)+'s';c.setAttribute('stroke-dasharray',`${c.dataset.a} ${100-c.dataset.a}`);})));
 }
@@ -719,33 +841,71 @@ painel();
 (function(){
  const lin=D.por_cfop.map(x=>`<tr><td>${tp(x.papel)}</td><td class="code">${e(x.cfop)}</td><td class="n">${x.itens}</td><td class="n">${m(x.bc)}</td><td class="n">${m(x.ibs)}</td><td class="n">${m(x.cbs)}</td></tr>`).join('');
  const docs=D.documentos.slice(0,1500).map(x=>`<tr><td>${tp(x.papel)}</td><td>${x.mod==='65'?'NFC-e':'NF-e'} ${e(x.num)}</td><td>${br(x.data)}</td><td>${e(x.part)}<div class="sm">${e(x.part_doc)}</div></td><td class="n">${m(x.vnf)}</td><td class="n">${m(x.bc)}</td><td class="n">${m(x.ibs)}</td><td class="n">${m(x.cbs)}</td><td>${tg(x.sit)}</td></tr>`).join('');
- $('#pg-apur').innerHTML=`<h3 style="margin:0 0 8px">Por CFOP</h3><table><tr><th>Tipo</th><th>CFOP</th><th class="n">Itens</th><th class="n">Base IBS/CBS</th><th class="n">IBS</th><th class="n">CBS</th></tr>${lin}</table>
- <h3 style="margin:18px 0 8px">Por documento</h3><table><tr><th>Tipo</th><th>Nota</th><th>Data</th><th>Participante</th><th class="n">Valor</th><th class="n">Base</th><th class="n">IBS</th><th class="n">CBS</th><th>Situação</th></tr>${docs}</table>
- ${D.documentos.length>1500?`<div class="mais">Mostrando 1.500 de ${D.documentos.length} documentos — a lista completa está no Excel.</div>`:''}`;
+ $('#pg-apur').innerHTML=`<div class="tw"><h3 style="margin:10px 0 4px">Por CFOP</h3><table><tr><th>Tipo</th><th>CFOP</th><th class="n">Itens</th><th class="n">Base IBS/CBS</th><th class="n">IBS</th><th class="n">CBS</th></tr>${lin}</table></div>
+ <div class="tw"><h3 style="margin:10px 0 4px">Por documento</h3><table><tr><th>Tipo</th><th>Nota</th><th>Data</th><th>Participante</th><th class="n">Valor</th><th class="n">Base</th><th class="n">IBS</th><th class="n">CBS</th><th>Situação</th></tr>${docs}</table>
+ ${D.documentos.length>1500?`<div class="mais">Mostrando 1.500 de ${D.documentos.length} documentos — a lista completa está no Excel.</div>`:''}</div>`;
 })();
-// ---------- Classificação
+// ---------- Reduções e benefícios
 (function(){
- let filtro='',busca='';
+ const CORF={'Sem redução':'#9ca3af','Alíquota zero (100%)':'#6366f1','Sem IBS/CBS no XML':'#e5e7eb'};
+ const cor=f=>CORF[f]||(parseFloat(f.replace(/\D/g,''))>=60?'#22c55e':'#38bdf8');
+ const tb=X.faixas.reduce((a,f)=>a+f.bc,0)||1;
+ let modo=X.nao_aplicado?'nao_aplicado':(X.sem_direito?'sem_direito':'faixa'),fx=null,busca='';
+ const MODOS=[['nao_aplicado',`Benefício não aplicado (${X.nao_aplicado})`],['sem_direito',`Redução sem direito (${X.sem_direito})`],['condicional',`Condicional (${X.condicional})`],['faixa','Todos por faixa']];
+ const pela=p=>p.lc?`${pl(p.lc.red)}<span class="le">${e(p.lc.lei)} — ${e(p.lc.nome)}</span>${p.lc.cond?`<span class="sm">condição: ${e(p.lc.cond)}</span>`:''}`:(p.benef==='sem_direito'?'<span class="pill p0">Sem redução</span><span class="le" style="color:#b91c1c">o NCM não está no anexo aplicado</span>':'<span class="sm">sem redução pelo NCM</span>');
+ const noxml=p=>`${pl(p.red)}<div class="sm">${p.cclass?'cClassTrib '+e(p.cclass):'sem grupo IBS/CBS'}</div>`;
+ const desenha=()=>{
+  let l=D.produtos.filter(p=>modo==='faixa'?(!fx||p.faixa===fx):p.benef===modo);
+  if(busca)l=l.filter(p=>(p.desc+' '+p.ncm+' '+p.cod+' '+p.cclass).toLowerCase().includes(busca));
+  l=l.slice().sort((a,b)=>(b.dif||0)-(a.dif||0)||(b.ibs+b.cbs)-(a.ibs+a.cbs));
+  const col=modo==='nao_aplicado'?'IBS/CBS a mais':modo==='sem_direito'?'IBS/CBS a menos':'IBS + CBS';
+  $('#redT').innerHTML=`<tr><th>Produto</th><th>NCM</th><th>No XML</th><th>Pela LC 214/2025</th><th class="n">${col}</th></tr>`+(l.slice(0,800).map(p=>`<tr><td><b>${e(p.desc)}</b><div class="sm">${tp(p.papel)} · cód. ${e(p.cod)} · ${p.notas} nota(s)</div></td><td class="code">${ncmF(p.ncm)}</td><td>${noxml(p)}</td><td>${pela(p)}</td>
+   <td class="n ${modo==='nao_aplicado'?'ar':modo==='sem_direito'?'av':''}">${R(modo==='nao_aplicado'||modo==='sem_direito'?p.dif:p.ibs+p.cbs)}</td></tr>`).join('')||'<tr><td colspan="5"><div class="vazio" style="margin:10px 0">Nenhum produto aqui.</div></td></tr>')
+   +(l.length>800?`<tr><td colspan="5" class="mais">Mostrando 800 de ${l.length} — a lista completa está no Excel.</td></tr>`:'');
+  document.querySelectorAll('#redSeg span').forEach(x=>x.classList.toggle('on',x.dataset.m===modo));
+  document.querySelectorAll('#redLg div').forEach(x=>x.classList.toggle('on',modo==='faixa'&&x.dataset.f===fx));
+  document.querySelectorAll('.al').forEach(x=>x.classList.toggle('on',x.dataset.m===modo));
+ };
+ const reg=X.regime?`<div class="nota">Empresa marcada com regime específico (${e(D.regime_nome)}): nas <b>vendas</b>, a redução esperada é a do regime, não a do NCM do produto. Nas compras, vale a redução do NCM.</div>`:'';
+ $('#pg-red').innerHTML=`${reg}<div class="c"><h3>Base por faixa de redução</h3><div class="s">Base de cálculo dos itens, pela redução do cClassTrib informado no XML · clique numa faixa para ver os produtos</div>
+ <div class="stk">${X.faixas.map(f=>`<div data-f="${e(f.faixa)}" title="${e(f.faixa)}: ${R(f.bc)}" style="width:0;background:${cor(f.faixa)}" data-w="${Math.max(f.bc/tb*100,f.bc>0?.6:0)}"></div>`).join('')}</div>
+ <div class="lgd" id="redLg">${X.faixas.map(f=>`<div data-f="${e(f.faixa)}"><i style="background:${cor(f.faixa)}"></i>${e(f.faixa)}<small>${f.n} prod.</small><b>${R(f.bc)}</b></div>`).join('')}</div></div>
+ <div class="two"><div class="al o" data-m="nao_aplicado"><span class="ic">⚠️</span><div><b>${X.nao_aplicado} benefício(s) não aplicado(s) · ${R(X.a_mais)}</b><p>O NCM tem redução na LC 214/2025 e a nota saiu com tributação integral (ou com redução menor). Nas vendas, a empresa paga a mais; nas compras, o fornecedor destacou sem a redução.</p></div></div>
+ <div class="al r" data-m="sem_direito" style="${X.sem_direito?'':'opacity:.55'}"><span class="ic">⛔</span><div><b>${X.sem_direito} redução(ões) sem direito · ${R(X.a_menos)}</b><p>A nota aplicou uma redução que a lei não dá ao NCM do produto. Nas vendas, é imposto recolhido a menos; nas compras, o crédito destacado é menor que o devido.</p></div></div></div>
+ <div class="tw"><div class="bar" style="margin:10px 0 0"><div class="seg" id="redSeg">${MODOS.map(([k,t])=>`<span data-m="${k}">${t}</span>`).join('')}</div><span style="flex:1"></span><input class="q" id="redQ" placeholder="Buscar produto, NCM ou cClassTrib"></div>
+ <table id="redT"></table></div>
+ <div class="nota">Reduções pelo NCM conferidas no texto em vigor da LC 214/2025 (arts. 125, 133, 135, 136, 138, 147 e 148; Anexos I, VII, VIII, IX e XV; sem alteração da LC 227/2026 nesses artigos). <b>Condicional</b> é quando a redução depende de algo que o NCM não mostra (suco ou polpa sem açúcar, bebida láctea, destino agropecuário): o sistema não aponta falta, só aceita a redução quando ela vem no XML. Medicamentos: pelo NCM, no mínimo 60% (art. 133); a alíquota zero depende da finalidade do medicamento (art. 146).</div>`;
+ requestAnimationFrame(()=>requestAnimationFrame(()=>document.querySelectorAll('.stk div').forEach(d=>d.style.width=d.dataset.w+'%')));
+ document.querySelectorAll('#redSeg span').forEach(x=>x.onclick=()=>{modo=x.dataset.m;fx=null;desenha();});
+ document.querySelectorAll('.al').forEach(x=>x.onclick=()=>{modo=x.dataset.m;fx=null;desenha();});
+ document.querySelectorAll('.stk div, #redLg div').forEach(x=>x.onclick=()=>{modo='faixa';fx=fx===x.dataset.f?null:x.dataset.f;desenha();});
+ $('#redQ').oninput=ev=>{busca=ev.target.value.toLowerCase();desenha();};
+ desenha();
+})();
+// ---------- Produtos
+(function(){
+ let filtro='',fx='',busca='';
  const S={};D.produtos.forEach(p=>S[p.sit]=(S[p.sit]||0)+1);
  const cards=[['','Todos',D.produtos.length],['Confere','Conferem com a tabela oficial',S.Confere||0],['Divergente','Divergentes',S.Divergente||0],['Verificar','Para verificar',S.Verificar||0],['Sem IBS/CBS','Sem IBS/CBS no XML',S['Sem IBS/CBS']||0]];
- const cls=D.classes.map(c=>`<tr><td class="code">${e(c.cst)}</td><td class="code">${e(c.cclass)}</td><td>${e(c.nome)}</td><td class="n">${c.red?c.red+'%':'—'}</td><td>${e(c.artigo)}</td><td class="n">${c.itens}</td></tr>`).join('');
- const desenha=()=>{const l=D.produtos.filter(p=>(!filtro||p.sit===filtro)&&(!busca||(p.desc+' '+p.ncm+' '+p.cod+' '+p.cclass).toLowerCase().includes(busca))).slice(0,800);
-  $('#clasT').innerHTML=l.map(p=>`<tr><td>${e(p.desc)}<div class="sm">${tp(p.papel)} · cód. ${e(p.cod)} · ${p.itens} item(ns) em ${p.notas} nota(s)</div></td><td class="code">${e(p.ncm)}</td>
-  <td>${p.cclass?`<span class="code">CST ${e(p.cst)} · ${e(p.cclass)}</span><div class="sm">${e(p.nome)}</div>`:'<span class="sm">sem grupo IBS/CBS</span>'}</td>
+ const cls=D.classes.map(c=>`<tr><td class="code">${e(c.cst)}</td><td class="code">${e(c.cclass)}</td><td>${e(c.nome)}</td><td>${pl(c.red)}</td><td>${e(c.artigo)}</td><td class="n">${c.itens}</td></tr>`).join('');
+ const desenha=()=>{const l=D.produtos.filter(p=>(!filtro||p.sit===filtro)&&(!fx||p.faixa===fx)&&(!busca||(p.desc+' '+p.ncm+' '+p.cod+' '+p.cclass).toLowerCase().includes(busca))).slice(0,800);
+  $('#clasT').innerHTML=l.map(p=>`<tr><td><b>${e(p.desc)}</b><div class="sm">${tp(p.papel)} · cód. ${e(p.cod)} · ${p.itens} item(ns) em ${p.notas} nota(s)</div></td><td class="code">${ncmF(p.ncm)}</td>
+  <td>${p.cclass?`<span class="code">CST ${e(p.cst)} · ${e(p.cclass)}</span><div class="sm">${e(p.nome)}</div>`:'<span class="sm">sem grupo IBS/CBS</span>'}</td><td>${pl(p.red)}</td>
   <td class="lei">${p.motivos.map(x=>`<div>• ${e(x.texto)}${x.qtd>1?` <span class="sm">(${x.qtd})</span>`:''}</div>`).join('')}${p.texto?`<details><summary>${e(p.artigo)} — texto da lei</summary>${e(p.texto)}</details>`:''}</td>
-  <td class="n">${m(p.ibs+p.cbs)}</td><td>${tg(p.sit)}</td></tr>`).join('')||'<tr><td colspan="6" class="sm">Nada com esse filtro.</td></tr>';};
- $('#pg-clas').innerHTML=`<div class="bar">${cards.map(([k,t,n])=>`<div class="st${k===''?' on':''}" data-f="${k}"><b>${n}</b>${t}</div>`).join('')}<input class="q" placeholder="Buscar produto, NCM ou cClassTrib"></div>
- <table><tr><th>Produto</th><th>NCM</th><th>No XML</th><th>Conferência com a tabela oficial</th><th class="n">IBS+CBS</th><th>Situação</th></tr><tbody id="clasT"></tbody></table>
- <h3 style="margin:18px 0 8px">Classificações usadas no período</h3><table><tr><th>CST</th><th>cClassTrib</th><th>Classificação (tabela oficial)</th><th class="n">Redução</th><th>Artigo</th><th class="n">Itens</th></tr>${cls}</table>`;
+  <td class="n">${m(p.ibs+p.cbs)}</td><td>${tg(p.sit)}</td></tr>`).join('')||'<tr><td colspan="7" class="sm">Nada com esse filtro.</td></tr>';};
+ $('#pg-clas').innerHTML=`<div class="bar">${cards.map(([k,t,n])=>`<div class="st${k===''?' on':''}" data-f="${k}"><b>${n}</b>${t}</div>`).join('')}</div>
+ <div class="bar"><select class="q" id="clasFx" style="min-width:200px"><option value="">Todas as faixas de redução</option>${X.faixas.map(f=>`<option>${e(f.faixa)}</option>`).join('')}</select><input class="q" id="clasQ" placeholder="Buscar produto, NCM ou cClassTrib"></div>
+ <div class="tw"><table><tr><th>Produto</th><th>NCM</th><th>No XML</th><th>Redução</th><th>Conferência com a tabela oficial</th><th class="n">IBS+CBS</th><th>Situação</th></tr><tbody id="clasT"></tbody></table></div>
+ <div class="tw"><h3 style="margin:10px 0 4px">Classificações usadas no período</h3><table><tr><th>CST</th><th>cClassTrib</th><th>Classificação (tabela oficial)</th><th>Redução</th><th>Artigo</th><th class="n">Itens</th></tr>${cls}</table></div>`;
  document.querySelectorAll('#pg-clas .st').forEach(c=>c.onclick=()=>{filtro=c.dataset.f;document.querySelectorAll('#pg-clas .st').forEach(x=>x.classList.toggle('on',x===c));desenha();});
- $('#pg-clas .q').oninput=ev=>{busca=ev.target.value.toLowerCase();desenha();};desenha();
+ $('#clasQ').oninput=ev=>{busca=ev.target.value.toLowerCase();desenha();};$('#clasFx').onchange=ev=>{fx=ev.target.value;desenha();};desenha();
 })();
 // ---------- Pontos
 (function(){
- if(!D.pontos.length){$('#pg-pont').innerHTML='<div class="vazio">Nenhum ponto de atenção.</div>';return;}
- $('#pg-pont').innerHTML=`<table><tr><th>Situação</th><th>Nota</th><th>Produto</th><th>CST / cClassTrib</th><th>O que foi encontrado</th></tr>${D.pontos.slice(0,2000).map(p=>`<tr><td>${tg(p.sit)}</td><td>${tp(p.papel)} ${p.mod==='65'?'NFC-e':'NF-e'} ${e(p.num)}<div class="sm">${br(p.data)} · item ${e(p.item)}</div></td><td>${e(p.desc)}<div class="sm">NCM ${e(p.ncm)}</div></td><td class="code">${e(p.cst)} · ${e(p.cclass)}</td><td>${e(p.texto)}</td></tr>`).join('')}</table>
- ${D.n_pontos>2000?`<div class="mais">Mostrando 2.000 de ${D.n_pontos} — todos estão no Excel.</div>`:''}
- ${D.simples_sem_grupo.length?`<h3 style="margin:18px 0 8px">Fornecedores do Simples Nacional sem IBS/CBS no XML (sem crédito)</h3><table><tr><th>Nota</th><th>Data</th><th>Fornecedor</th><th>Regime</th><th class="n">Valor</th></tr>${D.simples_sem_grupo.map(x=>`<tr><td>${e(x.num)}</td><td>${br(x.data)}</td><td>${e(x.nome)}<div class="sm">${e(x.emit)}</div></td><td>${e(x.regime)}</td><td class="n">${m(x.vnf)}</td></tr>`).join('')}</table>`:''}`;
+ if(!D.pontos.length){$('#pg-pont').innerHTML='<div class="vazio">Nenhum ponto a corrigir.</div>';return;}
+ $('#pg-pont').innerHTML=`<div class="tw"><table><tr><th>Situação</th><th>Nota</th><th>Produto</th><th>CST / cClassTrib</th><th>O que foi encontrado</th></tr>${D.pontos.slice(0,2000).map(p=>`<tr><td>${tg(p.sit)}</td><td>${tp(p.papel)} ${p.mod==='65'?'NFC-e':'NF-e'} ${e(p.num)}<div class="sm">${br(p.data)} · item ${e(p.item)}</div></td><td><b>${e(p.desc)}</b><div class="sm">NCM ${ncmF(p.ncm)}</div></td><td class="code">${e(p.cst)} · ${e(p.cclass)}</td><td>${e(p.texto)}</td></tr>`).join('')}</table>
+ ${D.n_pontos>2000?`<div class="mais">Mostrando 2.000 de ${D.n_pontos} — todos estão no Excel.</div>`:''}</div>
+ ${D.simples_sem_grupo.length?`<div class="tw"><h3 style="margin:10px 0 4px">Fornecedores do Simples Nacional sem IBS/CBS no XML (sem crédito)</h3><table><tr><th>Nota</th><th>Data</th><th>Fornecedor</th><th>Regime</th><th class="n">Valor</th></tr>${D.simples_sem_grupo.map(x=>`<tr><td>${e(x.num)}</td><td>${br(x.data)}</td><td>${e(x.nome)}<div class="sm">${e(x.emit)}</div></td><td>${e(x.regime)}</td><td class="n">${m(x.vnf)}</td></tr>`).join('')}</table></div>`:''}`;
 })();
 // ---------- Simulação
 (function(){
@@ -753,15 +913,15 @@ painel();
  const desenha=()=>{$('#simT').innerHTML=cen.map((c,i)=>{const deb=(b.debito_cbs||0)*c.cbs/100+(b.debito_ibs||0)*c.ibs/100,cred=(b.credito_cbs||0)*c.cbs/100+(b.credito_ibs||0)*c.ibs/100;
   return `<tr><td><b>${c.ano}</b></td><td class="n"><input data-i="${i}" data-k="cbs" value="${String(c.cbs).replace('.',',')}">%</td><td class="n"><input data-i="${i}" data-k="ibs" value="${String(c.ibs).replace('.',',')}">%</td><td class="n">${m(deb)}</td><td class="n">${m(cred)}</td><td class="n"><b>${m(deb-cred)}</b></td><td class="sm">${e(c.nota)}</td></tr>`}).join('');
   document.querySelectorAll('#simT input').forEach(inp=>inp.onchange=()=>{const v=parseFloat(inp.value.replace(',','.'));if(!isNaN(v)){cen[inp.dataset.i][inp.dataset.k]=v;desenha();}});};
- $('#pg-sim').innerHTML=`<div class="c" style="margin-bottom:12px;font-size:12.5px;color:#57534e">Mesma movimentação do período, com as reduções de cada cClassTrib, nas alíquotas de cada ano. Entram os valores destacados nos XMLs (sem os créditos estimados e os do art. 57). As alíquotas podem ser alteradas aqui. Em 2026 pode haver diferença de centavos para o Painel porque os XMLs arredondam item por item. <b>Não são valores oficiais</b>: a CBS de 2027 (11,3%) foi calculada pelo TCU e depende de resolução do Senado, e o IBS de referência ainda não foi fixado. O ICMS em redução de 2029 a 2032 não entra na conta.</div>
- <table class="sim"><tr><th>Ano</th><th class="n">CBS</th><th class="n">IBS</th><th class="n">Débitos</th><th class="n">Créditos</th><th class="n">Saldo</th><th>Observação</th></tr><tbody id="simT"></tbody></table>`;desenha();
+ $('#pg-sim').innerHTML=`<div class="nota">Mesma movimentação do período, com as reduções de cada cClassTrib, nas alíquotas de cada ano. Entram os valores destacados nos XMLs (sem os créditos estimados e os do art. 57). As alíquotas podem ser alteradas aqui. Em 2026 pode haver diferença de centavos para o Painel porque os XMLs arredondam item por item. <b>Não são valores oficiais</b>: a CBS de 2027 (11,3%) foi calculada pelo TCU e depende de resolução do Senado, e o IBS de referência ainda não foi fixado. O ICMS em redução de 2029 a 2032 não entra na conta.</div>
+ <div class="tw"><table class="sim"><tr><th>Ano</th><th class="n">CBS</th><th class="n">IBS</th><th class="n">Débitos</th><th class="n">Créditos</th><th class="n">Saldo</th><th>Observação</th></tr><tbody id="simT"></tbody></table></div>`;desenha();
 })();
 // ---------- XML × SPED
 (function(){
  const x=D.xml_sped;
  if(!x){$('#pg-xs').innerHTML='<div class="vazio">Nenhum SPED Fiscal foi anexado. Anexe o SPED (opcional) para ver: XML sem escrituração, nota escriturada sem XML no lote e nota cancelada no SPED que ainda está autorizada no lote.</div>';return;}
- const t=(tit,l)=>`<h3 style="margin:16px 0 8px">${tit} <span class="sm">(${l.length})</span></h3>`+(l.length?`<table><tr><th>Tipo</th><th>Nota</th><th>Data</th><th class="n">Valor</th><th>Chave</th></tr>${l.slice(0,1000).map(k=>`<tr><td>${e(k.tipo)}</td><td>${e(k.num)}</td><td>${br(k.data)}</td><td class="n">${m(k.vnf)}</td><td class="code" style="font-size:11px">${e(k.chave)}</td></tr>`).join('')}</table>`:'<div class="sm">Nenhuma.</div>');
- $('#pg-xs').innerHTML=`<div class="sm">SPED ${e(x.empresa)} · ${e(x.periodo)}${x.cnpj_difere?' · <b style="color:#b91c1c">o CNPJ do SPED é diferente do CNPJ informado</b>':''}</div>`+t('XML sem escrituração no SPED',x.sem_sped)+t('Escriturada no SPED sem XML no lote',x.sem_xml)+t('Cancelada no SPED e autorizada no lote',x.canc_pasta);
+ const t=(tit,l)=>`<div class="tw"><h3 style="margin:10px 0 4px">${tit} <span class="sm">(${l.length})</span></h3>`+(l.length?`<table><tr><th>Tipo</th><th>Nota</th><th>Data</th><th class="n">Valor</th><th>Chave</th></tr>${l.slice(0,1000).map(k=>`<tr><td>${e(k.tipo)}</td><td>${e(k.num)}</td><td>${br(k.data)}</td><td class="n">${m(k.vnf)}</td><td class="code" style="font-size:11px">${e(k.chave)}</td></tr>`).join('')}</table>`:'<div class="sm" style="padding:6px 0 4px">Nenhuma.</div>')+'</div>';
+ $('#pg-xs').innerHTML=`<div class="nota">SPED ${e(x.empresa)} · ${e(x.periodo)}${x.cnpj_difere?' · <b style="color:#b91c1c">o CNPJ do SPED é diferente do CNPJ informado</b>':''}</div>`+t('XML sem escrituração no SPED',x.sem_sped)+t('Escriturada no SPED sem XML no lote',x.sem_xml)+t('Cancelada no SPED e autorizada no lote',x.canc_pasta);
 })();
 </script></body></html>'''
 
