@@ -1,0 +1,33 @@
+name: Importar o POP para a nuvem
+
+# Uso único (a mão): etapa "chave" e depois "importar". Ver .github/scripts/pop_import.js.
+on:
+  workflow_dispatch:
+    inputs:
+      etapa:
+        description: 'chave ou importar'
+        required: true
+        default: 'chave'
+
+jobs:
+  pop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Dependências
+        working-directory: functions
+        run: npm ci --no-audit --no-fund
+      - name: Credencial
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
+      - name: Executar
+        run: node .github/scripts/pop_import.js "${{ github.event.inputs.etapa }}"
+      - name: Apagar a credencial
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json"
