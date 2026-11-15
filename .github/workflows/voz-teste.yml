@@ -1,0 +1,37 @@
+name: Teste de voz (temporario)
+on:
+  push:
+    branches: [voz-teste]
+    paths: ['voz/textos.json', 'voz/gerar.py', '.github/workflows/voz-teste.yml']
+permissions:
+  contents: write
+jobs:
+  voz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Piper
+        run: |
+          pip install piper-tts
+          mkdir -p voz/modelos
+          for v in faber cadu jeff; do
+            for ext in onnx onnx.json; do
+              curl -sSL -o voz/modelos/pt_BR-$v-medium.$ext "https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/$v/medium/pt_BR-$v-medium.$ext"
+            done
+          done
+          python voz/gerar.py piper
+      - name: Kokoro
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq espeak-ng
+          pip install "kokoro>=0.9.4" soundfile
+          python voz/gerar.py kokoro
+      - name: Converter e devolver
+        run: |
+          sudo apt-get install -y -qq ffmpeg
+          cd voz/saida && for f in *.wav; do ffmpeg -loglevel error -y -i "$f" -ar 44100 -b:a 160k "${f%.wav}.mp3" && rm "$f"; done
+          cd ../.. && rm -rf voz/modelos
+          git config user.name "Rafael Cruz" && git config user.email "rafael.cruz@lidderacont.com.br"
+          git add voz/saida && git commit -m "Amostras de voz geradas" && git push
