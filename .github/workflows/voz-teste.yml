@@ -2,7 +2,7 @@ name: Teste de voz (temporario)
 on:
   push:
     branches: [voz-teste]
-    paths: ['voz/textos.json', 'voz/google.py', '.github/workflows/voz-teste.yml']
+    paths: ['voz/textos.json', 'voz/tts_google.py', '.github/workflows/voz-teste.yml']
 permissions:
   contents: write
 jobs:
@@ -21,7 +21,7 @@ jobs:
       - name: Voz do Google
         run: |
           pip install -q google-auth requests
-          python voz/google.py
+          python voz/tts_google.py
       - name: Devolver
         if: always()
         run: |
