@@ -3,6 +3,19 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.22
+
+- **Corretor do SPED Fiscal · "Análise ampla pelo POP" (EM TESTE, só Admin).** Fica no cartão "Análise ampla pelo POP" acima das Ferramentas do Admin e só roda quando você clica em **✦ Analisar com IA**. O ícone de IA é animado.
+  - **O que ela usa:** o SPED Fiscal, os XMLs anexados e, da nuvem, os DAREs pagos do mês e o Fisconforme da inscrição. O SPED do mês anterior entra se você anexar (opcional).
+  - **Itens do POP conferidos pelo sistema:**
+    - Etapa 1: 1.2 energia, 1.8 XML × SPED, 1.9 notas que ficaram para o próximo mês, 1.11 numeração faltante, 1.12 cancelada escriturada, 1.13 notas de meses anteriores, 1.14 0200 × XML, 1.15 Fisconforme (separa o que impede o SPED) e 1.28 DARE 1658 pago × RO020003;
+    - Etapa 2: 2.2 revenda ST × tributado (ST só com retenção no XML), 2.3 saídas ST × tributado e base do 5000, 2.13 devolução × compra de origem, 2.15 total por finalidade (explica falta de XML e diferença de valor), 2.17 e 2.18 CT-e e frete, 2.20, 2.22 CST pela natureza, 2.29 combustível CST 61 (só gasolina, diesel, GLP e biodiesel, pelo NCM), 2.34 origem, 2.38, 2.42 bonificações, 2.43 DIFAL, 2.46, 2.47 crédito do Simples (pCredSN ou rodapé da DANFE) e 2.61 transporte de crédito;
+    - Etapa 3: 3.4 validação do PVA e 3.6 resumo da apuração.
+  - **O que a IA faz** (função analisePop, sem CNPJ e sem nomes): explica cada apontamento, escreve o parecer com a prioridade, classifica as bonificações, lê os rodapés do Simples Nacional que o sistema não leu e redige o texto do **Word de observação ao cliente** (POP 2.1). As tabelas do Word saem do sistema.
+  - **Onde fica o POP:** é carregado pelo link "carregar o POP" e fica em segredos_admin/pop_icms (só Admin). Não vai para o código nem para o instalador.
+  - **Testes:** feitos em Conveniência Cacoal 09/2026, G S V Almeida 09/2026 e Patrão Cacoal 10/2026.
+  - **Se a IA não responder:** os apontamentos do sistema aparecem do mesmo jeito, com um aviso.
+
 ## 2.3.21
 
 - **NCM × XML das entradas · ficou só "SPED diferente do XML → opção de alterar"** (pedido do Rafael). As regras automáticas da 2.3.20 saíram: maioria, "outro produto", "outro capítulo" e "código genérico".

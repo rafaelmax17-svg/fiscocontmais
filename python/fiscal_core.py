@@ -3113,6 +3113,20 @@ def main(argv):
     if modo == 'substituir-lmc':
         import lmc as _lmc
         return _lmc.main_cli(argv)
+    if modo == 'analise-pop':
+        import analise_pop as _pop
+        return _pop.main_cli(argv[1:])
+    if modo == 'pop-texto':
+        import json as _js
+        import pdfplumber as _pp
+        _a = argv[argv.index('--pdf') + 1]
+        _o = argv[argv.index('--json') + 1]
+        with _pp.open(_a) as _pdf:
+            _t = '\n\n'.join((pg.extract_text() or '') for pg in _pdf.pages)
+            _np = len(_pdf.pages)
+        with open(_o, 'w', encoding='utf-8') as _fh:
+            _js.dump({'texto': _t, 'paginas': _np}, _fh, ensure_ascii=False)
+        return 0
     if modo == 'analisar-tudo':
         import analisar_tudo as _tudo
         return _tudo.main_cli(argv[1:])

@@ -1463,7 +1463,7 @@ function bindFiscal() {
     // ⚡ Automatizar correção → "Abrir no modo manual" de um cliente: escolhe o SPED (e a pasta de XMLs) como se fosse à mão
     window.__corrAbrirManual = (sped, xmls) => {
       corrSpedPath = sped; FISCAL.corrSpedPath = sped;
-      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad', '#btnCorrMaca', '#btnCorrDesc', '#btnCorrUnid', '#btnCorrComb'].forEach((id) => { $(id).disabled = false; });
+      ['#btnCorrSpedVerOriginal', '#btnCorrSpedRodar', '#btnCorrDifal', '#btnCorrSimples', '#btnCorrAcum', '#btnCorrCad', '#btnCorrMaca', '#btnCorrDesc', '#btnCorrUnid', '#btnCorrComb', '#btnPopIA'].forEach((id) => { $(id).disabled = false; });
       $('#corrUnid').hidden = true; $('#corrUnid').innerHTML = ''; $('#corrComb').hidden = true; $('#corrComb').innerHTML = '';
       $('#corrMaca').hidden = true; $('#corrMaca').innerHTML = '';
       $('#corrTudo').hidden = true; $('#corrTudo').innerHTML = ''; $('#corrDesc').hidden = true; $('#corrDesc').innerHTML = '';
@@ -1504,8 +1504,9 @@ function bindFiscal() {
       $('#btnCorrAcum').disabled = false; $('#corrAcum').hidden = true; $('#corrAcum').innerHTML = '';
       $('#btnCorrCad').disabled = false; $('#corrCad').hidden = true; $('#corrCad').innerHTML = '';
       $('#btnCorrMaca').disabled = false; $('#corrMaca').hidden = true; $('#corrMaca').innerHTML = '';
-      ['#btnCorrDesc', '#btnCorrUnid', '#btnCorrComb'].forEach((id) => { $(id).disabled = false; });
+      ['#btnCorrDesc', '#btnCorrUnid', '#btnCorrComb', '#btnPopIA'].forEach((id) => { $(id).disabled = false; });
       $('#corrComb').hidden = true; $('#corrComb').innerHTML = '';
+      $('#corrPop').hidden = true; $('#corrPop').innerHTML = '';
       $('#corrTudo').hidden = true; $('#corrTudo').innerHTML = ''; $('#corrDesc').hidden = true; $('#corrDesc').innerHTML = '';
       $('#corrUnid').hidden = true; $('#corrUnid').innerHTML = '';
       corrFeito = false;
@@ -1915,7 +1916,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
 
     // ---- painéis do Corretor: esconde os outros ao abrir um
     const CORR_PAINEIS = ['#corrSpedEmpty', '#corrSpedFrame', '#corrSpedResumo', '#corrDifal', '#corrSimples', '#corrLote', '#corrIcmsXml',
-      '#corrValXml', '#corrEstST', '#corrAcum', '#corrCad', '#corrMaca', '#corrDesc', '#corrUnid', '#corrComb', '#corrTudo'];
+      '#corrValXml', '#corrEstST', '#corrAcum', '#corrCad', '#corrMaca', '#corrDesc', '#corrUnid', '#corrComb', '#corrTudo', '#corrPop'];
     const corrSoMostra = (id) => CORR_PAINEIS.forEach((x) => { const el = $(x); if (el) el.hidden = x !== id; });
     const fmR = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     async function corrPedeXmls() {
@@ -2353,7 +2354,10 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       $('#corrEquipe').hidden = !adm;
       $('#corrSpedEmpty').classList.toggle('adm', adm);
       if (adm) corrEquipeCarregar();
+      if (window._popEntrar) window._popEntrar(adm);
     };
+    // ✦ Análise ampla pelo POP (renderer/pop.js · só Admin): o que ela precisa do Corretor
+    window._corrCtx = () => ({ sped: corrSpedPath, feito: corrFeito, xmls: XMLS.path, pedirXmls: corrPedeXmls, soMostra: corrSoMostra, abrirTudo: tdAbrir });
     $('#btnCorrSimples').addEventListener('click', () => snAbrir());
 
     const DIF = { an: null, origem: null };

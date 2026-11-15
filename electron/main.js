@@ -2196,6 +2196,124 @@ function fiscalScriptPath() {
 // Resolve como rodar o núcleo fiscal:
 //  - empacotado: fiscal_core.exe (compilado)
 //  - dev/portátil: Python (do .venv) + fiscal_core.py
+// ✦ Análise ampla pelo POP (Corretor do SPED Fiscal · só Admin · EM TESTE). Só roda quando o Admin clica em
+// "Analisar com IA": confere o SPED item a item do POP (Python), busca na nuvem os DAREs pagos e o Fisconforme da
+// inscrição, manda os achados (sem CNPJ e sem nomes) para a função analisePop e junta a resposta.
+function _cab0000Arq(arq) {
+  try {
+    const fd = fs.openSync(arq, 'r'); const b = Buffer.alloc(800); fs.readSync(fd, b, 0, 800, 0); fs.closeSync(fd);
+    const l = b.toString('latin1').replace(/^﻿/, '').split(/\r?\n/)[0].split('|');
+    if (l[1] !== '0000') return null;
+    return { dtIni: l[4], dtFin: l[5], ie: String(l[10] || '').replace(/\D/g, '').replace(/^0+/, ''), uf: l[9] };
+  } catch (_) { return null; }
+}
+async function _popExtras(cab) {
+  const out = { pagos: [], fisconforme: [], consultou_pagos: false, consultou_fisconforme: false };
+  const db = auth.db(); if (!db || !cab || !cab.ie) return out;
+  const f = auth.fsMod();
+  const mes = `${cab.dtIni.slice(4, 8)}${cab.dtIni.slice(2, 4)}`;
+  try {
+    (await f.getDocs(f.collection(db, 'dare'))).forEach((d) => {
+      if (!d.id.startsWith(`pg_${mes}_`)) return;
+      const x = d.data();
+      if (String(x.ie || '').replace(/\D/g, '').replace(/^0+/, '') !== cab.ie) return;
+      out.consultou_pagos = !x.erro;
+      out.pagos = (x.pagos || []).map((p) => ({ nr: p.nr, parc: p.parc, rec: p.rec, venc: p.venc, pagoEm: p.pagoEm, valorN: p.valorN, pagoN: p.pagoN }));
+    });
+  } catch (_) {}
+  try {
+    let lida = false;
+    (await f.getDocs(f.collection(db, 'fisconforme'))).forEach((d) => {
+      if (d.id === '_meta') { lida = true; return; }
+      if (d.id.startsWith('_')) return;
+      const x = d.data();
+      if (String(x.ie || '').replace(/\D/g, '').replace(/^0+/, '') !== cab.ie) return;
+      out.fisconforme.push({ codigo: x.codigo, periodo: x.periodo, desc: x.desc, status: x.status });
+    });
+    out.consultou_fisconforme = lida;
+  } catch (_) {}
+  return out;
+}
+ipcMain.handle('pop:estado', async () => {
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
+  try {
+    const db = auth.db(); const f = auth.fsMod();
+    const d = (await f.getDoc(f.doc(db, 'segredos_admin', 'pop_icms'))).data();
+    return { ok: true, pop: d ? { nome: d.nome || '', em: d.em || '', paginas: d.paginas || 0, tamanho: (d.texto || '').length } : null };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('pop:carregar', async () => {
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'POP do Fiscal — EFD ICMS/IPI (PDF)', properties: ['openFile'], filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  const jsonOut = path.join(os.tmpdir(), `fc_pop_${Date.now()}.json`);
+  try {
+    await runFiscal(['pop-texto', '--pdf', r.filePaths[0], '--json', jsonOut], jsonOut);
+    const t = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
+    if (!t.texto || t.texto.trim().length < 200) return { error: 'Não consegui ler o texto do PDF (ele precisa ter texto, não só imagem).' };
+    const db = auth.db(); const f = auth.fsMod();
+    const d = { texto: t.texto.slice(0, 150000), nome: path.basename(r.filePaths[0]), paginas: t.paginas || 0, em: new Date().toISOString(), por: (auth.sessao() || {}).email || '' };
+    await f.setDoc(f.doc(db, 'segredos_admin', 'pop_icms'), d);
+    return { ok: true, pop: { nome: d.nome, em: d.em, paginas: d.paginas, tamanho: d.texto.length } };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('pop:analisar', async (_evt, { spedPath, usarCorrigido, xmls, spedAnt }) => {
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
+  if (!spedPath) return { error: 'Selecione o SPED.' };
+  const base = _difalBase(spedPath, usarCorrigido);
+  const st = Date.now();
+  const jsonOut = path.join(os.tmpdir(), `fc_pop_res_${st}.json`), extraJ = path.join(os.tmpdir(), `fc_pop_extra_${st}.json`);
+  const iaJ = path.join(os.tmpdir(), `fc_pop_ia_${st}.json`), finalJ = path.join(os.tmpdir(), `fc_pop_fim_${st}.json`);
+  const prog = (t) => { try { mainWindow.webContents.send('pop:progresso', t); } catch (_) {} };
+  let regimes = null;
+  try {
+    prog('Buscando os DAREs pagos e o Fisconforme da inscrição…');
+    const cab = _cab0000Arq(base.arq);
+    fs.writeFileSync(extraJ, JSON.stringify(await _popExtras(cab)), 'utf-8');
+    prog('Conferindo o SPED item a item do POP…');
+    regimes = await _regimesJson([base.arq]);
+    await runFiscal(['analise-pop', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), ...(spedAnt ? ['--sped-ant', spedAnt] : []),
+      '--regimes', regimes, '--extra', extraJ, '--json', jsonOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
+    if (res.erro) return { error: res.erro };
+    prog('Analisando os achados com a IA…');
+    let ia = null, avisoIa = '';
+    try { ia = (await auth.analisePop(res.para_ia)).ia; } catch (e) { avisoIa = String(e.message || e); }
+    delete res.para_ia;
+    fs.writeFileSync(jsonOut, JSON.stringify(res), 'utf-8');
+    fs.writeFileSync(iaJ, JSON.stringify(ia || {}), 'utf-8');
+    await runFiscal(['analise-pop', '--res', jsonOut, '--ia', iaJ, '--json', finalJ], finalJ);
+    const fim = JSON.parse(fs.readFileSync(finalJ, 'utf-8'));
+    if (fim.erro) return { error: fim.erro };
+    return { ok: true, res: fim, avisoIa, origem: base.origem };
+  } catch (e) { return { error: String(e.message || e) }; }
+  finally { for (const x of [jsonOut, extraJ, iaJ, finalJ, regimes]) if (x) fs.unlink(x, () => {}); }
+});
+ipcMain.handle('pop:pickSpedAnt', async () => {
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'SPED Fiscal do mês anterior (transporte de crédito)', properties: ['openFile'], filters: [{ name: 'SPED', extensions: ['txt'] }] });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  const cab = _cab0000Arq(r.filePaths[0]);
+  if (!cab) return { error: 'Esse arquivo não é um SPED Fiscal.' };
+  return { ok: true, path: r.filePaths[0], periodo: `${cab.dtIni.slice(2, 4)}/${cab.dtIni.slice(4, 8)}` };
+});
+ipcMain.handle('pop:word', async (_evt, res) => {
+  const bloq = _soAdminCorretor(); if (bloq) return bloq;
+  const nome = `Observações ${String(res?.cab?.nome || 'cliente').replace(/[\\/:*?"<>|]+/g, ' ').trim()} ${String(res?.periodo || '').replace('/', '-')}.docx`;
+  const save = await dialog.showSaveDialog(mainWindow, { title: 'Salvar o Word de observação', defaultPath: nome, filters: [{ name: 'Word', extensions: ['docx'] }] });
+  if (save.canceled || !save.filePath) return { canceled: true };
+  const st = Date.now(), resJ = path.join(os.tmpdir(), `fc_pop_w_${st}.json`), outJ = path.join(os.tmpdir(), `fc_pop_wo_${st}.json`);
+  try {
+    fs.writeFileSync(resJ, JSON.stringify(res), 'utf-8');
+    await runFiscal(['analise-pop', '--res', resJ, '--word', save.filePath, '--json', outJ], outJ);
+    const r = JSON.parse(fs.readFileSync(outJ, 'utf-8'));
+    if (r.erro) return { error: r.erro };
+    shell.openPath(save.filePath);
+    return { ok: true, arquivo: save.filePath };
+  } catch (e) { return { error: String(e.message || e) }; }
+  finally { for (const x of [resJ, outJ]) fs.unlink(x, () => {}); }
+});
+
 function fiscalRunner() {
   if (app.isPackaged) {
     const bin = process.platform === 'win32' ? 'fiscal_core.exe' : 'fiscal_core';

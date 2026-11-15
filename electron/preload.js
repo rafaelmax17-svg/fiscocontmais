@@ -86,6 +86,15 @@ contextBridge.exposeInMainWorld('fiscocont', {
     pastaDados: () => ipcRenderer.invoke('fisc:pastaDados'),
     onProgresso: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('fisc:progresso', h); return () => ipcRenderer.removeListener('fisc:progresso', h); },
   },
+  // ✦ Análise ampla pelo POP (Corretor do SPED Fiscal · só Admin)
+  pop: {
+    estado: () => ipcRenderer.invoke('pop:estado'),
+    carregar: () => ipcRenderer.invoke('pop:carregar'),
+    analisar: (opc) => ipcRenderer.invoke('pop:analisar', opc),
+    word: (res) => ipcRenderer.invoke('pop:word', res),
+    pickSpedAnt: () => ipcRenderer.invoke('pop:pickSpedAnt'),
+    onProgresso: (cb) => { ipcRenderer.removeAllListeners('pop:progresso'); ipcRenderer.on('pop:progresso', (_e, d) => cb(d)); },
+  },
   dare: {
     ler: (ano) => ipcRenderer.invoke('dare:ler', ano),
     dados: (ano) => ipcRenderer.invoke('dare:dados', ano),

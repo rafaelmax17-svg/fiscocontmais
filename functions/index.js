@@ -175,3 +175,54 @@ exports.explicarFisconforme = onCall({ timeoutSeconds: 120, memory: '256MiB' }, 
     comDetalhe: !!detalhe, em: FieldValue.serverTimestamp() }).catch(() => {});
   return { texto };
 });
+
+// ------------------------------------------------------------------ Análise ampla pelo POP (Corretor do SPED Fiscal · só Admin)
+// Recebe os achados já calculados no computador (sem CNPJ e sem nomes de empresa/fornecedor) e o texto do POP guardado
+// em segredos_admin/pop_icms. Devolve explicações, parecer, classificação das bonificações, leitura dos rodapés do
+// Simples Nacional e o texto do Word de observação ao cliente. Só roda quando o Admin clica em "Analisar com IA".
+const { SISTEMA_POP } = require('./popPrompt');
+
+function _jsonDe(texto) {
+  const t = String(texto || '').trim();
+  try { return JSON.parse(t); } catch (_) {}
+  const a = t.indexOf('{'), b = t.lastIndexOf('}');
+  if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch (_) {} }
+  return null;
+}
+
+exports.analisePop = onCall({ timeoutSeconds: 300, memory: '512MiB' }, async (req) => {
+  const quem = await quemChamou(req, true);
+  const dados = req.data?.dados;
+  if (!dados || !Array.isArray(dados.itens)) throw new HttpsError('invalid-argument', 'Sem os achados da análise.');
+  const corpo = JSON.stringify(dados);
+  // segurança extra: nada com cara de CNPJ/CPF sai daqui para a IA
+  const limpo = corpo.replace(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/g, '[CNPJ]').replace(/\d{3}\.\d{3}\.\d{3}-\d{2}/g, '[CPF]');
+  if (limpo.length > 180000) throw new HttpsError('invalid-argument', 'Análise grande demais para enviar de uma vez.');
+  const pop = await db.doc('segredos_admin/pop_icms').get();
+  const textoPop = pop.exists ? String(pop.data().texto || '') : '';
+  if (!textoPop) throw new HttpsError('failed-precondition', 'O POP ainda não foi carregado (botão "POP" na Análise ampla).');
+  const cfg = await db.doc('config/chat_ia').get();
+  const chave = cfg.exists ? cfg.data().anthropic_key : null;
+  if (!chave) throw new HttpsError('failed-precondition', 'Chave ainda não configurada na nuvem (config/chat_ia).');
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6', max_tokens: 12000,
+      system: [{ type: 'text', text: SISTEMA_POP }, { type: 'text', text: `MANUAL DE PROCESSO OPERACIONAL PADRÃO (POP) DO ESCRITÓRIO:\n\n${textoPop.slice(0, 60000)}` }],
+      messages: [{ role: 'user', content: `Achados da conferência do SPED (período ${dados.periodo || ''}, UF ${dados.uf || ''}):\n\n${limpo}` }],
+    }),
+  });
+  if (!resp.ok) {
+    const t = await resp.text().catch(() => '');
+    throw new HttpsError('internal', `Erro na análise (${resp.status}): ${t.slice(0, 200)}`);
+  }
+  const data = await resp.json();
+  const texto = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+  const ia = _jsonDe(texto);
+  if (!ia) throw new HttpsError('internal', 'A resposta da análise veio fora do formato. Tente de novo.');
+  await db.collection('uso_ia').add({ modulo: 'analise_pop', uid: quem.uid, email: quem.email, periodo: String(dados.periodo || ''),
+    itens: dados.itens.length, tokens_in: data.usage?.input_tokens || 0, tokens_out: data.usage?.output_tokens || 0,
+    em: FieldValue.serverTimestamp() }).catch(() => {});
+  return { ia, uso: data.usage || {} };
+});

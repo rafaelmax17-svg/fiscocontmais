@@ -252,13 +252,13 @@ function sessao() { return _sessao ? { ..._sessao } : null; }
 
 // ------------------------------------------------------------------ funções no servidor do Google (Cloud Functions)
 let _fn = null;
-function _chamar(nome, dados) {
+function _chamar(nome, dados, timeout = 130000) {
   if (!_fn) {
     const { getFunctions } = require('firebase/functions');
     _fn = getFunctions(_app, 'southamerica-east1');
   }
   const { httpsCallable } = require('firebase/functions');
-  return httpsCallable(_fn, nome, { timeout: 130000 })(dados).then((r) => r.data).catch((e) => {
+  return httpsCallable(_fn, nome, { timeout })(dados).then((r) => r.data).catch((e) => {
     const m = String((e && e.message) || e);
     if (/not-found|NOT_FOUND/.test((e && e.code) || '') && !/Usuário/.test(m))
       throw new Error('As funções do sistema ainda não foram publicadas no Firebase (rode "Publicar funções e regras" no GitHub).');
@@ -284,6 +284,12 @@ async function trocarSenha(userDataDir, nova, salvar) {
     if (((e && e.code) || '') === 'auth/requires-recent-login') return { ok: false, erro: 'Por segurança, saia e entre de novo com a senha provisória.' };
     return { ok: false, erro: _msgErro(e) };
   }
+}
+
+// Análise ampla pelo POP (Corretor do SPED Fiscal): só Admin; os achados vão sem CNPJ e sem nomes
+async function analisePop(dados) {
+  if (!logado()) throw new Error('Entre com o seu usuário.');
+  return _chamar('analisePop', { dados }, 320000);
 }
 
 async function explicarFisconforme(dados) {
@@ -390,5 +396,5 @@ async function statusLicenca(codigo, status) {
 
 module.exports = {
   ADMIN_INICIAL, conectado, salvoPublico, salvoApagar, limpaOfflineAntigo, login, logout, confereSenha, redefinirSenha, criarAdminInicial, sessao, logado, db, fsMod,
-  listarUsuarios, cadastrarUsuario, novaSenhaProvisoria, alterarUsuario, cancelarConvite, trocarSenha, chatIA, explicarFisconforme, listarLicencas, statusLicenca,
+  listarUsuarios, cadastrarUsuario, novaSenhaProvisoria, alterarUsuario, cancelarConvite, trocarSenha, chatIA, explicarFisconforme, analisePop, listarLicencas, statusLicenca,
 };
