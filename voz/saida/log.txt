@@ -1,0 +1,6 @@
+ativar: 200 {
+  "name": "operations/acat.p2-1079764838710-1e32c110-37fc-418f-b9af-61fdfc522b6e"
+}
+
+estado: ENABLED
+vozes: pt-BR-Chirp3-HD-Achernar(FEMALE), pt-BR-Chirp3-HD-Achird(MALE), pt-BR-Chirp3-HD-Algenib(MALE), pt-BR-Chirp3-HD-Algieba(MALE), pt-BR-Chirp3-HD-Alnilam(MALE), pt-BR-Chirp3-HD-Aoede(FEMALE), pt-BR-Chirp3-HD-Autonoe(FEMALE), pt-BR-Chirp3-HD-Callirrhoe(FEMALE), pt-BR-Chirp3-HD-Charon(MALE), pt-BR-Chirp3-HD-Despina(FEMALE), pt-BR-Chirp3-HD-Enceladus(MALE), pt-BR-Chirp3-HD-Erinome(FEMALE), pt-BR-Chirp3-HD-Fenrir(MALE), pt-BR-Chirp3-HD-Gacrux(FEMALE), pt-BR-Chirp3-HD-Iapetus(MALE), pt-BR-Chirp3-HD-Kore(FEMALE), pt-BR-Chirp3-HD-Laomedeia(FEMALE), pt-BR-Chirp3-HD-Leda(FEMALE), pt-BR-Chirp3-HD-Orus(MALE), pt-BR-Chirp3-HD-Puck(MALE), pt-BR-Chirp3-HD-Pulcherrima(FEMALE), pt-BR-Chirp3-HD-Rasalgethi(MALE), pt-BR-Chirp3-HD-Sadachbia(MALE), pt-BR-Chirp3-HD-Sadaltager(MALE), pt-BR-Chirp3-HD-Schedar(MALE), pt-BR-Chirp3-HD-Sulafat(FEMALE), pt-BR-Chirp3-HD-Umbriel(MALE), pt-BR-Chirp3-HD-Vindemiatrix(FEMALE), pt-BR-Chirp3-HD-Zephyr(FEMALE), pt-BR-Chirp3-HD-Zubenelgenubi(MALE)
