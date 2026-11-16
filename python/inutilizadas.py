@@ -197,8 +197,12 @@ HTML = r'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>
 .kp{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}.kp div{background:#fff;border-radius:12px;padding:11px 13px;border-top:4px solid #c9cfdc;box-shadow:0 4px 14px rgba(20,27,45,.06);animation:sobe .45s both}
 .kp span{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#5a6785}.kp b{display:block;font-size:24px;margin-top:2px}.kp small{font-size:11px;color:#5a6785}
 .g2{display:grid;grid-template-columns:1fr 1.4fr;gap:14px;margin-bottom:14px}.c{background:#fff;border:1px solid #e8ebf3;border-radius:12px;padding:14px 16px;animation:sobe .5s both}.c h4{margin:0 0 10px;font-size:13.5px}
-.dn{display:flex;align-items:center;gap:18px}.lgs{flex:1;display:flex;flex-direction:column;gap:8px}.lg{display:flex;gap:8px;align-items:center;font-size:12.5px;cursor:pointer;border-radius:8px;padding:2px 4px}.lg:hover{background:#f4f6fb}.lg i{width:11px;height:11px;border-radius:3px;flex:none}.lg span{flex:1}
-.arco{transition:stroke-dasharray 1.1s cubic-bezier(.2,.8,.2,1)}
+.dn{display:flex;align-items:center;gap:22px}.lgs{flex:1;display:flex;flex-direction:column;gap:12px}
+.lg{display:grid;grid-template-columns:12px 1fr auto;gap:4px 9px;align-items:center;font-size:12.5px;cursor:pointer;border-radius:10px;padding:5px 7px;transition:background .2s,opacity .2s}
+.lg:hover{background:#f4f6fb}.lg i{width:12px;height:12px;border-radius:4px}.lg b{font-size:15px;font-variant-numeric:tabular-nums}
+.lg .br{grid-column:2/4;height:7px;background:#eef0f6;border-radius:8px;overflow:hidden}.lg .br em{display:block;height:100%;width:0;border-radius:8px}
+.lg.apaga,.arco.apaga{opacity:.28}.arco{cursor:pointer;transition:opacity .25s}
+#dn text{font-family:"Segoe UI",Inter,Arial,sans-serif}
 .sr{margin-bottom:12px}.sr .l{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px}.sr .l span{color:#5a6785}.sr .t{display:flex;height:16px;border-radius:999px;overflow:hidden;background:#eef0f6}.sr .t div{height:100%;width:0;transition:width 1s cubic-bezier(.2,.8,.2,1)}
 .tw{background:#fff;border:1px solid #e8ebf3;border-radius:12px;overflow:hidden;animation:sobe .55s both}.tb{display:flex;gap:7px;align-items:center;padding:10px 12px;border-bottom:1px solid #eef0f6;flex-wrap:wrap}
 .f{border:1px solid #d8dcea;border-radius:999px;padding:5px 11px;font-size:11.5px;font-weight:600;color:#475569;cursor:pointer;user-select:none}.f.on{background:#1f2a5a;color:#fff;border-color:#1f2a5a}
@@ -208,11 +212,11 @@ td{padding:8px 10px;border-bottom:1px solid #f0f2f7;vertical-align:top}.mono{fon
 .ob{color:#475569;max-width:430px}.mais{padding:10px;text-align:center;color:#5a6785;font-size:12px}
 .src{font-size:11.5px;color:#5a6785;margin:-4px 0 12px;line-height:1.5}
 @keyframes sobe{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-@media (prefers-reduced-motion:reduce){.kp div,.c,.tw{animation:none}.arco,.sr .t div{transition:none}}
+@media (prefers-reduced-motion:reduce){.kp div,.c,.tw{animation:none}.sr .t div{transition:none}}
 </style></head><body>
 <div class="src" id="src"></div>
 <div class="kp" id="kp"></div>
-<div class="g2"><div class="c"><h4>Situação dos números faltantes</h4><div class="dn"><svg width="190" height="190" viewBox="0 0 190 190" id="dn"></svg><div class="lgs" id="lgs"></div></div></div>
+<div class="g2"><div class="c"><h4>Situação dos números faltantes</h4><div class="dn"><svg width="220" height="220" viewBox="0 0 220 220" id="dn"></svg><div class="lgs" id="lgs"></div></div></div>
 <div class="c"><h4>Por modelo e série</h4><div id="series"></div></div></div>
 <div class="tw"><div class="tb" id="fil"></div><table><thead><tr><th>Modelo</th><th style="text-align:center">Série</th><th>Número</th><th>Situação</th><th>Protocolo / chave</th><th>Data da inutilização</th><th>Observação</th></tr></thead><tbody id="tb"></tbody></table></div>
 <script>
@@ -225,12 +229,41 @@ const K=[['Números faltantes no Domínio',D.numeros,`${n(D.faixas_dominio)} fai
 ['Explicados pelo SPED',g('cancelada')+g('denegada')+g('sped_inut'),'cancelada · denegada · inutilizada','#64748b'],['Faltam lançar no Domínio',g('escriturada'),'estão no SPED do cliente','#2f4090'],
 ['Sem explicação ainda',g('sem_registro')+g('pendente')+g('sem_portal'),g('sem_registro')?'pedir ao cliente':(g('pendente')?'importe o SPED do cliente':'consulte o portal'),'#e34948']];
 $('#kp').innerHTML=K.map(([t,v,s,c],i)=>`<div style="border-top-color:${c};animation-delay:${i*.06}s"><span>${t}</span><b>${n(v)}</b><small>${s}</small></div>`).join('');
-const tot=D.numeros||1,R=72,C=2*Math.PI*R;let off=0,arcs='';
-Object.entries(sit).forEach(([k,v])=>{const L=C*v/tot;arcs+=`<circle class="arco" data-l="${L}" data-k="${k}" cx="95" cy="95" r="${R}" fill="none" stroke="${S[k][1]}" stroke-width="28" stroke-dasharray="0 ${C}" stroke-dashoffset="${-off}" transform="rotate(-90 95 95)" style="cursor:pointer"/>`;off+=L;});
-$('#dn').innerHTML=`<circle cx="95" cy="95" r="${R}" fill="none" stroke="#eef0f6" stroke-width="28"/>${arcs}<text x="95" y="92" text-anchor="middle" font-size="30" font-weight="800">${n(D.numeros)}</text><text x="95" y="112" text-anchor="middle" font-size="11" fill="#5a6785">números</text>`;
-$('#lgs').innerHTML=Object.entries(sit).map(([k,v])=>`<div class="lg" data-k="${k}"><i style="background:${S[k][1]}"></i><span>${S[k][0]}</span><b>${n(v)}</b></div>`).join('');
+// Anel segmentado (modelo A): pontas arredondadas, espaço entre as fatias, brilho e desenho animado com o número subindo
+const tot=D.numeros||1,R=84,SW=22,TAU=Math.PI*2,CX=110;
+const claro=(h,f)=>{const x=parseInt(h.slice(1),16),r=x>>16,g2=x>>8&255,b=x&255,m=v=>Math.round(v+(255-v)*f);return`rgb(${m(r)},${m(g2)},${m(b)})`};
+const ents=Object.entries(sit).filter(([k,v])=>v>0);
+const semExp=g('sem_registro')+g('pendente')+g('sem_portal'),expl=Math.round(100*(tot-semExp)/tot);
+let defs='<defs><filter id="gl" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
+ents.forEach(([k],i)=>{defs+=`<linearGradient id="gr${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${claro(S[k][1],.32)}"/><stop offset="1" stop-color="${S[k][1]}"/></linearGradient>`;});
+defs+='</defs>';
+$('#dn').innerHTML=defs+`<circle cx="${CX}" cy="${CX}" r="${R}" fill="none" stroke="#eef0f6" stroke-width="${SW}"/>`
+ +ents.map(([k],i)=>`<path class="arco" data-k="${k}" fill="none" stroke="url(#gr${i})" stroke-width="${SW}" stroke-linecap="round" filter="url(#gl)"/>`).join('')
+ +`<text x="${CX}" y="${CX+4}" text-anchor="middle" font-size="44" font-weight="800" fill="#141b2d" id="dnN">0</text>`
+ +`<text x="${CX}" y="${CX+26}" text-anchor="middle" font-size="12" fill="#5a6785">números faltantes</text>`
+ +`<text x="${CX}" y="${CX+45}" text-anchor="middle" font-size="12" font-weight="700" fill="${expl===100?'#109868':'#b45309'}" id="dnP" opacity="0">${expl}% explicados</text>`;
+$('#lgs').innerHTML=ents.map(([k,v])=>`<div class="lg" data-k="${k}"><i style="background:${S[k][1]}"></i><span>${S[k][0]}</span><b data-v="${v}">0</b><div class="br"><em data-w="${100*v/tot}" style="background:linear-gradient(90deg,${claro(S[k][1],.32)},${S[k][1]})"></em></div></div>`).join('');
+const arcoD=(a0,a1)=>{if(a1-a0<0.0005)a1=a0+0.0005;const p=a=>[CX+R*Math.cos(a-Math.PI/2),CX+R*Math.sin(a-Math.PI/2)];const[x0,y0]=p(a0),[x1,y1]=p(a1);return`M${x0.toFixed(2)} ${y0.toFixed(2)}A${R} ${R} 0 ${a1-a0>Math.PI?1:0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`};
+const GAP=ents.length>1?(SW/R)+0.06:0;let ac=0;
+// fatia pequena (ex.: 1 de 286) ganha um tamanho mínimo para não sumir nem encostar na vizinha; a diferença sai da maior
+const MIN=GAP+0.07,ang=ents.map(([k,v])=>v/tot*TAU);
+if(ents.length>1){let falta=0;ang.forEach((a,i)=>{if(a<MIN){falta+=MIN-a;ang[i]=MIN;}});const im=ang.indexOf(Math.max(...ang));ang[im]-=falta;}
+const fat=ents.map(([k],i)=>{const a0=ac,a1=ac+ang[i];ac=a1;return{k,a0,a1}});
+const pathEls=[...document.querySelectorAll('#dn .arco')],bs=[...document.querySelectorAll('.lg b')],ems=[...document.querySelectorAll('.lg em')];
+const eo=x=>1-Math.pow(1-Math.max(0,Math.min(1,x)),3);
+function quadro(t){
+ const pr=eo(t/1.6)*TAU;
+ fat.forEach((f,i)=>{const ini=f.a0+GAP/2,fimF=Math.max(ini,f.a1-GAP/2);const el=pathEls[i];
+  if(ents.length===1&&pr>=TAU-1e-6){el.setAttribute('d',`M${CX} ${CX-R}A${R} ${R} 0 1 1 ${CX-0.01} ${CX-R}`);return;}
+  if(pr<=ini){el.setAttribute('d','');return;} el.setAttribute('d',arcoD(ini,Math.min(fimF,pr)));});
+ const k=eo(t/1.9);$('#dnN').textContent=n(Math.round(tot*k));
+ $('#dnP').setAttribute('opacity',Math.max(0,Math.min(1,(t-1.7)/0.4)));
+ bs.forEach((b,i)=>{const kk=eo((t-0.15-i*0.12)/1.3);b.textContent=n(Math.round(+b.dataset.v*kk));ems[i].style.width=(+ems[i].dataset.w*kk)+'%';});
+}
+const reduz=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+if(reduz){quadro(9);}else{const t0=performance.now();const passo=now=>{const t=(now-t0)/1000;quadro(t);if(t<2.4)requestAnimationFrame(passo);else quadro(9);};requestAnimationFrame(passo);}
 $('#series').innerHTML=D.por_serie.map(s=>`<div class="sr"><div class="l"><b>${e(s.nome)}</b><span>${n(s.total)} número(s)${s.sit.portal?` · ${n(s.sit.portal)} inutilizado(s) no portal`:''}</span></div><div class="t">${Object.keys(S).filter(k=>s.sit[k]).map(k=>`<div data-w="${100*s.sit[k]/s.total}" style="background:${S[k][1]}" title="${e(S[k][0])}: ${n(s.sit[k])}"></div>`).join('')}</div></div>`).join('');
-requestAnimationFrame(()=>requestAnimationFrame(()=>{document.querySelectorAll('.arco').forEach((a,i)=>{a.style.transitionDelay=(i*.12)+'s';a.setAttribute('stroke-dasharray',`${a.dataset.l} ${C}`);});document.querySelectorAll('.sr .t div').forEach(d=>d.style.width=d.dataset.w+'%');}));
+requestAnimationFrame(()=>requestAnimationFrame(()=>{document.querySelectorAll('.sr .t div').forEach(d=>d.style.width=d.dataset.w+'%');}));
 let filtro='',busca='';
 const FIL=[['','Todos'],...Object.keys(S).filter(k=>sit[k]).map(k=>[k,S[k][0]])];
 $('#fil').innerHTML=FIL.map(([k,t])=>`<span class="f${k===''?' on':''}" data-k="${k}">${e(t)} (${k?n(D.faixas.filter(f=>f.sit===k).length):n(D.faixas.length)})</span>`).join('')+'<input class="q" id="q" placeholder="Buscar número, série ou protocolo">';
@@ -238,7 +271,8 @@ function desenha(){let L=D.faixas.filter(f=>(!filtro||f.sit===filtro)&&(!busca||
  $('#tb').innerHTML=L.slice(0,1500).map(f=>`<tr><td>${MN[f.modelo]||e(f.especie)}</td><td style="text-align:center">${f.serie}</td><td class="mono">${f.ini===f.fim?f.ini:f.ini+' a '+f.fim}${f.qtd>1?` <span style="color:#8a93a8;font-weight:400">(${f.qtd})</span>`:''}</td>
  <td><span class="pl" style="background:${S[f.sit][1]}">${e(S[f.sit][0])}</span></td><td class="mono" style="font-size:11.5px">${e(f.prot)||'—'}</td><td>${e(f.data)||'—'}</td><td class="ob">${e(f.obs)||'—'}</td></tr>`).join('')
  +(L.length>1500?`<tr><td colspan="7" class="mais">Mostrando 1.500 de ${n(L.length)} — a lista completa está no Excel.</td></tr>`:'')+(L.length?'':'<tr><td colspan="7" class="mais">Nada com esse filtro.</td></tr>');
- document.querySelectorAll('.f').forEach(x=>x.classList.toggle('on',x.dataset.k===filtro));}
+ document.querySelectorAll('.f').forEach(x=>x.classList.toggle('on',x.dataset.k===filtro));
+ document.querySelectorAll('.lg,.arco').forEach(x=>x.classList.toggle('apaga',!!filtro&&x.dataset.k!==filtro));}
 document.querySelectorAll('.f').forEach(x=>x.onclick=()=>{filtro=x.dataset.k;desenha();});
 document.querySelectorAll('.lg,.arco').forEach(x=>x.addEventListener('click',()=>{filtro=filtro===x.dataset.k?'':x.dataset.k;desenha();}));
 $('#q').oninput=ev=>{busca=ev.target.value.trim().toLowerCase();desenha();};desenha();
