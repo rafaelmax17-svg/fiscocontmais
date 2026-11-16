@@ -1,30 +1,21 @@
-name: Teste de voz (temporario)
+name: Verificacao temporaria
 on:
   push:
     branches: [voz-teste]
-    paths: ['voz/textos.json', 'voz/tts_google.py', '.github/workflows/voz-teste.yml']
-permissions:
-  contents: write
+    paths: ['verif/agenda.py', '.github/workflows/voz-teste.yml']
 jobs:
-  voz:
+  verif:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
-      - name: Credencial
+      - name: Ler agenda (somente leitura)
         env:
           SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
-      - name: Voz do Google
-        run: |
-          pip install -q google-auth requests
-          python voz/tts_google.py
-      - name: Devolver
-        if: always()
-        run: |
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          pip install -q google-cloud-firestore
+          python verif/agenda.py
           rm -f "$RUNNER_TEMP/sa.json"
-          git config user.name "Rafael Cruz" && git config user.email "rafael.cruz@lidderacont.com.br"
-          git add voz/saida && git commit -m "Amostras de voz do Google" && git push
