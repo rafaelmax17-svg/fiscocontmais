@@ -23,6 +23,7 @@ for t in cest[-2:]:
             t2 = raw.decode('latin1')
             codes = sorted(set(re.findall(r'(?<!\d)(\d{7})(?!\d)', t2)))
             out[i] = {'url': u, 'cab': t2[:400], 'codes': codes}
+            open('verif/cest_tabela.txt', 'w', encoding='utf-8').write(t2)
             print('RESULTADO baixou', i, len(raw), len(codes), '1708704' in codes, '1700301' in codes, '0302500' in codes, t2[:200].replace('\n', ' | '))
             if codes:
                 break

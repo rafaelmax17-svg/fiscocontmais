@@ -18,4 +18,4 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
-          git add -f verif/cest_oficial.json; git add -f verif/versoes.xml || true; git commit -m "Tabela CEST (temporario)" && git push
+          git add -f verif/cest_oficial.json; git add -f verif/cest_tabela.txt || true; git commit -m "Tabela CEST (temporario)" && git push
