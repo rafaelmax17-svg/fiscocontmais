@@ -25,7 +25,7 @@ for x in esc:
     nome = x['name'].split('-')[-1]
     for i, t in enumerate(T):
         body = {'input': {'text': t}, 'voice': {'languageCode': 'pt-BR', 'name': x['name']},
-                'audioConfig': {'audioEncoding': 'MP3', 'sampleRateHertz': 44100, 'speakingRate': 1.3}}
+                'audioConfig': {'audioEncoding': 'MP3', 'sampleRateHertz': 44100, 'speakingRate': 1.22}}
         for tent in range(4):
             r = requests.post('https://texttospeech.googleapis.com/v1/text:synthesize', headers=H, json=body)
             if r.ok:
