@@ -2396,6 +2396,7 @@ function _soAdminCorretor() {
 // A Validação do PVA é a base das outras e sempre roda. O Estoque que saiu da ST fica fora (só o Admin, botão próprio).
 const CORR_ETAPAS = [
   { key: 'validacao', nome: 'Validação do PVA', fixo: true },
+  { key: 'pvacad', nome: 'Validação do PVA · cadastro e ajustes', teste: true },
   { key: 'chave', nome: 'Chave de acesso × XML', teste: true },
   { key: 'ncm', nome: 'NCM × XML das entradas', teste: true },
   { key: 'ucons', nome: 'Uso e consumo lançado como revenda', teste: true },

@@ -3,6 +3,16 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.26
+
+- **Corretor do SPED Fiscal · "Validação do PVA · cadastro e ajustes" (EM TESTE, só Admin).** Nova conferência da Análise Inteligente, montada sobre os 30 erros do PVA do Auto Posto Patrão Cacoal (10/2026). A equipe só recebe quando você ligar em "O que a equipe recebe". Tudo vem marcado e você pode desmarcar item por item; é aplicada por último, depois das outras correções.
+  - **GTIN repetido no fator de conversão** ("Não podem ser informados GTINs iguais para fatores de conversão de produtos"): o 0220 vinha do Domínio com o mesmo código de barras do produto (unidade 648 "UNIDADE", fator 1). O código de barras sai só do 0220; o GTIN do 0200 continua.
+  - **Produto sem uso no mês** ("Não informar item, se não referenciado…"): sai o 0200 com os filhos (0205, 0206, 0210, 0220, 0221). Antes de tirar, confere notas, cupons, inventário, bloco K e movimentação de combustíveis (1300). A unidade (0190) que só ele usava sai junto.
+  - **CEST fora da tabela:** confere com a tabela COD_CEST do próprio PVA (versão 18, baixada do serviço oficial de tabelas do SPED e guardada no sistema), inclusive a vigência. Troca pelo CEST do NCM. Na água mineral decide pela capacidade da embalagem (Conv. ICMS 142/2018, Anexo IV: 03.002.00, 03.024.00 ou 03.025.00); sem um CEST certo, deixa o campo vazio.
+  - **Ajuste C197 zerado:** sai o C197; o C195 e a observação (0460) que ficarem sem uso saem junto. DIFAL zerado em compra de outro estado não é retirado: aparece como "NÃO ALTERAR", para calcular em "Uso e consumo · DIFAL e crédito".
+  - **Teste:** no SPED do Patrão Cacoal resolveu os 30 itens do relatório (26 + 2 + 1 + 1). O bloco 9 e os totais dos blocos foram recontados, e o arquivo corrigido, analisado de novo, não aponta mais nada.
+  - **Pesquisa de GTIN pela descrição (IA):** ficou para depois, porque neste arquivo nenhum GTIN era inválido (os 266 do cadastro têm dígito e tamanho certos).
+
 ## 2.3.23
 
 - **Análise ampla pelo POP: virou só o botão "Ativar IA"** (pedido do Rafael). É um botão pequeno e destacado na barra do Corretor do SPED Fiscal, ao lado de "XMLs das notas", e só aparece para o Admin.

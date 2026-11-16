@@ -2142,7 +2142,8 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
     // ---- 🔎 Analisar tudo / Aplicar tudo
     const TD = { an: null, etapa: {}, marc: {}, val: {}, aberto: new Set(), gAberto: new Set(), lAberta: new Set(), busca: {}, lim: {}, modo: {}, e116: null };
     const TD_DICT = { cfop: 'difal', difal: 'difal', balcao: 'difal', frete: 'difal', cred: 'difal', desconto: 'desconto', icms: 'icms', valor: 'valor',
-      simples: 'simples', snd: 'simples', maca: 'maca', acum: 'acum', cad: 'cad', comb: 'comb', ucons: 'ucons', stent: 'stent', chave: 'chave', ncm: 'ncm' };
+      simples: 'simples', snd: 'simples', maca: 'maca', acum: 'acum', cad: 'cad', comb: 'comb', ucons: 'ucons', stent: 'stent', chave: 'chave', ncm: 'ncm',
+      pva_gtin: 'pvacad', pva_semuso: 'pvacad', pva_cest: 'pvacad', pva_c197: 'pvacad' };
     const tdK = (g, l) => `${g}|${l.sel}`;
     function tdIniciar(an) {
       Object.assign(TD, { an, etapa: {}, marc: {}, val: {}, aberto: new Set(), gAberto: new Set(), lAberta: new Set(), busca: {}, lim: {}, modo: {} });
@@ -2220,7 +2221,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
               const gab = TD.gAberto.has(g.id), qs = (g.linhas || []).length;
               const nm = (g.linhas || []).filter((l) => TD.marc[tdK(g.id, l)]).length;
               return `<div class="td-g"><div class="td-gh"><a class="td-lk" data-g="${esc(g.id)}">${gab ? '▴' : '▾'} ${esc(g.titulo)}</a>
-                <span>${qs} ${g.id === 'acum' || g.id === 'cad' || g.id === 'ncm' ? 'produto(s)' : (g.id === 'val' ? 'tipo(s)' : (g.id === 'unid' ? 'unidade(s)' : (['comb', 'ucons', 'stent'].includes(g.id) ? 'item(ns)' : 'nota(s)')))}${g.id === 'val' || g.id === 'unid' ? '' : ` · ${nm} marcado(s)`}</span><span class="ac7-mi">sugestão: ${esc(g.sugestao || '—')}</span>
+                <span>${qs} ${g.id === 'acum' || g.id === 'cad' || g.id === 'ncm' || ['pva_gtin', 'pva_semuso', 'pva_cest'].includes(g.id) ? 'produto(s)' : g.id === 'pva_c197' ? 'ajuste(s)' : (g.id === 'val' ? 'tipo(s)' : (g.id === 'unid' ? 'unidade(s)' : (['comb', 'ucons', 'stent'].includes(g.id) ? 'item(ns)' : 'nota(s)')))}${g.id === 'val' || g.id === 'unid' ? '' : ` · ${nm} marcado(s)`}</span><span class="ac7-mi">sugestão: ${esc(g.sugestao || '—')}</span>
                 ${g.marcar_todos ? `<a class="td-lk" data-mt="${esc(g.id)}">marcar todos</a><a class="td-lk" data-dt="${esc(g.id)}">desmarcar todos</a>` : ''}
                 ${g.modo ? `<select class="ac7-s td-modo" data-g="${esc(g.id)}">${g.modo.opcoes.map((o) => `<option value="${o.v}"${TD.modo[g.id] === o.v ? ' selected' : ''}>${esc(o.rot)}</option>`).join('')}</select>` : ''}</div>
                 ${gab ? tdLinhas(e, g) : ''}</div>`; }).join('')}</div>` : ''}</div>`; }).join('')}</div>
@@ -2248,7 +2249,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       $('#tdAplicar').addEventListener('click', () => tdAplicar());
     }
     function tdEscolhas() {
-      const esc2 = { etapas: { ...TD.etapa }, difal: {}, desconto: {}, icms: {}, valor: {}, simples: {}, maca: {}, acum: {}, cad: {}, comb: {}, ucons: {}, stent: {}, chave: {}, ncm: {} };
+      const esc2 = { etapas: { ...TD.etapa }, difal: {}, desconto: {}, icms: {}, valor: {}, simples: {}, maca: {}, acum: {}, cad: {}, comb: {}, ucons: {}, stent: {}, chave: {}, ncm: {}, pvacad: {} };
       if (TD.e116) esc2.e116 = TD.e116;
       TD.an.etapas.forEach((e) => e.grupos.forEach((g) => {
         const dic = TD_DICT[g.id];
@@ -2257,7 +2258,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
         (g.linhas || []).forEach((l) => {
           if (l.bloqueado) return;
           const k = tdK(g.id, l), on = !!TD.marc[k];
-          if (['cfop', 'cred', 'desconto', 'icms', 'valor', 'simples', 'maca', 'comb', 'ucons', 'stent', 'chave'].includes(g.id)) { if (!on) esc2[dic][l.sel] = false; return; }
+          if (['cfop', 'cred', 'desconto', 'icms', 'valor', 'simples', 'maca', 'comb', 'ucons', 'stent', 'chave', 'pva_gtin', 'pva_semuso', 'pva_cest', 'pva_c197'].includes(g.id)) { if (!on) esc2[dic][l.sel] = false; return; }
           if (g.id === 'acum' || g.id === 'cad' || g.id === 'ncm') { esc2[dic][l.sel] = on ? (TD.val[k] || l.padrao || false) : false; return; }
           if (g.id === 'snd') { esc2.simples[l.sel] = on; return; }
           if (!on) { esc2.difal[l.sel] = g.id === 'balcao' ? 'manter' : 'nao'; return; }
@@ -2312,6 +2313,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       if (z.acum) lin.push(`Acumulador 7000: ${z.acum.itens} item(ns) reclassificados (${(z.acum.acumuladores || []).length} acumuladores)`);
       if (z.cad) lin.push(`Cadastro 0200: ${z.cad.produtos} produto(s) (${Object.entries(z.cad.por_tipo || {}).map(([k, v]) => `${v} → ${k}`).join(' · ')})`);
       if (z.unid) lin.push(`Unidade × XML: ${z.unid.itens} item(ns) com a unidade da nota`);
+      if (z.pvacad) lin.push(`Validação do PVA · cadastro e ajustes: ${[[z.pvacad.gtin, 'código de barras repetido tirado do 0220'], [z.pvacad.semuso, 'produto(s) sem uso retirado(s)'], [z.pvacad.cest, 'CEST corrigido(s)'], [z.pvacad.c197, 'ajuste(s) zerado(s) retirado(s)']].filter((x) => x[0]).map((x) => `${x[0]} ${x[1]}`).join(' · ')}`);
       out.innerHTML = `<div class="dif-done sn-done"><div class="dif-k">Corrigido: um arquivo novo com tudo o que estava marcado (o original não foi alterado)</div>
         <div class="dif-kpis"><div><span>ICMS a recolher antes</span><b>R$ ${fmR(r.icms_antes)}</b></div><div class="k-ok"><span>ICMS a recolher depois</span><b>R$ ${fmR(r.icms_depois)}</b></div>
           <div><span>Saldo credor depois</span><b>R$ ${fmR(r.credor_depois)}</b></div></div>

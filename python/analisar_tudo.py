@@ -19,6 +19,8 @@ Ordem (é também a ordem de aplicação, uma sobre a outra, no mesmo arquivo):
   7) Acumulador 7000 .............. acumulador_despesa
   8) Cadastro de produtos (0200) .. cadastro_0200
   9) Unidade × XML ................ unidade_xml (troca o código da unidade pelo da nota; precisa dos XMLs)
+ 10) Validação do PVA · cadastro e ajustes  pva_cadastro (GTIN repetido no 0220, produto sem uso, CEST fora da tabela do
+                                   PVA, C197 zerado) — EM TESTE; por último, porque só mexe no cadastro e em ajuste zerado
   (Estoque de mercadoria que saiu da ST precisa da planilha do estoque: fica no botão próprio.)
 O plano padrão é o mesmo do antigo "Automatizar correção" (lote_sped), agora com escolha nota a nota.
 
@@ -37,6 +39,7 @@ Escolhas (aplicar):
    "simples": {"<chave>": false}, "maca": {"<chave da nota ou nº|série|fornecedor>": false},
    "acum": {"<COD_ITEM>": "70xx"|false}, "cad": {"<COD_ITEM>": "07"|"08"|false}, "comb": {"<doc:item>": false}, "ucons": {"<doc:item>": false},
    "stent": {"<doc:item>": false}, "chave": {"<nota>": false}, "ncm": {"<COD_ITEM>": "<NCM escolhido>"|false},
+   "pvacad": {"<id do item>": false},
    "e116": {"venc": "ddmmaaaa", "cod_rec": "..."}}
 Gera arquivo NOVO; o original nunca é alterado.
 """
@@ -60,6 +63,7 @@ import chave_xml as ck
 import ncm_xml as nx
 import st_entrada_ro as se
 import unidade_xml as ux
+import pva_cadastro as pc
 from xml_entradas import ler_xmls
 
 
@@ -183,6 +187,28 @@ def analisar(sped, xml_dir, permitidas=None):
     etapas.append({'key': 'validacao', 'titulo': 'Validação do PVA', 'desc': 'C191, E500, GTIN, CEST, COD_NAT, C197 com campo a mais, totais do C100',
                    'qtd': f'{n_val} correção(ões)' if n_val else 'nada encontrado', 'valor': '', 'badge': 'aplica sozinho' if n_val else 'sem correção',
                    'tipo': 'auto' if n_val else 'zero', 'fixo': True, 'grupos': [{'id': 'val', 'titulo': 'Correções de validação', 'linhas': linhas_val}] if n_val else []})
+
+    # 1·) validação do PVA · cadastro e ajustes (EM TESTE; é aplicada por último)
+    if pode('pvacad'):
+        pa = pc.analisar_texto(corr_v)
+        grupos = []
+        for t, tit, sug in (('gtin', 'Código de barras do fator de conversão (0220) igual ao do produto', 'o 0220 fica sem código de barras; o GTIN do produto não muda'),
+                            ('semuso', 'Produto sem uso no mês (0200)', 'sai do cadastro, com os registros filhos'),
+                            ('cest', 'CEST fora da tabela do PVA (0200)', 'CEST do NCM ou campo vazio'),
+                            ('c197', 'Ajuste C197 zerado', 'sai o ajuste (e o C195 / 0460 sem uso)')):
+            lin = [{'sel': i['id'], 'nota': f"{i['cod']} · {i['desc']}" if t != 'c197' else f"{i['cod']} · {i['desc']}",
+                    'det': f"{i['det']} → {i['motivo']}" if not i.get('bloqueado') else f"NÃO ALTERAR: {i['det']} · {i['motivo']}",
+                    'valor': None, 'marcado': not i.get('bloqueado'), 'bloqueado': bool(i.get('bloqueado'))}
+                   for i in pa['itens'] if i['tipo'] == t]
+            if lin:
+                grupos.append({'id': f'pva_{t}', 'titulo': tit, 'sugestao': sug, 'linhas': lin, 'marcar_todos': len(lin) > 1})
+        n = sum(1 for i in pa['itens'] if not i.get('bloqueado'))
+        r = pa['resumo']
+        partes = [f"{r[k]} {rot}" for k, rot in (('gtin', 'GTIN repetido no 0220'), ('semuso', 'produto(s) sem uso'), ('cest', 'CEST fora da tabela'), ('c197', 'C197 zerado')) if r.get(k)]
+        etapas.append({'key': 'pvacad', 'titulo': 'Validação do PVA · cadastro e ajustes',
+                       'desc': 'GTIN repetido no fator de conversão (0220) · produto sem uso · CEST fora da tabela do PVA · ajuste C197 zerado',
+                       'qtd': ' · '.join(partes) if partes else 'nada encontrado', 'valor': '',
+                       'badge': 'certo · já marcado' if n else 'sem correção', 'tipo': 'auto' if n else 'zero', 'grupos': grupos})
 
     # 1·) chave de acesso × XML (NF-e e NFC-e, entradas e saídas)
     if ca_ch is not None:
@@ -685,6 +711,14 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
             final = novo
             resumo['unid'] = {'itens': r['itens']}
             avisos += r.get('avisos') or []
+    # 10) validação do PVA · cadastro e ajustes (por último: só mexe no cadastro e em ajuste zerado)
+    if liga('pvacad'):
+        ep = esc.get('pvacad') or {}
+        ids = [i['id'] for i in pc.analisar_texto(final)['itens'] if not i.get('bloqueado') and ep.get(i['id'], True) is not False]
+        if ids:
+            final, r = pc.aplicar_texto(final, ids)
+            resumo['pvacad'] = {k: r[k] for k in ('gtin', 'semuso', 'cest', 'c197')}
+            avisos += [a for a in r.get('avisos') or [] if 'assinado' not in a]
     antes = ls._e110(texto) or {}
     depois = ls._e110(final) or {}
     avisos2 = []
