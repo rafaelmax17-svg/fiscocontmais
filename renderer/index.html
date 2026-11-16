@@ -243,6 +243,11 @@
         <span>Apuração Assistida</span>
         <em class="nav-rt">REFORMA TRIBUTÁRIA</em>
       </button>
+      <button class="nav-item" data-group="fiscal" data-view="fiscal-inut">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M4 6h4M4 12h4M4 18h4M12 6h8M12 18h8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M12 12h8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-dasharray="2 2.4"/></svg>
+        <span>Inutilizadas × Domínio</span>
+        <em class="nav-new" id="inutNewBadge" hidden>NOVO</em>
+      </button>
       <button class="nav-item" data-group="fiscal" data-view="fiscal-pgdas">
         <svg viewBox="0 0 24 24" class="ic"><path d="M4 20V10 M10 20V4 M16 20v-7 M22 20H2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Simples Nacional</span>
@@ -1391,6 +1396,34 @@
           <p class="rtc-lei">LC 214/2025 — art. 46 (apuração assistida), art. 47 (créditos), art. 57 (uso ou consumo pessoal), art. 343 e seguintes (2026, ano de teste); reduções dos arts. 125, 133, 135, 136, 138, 147 e 148 (Anexos I, VII, VIII, IX e XV).</p>
         </div>
         <iframe id="rtcFrame" class="fiscal-frame" hidden></iframe>
+      </div>
+
+      <!-- Fiscal: Inutilizadas × Domínio — numeração faltante do relatório "Notas não lançadas" × Portal da NF-e × SPED do cliente -->
+      <div class="view adm-view" id="view-fiscal-inut" hidden>
+        <div class="fiscal-bar adm-bar">
+          <button class="act inv-export adm-btn" id="btnInutDom">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0l-4 4m4-4l4 4M6 19h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Relatório do Domínio (PDF)
+          </button>
+          <select id="inutAno" class="rtc-sel" title="Ano da inutilização no portal"></select>
+          <button class="act inv-export adm-btn" id="btnInutPortal" disabled title="Abre o portal com o CNPJ e o ano preenchidos; você marca &quot;Sou humano&quot; e clica em Continuar">Consultar no portal</button>
+          <button class="act inv-export adm-btn" id="btnInutSped" disabled title="Opcional: confere no SPED do cliente os números que não estão inutilizados no portal">SPED do cliente (opcional)</button>
+          <span class="adm-sel" id="inutSel" hidden></span>
+          <span class="fiscal-spacer"></span>
+          <button class="act inv-export" id="btnInutXlsx" disabled>Exportar Excel</button>
+        </div>
+        <div class="fiscal-empty adm-empty" id="inutVazio">
+          <h2>Inutilizadas × Domínio</h2>
+          <p><b>1.</b> Selecione o relatório <b>"Notas não lançadas"</b> do Domínio (PDF). O sistema lista cada número faltante por modelo e série.</p>
+          <p><b>2.</b> Clique em <b>Consultar no portal</b>: abre a consulta de inutilização do Portal Nacional da NF-e com o CNPJ e o ano
+          já preenchidos. Você marca <b>"Sou humano"</b> e clica em <b>Continuar</b>; o sistema lê sozinho todas as inutilizações do ano e
+          mostra, para cada número, o <b>protocolo e a data</b> da inutilização.</p>
+          <p><b>3.</b> Para os números que não estão inutilizados no portal, importe o <b>SPED Fiscal do cliente</b> (um ou mais meses): o sistema
+          mostra se a nota foi emitida e só falta lançar no Domínio, se foi cancelada ou denegada, ou se não há registro em lugar nenhum.
+          Nenhum arquivo é alterado.</p>
+          <p class="rtc-lei">Ajuste SINIEF 07/2005, cláusula décima quarta (pedido de inutilização de numeração da NF-e); Guia Prático da EFD ICMS/IPI, registro C100 (COD_SIT 05 = numeração inutilizada, 02/03 = cancelado, 04 = denegado).</p>
+        </div>
+        <iframe id="inutFrame" class="fiscal-frame" hidden></iframe>
       </div>
 
       <!-- Admin (teste): Crédito de PIS/COFINS sobre frete FOB — CT-e × itens das NF-e transportadas -->

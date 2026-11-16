@@ -2677,6 +2677,137 @@ ipcMain.handle('fiscal:rtcExportar', async (_evt, { formato }) => {
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+// ---------------------------------------------------------------- Inutilizadas × Domínio (equipe)
+// Explica a numeração faltante do relatório "Notas não lançadas" do Domínio: consulta de inutilização do Portal Nacional da NF-e
+// (CNPJ + ano; a pessoa marca o "Sou humano" — o sistema não resolve CAPTCHA — e o sistema lê a lista inteira) e SPED do cliente.
+const INUT_URL = 'https://www.nfe.fazenda.gov.br/portal/consulta.aspx?tipoConsulta=inutilizacao&tipoConteudo=nDmpH/MjKrg=';
+let _inutUltimo = null;   // { args, html, nome }
+let _inutJanela = null;
+ipcMain.handle('fiscal:inutPickDominio', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'Relatório do Domínio "Notas não lançadas" (PDF)',
+    properties: ['openFile'], filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  return { path: r.filePaths[0] };
+});
+ipcMain.handle('fiscal:inutPickSped', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'SPED Fiscal do cliente (um ou mais meses)',
+    properties: ['openFile', 'multiSelections'], filters: [{ name: 'SPED Fiscal', extensions: ['txt'] }] });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  return { paths: r.filePaths };
+});
+// script injetado no portal: preenche CNPJ e ano, mostra o aviso e, depois do "Continuar", lê a tabela de inutilizações
+const _INUT_JS_PREENCHE = (cnpj, ano) => `(() => {
+  const vis = (e) => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
+  const ev = (el) => ['input', 'change', 'blur'].forEach((t) => el.dispatchEvent(new Event(t, { bubbles: true })));
+  let inp = [...document.querySelectorAll('input')].filter((i) => vis(i) && /text|^$/.test(i.type || '') && /cnpj/i.test(i.id + ' ' + i.name))[0];
+  if (!inp) {
+    const lab = [...document.querySelectorAll('label, span, td, div, p')].find((x) => /^\\s*CNPJ do Emitente\\s*$/i.test(x.innerText || ''));
+    if (lab) inp = [...document.querySelectorAll('input')].find((i) => vis(i) && (lab.compareDocumentPosition(i) & 4) && /text|^$/.test(i.type || ''));
+  }
+  const sels = [...document.querySelectorAll('select')].filter((x) => vis(x) && [...x.options].some((o) => o.text.trim() === '${ano}'));
+  const sel = sels.find((x) => /ano/i.test(x.id + ' ' + x.name)) || sels[0];
+  if (inp && !inp.value) { inp.value = '${cnpj}'; ev(inp); }
+  if (sel) { const o = [...sel.options].find((o) => o.text.trim() === '${ano}'); if (o && sel.value !== o.value) { sel.value = o.value; ev(sel); } }
+  if (!document.getElementById('fcInutAviso')) {
+    const d = document.createElement('div'); d.id = 'fcInutAviso';
+    d.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;background:#1f2a5a;color:#fff;font:600 14px Segoe UI,Arial;padding:10px 16px;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.25)';
+    d.textContent = 'FiscoCont+: confira o CNPJ e o ano, marque "Sou humano" e clique em Continuar. A lista de inutilizações é lida sozinha e esta janela fecha.';
+    document.body.appendChild(d);
+  }
+  return { cnpj: !!inp, ano: !!sel };
+})()`;
+const _INUT_JS_LE = `(() => {
+  const tabs = [...document.querySelectorAll('table')].filter((t) => /Protocolo/i.test(t.innerText) && /N[uú]mero\\s+Inicial/i.test(t.innerText));
+  if (!tabs.length) return { ok: false, vazio: /nenhum|n[ãa]o\\s+(foram\\s+)?encontrad/i.test(document.body.innerText || '') && /Nova Consulta/i.test(document.body.innerText || '') };
+  const t = tabs.sort((a, b) => a.innerText.length - b.innerText.length)[0];
+  const linhas = [];
+  [...t.querySelectorAll('tr')].forEach((tr) => {
+    const c = [...tr.querySelectorAll('td')].map((td) => td.innerText.trim());
+    if (c.length >= 7 && /^\\d{1,4}$/.test(c[0]) && /^\\d+$/.test(c[3]) && /^\\d+$/.test(c[4])) {
+      linhas.push({ ano: c[0], modelo: c[1], serie: c[2], ini: c[3], fim: c[4], protocolo: c[5], data: c[6], receb: c[7] || '' });
+    }
+  });
+  // paginação do portal (se houver): próximo número de página depois do atual
+  const pag = [...t.querySelectorAll('a')].filter((a) => /^\\d+$|^\\.\\.\\.$|^>$|pr[óo]xim/i.test(a.innerText.trim()));
+  const atual = [...t.querySelectorAll('span, td')].map((x) => x.innerText.trim()).find((x, i, arr) => /^\\d+$/.test(x) && x.length < 4 && !x.includes(' ') && false);
+  const cnpj = ((document.body.innerText.match(/CNPJ:\\s*([\\d./-]+)/) || [])[1] || '').replace(/\\D/g, '');
+  return { ok: true, linhas, paginas: pag.map((a) => a.innerText.trim()), cnpj, primeiro: linhas[0] ? linhas[0].protocolo : '' };
+})()`;
+ipcMain.handle('fiscal:inutPortal', async (_evt, { cnpj, ano }) => {
+  cnpj = String(cnpj || '').replace(/\D/g, ''); ano = String(ano || new Date().getFullYear());
+  if (cnpj.length !== 14) return { error: 'CNPJ inválido.' };
+  if (_inutJanela && !_inutJanela.isDestroyed()) { _inutJanela.focus(); return { error: 'A janela do portal já está aberta.' }; }
+  const w = new BrowserWindow({ parent: mainWindow, width: 1150, height: 820, title: 'FiscoCont+ · Consultar Inutilização (Portal da NF-e)', autoHideMenuBar: true,
+    webPreferences: { partition: 'persist:portal-nfe', contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  _inutJanela = w;
+  w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  const js = (c) => Promise.race([w.webContents.executeJavaScript(c, true), new Promise((_r, rej) => setTimeout(() => rej(new Error('sem resposta')), 15000))]);
+  return new Promise((resolve) => {
+    let fim = false, timer = null, todas = [], vistos = new Set(), paginasFeitas = new Set(['1']), ultimoPrimeiro = '';
+    const acaba = (r) => { if (fim) return; fim = true; clearInterval(timer); try { if (!w.isDestroyed()) w.close(); } catch (_) {} _inutJanela = null; resolve(r); };
+    w.on('closed', () => acaba(todas.length ? { ok: true, linhas: todas, ano, cnpj } : { canceled: true }));
+    w.webContents.on('did-finish-load', () => { js(_INUT_JS_PREENCHE(cnpj, ano)).catch(() => {}); });
+    w.loadURL(INUT_URL).catch(() => {});
+    const t0 = Date.now();
+    timer = setInterval(async () => {
+      if (fim || w.isDestroyed()) return;
+      if (Date.now() - t0 > 15 * 60 * 1000) return acaba(todas.length ? { ok: true, linhas: todas, ano, cnpj } : { error: 'A consulta não foi concluída em 15 minutos.' });
+      let r;
+      try { r = await js(_INUT_JS_LE); } catch (_) { return; }
+      if (!r) return;
+      if (!r.ok) { if (r.vazio) acaba({ ok: true, linhas: [], ano, cnpj, vazio: true }); return; }
+      if (r.cnpj && r.cnpj !== cnpj) return acaba({ error: `O portal mostrou o CNPJ ${r.cnpj}, diferente do CNPJ do relatório do Domínio (${cnpj}).` });
+      if (r.primeiro === ultimoPrimeiro) return;           // mesma página ainda
+      ultimoPrimeiro = r.primeiro;
+      r.linhas.forEach((l) => { const k = `${l.modelo}|${l.serie}|${l.ini}|${l.fim}|${l.protocolo}`; if (!vistos.has(k)) { vistos.add(k); todas.push(l); } });
+      // próxima página, se o portal paginar
+      const prox = (r.paginas || []).find((p) => /^\d+$/.test(p) && !paginasFeitas.has(p));
+      if (prox) {
+        paginasFeitas.add(prox);
+        try { await js(`(() => { const a = [...document.querySelectorAll('table a')].find((a) => a.innerText.trim() === '${prox}'); if (a) a.click(); return !!a; })()`); } catch (_) {}
+        return;
+      }
+      acaba({ ok: true, linhas: todas, ano, cnpj });
+    }, 1500);
+  });
+});
+ipcMain.handle('fiscal:inutConferir', async (_evt, { dominio, portal, speds }) => {
+  if (!dominio) return { error: 'Selecione o relatório "Notas não lançadas" do Domínio.' };
+  const stamp = Date.now();
+  const jsonOut = path.join(os.tmpdir(), `fc_inut_${stamp}.json`);
+  const htmlOut = path.join(os.tmpdir(), `fc_inut_${stamp}.html`);
+  const args = ['inutilizadas', '--dominio', dominio];
+  if (portal && (Array.isArray(portal) ? portal.length : portal.consultado)) {
+    const pj = path.join(os.tmpdir(), `fc_inut_portal_${stamp}.json`);
+    fs.writeFileSync(pj, JSON.stringify(portal), 'utf-8');
+    args.push('--portal', pj);
+  }
+  if (Array.isArray(speds) && speds.length) args.push('--sped', ...speds);
+  try {
+    await runFiscal([...args, '--json', jsonOut, '--html', htmlOut], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    const html = fs.readFileSync(htmlOut, 'utf-8');
+    if (_inutUltimo && _inutUltimo.html && _inutUltimo.html !== htmlOut) fs.unlink(_inutUltimo.html, () => {});
+    _inutUltimo = { args, html: htmlOut, nome: res.empresa || res.cnpj || '' };
+    return { ok: true, res, html };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('fiscal:inutExportar', async () => {
+  if (!_inutUltimo) return { error: 'Faça a conferência primeiro.' };
+  const base = `Inutilizadas-Dominio-${String(_inutUltimo.nome || '').replace(/[^\w-]+/g, '_')}`.replace(/_+$/, '');
+  const r = await dialog.showSaveDialog(mainWindow, { title: 'Salvar Excel', defaultPath: `${base}.xlsx`, filters: [{ name: 'Planilha Excel', extensions: ['xlsx'] }] });
+  if (r.canceled || !r.filePath) return { canceled: true };
+  try {
+    const jsonOut = path.join(os.tmpdir(), `fc_inutx_${Date.now()}.json`);
+    await runFiscal([..._inutUltimo.args, '--json', jsonOut, '--xlsx', r.filePath], jsonOut);
+    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
+    if (res.erro) return { error: res.erro };
+    shell.openPath(r.filePath);
+    return { ok: true, path: r.filePath };
+  } catch (e) { return { error: String(e.message || e) }; }
+});
+
 ipcMain.handle('admin:audPick', async () => {
   const bloq = _soAdmin(); if (bloq) return bloq;
   const r = await dialog.showOpenDialog(mainWindow, { title: 'Selecione a EFD ICMS/IPI (SPED Fiscal) do cliente do Amazonas',

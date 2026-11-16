@@ -3089,6 +3089,9 @@ def main(argv):
     if modo == 'apuracao-rtc':
         import apuracao_rtc as _rtc
         return _rtc.main_cli(argv[1:])
+    if modo == 'inutilizadas':
+        import inutilizadas as _inu
+        return _inu.main_cli(argv[1:])
     if modo == 'auditoria-icms-am':
         import auditoria_am as _am
         return _am.main_cli(argv[1:])

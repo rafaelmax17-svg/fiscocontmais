@@ -577,6 +577,7 @@ function switchView(name) {
   if (name === 'admin-audam') { $('#view-admin-audam').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-atrib') { $('#view-fiscal-atrib').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'fiscal-rtc') { $('#view-fiscal-rtc').hidden = false; $('#empty').hidden = true; return; }
+  if (name === 'fiscal-inut') { $('#view-fiscal-inut').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-evo') { $('#view-admin-evo').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-radar') { $('#view-admin-radar').hidden = false; $('#empty').hidden = true; return; }
   if (name === 'admin-legal') { $('#view-admin-legal').hidden = false; $('#empty').hidden = true; return; }
@@ -6152,7 +6153,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Selos com data fixa de validade (7 dias a partir do lançamento): EFD-Contribuições (07/10/2026)
   // e Manual do Fiscal (26/10/2026, selo "NOVIDADE" em destaque).
-  [['#efdNewBadge', '2026-10-14T23:59:59'], ['#manualNewBadge', '2026-11-02T23:59:59'], ['#atribNewBadge', '2026-11-06T23:59:59'], ['#integraNewBadge', '2026-11-12T23:59:59'], ['#fiscNewBadge', '2026-11-16T23:59:59'], ['#dareNewBadge', '2026-11-16T23:59:59']].forEach(([sel, ate]) => {
+  [['#efdNewBadge', '2026-10-14T23:59:59'], ['#manualNewBadge', '2026-11-02T23:59:59'], ['#atribNewBadge', '2026-11-06T23:59:59'], ['#integraNewBadge', '2026-11-12T23:59:59'], ['#fiscNewBadge', '2026-11-16T23:59:59'], ['#dareNewBadge', '2026-11-16T23:59:59'], ['#inutNewBadge', '2026-11-23T23:59:59']].forEach(([sel, ate]) => {
     const b = $(sel); if (b && new Date() <= new Date(ate)) b.hidden = false;
   });
   await checkLicenseGate();
@@ -6656,6 +6657,83 @@ function rtcInit() {
   $('#btnRtcXlsx').addEventListener('click', () => exp('xlsx'));
 }
 
+// ---- Inutilizadas × Domínio (equipe): relatório "Notas não lançadas" × Portal da NF-e (inutilização) × SPED do cliente
+const INUT = { dominio: '', cnpj: '', empresa: '', speds: [], portal: { consultado: false, anos: [], linhas: [] } };
+function inutInit() {
+  const fis = window.fiscocont && window.fiscocont.fiscal;
+  if (!fis || !$('#btnInutDom') || !fis.inutConferir) return;
+  const ano0 = new Date().getFullYear();
+  $('#inutAno').innerHTML = [0, 1, 2, 3, 4].map((k) => `<option>${ano0 - k}</option>`).join('');
+  const nome = (p) => esc(p.split(/[\\/]/).pop());
+  const mostraSel = () => {
+    const p = [];
+    if (INUT.dominio) p.push(`<span>Domínio · ${INUT.empresa ? esc(INUT.empresa) : nome(INUT.dominio)}</span>`);
+    if (INUT.portal.consultado) p.push(`<span>Portal · ${INUT.portal.anos.join(', ')} · ${INUT.portal.linhas.length} inutilização(ões)</span>`);
+    if (INUT.speds.length) p.push(`<span>SPED · ${INUT.speds.length} arquivo(s)</span>`);
+    const sel = $('#inutSel'); sel.hidden = !p.length; sel.innerHTML = p.join(' ');
+    $('#btnInutPortal').disabled = !INUT.cnpj; $('#btnInutSped').disabled = !INUT.dominio;
+  };
+  const conferir = async (msg) => {
+    overlay(true, msg || 'Conferindo a numeração…');
+    try {
+      const r = await fis.inutConferir({ dominio: INUT.dominio, portal: INUT.portal, speds: INUT.speds });
+      overlay(false);
+      if (!r || r.error) { toast((r && r.error) || 'Falha na conferência.', true); return null; }
+      INUT.cnpj = r.res.cnpj || ''; INUT.empresa = r.res.empresa || '';
+      $('#inutVazio').hidden = true;
+      const fr = $('#inutFrame'); fr.hidden = false; fr.srcdoc = r.html;
+      $('#btnInutXlsx').disabled = false;
+      mostraSel();
+      return r.res;
+    } catch (e) { overlay(false); toast('Falha: ' + e.message, true); return null; }
+  };
+  $('#btnInutDom').addEventListener('click', async () => {
+    const r = await fis.inutPickDominio();
+    if (!r || r.canceled || !r.path) return;
+    INUT.dominio = r.path; INUT.cnpj = ''; INUT.empresa = ''; INUT.speds = [];
+    INUT.portal = { consultado: false, anos: [], linhas: [] };
+    $('#btnInutDom').classList.add('ok'); $('#btnInutSped').classList.remove('ok'); $('#btnInutPortal').classList.remove('ok');
+    const res = await conferir('Lendo o relatório do Domínio…');
+    if (!res) return;
+    if (!INUT.cnpj) toast('O CNPJ da empresa não foi encontrado no relatório; a consulta no portal fica indisponível.', true);
+    else toast(`${res.numeros} número(s) faltante(s) em ${res.faixas_dominio} faixa(s). Agora consulte o portal da NF-e.`);
+  });
+  $('#btnInutPortal').addEventListener('click', async () => {
+    if (!INUT.cnpj) return;
+    const ano = $('#inutAno').value;
+    toast('Na janela do portal, marque "Sou humano" e clique em Continuar.');
+    const r = await fis.inutPortal({ cnpj: INUT.cnpj, ano });
+    if (!r || r.canceled) { toast('Consulta no portal cancelada.'); return; }
+    if (r.error) { toast(r.error, true); return; }
+    const p = INUT.portal;
+    p.linhas = p.linhas.filter((l) => !((l.ano.length === 2 ? '20' + l.ano : l.ano) === ano)).concat(r.linhas || []);
+    if (!p.anos.includes(ano)) p.anos.push(ano);
+    p.anos.sort(); p.consultado = true;
+    $('#btnInutPortal').classList.add('ok');
+    const res = await conferir('Conferindo com o portal…');
+    if (res) toast(`Portal ${ano}: ${(r.linhas || []).length} inutilização(ões). ${(res.situacao || {}).portal || 0} número(s) do Domínio inutilizado(s) no portal.`);
+  });
+  $('#btnInutSped').addEventListener('click', async () => {
+    const r = await fis.inutPickSped();
+    if (!r || r.canceled || !r.paths) return;
+    INUT.speds = [...new Set([...INUT.speds, ...r.paths])];
+    $('#btnInutSped').classList.add('ok');
+    const res = await conferir('Conferindo no SPED do cliente…');
+    if (res) {
+      const s = res.situacao || {};
+      toast(`${s.escriturada || 0} emitida(s) no SPED (falta lançar) · ${(s.cancelada || 0) + (s.denegada || 0)} cancelada(s)/denegada(s) · ${s.sem_registro || 0} sem registro.`);
+    }
+  });
+  $('#btnInutXlsx').addEventListener('click', async () => {
+    overlay(true, 'Montando o Excel…');
+    const r = await fis.inutExportar();
+    overlay(false);
+    if (!r || r.canceled) return;
+    if (r.error) { toast(r.error, true); return; }
+    toast('Excel salvo.');
+  });
+}
+
 // ---- Análise Tributária (equipe): tributação das entradas por produto + auditoria de tributação
 const ATRIB = { sped: '', nome: '' };
 function atribInit() {
@@ -7013,6 +7091,7 @@ function initAdminModulos() {
   audInit();
   atribInit();
   rtcInit();
+  inutInit();
   fpInit();
   evoInit();
   const adm = window.fiscocont && window.fiscocont.admin;
