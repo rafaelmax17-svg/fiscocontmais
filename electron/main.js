@@ -2730,7 +2730,9 @@ const _INUT_JS_LE = `(() => {
   // paginação do portal (se houver): próximo número de página depois do atual
   const pag = [...t.querySelectorAll('a')].filter((a) => /^\\d+$|^\\.\\.\\.$|^>$|pr[óo]xim/i.test(a.innerText.trim()));
   const atual = [...t.querySelectorAll('span, td')].map((x) => x.innerText.trim()).find((x, i, arr) => /^\\d+$/.test(x) && x.length < 4 && !x.includes(' ') && false);
-  const cnpj = ((document.body.innerText.match(/CNPJ:\\s*([\\d./-]+)/) || [])[1] || '').replace(/\\D/g, '');
+  // CNPJ do cabeçalho do resultado: 14 dígitos com qualquer separador (o portal pode usar traço longo, espaço etc.)
+  const mc = (document.body.innerText || '').match(/CNPJ[^\\d\\n]{0,15}((?:\\d[^\\d\\n]{0,3}){13}\\d)/);
+  const cnpj = mc ? mc[1].replace(/\\D/g, '') : '';
   return { ok: true, linhas, paginas: pag.map((a) => a.innerText.trim()), cnpj, primeiro: linhas[0] ? linhas[0].protocolo : '' };
 })()`;
 ipcMain.handle('fiscal:inutPortal', async (_evt, { cnpj, ano }) => {
@@ -2756,7 +2758,7 @@ ipcMain.handle('fiscal:inutPortal', async (_evt, { cnpj, ano }) => {
       try { r = await js(_INUT_JS_LE); } catch (_) { return; }
       if (!r) return;
       if (!r.ok) { if (r.vazio) acaba({ ok: true, linhas: [], ano, cnpj, vazio: true }); return; }
-      if (r.cnpj && r.cnpj !== cnpj) return acaba({ error: `O portal mostrou o CNPJ ${r.cnpj}, diferente do CNPJ do relatório do Domínio (${cnpj}).` });
+      if (r.cnpj && r.cnpj.length === 14 && r.cnpj !== cnpj) return acaba({ error: `O portal mostrou o CNPJ ${r.cnpj}, diferente do CNPJ do relatório do Domínio (${cnpj}).` });
       if (r.primeiro === ultimoPrimeiro) return;           // mesma página ainda
       ultimoPrimeiro = r.primeiro;
       r.linhas.forEach((l) => { const k = `${l.modelo}|${l.serie}|${l.ini}|${l.fim}|${l.protocolo}`; if (!vistos.has(k)) { vistos.add(k); todas.push(l); } });
