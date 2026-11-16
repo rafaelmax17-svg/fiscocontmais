@@ -6658,7 +6658,7 @@ function rtcInit() {
 }
 
 // ---- Inutilizadas × Domínio (equipe): relatório "Notas não lançadas" × Portal da NF-e (inutilização) × SPED do cliente
-const INUT = { dominio: '', cnpj: '', empresa: '', speds: [], portal: { consultado: false, anos: [], linhas: [] } };
+const INUT = { dominio: '', cnpj: '', empresa: '', speds: [], portal: { consultado: false, anos: [], fontes: [], linhas: [] } };
 function inutInit() {
   const fis = window.fiscocont && window.fiscocont.fiscal;
   if (!fis || !$('#btnInutDom') || !fis.inutConferir) return;
@@ -6668,10 +6668,10 @@ function inutInit() {
   const mostraSel = () => {
     const p = [];
     if (INUT.dominio) p.push(`<span>Domínio · ${INUT.empresa ? esc(INUT.empresa) : nome(INUT.dominio)}</span>`);
-    if (INUT.portal.consultado) p.push(`<span>Portal · ${INUT.portal.anos.join(', ')} · ${INUT.portal.linhas.length} inutilização(ões)</span>`);
+    if (INUT.portal.consultado) p.push(`<span>${INUT.portal.fontes.map((f) => (f === 'nfce-ro' ? 'NFC-e RO' : 'NF-e')).join(' + ')} · ${INUT.portal.anos.join(', ')} · ${INUT.portal.linhas.length} inutilização(ões)</span>`);
     if (INUT.speds.length) p.push(`<span>SPED · ${INUT.speds.length} arquivo(s)</span>`);
     const sel = $('#inutSel'); sel.hidden = !p.length; sel.innerHTML = p.join(' ');
-    $('#btnInutPortal').disabled = !INUT.cnpj; $('#btnInutSped').disabled = !INUT.dominio;
+    $('#btnInutPortal').disabled = !INUT.cnpj; $('#btnInutPortalRo').disabled = !INUT.cnpj; $('#btnInutSped').disabled = !INUT.dominio;
   };
   const conferir = async (msg) => {
     overlay(true, msg || 'Conferindo a numeração…');
@@ -6691,28 +6691,33 @@ function inutInit() {
     const r = await fis.inutPickDominio();
     if (!r || r.canceled || !r.path) return;
     INUT.dominio = r.path; INUT.cnpj = ''; INUT.empresa = ''; INUT.speds = [];
-    INUT.portal = { consultado: false, anos: [], linhas: [] };
-    $('#btnInutDom').classList.add('ok'); $('#btnInutSped').classList.remove('ok'); $('#btnInutPortal').classList.remove('ok');
+    INUT.portal = { consultado: false, anos: [], fontes: [], linhas: [] };
+    $('#btnInutDom').classList.add('ok'); ['#btnInutSped', '#btnInutPortal', '#btnInutPortalRo'].forEach((b) => $(b).classList.remove('ok'));
     const res = await conferir('Lendo o relatório do Domínio…');
     if (!res) return;
     if (!INUT.cnpj) toast('O CNPJ da empresa não foi encontrado no relatório; a consulta no portal fica indisponível.', true);
-    else toast(`${res.numeros} número(s) faltante(s) em ${res.faixas_dominio} faixa(s). Agora consulte o portal da NF-e.`);
+    else toast(`${res.numeros} número(s) faltante(s) em ${res.faixas_dominio} faixa(s). Agora consulte os portais (NF-e e, se houver NFC-e, o de Rondônia).`);
   });
-  $('#btnInutPortal').addEventListener('click', async () => {
+  const consultaPortal = async (fonte) => {
     if (!INUT.cnpj) return;
     const ano = $('#inutAno').value;
-    toast('Na janela do portal, marque "Sou humano" e clique em Continuar.');
-    const r = await fis.inutPortal({ cnpj: INUT.cnpj, ano });
+    const ro = fonte === 'nfce-ro';
+    toast(ro ? 'Na janela do portal da NFC-e, digite o código da imagem e clique em Consultar.' : 'Na janela do portal, marque "Sou humano" e clique em Continuar.');
+    const r = await fis.inutPortal({ cnpj: INUT.cnpj, ano, fonte });
     if (!r || r.canceled) { toast('Consulta no portal cancelada.'); return; }
     if (r.error) { toast(r.error, true); return; }
     const p = INUT.portal;
-    p.linhas = p.linhas.filter((l) => !((l.ano.length === 2 ? '20' + l.ano : l.ano) === ano)).concat(r.linhas || []);
+    const anoDe = (l) => (String(l.ano).length === 2 ? '20' + l.ano : String(l.ano));
+    p.linhas = p.linhas.filter((l) => !(l.fonte === fonte && anoDe(l) === ano)).concat((r.linhas || []).map((l) => ({ ...l, fonte })));
     if (!p.anos.includes(ano)) p.anos.push(ano);
+    if (!p.fontes.includes(fonte)) p.fontes.push(fonte);
     p.anos.sort(); p.consultado = true;
-    $('#btnInutPortal').classList.add('ok');
+    $(ro ? '#btnInutPortalRo' : '#btnInutPortal').classList.add('ok');
     const res = await conferir('Conferindo com o portal…');
-    if (res) toast(`Portal ${ano}: ${(r.linhas || []).length} inutilização(ões). ${(res.situacao || {}).portal || 0} número(s) do Domínio inutilizado(s) no portal.`);
-  });
+    if (res) toast(`${ro ? 'NFC-e RO' : 'NF-e'} ${ano}: ${(r.linhas || []).length} inutilização(ões) no portal. ${(res.situacao || {}).portal || 0} número(s) do Domínio inutilizado(s) no total.`);
+  };
+  $('#btnInutPortal').addEventListener('click', () => consultaPortal('nfe'));
+  $('#btnInutPortalRo').addEventListener('click', () => consultaPortal('nfce-ro'));
   $('#btnInutSped').addEventListener('click', async () => {
     const r = await fis.inutPickSped();
     if (!r || r.canceled || !r.paths) return;

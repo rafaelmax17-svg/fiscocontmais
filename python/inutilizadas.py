@@ -105,14 +105,25 @@ def _br_data(d):
 
 def conferir(dominio, portal=None, sped_idx=None, sped_info=None):
     # portal: lista de linhas, ou {'consultado': True, 'anos': ['2026'], 'linhas': [...]} (consulta feita, mesmo sem nenhuma inutilização)
-    anos_cons = []
+    # 'fontes': portais consultados — 'nfe' (Portal Nacional da NF-e) e 'nfce-ro' (portal da NFC-e da SEFIN-RO)
+    anos_cons, fontes = [], None
     if isinstance(portal, dict):
         consultado = bool(portal.get('consultado'))
         anos_cons = [str(a) for a in portal.get('anos') or []]
+        if portal.get('fontes') is not None:
+            fontes = set(portal.get('fontes') or [])
         portal = portal.get('linhas') or []
     else:
         portal = portal or []
         consultado = bool(portal)
+
+    def _consultado(mod):
+        if fontes is None:
+            return consultado
+        return ('nfce-ro' in fontes) if mod == '65' else ('nfe' in fontes)
+
+    def _onde(mod):
+        return 'no portal da NFC-e (SEFIN-RO)' if mod == '65' else 'no portal da NF-e'
     pf = defaultdict(list)
     for r in portal:
         pf[(str(r.get('modelo') or '').strip(), _int(r.get('serie')))].append(r)
@@ -133,8 +144,7 @@ def conferir(dominio, portal=None, sped_idx=None, sped_info=None):
             if d:
                 cs = d['sit']
                 if cs == '05':
-                    sit, obs = 'sped_inut', f"situação 05 (numeração inutilizada) no SPED {d['periodo']}, mas não consta na consulta do portal" + (
-                        ' da NF-e' if mod == '65' else '') + ' — pedir ao cliente o protocolo da inutilização'
+                    sit, obs = 'sped_inut', f"situação 05 (numeração inutilizada) no SPED {d['periodo']}, mas não consta na consulta " + _onde(mod).replace('no ', 'do ', 1) + ' — pedir ao cliente o protocolo da inutilização'
                 elif cs in ('02', '03'):
                     sit, obs = 'cancelada', f"situação {cs} no SPED {d['periodo']}: nota autorizada e cancelada — não é numeração faltante"
                 elif cs == '04':
@@ -145,14 +155,12 @@ def conferir(dominio, portal=None, sped_idx=None, sped_info=None):
                         f", R$ {d['valor']}" if d['valor'] else '') + '): falta lançar no Domínio'
                     prot = d['chave']
         if not sit:
-            if not consultado:
-                sit, obs = 'sem_portal', 'consulte o portal da NF-e (CNPJ e ano)'
+            if not _consultado(mod):
+                sit, obs = 'sem_portal', ('consulte o portal da NFC-e de Rondônia (CNPJ e ano)' if mod == '65' else 'consulte o portal da NF-e (CNPJ e ano)')
             elif sped_idx is None:
-                sit, obs = 'pendente', 'não está inutilizada no portal: importe o SPED Fiscal do cliente para conferir'
+                sit, obs = 'pendente', f'não está inutilizada {_onde(mod)}: importe o SPED Fiscal do cliente para conferir'
             else:
-                sit, obs = 'sem_registro', 'não está inutilizada no portal nem no SPED do cliente: pedir ao cliente o XML da nota ou da inutilização'
-                if mod == '65':
-                    obs += ' (NFC-e: confirme se o portal da NF-e traz as inutilizações de NFC-e da empresa)'
+                sit, obs = 'sem_registro', f'não está inutilizada {_onde(mod)} nem no SPED do cliente: pedir ao cliente o XML da nota ou da inutilização'
         res.append({'modelo': mod, 'serie': ser, 'num': n, 'especie': esp, 'sit': sit, 'prot': prot, 'data': data, 'obs': obs})
     # junta de volta em faixas (números seguidos com a mesma situação e o mesmo protocolo)
     faixas = []
@@ -175,7 +183,7 @@ def conferir(dominio, portal=None, sped_idx=None, sped_info=None):
             'situacao': {k: cont.get(k, 0) for k in ORDEM if cont.get(k)},
             'por_serie': [{'modelo': m, 'serie': s, 'nome': f"{MOD_NOME.get(m, m or '?')} · série {s}", 'total': sum(c.values()),
                            'sit': dict(c)} for (m, s), c in sorted(por_serie.items(), key=lambda x: (x[0][0] != '55', x[0][0], x[0][1]))],
-            'portal': {'consultado': consultado, 'qtd': len(portal), 'anos': anos,
+            'portal': {'consultado': consultado, 'fontes': sorted(fontes) if fontes is not None else (['nfe'] if consultado else []), 'qtd': len(portal), 'anos': anos,
                        'modelos': sorted({str(r.get('modelo', '')) for r in portal})},
             'sped': sped_info or [], 'faixas': faixas}
 
@@ -212,7 +220,7 @@ const D=/*DADOS*/;const S=/*SIT*/;const MN={'55':'NF-e','65':'NFC-e','57':'CT-e'
 const $=s=>document.querySelector(s);const e=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const n=v=>(v||0).toLocaleString('pt-BR');const sit=D.situacao;
 const g=k=>sit[k]||0;
-$('#src').innerHTML=`<b>${e(D.empresa)}</b> · CNPJ ${e(D.cnpj)} · relatório do Domínio: ${n(D.faixas_dominio)} faixa(s), ${n(D.numeros)} número(s) · portal: ${D.portal.consultado?`${n(D.portal.qtd)} inutilização(ões) no ano ${e(D.portal.anos.join(', '))}${D.portal.qtd?` (modelo ${e(D.portal.modelos.join(', '))})`:''}`:'não consultado'} · SPED do cliente: ${D.sped.length?D.sped.map(s=>`${e(s.periodo)}${s.cnpj&&D.cnpj&&s.cnpj!==D.cnpj?' <b style="color:#b4234a">(outro CNPJ)</b>':''}`).join(', '):'não importado'}`;
+$('#src').innerHTML=`<b>${e(D.empresa)}</b> · CNPJ ${e(D.cnpj)} · relatório do Domínio: ${n(D.faixas_dominio)} faixa(s), ${n(D.numeros)} número(s) · portais: ${D.portal.consultado?`${e((D.portal.fontes||[]).map(f=>f==='nfce-ro'?'NFC-e RO':'NF-e').join(' e '))} · ${n(D.portal.qtd)} inutilização(ões) no ano ${e(D.portal.anos.join(', '))}`:'não consultados'} · SPED do cliente: ${D.sped.length?D.sped.map(s=>`${e(s.periodo)}${s.cnpj&&D.cnpj&&s.cnpj!==D.cnpj?' <b style="color:#b4234a">(outro CNPJ)</b>':''}`).join(', '):'não importado'}`;
 const K=[['Números faltantes no Domínio',D.numeros,`${n(D.faixas_dominio)} faixa(s)`,'#c9cfdc'],['Inutilizados no portal',g('portal'),'com protocolo e data','#1baf7a'],
 ['Explicados pelo SPED',g('cancelada')+g('denegada')+g('sped_inut'),'cancelada · denegada · inutilizada','#64748b'],['Faltam lançar no Domínio',g('escriturada'),'estão no SPED do cliente','#2f4090'],
 ['Sem explicação ainda',g('sem_registro')+g('pendente')+g('sem_portal'),g('sem_registro')?'pedir ao cliente':(g('pendente')?'importe o SPED do cliente':'consulte o portal'),'#e34948']];

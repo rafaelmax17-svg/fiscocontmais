@@ -1406,7 +1406,8 @@
             Relatório do Domínio (PDF)
           </button>
           <select id="inutAno" class="rtc-sel" title="Ano da inutilização no portal"></select>
-          <button class="act inv-export adm-btn" id="btnInutPortal" disabled title="Abre o portal com o CNPJ e o ano preenchidos; você marca &quot;Sou humano&quot; e clica em Continuar">Consultar no portal</button>
+          <button class="act inv-export adm-btn" id="btnInutPortal" disabled title="Portal Nacional da NF-e: abre com o CNPJ e o ano preenchidos; você marca &quot;Sou humano&quot; e clica em Continuar">Portal NF-e</button>
+          <button class="act inv-export adm-btn" id="btnInutPortalRo" disabled title="Portal da NFC-e de Rondônia (SEFIN-RO): abre com o CNPJ e o ano preenchidos; você digita o código da imagem e clica em Consultar">Portal NFC-e (RO)</button>
           <button class="act inv-export adm-btn" id="btnInutSped" disabled title="Opcional: confere no SPED do cliente os números que não estão inutilizados no portal">SPED do cliente (opcional)</button>
           <span class="adm-sel" id="inutSel" hidden></span>
           <span class="fiscal-spacer"></span>
@@ -1415,9 +1416,10 @@
         <div class="fiscal-empty adm-empty" id="inutVazio">
           <h2>Inutilizadas × Domínio</h2>
           <p><b>1.</b> Selecione o relatório <b>"Notas não lançadas"</b> do Domínio (PDF). O sistema lista cada número faltante por modelo e série.</p>
-          <p><b>2.</b> Clique em <b>Consultar no portal</b>: abre a consulta de inutilização do Portal Nacional da NF-e com o CNPJ e o ano
-          já preenchidos. Você marca <b>"Sou humano"</b> e clica em <b>Continuar</b>; o sistema lê sozinho todas as inutilizações do ano e
-          mostra, para cada número, o <b>protocolo e a data</b> da inutilização.</p>
+          <p><b>2.</b> Escolha o ano e clique em <b>Portal NF-e</b> (Portal Nacional da NF-e) e, se houver NFC-e, em <b>Portal NFC-e (RO)</b>
+          (portal da NFC-e da SEFIN-RO). A consulta abre com o CNPJ e o ano já preenchidos: no da NF-e você marca <b>"Sou humano"</b> e clica
+          em <b>Continuar</b>; no da NFC-e você digita o <b>código da imagem</b> e clica em <b>Consultar</b>. O sistema lê sozinho as
+          inutilizações do ano e mostra, para cada número, o <b>protocolo e a data</b> da inutilização.</p>
           <p><b>3.</b> Para os números que não estão inutilizados no portal, importe o <b>SPED Fiscal do cliente</b> (um ou mais meses): o sistema
           mostra se a nota foi emitida e só falta lançar no Domínio, se foi cancelada ou denegada, ou se não há registro em lugar nenhum.
           Nenhum arquivo é alterado.</p>

@@ -2696,22 +2696,22 @@ ipcMain.handle('fiscal:inutPickSped', async () => {
   return { paths: r.filePaths };
 });
 // script injetado no portal: preenche CNPJ e ano, mostra o aviso e, depois do "Continuar", lê a tabela de inutilizações
-const _INUT_JS_PREENCHE = (cnpj, ano) => `(() => {
+const _INUT_JS_PREENCHE = (cnpj, ano, aviso, formatado) => `(() => {
   const vis = (e) => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
   const ev = (el) => ['input', 'change', 'blur'].forEach((t) => el.dispatchEvent(new Event(t, { bubbles: true })));
   let inp = [...document.querySelectorAll('input')].filter((i) => vis(i) && /text|^$/.test(i.type || '') && /cnpj/i.test(i.id + ' ' + i.name))[0];
   if (!inp) {
-    const lab = [...document.querySelectorAll('label, span, td, div, p')].find((x) => /^\\s*CNPJ do Emitente\\s*$/i.test(x.innerText || ''));
+    const lab = [...document.querySelectorAll('label, span, td, div, p')].find((x) => /^\\s*CNPJ do Emitente\\s*:?\\s*\\*?\\s*$/i.test(x.innerText || ''));
     if (lab) inp = [...document.querySelectorAll('input')].find((i) => vis(i) && (lab.compareDocumentPosition(i) & 4) && /text|^$/.test(i.type || ''));
   }
   const sels = [...document.querySelectorAll('select')].filter((x) => vis(x) && [...x.options].some((o) => o.text.trim() === '${ano}'));
   const sel = sels.find((x) => /ano/i.test(x.id + ' ' + x.name)) || sels[0];
-  if (inp && !inp.value) { inp.value = '${cnpj}'; ev(inp); }
+  if (inp && !inp.value) { inp.value = (${formatado ? 'true' : 'false'} && !(inp.maxLength > 0 && inp.maxLength < 18)) ? '${cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')}' : '${cnpj}'; ev(inp); }
   if (sel) { const o = [...sel.options].find((o) => o.text.trim() === '${ano}'); if (o && sel.value !== o.value) { sel.value = o.value; ev(sel); } }
   if (!document.getElementById('fcInutAviso')) {
     const d = document.createElement('div'); d.id = 'fcInutAviso';
     d.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;background:#1f2a5a;color:#fff;font:600 14px Segoe UI,Arial;padding:10px 16px;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.25)';
-    d.textContent = 'FiscoCont+: confira o CNPJ e o ano, marque "Sou humano" e clique em Continuar. A lista de inutilizações é lida sozinha e esta janela fecha.';
+    d.textContent = ${JSON.stringify(aviso)};
     document.body.appendChild(d);
   }
   return { cnpj: !!inp, ano: !!sel };
@@ -2735,29 +2735,106 @@ const _INUT_JS_LE = `(() => {
   const cnpj = mc ? mc[1].replace(/\\D/g, '') : '';
   return { ok: true, linhas, paginas: pag.map((a) => a.innerText.trim()), cnpj, primeiro: linhas[0] ? linhas[0].protocolo : '' };
 })()`;
-ipcMain.handle('fiscal:inutPortal', async (_evt, { cnpj, ano }) => {
+// leitor genérico (portal da NFC-e da SEFIN-RO): acha a tabela pelo cabeçalho (Protocolo + Número/Série) e mapeia as colunas pelo nome
+const _INUT_JS_LE_GEN = (ano) => `(() => {
+  const norm = (s) => String(s || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/\\s+/g, ' ').trim();
+  const dig = (s) => String(s || '').replace(/[^\\d]/g, '');
+  const corpo = document.body ? document.body.innerText || '' : '';
+  const mapa = (cab) => {
+    const m = {};
+    cab.forEach((h, i) => {
+      const t = norm(h);
+      if (m.protocolo === undefined && /protocolo/.test(t)) m.protocolo = i;
+      else if (m.ini === undefined && /inicial|inicio|^de$|num.*ini/.test(t)) m.ini = i;
+      else if (m.fim === undefined && /final|^fim|^ate$|num.*fin/.test(t)) m.fim = i;
+      else if (m.serie === undefined && /serie/.test(t)) m.serie = i;
+      else if (m.modelo === undefined && /modelo|^mod\\.?$/.test(t)) m.modelo = i;
+      else if (m.ano === undefined && /^ano$/.test(t)) m.ano = i;
+      else if (m.data === undefined && /data|hora|^dt/.test(t) && !/recebimento/.test(t)) m.data = i;
+      else if (m.num === undefined && /^(numero|n[oº°]\\.?|num\\.?|numeracao|faixa)$/.test(t)) m.num = i;
+    });
+    return m;
+  };
+  const linhas = [];
+  for (const t of document.querySelectorAll('table')) {
+    const trs = [...t.querySelectorAll('tr')];
+    const hi = trs.findIndex((tr) => { const x = norm(tr.innerText); return /protocolo/.test(x) && /numero|inicial|serie|faixa/.test(x) && tr.querySelectorAll('td, th').length >= 3; });
+    if (hi < 0) continue;
+    const m = mapa([...trs[hi].querySelectorAll('th, td')].map((c) => c.innerText));
+    if (m.protocolo === undefined || (m.ini === undefined && m.num === undefined)) continue;
+    trs.slice(hi + 1).forEach((tr) => {
+      const c = [...tr.querySelectorAll('td')].map((td) => td.innerText.trim());
+      if (c.length < 3) return;
+      let ini = '', fim = '';
+      const base = m.ini !== undefined ? c[m.ini] : c[m.num];
+      const faixa = String(base || '').match(/(\\d[\\d.]*)\\s*(?:a|at[eé]|-|–|\\/)\\s*(\\d[\\d.]*)/i);
+      if (faixa) { ini = dig(faixa[1]); fim = dig(faixa[2]); }
+      else { ini = dig(base); fim = m.fim !== undefined ? dig(c[m.fim]) : ini; }
+      if (!ini) return;
+      const data = m.data !== undefined ? c[m.data] : '';
+      let a = m.ano !== undefined ? dig(c[m.ano]) : '';
+      if (!a) { const y = String(data).match(/(20\\d\\d)/); a = y ? y[1] : '${ano}'; }
+      linhas.push({ ano: a, modelo: (m.modelo !== undefined && dig(c[m.modelo])) || '65', serie: m.serie !== undefined ? dig(c[m.serie]) : '',
+        ini, fim: fim || ini, protocolo: dig(c[m.protocolo]) || c[m.protocolo], data, receb: '' });
+    });
+    if (linhas.length) break;
+  }
+  if (!linhas.length) {
+    // sem tabela: resultado em pares "rótulo: valor" (um ou mais registros)
+    const pega = (re) => [...corpo.matchAll(re)].map((x) => x[1].trim());
+    const prot = pega(/Protocolo[^:\\n]{0,25}:\\s*(\\d{10,20})/gi);
+    const ini = pega(/N[uú]mero\\s+Inicial[^:\\n]{0,10}:\\s*(\\d[\\d.]*)/gi);
+    const fim = pega(/N[uú]mero\\s+Final[^:\\n]{0,10}:\\s*(\\d[\\d.]*)/gi);
+    const ser = pega(/S[ée]rie[^:\\n]{0,10}:\\s*(\\d+)/gi);
+    const dat = pega(/Data[^:\\n]{0,30}:\\s*([\\d\\/]{8,10}(?:\\s+[\\d:]{5,8})?)/gi);
+    prot.forEach((p, i) => {
+      if (!ini[i]) return;
+      const y = String(dat[i] || '').match(/(20\\d\\d)/);
+      linhas.push({ ano: y ? y[1] : '${ano}', modelo: '65', serie: ser[i] || '', ini: dig(ini[i]), fim: dig(fim[i] || ini[i]), protocolo: p, data: dat[i] || '', receb: '' });
+    });
+  }
+  if (linhas.length) return { ok: true, linhas, paginas: [], cnpj: '', primeiro: linhas[0].protocolo + '|' + linhas.length };
+  const n = norm(corpo);
+  return { ok: false, vazio: /nenhum(a)? (registro|inutiliza|resultado|numeracao)|nao (foi|foram) encontrad|nao (ha|existe|existem) (registro|inutiliza|numeracao)|sem (registro|inutiliza)|nao possui (registro|inutiliza)/.test(n),
+    erroCaptcha: /captcha|codigo (da imagem )?(invalido|incorreto)/.test(n) && /invalid|incorret|errad/.test(n) };
+})()`;
+const INUT_FONTES = {
+  nfe: { url: INUT_URL, titulo: 'Consultar Inutilização (Portal Nacional da NF-e)', particao: 'persist:portal-nfe', formatado: false,
+    aviso: 'FiscoCont+: confira o CNPJ e o ano, marque "Sou humano" e clique em Continuar. A lista de inutilizações é lida sozinha e esta janela fecha.',
+    le: () => _INUT_JS_LE },
+  'nfce-ro': { url: 'https://www.nfce.sefin.ro.gov.br/consultarInutilizado.jsp', titulo: 'Consultar Inutilização (Portal da NFC-e · SEFIN-RO)', particao: 'persist:portal-nfce-ro', formatado: true,
+    aviso: 'FiscoCont+: confira o CNPJ e o ano, digite o código da imagem (Captcha) e clique em Consultar. As inutilizações de NFC-e são lidas sozinhas e esta janela fecha.',
+    le: (ano) => _INUT_JS_LE_GEN(ano) },
+};
+ipcMain.handle('fiscal:inutPortal', async (_evt, { cnpj, ano, fonte }) => {
+  const F = INUT_FONTES[fonte] || INUT_FONTES.nfe; fonte = INUT_FONTES[fonte] ? fonte : 'nfe';
   cnpj = String(cnpj || '').replace(/\D/g, ''); ano = String(ano || new Date().getFullYear());
   if (cnpj.length !== 14) return { error: 'CNPJ inválido.' };
   if (_inutJanela && !_inutJanela.isDestroyed()) { _inutJanela.focus(); return { error: 'A janela do portal já está aberta.' }; }
-  const w = new BrowserWindow({ parent: mainWindow, width: 1150, height: 820, title: 'FiscoCont+ · Consultar Inutilização (Portal da NF-e)', autoHideMenuBar: true,
-    webPreferences: { partition: 'persist:portal-nfe', contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  const w = new BrowserWindow({ parent: mainWindow, width: 1150, height: 820, title: `FiscoCont+ · ${F.titulo}`, autoHideMenuBar: true,
+    webPreferences: { partition: F.particao, contextIsolation: true, nodeIntegration: false, sandbox: true } });
   _inutJanela = w;
   w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   const js = (c) => Promise.race([w.webContents.executeJavaScript(c, true), new Promise((_r, rej) => setTimeout(() => rej(new Error('sem resposta')), 15000))]);
   return new Promise((resolve) => {
-    let fim = false, timer = null, todas = [], vistos = new Set(), paginasFeitas = new Set(['1']), ultimoPrimeiro = '';
-    const acaba = (r) => { if (fim) return; fim = true; clearInterval(timer); try { if (!w.isDestroyed()) w.close(); } catch (_) {} _inutJanela = null; resolve(r); };
+    let fim = false, timer = null, todas = [], vistos = new Set(), paginasFeitas = new Set(['1']), ultimoPrimeiro = '', cargas = 0, vazioAntes = null;
+    const acaba = (r) => { if (fim) return; fim = true; clearInterval(timer); try { if (!w.isDestroyed()) w.close(); } catch (_) {} _inutJanela = null; resolve(r && r.ok ? { ...r, fonte } : r); };
     w.on('closed', () => acaba(todas.length ? { ok: true, linhas: todas, ano, cnpj } : { canceled: true }));
-    w.webContents.on('did-finish-load', () => { js(_INUT_JS_PREENCHE(cnpj, ano)).catch(() => {}); });
-    w.loadURL(INUT_URL).catch(() => {});
+    w.webContents.on('did-finish-load', () => { cargas++; js(_INUT_JS_PREENCHE(cnpj, ano, F.aviso, F.formatado)).catch(() => {}); });
+    w.loadURL(F.url).catch(() => {});
     const t0 = Date.now();
     timer = setInterval(async () => {
       if (fim || w.isDestroyed()) return;
       if (Date.now() - t0 > 15 * 60 * 1000) return acaba(todas.length ? { ok: true, linhas: todas, ano, cnpj } : { error: 'A consulta não foi concluída em 15 minutos.' });
       let r;
-      try { r = await js(_INUT_JS_LE); } catch (_) { return; }
+      try { r = await js(F.le(ano)); } catch (_) { return; }
       if (!r) return;
-      if (!r.ok) { if (r.vazio) acaba({ ok: true, linhas: [], ano, cnpj, vazio: true }); return; }
+      if (!r.ok) {
+        // "nenhuma inutilização" só vale depois da consulta (página recarregada, ou a mensagem apareceu agora)
+        if (vazioAntes === null) vazioAntes = !!r.vazio;
+        if (r.vazio && !r.erroCaptcha && (cargas >= 2 || !vazioAntes)) acaba({ ok: true, linhas: [], ano, cnpj, vazio: true });
+        return;
+      }
       if (r.cnpj && r.cnpj.length === 14 && r.cnpj !== cnpj) return acaba({ error: `O portal mostrou o CNPJ ${r.cnpj}, diferente do CNPJ do relatório do Domínio (${cnpj}).` });
       if (r.primeiro === ultimoPrimeiro) return;           // mesma página ainda
       ultimoPrimeiro = r.primeiro;
