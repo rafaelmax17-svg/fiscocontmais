@@ -3,6 +3,21 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.30
+
+- **Corretor do SPED Fiscal · "DIFAL do Acre · uso e consumo e ativo" (EM TESTE, só Admin).** Nova conferência da Análise Inteligente. Aparece só quando o SPED é de empresa do Acre (UF do registro 0000). A equipe só recebe quando você ligar em "O que a equipe recebe".
+  - **Cálculo pela base dupla, com o imposto por dentro:** ICMS da origem = valor × interestadual; base = (valor − ICMS da origem) ÷ 0,81; DIFAL = base × 19% − ICMS da origem. Base legal: LC 55/1997, art. 6º, XI, §§ 7º e 8º, e art. 8º (LC 417/2022); RICMS-AC, art. 5º, IX-A, §§ 8º e 9º, e art. 7º (Decreto 11.206/2023, DOE 24/03/2023). Antes de 24/03/2023, base única; alíquota interna de 17% antes de 01/04/2023.
+  - **Valor do item:** valor − desconto + frete + seguro + outras despesas + IPI (art. 97, § 3º). Vem do XML quando anexado; sem XML, o frete da nota é rateado pelos itens.
+  - **Fornecedor do Simples:** abate a alíquota interestadual cheia (art. 97, § 5º).
+  - **Fica fora do DIFAL:** item com ICMS-ST retido na nota e transferência da mesma empresa, mesma raiz de CNPJ (art. 97, § 7º-B, Decreto 11.852/2026).
+  - **Lançamento (Manual da EFD do AC, IN DIAT 2/2018, itens 8 e 9):**
+    - 0460 + C195 + um C197 por item: AC70000002 (uso e consumo) ou AC70000001 (ativo), com COD_ITEM, base, alíquota interestadual e DIFAL;
+    - soma no campo 15 (DEB_ESP) do E110;
+    - E116 com código de receita 1641 ou 1642 e vencimento no dia 20 do mês seguinte (RICMS-AC, art. 93, IV, "f").
+  - **DIFAL lançado com valor diferente** (por exemplo, pela base única): é trocado pelo calculado.
+  - **CST 90 sem crédito**, como pede o manual. Item com crédito de ICMS aparece como "NÃO ALTERAR": retire o crédito antes, em "Uso e consumo · DIFAL e crédito".
+  - **Regime especial:** o manual só prevê o lançamento para "estabelecimento detentor de regime especial". A opção vem marcada quando o SPED já tem C197 AC7000000x ou E116 1641/1642. Sem ela, o sistema só confere o valor calculado, porque o DIFAL é notificado na entrada (art. 93, VI).
+
 ## 2.3.26
 
 - **Corretor do SPED Fiscal · "Validação do PVA · cadastro e ajustes" (EM TESTE, só Admin).** Nova conferência da Análise Inteligente, montada sobre os 30 erros do PVA do Auto Posto Patrão Cacoal (10/2026). A equipe só recebe quando você ligar em "O que a equipe recebe". Tudo vem marcado e você pode desmarcar item por item; é aplicada por último, depois das outras correções.

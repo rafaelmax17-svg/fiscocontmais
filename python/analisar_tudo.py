@@ -64,6 +64,7 @@ import ncm_xml as nx
 import st_entrada_ro as se
 import unidade_xml as ux
 import pva_cadastro as pc
+import difal_ac as dac
 from xml_entradas import ler_xmls
 
 
@@ -363,6 +364,58 @@ def analisar(sped, xml_dir, permitidas=None):
                    'qtd': f'{n_dif} nota(s)' if n_dif else 'nada encontrado', 'valor': (f"{'+' if v_dif > 0 else '−'} R$ {_fm(abs(v_dif))} DIFAL" if abs(v_dif) >= 0.01 else ''),
                    'badge': f'decidir {n_dec}' if n_dec else ('pode corrigir' if n_dif else 'sem correção'),
                    'tipo': 'decidir' if n_dec else ('auto' if n_dif else 'zero'), 'grupos': grupos})
+
+    # 2a) DIFAL do Acre (empresa do AC pelo 0000; EM TESTE)
+    if pode('difalac'):
+        aa = dac.analisar_texto(corr, xmls)
+        if aa['aplica']:
+            reg = aa['regime_especial']
+            g_ac = []
+            g_ac.append({'id': 'difac_reg', 'titulo': 'Regime especial de pagamento do DIFAL (lança no SPED)',
+                         'sugestao': 'marcado quando o SPED já tem C197 AC7000000x ou E116 1641/1642', 'linhas': [{
+                             'sel': 'regime', 'nota': 'A empresa tem regime especial e apura o DIFAL no SPED',
+                             'det': ('Encontrado no SPED (C197 AC70000001/2 ou E116 1641/1642).' if reg['detectado'] else
+                                     'Não encontrado no SPED: sem a marca, o sistema só confere o valor (o DIFAL é notificado na entrada, '
+                                     'RICMS-AC, art. 93, VI). Marque se a empresa tiver regime especial.')
+                                    + ' Lança C197 por item, campo 15 do E110 e E116 1641/1642 com vencimento no dia 20 do mês seguinte.',
+                             'valor': None, 'marcado': reg['detectado']}]})
+            rot = {'faltando': 'DIFAL faltando', 'divergente': 'DIFAL com valor diferente'}
+            lin = []
+            for d in aa['docs']:
+                if d['status'] not in rot:
+                    continue
+                its = [{'cod': i['cod'], 'descr': i['descr'], 'cfop': i['cfop'], 'valor': i['valor'], 'aliq': i['aliq_inter'], 'base': i['base'],
+                        'difal': i['difal'], 'st': i['st'], 'fonte': i['fonte_valor']} for i in d['itens']]
+                lin.append({'sel': d['id'], 'nota': f"NF {_num(d['num'])} · {d['fornecedor']} ({d['uf_origem']})",
+                            'det': ' · '.join([f"{rot[d['status']]}: calculado R$ {_fm(d['difal_calculado'])}, lançado R$ {_fm(d['difal_lancado'])}"
+                                               + (' (base dupla, 19%)' if d['base_dupla'] else ' (base única)')] + d['obs']),
+                            'valor': round(d['difal_calculado'] - d['difal_lancado'], 2), 'marcado': True, 'difac': its})
+            if lin:
+                g_ac.append({'id': 'difac', 'titulo': 'DIFAL do Acre faltando ou com valor diferente (C197 AC70000001/2)',
+                             'sugestao': 'incluir / trocar pelo calculado (base dupla)', 'linhas': lin, 'marcar_todos': len(lin) > 1})
+            conf = [{'sel': f"conf:{d['id']}", 'nota': f"NF {_num(d['num'])} · {d['fornecedor']} ({d['uf_origem']})",
+                     'det': {'ok': f"Confere: R$ {_fm(d['difal_lancado'])}", 'transferencia': 'Transferência da mesma empresa: sem DIFAL',
+                             'st_nota': 'ICMS-ST retido na nota: sem DIFAL', 'zero': 'Sem DIFAL a calcular'}.get(d['status'], d['status'])
+                            + (' · ' + ' · '.join(d['obs']) if d['obs'] else ''),
+                     'valor': d['difal_calculado'] or None, 'marcado': False, 'bloqueado': True,
+                     'difac': [{'cod': i['cod'], 'descr': i['descr'], 'cfop': i['cfop'], 'valor': i['valor'], 'aliq': i['aliq_inter'],
+                                'base': i['base'], 'difal': i['difal'], 'st': i['st'], 'fonte': i['fonte_valor']} for i in d['itens']]}
+                    for d in aa['docs'] if d['status'] not in rot]
+            if conf:
+                g_ac.append({'id': 'difac_conf', 'titulo': 'Notas que já conferem ou sem DIFAL', 'sugestao': 'nada a fazer', 'linhas': conf})
+            lc = [{'sel': f"cst:{c['id']}", 'nota': f"NF {_num(c['num'])} · {c['item']} · {c['descr']}",
+                   'det': (f"CST {c['cst']} → {c['para']} · {c['motivo']}" if not c['bloqueado'] else f"NÃO ALTERAR: CST {c['cst']} · {c['motivo']}"),
+                   'valor': None, 'marcado': not c['bloqueado'], 'bloqueado': c['bloqueado']} for c in aa['cst']]
+            if lc:
+                g_ac.append({'id': 'difac_cst', 'titulo': 'CST 90 sem crédito na nota com DIFAL (manual da EFD do AC)', 'sugestao': 'CST x90',
+                             'linhas': lc, 'marcar_todos': len(lc) > 1})
+            r = aa['resumo']
+            etapas.append({'key': 'difalac', 'titulo': 'DIFAL do Acre · uso e consumo e ativo',
+                           'desc': 'empresa do AC (registro 0000) · base dupla, 19% · C197 AC70000001/2 por item · E110 campo 15 · E116 1641/1642',
+                           'qtd': f"{r['notas']} nota(s) · {r['faltando']} faltando · {r['divergente']} diferente(s)" if r['notas'] else 'nada encontrado',
+                           'valor': f"+ R$ {_fm(r['a_lancar'])} DIFAL" if r['a_lancar'] >= 0.01 else '',
+                           'badge': ('certo · já marcado' if reg['detectado'] else 'decidir: regime especial') if lin else ('confere' if r['notas'] else 'sem correção'),
+                           'tipo': ('auto' if reg['detectado'] else 'decidir') if (lin or lc) else 'zero', 'grupos': g_ac})
 
     # 3) desconto (sobre o arquivo de validação; a aplicação reanalisa depois do DIFAL)
     if xmls:
@@ -711,6 +764,22 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
             final = novo
             resumo['unid'] = {'itens': r['itens']}
             avisos += r.get('avisos') or []
+    # 9a) DIFAL do Acre (empresa do AC): sobre o arquivo já com as demais correções
+    if liga('difalac'):
+        ea = esc.get('difalac') or {}
+        reg = ea.get('regime') if isinstance(ea.get('regime'), bool) else None
+        aa = dac.analisar_texto(final, xmls, reg)
+        if aa['aplica']:
+            ids_d = [d['id'] for d in aa['docs'] if d.get('sugerido') and ea.get(d['id'], True) is not False]
+            ids_c = [c['id'] for c in aa['cst'] if not c['bloqueado'] and ea.get(f"cst:{c['id']}", True) is not False]
+            if ids_d or ids_c:
+                novo, r = dac.aplicar_texto(final, ids_d, ids_c, aa['regime_especial']['usado'], xmls)
+                if r.get('erro'):
+                    return None, enc, {'erro': f"DIFAL do Acre: {r['erro']}", 'etapa': 'DIFAL do Acre'}
+                final = novo
+                resumo['difalac'] = {'notas': r['notas'], 'difal': r['difal'], 'cst': r['cst'], 'e116': r.get('e116', '')}
+                avisos += r.get('avisos') or []
+            avisos += aa.get('avisos') or []
     # 10) validação do PVA · cadastro e ajustes (por último: só mexe no cadastro e em ajuste zerado)
     if liga('pvacad'):
         ep = esc.get('pvacad') or {}

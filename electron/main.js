@@ -2403,6 +2403,7 @@ const CORR_ETAPAS = [
   { key: 'comb', nome: 'Combustível × uso e consumo' },
   { key: 'stent', nome: 'ICMS-ST na entrada', teste: true },
   { key: 'difal', nome: 'Uso e consumo · DIFAL e crédito' },
+  { key: 'difalac', nome: 'DIFAL do Acre · uso e consumo e ativo', teste: true },
   { key: 'desconto', nome: 'Desconto × XML' },
   { key: 'icms', nome: 'ICMS creditado × XML' },
   { key: 'valor', nome: 'Valor e base × XML' },
