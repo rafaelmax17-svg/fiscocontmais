@@ -5,6 +5,10 @@ def get(u):
 x = get(B + '/consultarVersoesTabelasExternas?codigoSistema=SpedFiscal').decode('utf-8', 'replace')
 open('verif/versoes.xml', 'w').write(x)
 print('RESULTADO versoes', len(x))
+print('RESULTADO inicio', re.sub(r'\s+',' ',x[:1200]))
+for m in re.finditer(r'(?i)cest|especificador', x):
+    print('RESULTADO ctx', re.sub(r'\s+',' ',x[max(0,m.start()-500):m.start()+300]))
+    break
 # acha a tabela de CEST
 blocos = re.findall(r'<tabela>(.*?)</tabela>', x, re.S | re.I) or re.findall(r'<Tabela[^>]*>(.*?)</Tabela>', x, re.S)
 achou = [b for b in blocos if 'CEST' in b.upper() or 'ESPECIFICADOR' in b.upper()]
