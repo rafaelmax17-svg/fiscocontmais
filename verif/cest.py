@@ -14,14 +14,18 @@ for t in cest[-2:]:
     if not m:
         continue
     i = m.group(1)
-    for u in ('http://www.sped.fazenda.gov.br/spedtabelas/wsconsulta/obterTabela.ashx?idPacote=' + i, B + '/baixarVersaoTabelaExterna?idPacote=' + i):
+    v = re.search(r'versao="(\d+)"', t).group(1)
+    for u in ('http://www.sped.fazenda.gov.br/spedtabelas/wsconsulta/obterTabela.ashx?idTabela=' + i + '&versao=' + v,
+              'http://www.sped.fazenda.gov.br/spedtabelas/wsconsulta/obterTabela.ashx?idPacote=' + i + '&versao=' + v,
+              'http://www.sped.fazenda.gov.br/spedtabelas/wsconsulta/obterTabela.ashx?id=' + i + '&versao=' + v):
         try:
             raw = get(u)
             t2 = raw.decode('latin1')
             codes = sorted(set(re.findall(r'(?<!\d)(\d{7})(?!\d)', t2)))
             out[i] = {'url': u, 'cab': t2[:400], 'codes': codes}
             print('RESULTADO baixou', i, len(raw), len(codes), '1708704' in codes, '1700301' in codes, '0302500' in codes, t2[:200].replace('\n', ' | '))
-            break
+            if codes:
+                break
         except Exception as e:
             print('RESULTADO falhou', u, e)
 json.dump(out, open('verif/cest_oficial.json', 'w'), indent=0)
