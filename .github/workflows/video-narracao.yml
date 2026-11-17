@@ -1,0 +1,21 @@
+name: Narracao do video (temporario)
+on:
+  push:
+    branches: [video-narracao]
+    paths: ['narracao/textos.json']
+jobs:
+  tts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install google-auth requests
+      - run: python narracao/tts.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: narracao
+          path: narracao/saida

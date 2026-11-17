@@ -1,0 +1,12 @@
+[
+ {"id": "a01", "cena": "abertura", "texto": "Bem-vindo ao treinamento do FiscoCont+, o sistema de automação fiscal e contábil da Liddera. Neste vídeo, você vai conhecer os módulos que a equipe usa no dia a dia: para que cada um serve, o que importar e como ler os resultados."},
+ {"id": "a02", "cena": "login", "texto": "Para entrar, use o seu e-mail e a sua senha. O acesso é individual, e o sistema só abre com internet. Se você ficar um tempo sem usar, ele pede a senha de novo, para proteger os dados dos clientes."},
+ {"id": "a03", "cena": "menu", "texto": "Depois do login, o menu à esquerda mostra os módulos liberados para você, organizados em grupos: Fiscal, os serviços da SEFIN de Rondônia e Contábil. Quando um módulo é novo, ele aparece com o selo NOVO durante alguns dias."},
+ {"id": "d01", "cena": "dash-vazio", "texto": "Vamos começar pelo Dashboard do SPED. A partir do arquivo do SPED Fiscal, ele monta um painel da empresa, pronto para enviar ao cliente."},
+ {"id": "d02", "cena": "dash-importa", "texto": "Clique em Importar SPED Fiscal e escolha o arquivo texto do período. Em poucos segundos, o sistema lê o arquivo e monta o painel. Neste exemplo, usamos uma empresa fictícia, o Mercado Bom Preço."},
+ {"id": "d03", "cena": "dash-cards", "texto": "No topo ficam os números principais do mês: o faturamento bruto, o ICMS dos débitos e dos créditos, o ICMS a recolher e a alíquota efetiva, que é o imposto do mês dividido pelo faturamento."},
+ {"id": "d04", "cena": "dash-apuracao", "texto": "Logo abaixo, a apuração do ICMS mostra como se chegou ao valor a recolher: os débitos das saídas, menos os créditos das compras e os ajustes. Ao lado, o VAF Fiscal mostra as vendas menos as compras para revenda, que formam o valor adicionado. Uso e consumo e imobilizado ficam fora desse cálculo."},
+ {"id": "d05", "cena": "dash-cfop", "texto": "Descendo a página, as entradas e as saídas aparecem agrupadas por CFOP, com a quantidade de notas e o valor de cada grupo. É um jeito rápido de conferir se as operações do mês fazem sentido para a atividade da empresa."},
+ {"id": "d06", "cena": "dash-rankings", "texto": "Em seguida, os maiores fornecedores e os produtos mais comprados ajudam a entender o perfil de compras do cliente."},
+ {"id": "d07", "cena": "dash-exportar", "texto": "Com tudo conferido, use Exportar PDF ou Exportar HTML para salvar o painel e enviar ao cliente. O SPED importado aqui já fica pronto para os outros módulos fiscais, sem precisar importar de novo. Para trocar de empresa, use Nova análise, no alto do menu."}
+]
