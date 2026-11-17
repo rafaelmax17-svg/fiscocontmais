@@ -32,6 +32,7 @@
   .dfe-lk{color:#2f4090;font-weight:700;font-size:11.5px;cursor:pointer;background:none;border:none;padding:0;margin-top:3px}
   .dfe-uf{font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 6px;background:#eef0f6;color:#475569}.dfe-uf.ro{background:#e8f0ff;color:#2f4090}
   .dfe-pasta{font-size:11.5px;color:var(--ink2);margin-top:10px}
+  .dl-so{display:inline-block;margin-left:6px;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:#e8632b;color:#fff;border-radius:8px;padding:1px 7px;vertical-align:1px}
   .dfe-rel{display:inline-flex;align-items:center;gap:6px;margin-top:6px;font:inherit;font-size:11.5px;font-weight:700;color:#fff;background:linear-gradient(90deg,#2f4090,#4f46e5);border:none;border-radius:8px;padding:4px 10px;cursor:pointer;box-shadow:0 3px 10px rgba(79,70,229,.25)}
   .dfe-rel svg{width:13px;height:13px}
   .dfe-rel:hover{filter:brightness(1.08)}
@@ -75,6 +76,12 @@
     const t = tipos();
     const so = t.length === 1 && t[0] === 'nfse';
     const b = q('#btnDlBaixar'); if (b) b.textContent = so || !t.length ? 'Baixar NFS-e' : 'Baixar notas';
+    const lt = q('#btnNflBaixar');
+    if (lt) {
+      lt.hidden = !t.includes('nfse');                       // o lote é só de NFS-e: some quando a NFS-e não está marcada
+      lt.innerHTML = 'Baixar NFS-e em lote (todas as empresas) <span class="dl-so">só NFS-e</span>';
+      lt.title = 'O lote baixa apenas NFS-e, de todas as empresas. NF-e, NFC-e e CT-e são baixadas por empresa, no botão ao lado.';
+    }
     const cb = q('#dlCienciaBox'); if (cb) cb.hidden = !(ehAdmin() && t.includes('nfe-e'));
     const pdf = q('#dlGerarPdf');
     if (pdf) {
@@ -237,15 +244,9 @@
         await baixarNovos([id]);
       } finally { X.rodando = false; X.repassa = false; b.disabled = false; ajustaTela(); }
     }, true);
-    // "Baixar em lote (todas as empresas)": tipos novos de todas as empresas; NFS-e abre a janela do lote de sempre.
-    if (lote) lote.addEventListener('click', async (ev) => {
-      if (X.repassa || !novos().length) return;
-      ev.stopImmediatePropagation();
-      if (X.rodando) return;
-      X.rodando = true; lote.disabled = true;
-      try { await baixarNovos(null); } finally { X.rodando = false; lote.disabled = false; }
-      if (tipos().includes('nfse')) { X.repassa = true; lote.click(); X.repassa = false; }
-    }, true);
+    // "Baixar NFS-e em lote (todas as empresas)": só NFS-e (janela do lote de sempre). NF-e, NFC-e e CT-e são por empresa
+    // (pedido do Rafael, 17/11: o lote das saídas de RO depende do código da imagem de cada arquivo).
+    void lote;
   }
 
 
