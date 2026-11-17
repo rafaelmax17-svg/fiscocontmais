@@ -2,8 +2,8 @@
 // Baixas DF-e · NF-e Entradas, NF-e Saídas, NFC-e Saídas e CT-e Entradas — nos mesmos botões da tela "Baixar NFS-e".
 //   Entradas (todas as empresas): NF-e e CT-e pelo Ambiente Nacional, com o certificado cadastrado; Ciência da Operação
 //   automática só nas notas que vierem como resumo (nota já manifestada vem completa e é só baixada).
-//   Saídas (só empresas de RO): NF-e e NFC-e pelo DFe-Download da SEFIN, reaproveitando o pedido do mês já feito; a pessoa
-//   digita o código da imagem na janela da SEFIN.
+//   Saídas (só empresas de RO): NF-e e NFC-e pelo DFe-Download da SEFIN, reaproveitando o pedido do mês já feito. A página da
+//   SEFIN fica escondida: só a imagem do código aparece aqui, a pessoa digita e o sistema baixa todas as partes do arquivo.
 // Os botões "Baixar NFS-e" e "Baixar em lote" passam a baixar o que estiver marcado: NFS-e continua no fluxo de sempre.
 (function () {
   const NOVO_ATE = '2026-11-24T23:59:59';
@@ -31,7 +31,26 @@
   .dfe-ok{background:#e3f7ee;color:#0f7a52}.dfe-ag{background:#fff4dd;color:#9a6200}.dfe-pr{background:#e8f0ff;color:#2f4090}.dfe-er{background:#fdeaea;color:#b42323}.dfe-nr{background:#eef0f6;color:#475569}
   .dfe-lk{color:#2f4090;font-weight:700;font-size:11.5px;cursor:pointer;background:none;border:none;padding:0;margin-top:3px}
   .dfe-uf{font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 6px;background:#eef0f6;color:#475569}.dfe-uf.ro{background:#e8f0ff;color:#2f4090}
-  .dfe-pasta{font-size:11.5px;color:var(--ink2);margin-top:10px}`;
+  .dfe-pasta{font-size:11.5px;color:var(--ink2);margin-top:10px}
+  .dfe-cod-bg{position:fixed;inset:0;background:rgba(20,24,50,.55);z-index:9700;display:flex;align-items:center;justify-content:center;animation:dfeIn .18s ease}
+  @keyframes dfeIn{from{opacity:0}to{opacity:1}}
+  .dfe-cod{background:#fff;border-radius:18px;width:min(440px,92vw);overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.35)}
+  .dfe-cod-h{background:linear-gradient(120deg,#1f2a5a,#2b3a72);color:#fff;padding:15px 20px;display:flex;align-items:flex-start;gap:10px}
+  .dfe-cod-h b{font-size:14px;display:block}.dfe-cod-h small{font-size:11.5px;color:#c7cbe8;display:block;margin-top:3px;line-height:1.35}
+  .dfe-cod-h .x{margin-left:auto;background:none;border:none;color:#fff;font-size:20px;cursor:pointer;line-height:1}
+  .dfe-cod-b{padding:18px 20px 6px}
+  .dfe-cod-img{display:flex;align-items:center;justify-content:center;background:#f4f6fb;border:1px solid #e3e6f0;border-radius:12px;min-height:84px;padding:10px}
+  .dfe-cod-img img{max-width:100%;max-height:120px;image-rendering:auto}
+  .dfe-cod-parte{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 4px;font-size:11.5px;color:#475569}
+  .dfe-cod-parte span{background:#eef0f6;border-radius:12px;padding:2px 9px}.dfe-cod-parte span.on{background:#e8f0ff;color:#2f4090;font-weight:700}
+  .dfe-cod-erro{background:#fdeaea;color:#b42323;border-radius:10px;padding:7px 10px;font-size:12px;margin-top:10px}
+  .dfe-cod-b label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8890ab;margin:14px 0 5px}
+  .dfe-cod-b input{width:100%;box-sizing:border-box;font:inherit;font-size:20px;letter-spacing:.18em;text-align:center;padding:10px 12px;border:1.5px solid #d6dae8;border-radius:12px;outline:none}
+  .dfe-cod-b input:focus{border-color:#e8632b;box-shadow:0 0 0 4px rgba(232,99,43,.12)}
+  .dfe-cod-f{display:flex;gap:10px;align-items:center;padding:14px 20px 18px}
+  .dfe-cod-f .sp{flex:1}.dfe-cod-f .lk{background:none;border:none;color:#8890ab;font:inherit;font-size:12px;cursor:pointer;padding:0}
+  .dfe-cod-f .ok{background:linear-gradient(90deg,#e8632b,#ff9860);color:#fff;border:none;font-weight:700;border-radius:10px;padding:10px 22px;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
+  .dfe-cod-f .ok:disabled{opacity:.5;cursor:default}`;
 
   const tipos = () => [...document.querySelectorAll('#dlTipos .dl-tipo.on')].map((b) => b.dataset.tipo);
   const novos = () => tipos().filter((t) => t !== 'nfse');
@@ -139,7 +158,7 @@
       if (!alvo.some((m) => m.uf === 'RO')) aviso('Saídas: nenhuma empresa de Rondônia na seleção (o DFe-Download da SEFIN é só para RO).', true);
       else {
         for (const c of ms) {
-          aviso(`Saídas de ${compRot(c)}: a janela da SEFIN abre para cada empresa de RO. Quando pedir, digite o código da imagem.`);
+          aviso(`Saídas de ${compRot(c)}: quando a SEFIN pedir, o código da imagem aparece aqui para você digitar.`);
           const r = await window.fiscocont.dfe.saidas({ ids, competencia: c, tipos: sai() });
           if (r && r.error) { aviso(r.error, true); break; }
         }
@@ -183,6 +202,36 @@
     }, true);
   }
 
+
+  // Código da imagem da SEFIN: a página do DFe-Download fica escondida; a imagem vem para cá, a pessoa digita e o sistema envia.
+  function pedirCodigo(d) {
+    const velho = q('#dfeCodBg'); if (velho) velho.remove();
+    const partes = d.partes > 1 ? `<div class="dfe-cod-parte">${Array.from({ length: d.partes }, (_, i) => `<span class="${i + 1 === d.parte ? 'on' : ''}">Parte ${i + 1}${i + 1 < d.parte ? ' ✓' : ''}</span>`).join('')}</div>` : '';
+    const bg = document.createElement('div');
+    bg.className = 'dfe-cod-bg'; bg.id = 'dfeCodBg';
+    bg.innerHTML = `<div class="dfe-cod" role="dialog" aria-label="Código da imagem">
+      <div class="dfe-cod-h"><div><b>Digite o código da imagem</b><small>${e(d.empresa)} · ${e(d.doc)} Saídas · SEFIN-RO</small></div><button class="x" id="dfeCodX" title="Parar a busca das saídas">×</button></div>
+      <div class="dfe-cod-b">
+        <div class="dfe-cod-img"><img alt="Código de verificação" src="${e(d.img)}"></div>
+        ${partes}
+        ${d.erro ? '<div class="dfe-cod-erro">A SEFIN não aceitou o código anterior. Digite o desta nova imagem.</div>' : ''}
+        <label for="dfeCodIn">Código</label>
+        <input id="dfeCodIn" autocomplete="off" spellcheck="false" maxlength="12">
+      </div>
+      <div class="dfe-cod-f"><button class="lk" id="dfeCodPula">Pular esta parte</button><span class="sp"></span><button class="ok" id="dfeCodOk" disabled>Enviar</button></div>
+    </div>`;
+    document.body.appendChild(bg);
+    const inp = q('#dfeCodIn'), ok = q('#dfeCodOk');
+    let foi = false;
+    const fecha = (texto) => { if (foi) return; foi = true; bg.remove(); return window.fiscocont.dfe.codigo(d.id, texto); };
+    inp.addEventListener('input', () => { ok.disabled = !inp.value.trim(); });
+    inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && inp.value.trim()) fecha(inp.value.trim()); if (ev.key === 'Escape') fecha(null); });
+    ok.addEventListener('click', () => fecha(inp.value.trim()));
+    q('#dfeCodPula').addEventListener('click', () => fecha(null));
+    q('#dfeCodX').addEventListener('click', () => { if (foi) return; foi = true; bg.remove(); window.fiscocont.dfe.cancelar(); });
+    setTimeout(() => inp.focus(), 50);
+  }
+
   function iniciar() {
     if (X.iniciado || !q('#dlTipos')) return;
     X.iniciado = true;
@@ -191,6 +240,7 @@
     q('#dlTipos').addEventListener('click', (ev) => { const t = ev.target.closest('.dl-tipo'); if (!t) return; t.classList.toggle('on'); ajustaTela(); });
     ['#dlDataInicial', '#dlDataFinal', '#dlSelectEmpresa'].forEach((s) => { const el = q(s); if (el) el.addEventListener('change', () => { X.todas = false; if (!q('#dfeCard').hidden) atualizar(); }); });
     ligarBotoes();
+    if (window.fiscocont && window.fiscocont.dfe && window.fiscocont.dfe.onCodigo) window.fiscocont.dfe.onCodigo(pedirCodigo);
     ajustaTela();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();

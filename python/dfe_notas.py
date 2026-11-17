@@ -303,18 +303,48 @@ def _xmls_do_zip(dados, profundidade=0):
             yield info.filename, conteudo
 
 
+def _itens_das_partes(caminhos):
+    """Lê os arquivos baixados de um pedido. Cada ARQUIVO/PARTE normalmente é um ZIP completo; se vier um ZIP
+    dividido em pedaços (nenhum abre sozinho), junta os pedaços na ordem e abre como um só."""
+    blocos = []
+    for c in caminhos:
+        with open(c, 'rb') as fh:
+            blocos.append((os.path.basename(c), fh.read()))
+    itens, soltos = [], []
+    for nome, dados in blocos:
+        lido = None
+        if zipfile.is_zipfile(io.BytesIO(dados)):
+            try:
+                lido = list(_xmls_do_zip(dados))
+            except Exception:           # pedaço de um ZIP dividido: o fim do ZIP está aqui, o começo em outra parte
+                lido = None
+        if lido is not None:
+            itens.extend(lido)
+        elif dados.lstrip()[:1] == b'<':
+            itens.append((nome, dados))
+        else:
+            soltos.append(dados)
+    if soltos:
+        junto = b''.join(soltos)
+        if junto[:4] == b'PK\x07\x08':            # assinatura de ZIP dividido
+            junto = junto[4:]
+        try:
+            itens.extend(_xmls_do_zip(junto))
+        except Exception:
+            if not itens:
+                return None
+        if not itens:
+            return None
+    return itens
+
+
 def extrair_saidas(zip_path, base, empresa, cnpj, tipo, competencia=''):
     sub = 'NFC-e Saídas' if tipo == 'nfce' else 'NF-e Saídas'
     cnpj = re.sub(r'\D', '', cnpj or '')
-    with open(zip_path, 'rb') as fh:
-        dados = fh.read()
-    if not zipfile.is_zipfile(io.BytesIO(dados)):
-        if dados.lstrip()[:1] == b'<':
-            itens = [(os.path.basename(zip_path), dados)]
-        else:
-            return {'erro': 'O arquivo baixado da SEFIN não é um ZIP nem um XML.'}
-    else:
-        itens = list(_xmls_do_zip(dados))
+    caminhos = zip_path if isinstance(zip_path, (list, tuple)) else [zip_path]
+    itens = _itens_das_partes(caminhos)
+    if itens is None:
+        return {'erro': 'O arquivo baixado da SEFIN não é um ZIP nem um XML.'}
     notas, canc, outros, outras_emp = {}, set(), 0, 0
     eventos = []
     for nome, conteudo in itens:
@@ -359,7 +389,8 @@ def main_cli(argv):
     saida = opt('--json')
     try:
         if argv and argv[0] == 'extrair':
-            r = extrair_saidas(opt('--zip'), opt('--pasta'), opt('--empresa', ''), opt('--cnpj', ''), opt('--tipo', 'nfe'), opt('--competencia', ''))
+            zips = [argv[i + 1] for i, a in enumerate(argv[:-1]) if a == '--zip']
+            r = extrair_saidas(zips, opt('--pasta'), opt('--empresa', ''), opt('--cnpj', ''), opt('--tipo', 'nfe'), opt('--competencia', ''))
         else:
             ent = opt('--entrada')
             with open(ent, encoding='utf-8') as fh:

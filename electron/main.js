@@ -1687,6 +1687,8 @@ ipcMain.handle('dfe:saidas', (_evt, { ids, competencia, tipos }) => _mod('fiscal
   if (!alvo.length) throw new Error('Nenhuma empresa de Rondônia na seleção: as saídas pelo DFe-Download são só para empresas de RO.');
   return dfeSefin.baixar(alvo, competencia, tipos && tipos.length ? tipos : ['nfe', 'nfce']);
 }));
+ipcMain.handle('dfe:captcha', (_evt, { id, texto } = {}) => _mod('fiscal-downloads')(async () => dfeSefin.respostaCodigo(id, texto)));
+ipcMain.handle('dfe:cancelar', () => _mod('fiscal-downloads')(async () => dfeSefin.cancelar()));
 ipcMain.handle('dfe:abrir', (_evt, caminho) => _mod('fiscal-downloads')(async () => {
   if (!caminho || !fs.existsSync(caminho)) throw new Error('Pasta não encontrada.');
   await shell.openPath(caminho);
