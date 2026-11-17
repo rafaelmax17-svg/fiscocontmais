@@ -203,7 +203,7 @@ HTML = r'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>
 .lg .br{grid-column:2/4;height:7px;background:#eef0f6;border-radius:8px;overflow:hidden}.lg .br em{display:block;height:100%;width:0;border-radius:8px}
 .lg.apaga,.arco.apaga{opacity:.28}.arco{cursor:pointer;transition:opacity .25s}
 #dn text{font-family:"Segoe UI",Inter,Arial,sans-serif}
-.sr{margin-bottom:12px}.sr .l{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px}.sr .l span{color:#5a6785}.sr .t{display:flex;height:16px;border-radius:999px;overflow:hidden;background:#eef0f6}.sr .t div{height:100%;width:0;transition:width 1s cubic-bezier(.2,.8,.2,1)}
+.srg{display:grid;grid-template-columns:minmax(120px,auto) 1fr 66px;gap:16px 14px;align-items:center}.srl{display:flex;flex-direction:column;gap:3px;font-size:13px;font-weight:700}.srl small{font-weight:500;color:#5a6785;font-size:11.5px}.md{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.03em;border-radius:6px;padding:2px 6px;color:#fff;margin-right:5px;background:#64748b}.sb{display:flex;gap:4px;height:34px}.sb i{display:flex;align-items:center;justify-content:flex-end;padding-right:9px;color:#fff;font-style:normal;font-weight:800;font-size:12.5px;border-radius:9px;overflow:hidden;white-space:nowrap;height:100%;width:0;min-width:0;cursor:pointer;transition:opacity .2s;font-variant-numeric:tabular-nums}.sb i.apaga{opacity:.28}.spc{text-align:right;font-size:18px;font-weight:800;font-variant-numeric:tabular-nums}.spc small{display:block;font-size:10.5px;color:#5a6785;font-weight:600}.slg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:#475569;margin-top:14px}.slg span{display:flex;align-items:center;gap:5px}.slg i{width:9px;height:9px;border-radius:3px}
 .tw{background:#fff;border:1px solid #e8ebf3;border-radius:12px;overflow:hidden;animation:sobe .55s both}.tb{display:flex;gap:7px;align-items:center;padding:10px 12px;border-bottom:1px solid #eef0f6;flex-wrap:wrap}
 .f{border:1px solid #d8dcea;border-radius:999px;padding:5px 11px;font-size:11.5px;font-weight:600;color:#475569;cursor:pointer;user-select:none}.f.on{background:#1f2a5a;color:#fff;border-color:#1f2a5a}
 .q{margin-left:auto;border:1px solid #d8dcea;border-radius:9px;padding:7px 10px;width:240px;font-size:12px;outline:0}
@@ -212,7 +212,7 @@ td{padding:8px 10px;border-bottom:1px solid #f0f2f7;vertical-align:top}.mono{fon
 .ob{color:#475569;max-width:430px}.mais{padding:10px;text-align:center;color:#5a6785;font-size:12px}
 .src{font-size:11.5px;color:#5a6785;margin:-4px 0 12px;line-height:1.5}
 @keyframes sobe{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-@media (prefers-reduced-motion:reduce){.kp div,.c,.tw{animation:none}.sr .t div{transition:none}}
+@media (prefers-reduced-motion:reduce){.kp div,.c,.tw{animation:none}}
 </style></head><body>
 <div class="src" id="src"></div>
 <div class="kp" id="kp"></div>
@@ -262,8 +262,22 @@ function quadro(t){
 }
 const reduz=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 if(reduz){quadro(9);}else{const t0=performance.now();const passo=now=>{const t=(now-t0)/1000;quadro(t);if(t<2.4)requestAnimationFrame(passo);else quadro(9);};requestAnimationFrame(passo);}
-$('#series').innerHTML=D.por_serie.map(s=>`<div class="sr"><div class="l"><b>${e(s.nome)}</b><span>${n(s.total)} número(s)${s.sit.portal?` · ${n(s.sit.portal)} inutilizado(s) no portal`:''}</span></div><div class="t">${Object.keys(S).filter(k=>s.sit[k]).map(k=>`<div data-w="${100*s.sit[k]/s.total}" style="background:${S[k][1]}" title="${e(S[k][0])}: ${n(s.sit[k])}"></div>`).join('')}</div></div>`).join('');
-requestAnimationFrame(()=>requestAnimationFrame(()=>{document.querySelectorAll('.sr .t div').forEach(d=>d.style.width=d.dataset.w+'%');}));
+// Por modelo e série (modelo B): barra segmentada com o número dentro e o % já explicado
+const SEMX=['sem_registro','pendente','sem_portal'],MC={'55':'#2f4090','65':'#7c3aed','57':'#0e7490'};
+$('#series').innerHTML='<div class="srg">'+D.por_serie.map((s,i)=>{const ks=Object.keys(S).filter(k=>s.sit[k]);const m=ks.length;
+ const ex=Math.round(100*(s.total-SEMX.reduce((a,k)=>a+(s.sit[k]||0),0))/s.total);
+ return `<div class="srl"><span><span class="md" style="background:${MC[s.modelo]||'#64748b'}">${e(MN[s.modelo]||s.modelo||'?')}</span>série ${e(s.serie)}</span><small>${n(s.total)} número(s)</small></div>`
+ +`<div class="sb">${ks.map(k=>{const p=100*s.sit[k]/s.total;return`<i data-k="${k}" data-v="${s.sit[k]}" data-w="calc(${p}% - ${(4*(m-1)*p/100).toFixed(2)}px)" data-p="${p}" style="background:linear-gradient(90deg,${claro(S[k][1],.32)},${S[k][1]})" title="${e(S[k][0])}: ${n(s.sit[k])}"></i>`}).join('')}</div>`
+ +`<div class="spc" style="color:${ex===100?'#109868':'#b45309'}" data-ex="${ex}">0%<small>explicado</small></div>`}).join('')+'</div>'
+ +'<div class="slg">'+Object.keys(S).filter(k=>sit[k]).map(k=>`<span><i style="background:${S[k][1]}"></i>${e(S[k][0])}</span>`).join('')+'</div>';
+const segs=[...document.querySelectorAll('.sb i')],pcs=[...document.querySelectorAll('.spc')];
+segs.forEach(x=>{x.style.width=x.dataset.w;x.dataset.px=x.getBoundingClientRect().width;x.style.width='0';x.style.minWidth='0';});
+function quadroS(t){
+ document.querySelectorAll('.sb').forEach((b,i)=>{const k=eo((t-0.25-i*0.15)/1.3);
+  b.querySelectorAll('i').forEach(x=>{x.style.width=`calc((${x.dataset.w}) * ${k.toFixed(4)})`;x.style.minWidth=k>0.05?'6px':'0';x.textContent=(+x.dataset.px>=34&&k>0.45)?n(Math.round(+x.dataset.v*k)):'';});
+  const pc=pcs[i];pc.firstChild.textContent=Math.round(+pc.dataset.ex*k)+'%';});
+}
+if(reduz){quadroS(9);}else{const t1=performance.now();const passoS=now=>{const t=(now-t1)/1000;quadroS(t);if(t<2.4)requestAnimationFrame(passoS);else quadroS(9);};requestAnimationFrame(passoS);}
 let filtro='',busca='';
 const FIL=[['','Todos'],...Object.keys(S).filter(k=>sit[k]).map(k=>[k,S[k][0]])];
 $('#fil').innerHTML=FIL.map(([k,t])=>`<span class="f${k===''?' on':''}" data-k="${k}">${e(t)} (${k?n(D.faixas.filter(f=>f.sit===k).length):n(D.faixas.length)})</span>`).join('')+'<input class="q" id="q" placeholder="Buscar número, série ou protocolo">';
@@ -272,9 +286,9 @@ function desenha(){let L=D.faixas.filter(f=>(!filtro||f.sit===filtro)&&(!busca||
  <td><span class="pl" style="background:${S[f.sit][1]}">${e(S[f.sit][0])}</span></td><td class="mono" style="font-size:11.5px">${e(f.prot)||'—'}</td><td>${e(f.data)||'—'}</td><td class="ob">${e(f.obs)||'—'}</td></tr>`).join('')
  +(L.length>1500?`<tr><td colspan="7" class="mais">Mostrando 1.500 de ${n(L.length)} — a lista completa está no Excel.</td></tr>`:'')+(L.length?'':'<tr><td colspan="7" class="mais">Nada com esse filtro.</td></tr>');
  document.querySelectorAll('.f').forEach(x=>x.classList.toggle('on',x.dataset.k===filtro));
- document.querySelectorAll('.lg,.arco').forEach(x=>x.classList.toggle('apaga',!!filtro&&x.dataset.k!==filtro));}
+ document.querySelectorAll('.lg,.arco,.sb i').forEach(x=>x.classList.toggle('apaga',!!filtro&&x.dataset.k!==filtro));}
 document.querySelectorAll('.f').forEach(x=>x.onclick=()=>{filtro=x.dataset.k;desenha();});
-document.querySelectorAll('.lg,.arco').forEach(x=>x.addEventListener('click',()=>{filtro=filtro===x.dataset.k?'':x.dataset.k;desenha();}));
+document.querySelectorAll('.lg,.arco,.sb i').forEach(x=>x.addEventListener('click',()=>{filtro=filtro===x.dataset.k?'':x.dataset.k;desenha();}));
 $('#q').oninput=ev=>{busca=ev.target.value.trim().toLowerCase();desenha();};desenha();
 </script></body></html>'''
 
