@@ -44,6 +44,8 @@
   .dfe-cod-parte{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 4px;font-size:11.5px;color:#475569}
   .dfe-cod-parte span{background:#eef0f6;border-radius:12px;padding:2px 9px}.dfe-cod-parte span.on{background:#e8f0ff;color:#2f4090;font-weight:700}
   .dfe-cod-erro{background:#fdeaea;color:#b42323;border-radius:10px;padding:7px 10px;font-size:12px;margin-top:10px}
+  .dfe-cod-erro b{font-weight:700}
+  .dfe-cod-av{background:#fff4dd;color:#8a5a00;border-radius:10px;padding:7px 10px;font-size:12px;margin-top:10px}
   .dfe-cod-b label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8890ab;margin:14px 0 5px}
   .dfe-cod-b input{width:100%;box-sizing:border-box;font:inherit;font-size:20px;letter-spacing:.18em;text-align:center;padding:10px 12px;border:1.5px solid #d6dae8;border-radius:12px;outline:none}
   .dfe-cod-b input:focus{border-color:#e8632b;box-shadow:0 0 0 4px rgba(232,99,43,.12)}
@@ -214,7 +216,8 @@
       <div class="dfe-cod-b">
         <div class="dfe-cod-img"><img alt="Código de verificação" src="${e(d.img)}"></div>
         ${partes}
-        ${d.erro ? '<div class="dfe-cod-erro">A SEFIN não aceitou o código anterior. Digite o desta nova imagem.</div>' : ''}
+        ${d.msgSefin ? `<div class="dfe-cod-erro"><b>Mensagem da SEFIN:</b> ${e(d.msgSefin)}</div>` : ''}
+        ${d.aviso ? `<div class="dfe-cod-av">${e(d.aviso)}</div>` : ''}
         <label for="dfeCodIn">Código</label>
         <input id="dfeCodIn" autocomplete="off" spellcheck="false" maxlength="12">
       </div>

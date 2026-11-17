@@ -70,7 +70,8 @@ function _janela(emp) {
   if (_win && !_win.isDestroyed()) return _win;
   // a página da SEFIN fica escondida: o código da imagem aparece numa janela do próprio FiscoCont+ (pedido do Rafael, 17/11)
   _win = new BrowserWindow({ show: false, width: 1250, height: 880, title: `FiscoCont+ · DFe-Download SEFIN-RO · ${emp.nome}`, autoHideMenuBar: true,
-    webPreferences: { partition: PARTICAO(emp.cnpj), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+    webPreferences: { partition: PARTICAO(emp.cnpj), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false } });
+  _ligaImagens(_win.webContents);
   // achado real (17/11): depois do código, o site abre o arquivo numa janela nova — antes era bloqueada e o download nunca vinha.
   // Agora a janela nova abre escondida (mesma sessão), o download é capturado e ela fecha sozinha.
   _win.webContents.setWindowOpenHandler(({ url }) => {
@@ -106,6 +107,35 @@ function _janela(emp) {
     });
   }
   return _win;
+}
+// guarda a referência das imagens que a página recebeu: se a imagem do código não puder ser copiada da página,
+// lê exatamente os bytes que a SEFIN mandou (sem pedir outra imagem, que trocaria o código)
+const _imgs = new Map();
+function _ligaImagens(wc) {
+  _imgs.clear();
+  try {
+    wc.debugger.attach('1.3');
+    wc.debugger.on('message', (_e, metodo, p) => {
+      if (metodo === 'Network.responseReceived' && p && p.response && (p.type === 'Image' || /^image\//.test(p.response.mimeType || ''))) {
+        _imgs.set(p.response.url, p.requestId);
+        if (_imgs.size > 80) _imgs.delete(_imgs.keys().next().value);
+      }
+    });
+    wc.debugger.sendCommand('Network.enable').catch(() => {});
+  } catch (e) { _log(`leitor de imagens indisponível: ${e.message || e}`); }
+}
+async function _bytesImagem(src) {
+  try {
+    if (!src || !_vivo()) return '';
+    let id = _imgs.get(src);
+    if (!id) { const base = src.split('#')[0]; for (const [u, r] of _imgs) if (u.split('#')[0] === base) id = r; }
+    if (!id) return '';
+    const r = await _win.webContents.debugger.sendCommand('Network.getResponseBody', { requestId: id });
+    if (!r || !r.body) return '';
+    const b64 = r.base64Encoded ? r.body : Buffer.from(r.body, 'binary').toString('base64');
+    const tipo = /\.jpe?g/i.test(src) ? 'image/jpeg' : /\.gif/i.test(src) ? 'image/gif' : 'image/png';
+    return `data:${tipo};base64,${b64}`;
+  } catch (_) { return ''; }
 }
 function _mostra(sim) { try { if (_vivo()) { if (sim) { _win.show(); _win.focus(); } else _win.hide(); } } catch (_) {} }
 function _vivo() { return _win && !_win.isDestroyed(); }
@@ -196,35 +226,77 @@ const JS_AVISO = (txt) => `(() => {
 
 // Código da imagem (captcha) da SEFIN: acha o quadro "Resolva o texto de verificação", a imagem, a resposta e o ENVIAR.
 // O sistema NÃO resolve o código: mostra a imagem para a pessoa digitar e só preenche o que ela digitou.
-const JS_CAPTCHA = `(() => { ${JS_BASE}
-  const caixas = [...document.querySelectorAll('div, form, section, mat-dialog-container, .modal, [role=dialog]')].filter(vis)
-    .filter((d) => /RESOLVA O TEXTO|TEXTO DE VERIFICACAO|CAPTCHA/.test(norm(d.innerText)) && d.querySelector('img, canvas'));
-  const box = caixas.sort((a, b) => a.innerText.length - b.innerText.length)[0];
-  if (!box) return { achou: false };
-  const el = [...box.querySelectorAll('img, canvas')].filter(vis).sort((a, b) => (b.offsetWidth * b.offsetHeight) - (a.offsetWidth * a.offsetHeight))[0];
-  let img = '';
+// O quadro é o menor bloco que tem o título, a imagem, o campo e o botão ENVIAR (no site real o botão pode ficar
+// fora do bloco do campo, por isso sobe até achar os quatro).
+const JS_CAP_BASE = `${JS_BASE}
+  const ehEnviar = (x) => /^ENVIAR$/.test(norm(x.innerText || x.value));
+  const quadro = () => {
+    const tit = [...document.querySelectorAll('body *')].filter(vis).filter((d) => d.children.length < 4 && /RESOLVA O TEXTO|TEXTO DE VERIFICACAO/.test(norm(d.innerText)) && norm(d.innerText).length < 80);
+    for (const t of tit) {
+      let el = t;
+      for (let k = 0; k < 12 && el && el !== document.body; k++, el = el.parentElement) {
+        const img = [...el.querySelectorAll('img, canvas')].filter(vis);
+        const inp = [...el.querySelectorAll('input, textarea')].filter(vis).filter((i) => !/hidden|checkbox|radio|submit|button/.test(i.type));
+        const bt = [...el.querySelectorAll('button, input[type=submit], input[type=button], a, [role=button]')].filter(vis).filter(ehEnviar);
+        if (img.length && inp.length && bt.length) return { box: el, img: img.sort((a, b) => (b.offsetWidth * b.offsetHeight) - (a.offsetWidth * a.offsetHeight))[0], inp: inp[0], bt: bt[0] };
+      }
+    }
+    return null;
+  };
+  // mensagem que a SEFIN mostra (no quadro ou em aviso solto na página), do jeito que está escrita
+  const FIXO = /^(RESOLVA O TEXTO DE VERIFICACAO|TEXTO DE VERIFICACAO|RESPOSTA\\*?:?|FECHAR|ENVIAR|CANCELAR|X|×|CLOSE)$/;
+  const mensagem = (q) => {
+    const linhas = [];
+    if (q) {                                                   // textos do quadro, fora botões, título, rótulos e campo
+      const w = document.createTreeWalker(q.box, NodeFilter.SHOW_TEXT);
+      for (let nd = w.nextNode(); nd; nd = w.nextNode()) {
+        const pai = nd.parentElement, t = String(nd.textContent || '').replace(/\\s+/g, ' ').trim();
+        if (!t || !pai || !vis(pai) || pai.closest('button, a, label, h1, h2, h3, h4, script, style, [role=button], .mat-dialog-title, mat-label, option')) continue;
+        if (FIXO.test(norm(t)) || t.length > 300 || linhas.includes(t)) continue;
+        linhas.push(t);
+      }
+    }
+    [...document.querySelectorAll('[role=alert], .alert, .toast, .toast-message, .snackbar, mat-snack-bar-container, .mat-snack-bar-container, .swal2-popup, .notification, .error, .erro, .invalid-feedback, .mat-error, mat-error, .text-danger')]
+      .filter(vis).filter((x) => !q || !q.box.contains(x)).forEach((x) => { const t = String(x.innerText || '').trim(); if (t && t.length < 300 && !linhas.includes(t)) linhas.push(t); });
+    return linhas.join(' · ');
+  };`;
+const JS_CAPTCHA = `(() => { ${JS_CAP_BASE}
+  const q = quadro();
+  if (!q) return { achou: false, msg: mensagem(null) };
+  const el = q.img;
+  if (el.tagName === 'IMG' && !(el.complete && el.naturalWidth)) return { achou: true, pronto: false };
+  let img = '', tranca = false;
   try {
     if (el.tagName === 'CANVAS') img = el.toDataURL('image/png');
-    else if (/^data:/.test(el.src)) img = el.src;
-    else { const c = document.createElement('canvas'); c.width = el.naturalWidth || el.width; c.height = el.naturalHeight || el.height; c.getContext('2d').drawImage(el, 0, 0); img = c.toDataURL('image/png'); }
-  } catch (_) { img = ''; }
-  const r = el.getBoundingClientRect();
-  const erro = /INVALID|INCORRET|ERRAD|NAO CONFERE/.test(norm(box.innerText));
-  return { achou: true, img, rect: { x: Math.max(0, Math.floor(r.x)), y: Math.max(0, Math.floor(r.y)), width: Math.ceil(r.width), height: Math.ceil(r.height) }, erro };
+    else if (/^data:image/.test(el.src)) img = el.src;
+    else { const c = document.createElement('canvas'); c.width = el.naturalWidth; c.height = el.naturalHeight; c.getContext('2d').drawImage(el, 0, 0); img = c.toDataURL('image/png'); }
+  } catch (_) { img = ''; tranca = true; }
+  const src = el.tagName === 'IMG' ? el.currentSrc || el.src : '';
+  return { achou: true, pronto: true, img, tranca, src: /^data:/.test(src) ? '' : src, chave: (src.length > 300 ? src.slice(-120) : src) + '|' + img.length + '|' + img.slice(-60), msg: mensagem(q) };
 })()`;
-const JS_CAPTCHA_ENVIA = (texto) => `(() => { ${JS_BASE}
-  const caixas = [...document.querySelectorAll('div, form, section, mat-dialog-container, .modal, [role=dialog]')].filter(vis)
-    .filter((d) => /RESOLVA O TEXTO|TEXTO DE VERIFICACAO|CAPTCHA/.test(norm(d.innerText)) && d.querySelector('input'));
-  const box = caixas.sort((a, b) => a.innerText.length - b.innerText.length)[0];
-  if (!box) return false;
-  const inp = [...box.querySelectorAll('input')].filter(vis).find((i) => !/hidden|checkbox|radio|submit|button/.test(i.type));
-  if (!inp) return false;
-  const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value'); d.set.call(inp, ${JSON.stringify(String(texto || ''))});
-  ['input', 'change', 'keyup', 'blur'].forEach((t) => inp.dispatchEvent(new Event(t, { bubbles: true })));
-  const b = [...box.querySelectorAll('button, input[type=submit], a')].filter(vis).find((x) => /^ENVIAR$/.test(norm(x.innerText || x.value)));
-  if (!b) return false;
-  setTimeout(() => b.click(), 150);
-  return true;
+// como é o quadro (para o "Passo a passo"): nomes de campos e botões, sem a imagem
+const JS_CAPTCHA_RAIO_X = `(() => { ${JS_CAP_BASE}
+  const q = quadro(); if (!q) return 'quadro do código não encontrado';
+  const d = (x) => x ? x.tagName.toLowerCase() + (x.id ? '#' + x.id : '') + (x.name ? '[name=' + x.name + ']' : '') + (typeof x.className === 'string' && x.className ? '.' + x.className.trim().split(/\\s+/).slice(0, 3).join('.') : '') : '-';
+  return 'quadro ' + d(q.box) + ' · imagem ' + d(q.img) + ' ' + String(q.img.src || '').split('?')[0].slice(0, 80) + ' · campo ' + d(q.inp) + ' maxlength=' + (q.inp.maxLength || '') + ' · botão ' + d(q.bt) + (q.bt.disabled ? ' (desabilitado)' : '') + ' · form=' + !!q.inp.form;
+})()`;
+const JS_CAPTCHA_ENVIA = (texto) => `(async () => { ${JS_CAP_BASE}
+  const q = quadro();
+  if (!q) return { ok: false, motivo: 'quadro do código sumiu' };
+  const inp = q.inp, v = ${JSON.stringify(String(texto || ''))};
+  inp.focus();
+  const proto = inp.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(proto, 'value').set.call(inp, v);
+  inp.dispatchEvent(new InputEvent('input', { bubbles: true, data: v, inputType: 'insertText' }));
+  inp.dispatchEvent(new Event('change', { bubbles: true }));
+  inp.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: v.slice(-1) }));
+  inp.dispatchEvent(new Event('blur', { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 350));                 // o site habilita o ENVIAR depois de ler o campo
+  const b = quadro() ? quadro().bt : q.bt;
+  if (inp.value !== v) return { ok: false, motivo: 'o campo não ficou com o código digitado' };
+  if (b.disabled) return { ok: false, motivo: 'o botão ENVIAR continuou desabilitado' };
+  b.click();
+  return { ok: true };
 })()`;
 const JS_LINK_BAIXAR = `(() => { ${JS_BASE}
   const b = [...document.querySelectorAll('a, button')].filter(vis).find((x) => /^(BAIXAR|DOWNLOAD|CLIQUE AQUI)/.test(norm(x.innerText)) && !/DETALHES|COMPROVANTE/.test(norm(x.innerText)));
@@ -356,63 +428,80 @@ function respostaCodigo(id, texto) {
   return { ok: true };
 }
 async function _imagemCodigo(c) {
-  if (c.img && c.img.length > 200) return c.img;
-  try {                                                     // imagem de outra origem: recorta da própria página escondida
-    const shot = await _win.webContents.capturePage(c.rect);
-    if (!shot.isEmpty()) return shot.toDataURL();
-  } catch (_) {}
-  return '';
+  if (c.img && c.img.length > 200) return { img: c.img, como: 'cópia da página' };
+  const b = await _bytesImagem(c.src);
+  if (b) return { img: b, como: 'arquivo recebido da SEFIN' };
+  return { img: '', como: c.tranca ? 'imagem protegida' : 'sem imagem' };
+}
+// espera o quadro do código ficar pronto (imagem carregada); devolve null se não aparecer em `ms`
+async function _esperaQuadro(espera, ms) {
+  const fim = Date.now() + ms;
+  while (Date.now() < fim) {
+    const r = await Promise.race([espera.then((x) => ({ fim: x })), _sleep(500).then(() => null)]);
+    if (r && r.fim) return { fim: r.fim };
+    const c = await _js(JS_CAPTCHA).catch(() => null);
+    if (c && c.achou && c.pronto) return { c };
+  }
+  return null;
 }
 
 // baixa UM arquivo (parte) do pedido: clica, mostra o código no FiscoCont+, envia o que a pessoa digitou, espera o download
 async function _baixarParte(emp, tipo, achado, a, n, tot) {
   const k = achado.det.arquivos.findIndex((x) => x.texto === a.texto);
-  let espera = _esperaDownload(4 * 60 * 1000);
+  const espera = _esperaDownload(5 * 60 * 1000);
   await _js(JS_CLICA_ARQ(k));
+  let msgSefin = '', aviso = '', raioX = false;
   for (let tent = 1; tent <= 6; tent++) {
-    // até 10 s para aparecer o código (ou o download começar direto)
-    let c = null;
-    for (let t = 0; t < 20 && !c; t++) {
-      const r = await Promise.race([espera.then((x) => ({ fim: x })), _sleep(500).then(() => null)]);
-      if (r && r.fim) return r.fim;
-      const cc = await _js(JS_CAPTCHA).catch(() => null);
-      if (cc && cc.achou) c = cc;
-    }
-    if (!c) {
+    const q = await _esperaQuadro(espera, 12000);
+    if (q && q.fim) return q.fim;
+    if (!q) {
       if (await _js(JS_LINK_BAIXAR).catch(() => false)) { _log('clicou no link de baixar que apareceu'); const r = await Promise.race([espera, _sleep(30000).then(() => null)]); if (r) return r; }
+      const m = await _js(JS_CAPTCHA).catch(() => null);
+      if (m && m.msg) _log(`mensagem da SEFIN: ${m.msg}`);
       await _print();
       _log('o código da imagem não apareceu e o download não começou');
-      return { state: 'sem_codigo' };
+      return { state: 'sem_codigo', msg: m && m.msg };
     }
-    const img = await _imagemCodigo(c);
-    if (!img) {                                             // não deu para mostrar a imagem aqui: mostra a página da SEFIN
-      _log('não consegui copiar a imagem do código: mostrando a página da SEFIN');
+    const c = q.c;
+    if (!raioX) { raioX = true; _log(`código: ${await _js(JS_CAPTCHA_RAIO_X).catch((e) => String(e.message || e))}`); }
+    if (c.msg && tent === 1) msgSefin = c.msg;
+    const im = await _imagemCodigo(c);
+    _log(`imagem do código: ${im.como}`);
+    if (!im.img) {                                          // não deu para trazer a imagem: mostra a página da SEFIN
+      _log('não consegui trazer a imagem do código: mostrando a página da SEFIN');
       _mostra(true);
       await _js(JS_AVISO(`digite o código da imagem e clique em ENVIAR (${NOME[tipo]}, parte ${n} de ${tot}).`)).catch(() => {});
       _prog(`${emp.nome} · ${NOME[tipo]}: digite o código na janela da SEFIN (parte ${n} de ${tot})…`, { espera: true });
       const r = await espera; _mostra(false); return r;
     }
     _prog(`${emp.nome} · ${NOME[tipo]}: digite o código da imagem (parte ${n} de ${tot})…`, { espera: true });
-    const texto = await _pedirCodigo({ empresa: emp.nome, doc: NOME[tipo], parte: n, partes: tot, img, erro: tent > 1 || c.erro });
+    const texto = await _pedirCodigo({ empresa: emp.nome, doc: NOME[tipo], parte: n, partes: tot, img: im.img, msgSefin, aviso });
     if (texto == null) return { state: 'cancelado' };
-    await _js(JS_CAPTCHA_ENVIA(texto)).catch(() => false);
-    _log(`código enviado (tentativa ${tent})`);
+    // confere se o código pedido ainda é o mesmo da imagem mostrada (se a SEFIN trocou, mostra a nova)
+    const agora = await _js(JS_CAPTCHA).catch(() => null);
+    if (agora && agora.achou && agora.pronto && agora.chave !== c.chave) { _log('a SEFIN trocou a imagem antes do envio: mostra a nova'); msgSefin = agora.msg || ''; aviso = 'A imagem foi trocada pela SEFIN. Digite o código desta nova imagem.'; continue; }
+    const env = await _js(JS_CAPTCHA_ENVIA(texto)).catch((e) => ({ ok: false, motivo: String(e.message || e) }));
+    _log(`código enviado (tentativa ${tent}): ${env.ok ? 'ENVIAR clicado' : 'não enviado: ' + env.motivo}`);
+    if (!env.ok) { await _print(); msgSefin = ''; aviso = `O FiscoCont+ não conseguiu enviar o código (${env.motivo}). Digite de novo.`; continue; }
     _prog(`${emp.nome} · ${NOME[tipo]}: baixando a parte ${n} de ${tot}…`);
-    // espera o download; se o código voltar (errado), pede de novo
-    for (let t = 0; t < 60; t++) {
+    // depois do ENVIAR: ou vem o arquivo, ou a SEFIN mostra uma mensagem/imagem nova
+    msgSefin = ''; aviso = '';
+    let volta = false;
+    for (let t = 0; t < 90 && !volta; t++) {
       const r = await Promise.race([espera.then((x) => ({ fim: x })), _sleep(1000).then(() => null)]);
       if (r && r.fim) return r.fim;
-      if (t >= 3) {
-        const cc = await _js(JS_CAPTCHA).catch(() => null);
-        const outra = cc && cc.achou && cc.img && c.img && cc.img !== c.img;     // imagem nova = código recusado
-        if (cc && cc.achou && (cc.erro || outra || t >= 25)) { _log('o código voltou: pede de novo'); break; }
-        if (t === 12 && !(cc && cc.achou) && await _js(JS_LINK_BAIXAR).catch(() => false)) _log('clicou no link de baixar que apareceu');
-      }
-      if (t === 59) { await _print(); return { state: 'tempo' }; }
+      if (t < 2) continue;
+      const cc = await _js(JS_CAPTCHA).catch(() => null);
+      if (!cc) continue;
+      if (cc.msg && cc.msg !== c.msg) { msgSefin = cc.msg; _log(`mensagem da SEFIN: ${cc.msg}`); }
+      if (cc.achou && cc.pronto && (cc.chave !== c.chave || (cc.msg && cc.msg !== c.msg))) { volta = true; break; }
+      if (cc.achou && t === 25) { _log('o quadro do código continua aberto, sem mensagem e sem arquivo'); await _print(); aviso = 'A SEFIN não respondeu ao código. Digite de novo.'; volta = true; break; }
+      if (!cc.achou && t === 15 && await _js(JS_LINK_BAIXAR).catch(() => false)) _log('clicou no link de baixar que apareceu');
     }
-    if (_espera === null) espera = _esperaDownload(4 * 60 * 1000);
+    if (!volta) { await _print(); _log('o arquivo não chegou em 90 s depois do código'); return { state: 'tempo', msg: msgSefin }; }
+    _log('o código voltou: pede de novo');
   }
-  return { state: 'tempo' };
+  return { state: 'tempo', msg: msgSefin };
 }
 
 async function _baixar(emp, tipo, comp, achado, est, pasta) {
@@ -428,7 +517,7 @@ async function _baixar(emp, tipo, comp, achado, est, pasta) {
     if (n > 0) { await _vai(achado.det.url); await _sleep(1500); }
     const r = await _baixarParte(emp, tipo, achado, a, n + 1, arqs.length);
     if (r.state !== 'completed') {
-      const msg = { cancelado: 'o código não foi digitado (cancelado).', fechada: 'a busca foi interrompida.', tempo: 'o arquivo não chegou depois do código. Veja o "Passo a passo".',
+      const msg = r.msg ? `a SEFIN respondeu: ${r.msg}` : { cancelado: 'o código não foi digitado (cancelado).', fechada: 'a busca foi interrompida.', tempo: 'o arquivo não chegou depois do código. Veja o "Passo a passo".',
         sem_codigo: 'o site não mostrou o código nem o arquivo. Veja o "Passo a passo".' }[r.state] || `download ${r.state}`;
       if (baixados.length) break;                           // extrai o que já veio; o resto fica para a próxima
       return { status: r.state === 'cancelado' ? 'aguardando_codigo' : 'erro', msg };
