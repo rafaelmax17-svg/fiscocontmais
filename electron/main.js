@@ -1301,6 +1301,13 @@ async function _analisarNfseEmpresa(empresa, dataInicial, dataFinal, opcoes = {}
   let pastaBase;
   try { pastaBase = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase; } catch (_) {}
   if (!pastaBase) return { error: 'Escolha a pasta onde os documentos são salvos primeiro.' };
+  const pastaGeral = pastaBase;
+  pastaBase = _nfseBase(empresa, pastaGeral);
+  if (pastaBase !== pastaGeral) {
+    await _hidratarCliente({ nome: empresa.razaoSocial, cnpj: empresa.cnpj }, pastaBase, _mesesEntre(dataInicial, dataFinal), empresa.razaoSocial);
+    // baixado antes da pasta do cliente (ficou em Notas Automáticas): o painel continua lendo de lá
+    if (!_mesesEntre(dataInicial, dataFinal).some((c) => fs.existsSync(path.join(pastaBase, `${c.slice(5, 7)}-${c.slice(0, 4)}`, empresa.razaoSocial)))) pastaBase = pastaGeral;
+  }
   const pastaEmpresa = path.join(pastaBase, empresa.razaoSocial);
   if (!_temPastaEmpresa(pastaBase, empresa.razaoSocial)) {
     // no lote, empresa sem nenhuma nota baixada não é erro: simplesmente não teve notas no período
@@ -1355,6 +1362,7 @@ async function _baixarNfseEmpresa(empresa, dataInicial, dataFinal, gerarPdf) {
   let pastaBase;
   try { pastaBase = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase; } catch (_) {}
   if (!pastaBase) return { error: 'Escolha a pasta onde salvar os documentos antes de baixar.', tipo: 'pulada' };
+  pastaBase = _nfseBase(empresa, pastaBase);      // empresa com pasta no drive: cópia de trabalho + zips na pasta do cliente
 
   const { senha, pfxPath } = cred;
   const jsonTmp = path.join(os.tmpdir(), `fc_nfse_${Date.now()}.json`);
@@ -1386,8 +1394,7 @@ async function _baixarNfseEmpresa(empresa, dataInicial, dataFinal, gerarPdf) {
     }
     if (!resultado.erro) {
       try {
-        const meses = [];
-        for (let d = new Date(`${dataInicial.slice(0, 7)}-01T12:00:00`); d <= new Date(`${dataFinal}T12:00:00`); d.setMonth(d.getMonth() + 1)) meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+        const meses = _mesesEntre(dataInicial, dataFinal);
         const pub = await _publicarCliente({ nome: empresa.razaoSocial, cnpj: empresa.cnpj }, pastaBase, meses, empresa.razaoSocial);
         resultado.pastaCliente = Object.values(pub.destinos)[0] || '';
         resultado.semPastaCliente = !!pub.semPasta;
@@ -1681,6 +1688,38 @@ async function _publicarCliente(e, base, meses, nomePasta, extras = []) {
   return { destinos, erros: r.erros || (r.erro ? [r.erro] : []) };
 }
 
+// o contrário: traz para a cópia de trabalho deste computador o que já está nos zips da pasta do cliente (baixado em
+// outro computador), antes do painel da NFS-e e do Relatório DF-e
+async function _hidratarCliente(e, base, meses, nomePasta) {
+  const cli = _cliDe(e);
+  if (!cli) return 0;
+  const lista = [];
+  for (const comp of new Set(meses || [])) {
+    if (!/^\d{4}-\d{2}$/.test(comp)) continue;
+    const [a, m] = comp.split('-');
+    const dCli = pastaCliente.pastaMes(cli.dir, a, m, false);
+    if (!dCli || !fs.existsSync(dCli)) continue;
+    for (const [sub, rot] of Object.entries(ROT_ZIP)) for (const k of ['XML', 'PDF']) {
+      const z = path.join(dCli, `${rot} ${m}${a} - ${k}.zip`);
+      if (fs.existsSync(z)) lista.push({ hidratar: z, destino: path.join(base, `${m}-${a}`, nomePasta, sub, k) });
+    }
+  }
+  if (!lista.length) return 0;
+  const tag = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const ent = path.join(os.tmpdir(), `fc_hid_${tag}.json`), out = path.join(os.tmpdir(), `fc_hid_out_${tag}.json`);
+  fs.writeFileSync(ent, JSON.stringify(lista));
+  try { await runFiscal(['publicar-zip', '--entrada', ent, '--json', out], out); } catch (_) { return 0; } finally { fs.unlink(ent, () => {}); }
+  try { const r = JSON.parse(fs.readFileSync(out, 'utf-8')); fs.unlink(out, () => {}); return (r.feitos || []).reduce((s2, x) => s2 + (x.novos || 0), 0); } catch (_) { return 0; }
+}
+function _mesesEntre(ini, fim) {
+  const out = [];
+  if (!/^\d{4}-\d{2}/.test(ini || '') || !/^\d{4}-\d{2}/.test(fim || '')) return out;
+  for (let d = new Date(`${ini.slice(0, 7)}-01T12:00:00`); d <= new Date(`${fim.slice(0, 10)}T12:00:00`) && out.length < 36; d.setMonth(d.getMonth() + 1)) out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  return out;
+}
+// NFS-e: empresa com pasta no drive usa a cópia de trabalho (os arquivos vão em zip para a pasta do cliente)
+function _nfseBase(empresa, pastaBase) { return _cliDe({ nome: empresa.razaoSocial, cnpj: empresa.cnpj }) ? _dfeTrabalho() : pastaBase; }
+
 // mesmo nome de pasta que o Python usa (nfe_chave._limpa_nome)
 function _dfeNomePasta(nome) { return String(nome || '').replace(/[\\/:*?"<>|]+/g, ' ').trim().replace(/\.+$/, '').replace(/\s+/g, ' ').slice(0, 120) || 'Empresa'; }
 ipcMain.handle('dfe:estado', (_evt, { competencia } = {}) => _mod('fiscal-downloads')(async () => {
@@ -1787,6 +1826,7 @@ ipcMain.handle('dfe:relatorio', (_evt, { ids, competencias, pdf } = {}) => _mod(
         const cli = base !== pasta ? _cliDe(e) : null;
         const dCli = cli ? pastaCliente.pastaMes(cli.dir, ra, rm, true) : null;
         const pub = dCli ? path.join(dCli, `Relatório DF-e ${rm}${ra}.html`) : '';
+        if (dCli) await _hidratarCliente(e, base, [c], _dfeNomePasta(e.nome));
         await runFiscal(['dfe-relatorio', '--pasta', base, '--empresa', e.nome, '--cnpj', e.cnpj, '--competencia', c, '--pdf', pdf ? '1' : '0',
           ...(pub ? ['--publico', pub] : []), '--json', out], out);
         const r = JSON.parse(fs.readFileSync(out, 'utf-8')); fs.unlink(out, () => {});
@@ -1940,7 +1980,15 @@ ipcMain.handle('fiscal:nfseLoteIniciar', async (_evt, { dataInicial, dataFinal, 
       empresas,
       baixarEmpresa: (emp) => _baixarNfseEmpresa(emp, dataInicial, dataFinal, gerarPdf),
       analisarEmpresa: (emp) => _analisarNfseEmpresa(emp, dataInicial, dataFinal, { vazioSePastaAusente: true }),
-      salvarPainel: (emp, html) => nfseLote.salvarPainelIndividual(pastaBase, emp, html, dataInicial, dataFinal),
+      salvarPainel: (emp, html) => {
+        const cli = _cliDe({ nome: emp.razaoSocial, cnpj: emp.cnpj });
+        const dCli = cli ? pastaCliente.pastaMes(cli.dir, dataInicial.slice(0, 4), dataInicial.slice(5, 7), true) : null;
+        if (!dCli) return nfseLote.salvarPainelIndividual(pastaBase, emp, html, dataInicial, dataFinal);
+        const sub = nfseLote.periodoSubpasta(dataInicial, dataFinal);
+        const abs = path.join(dCli, `Painel NFS-e ${/^\d{4}-\d{2}$/.test(sub) ? sub.slice(5, 7) + sub.slice(0, 4) : sub}.html`);
+        fs.writeFileSync(abs, html, 'utf-8');
+        return { rel: abs, abs, dir: dCli };
+      },
       onProgresso: enviar,
       cancelado: () => _loteCancelar,
     });
@@ -1984,6 +2032,7 @@ ipcMain.handle('fiscal:nfsePdfAbrir', async (_evt, { empresaId, chave }) => {
   let pastaBase;
   try { pastaBase = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase; } catch (_) {}
   if (!pastaBase) return { error: 'Escolha a pasta onde os documentos são salvos primeiro.' };
+  { const t = _nfseBase(empresa, pastaBase); if (t !== pastaBase && _temPastaEmpresa(t, empresa.razaoSocial)) pastaBase = t; }
   const pastaEmpresa = path.join(pastaBase, empresa.razaoSocial);
   const jsonTmp = path.join(os.tmpdir(), `fc_nfse_pdf_${Date.now()}.json`);
   try {

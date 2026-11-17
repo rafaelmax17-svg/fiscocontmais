@@ -41,7 +41,10 @@ def _data(iso):
 
 def _href(rel):
     """Caminho relativo (a partir da subpasta _Relatorios em lote) para o painel individual."""
-    return '../' + '/'.join(quote(seg) for seg in (rel or '').split('/'))
+    rel = rel or ''
+    if re.match(r'^([A-Za-z]:[\\/]|/)', rel):        # painel salvo na pasta do cliente: caminho completo
+        return 'file:///' + quote(rel.replace('\\', '/').lstrip('/'), safe='/:')
+    return '../' + '/'.join(quote(seg) for seg in rel.split('/'))
 
 
 def resumo_lote(d):

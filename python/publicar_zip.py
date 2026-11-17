@@ -62,11 +62,33 @@ def publicar(origem, destino_zip):
     return {'zip': destino_zip, 'qtd': total, 'novos': len([r for r in entra if r not in antigos])}
 
 
+def hidratar(zip_path, destino):
+    """Traz para a cópia de trabalho deste computador o que está no zip da pasta do cliente e ainda não está aqui
+    (outro computador baixou): o painel e o relatório enxergam tudo o que já foi baixado."""
+    if not os.path.exists(zip_path):
+        return 0
+    n = 0
+    with zipfile.ZipFile(zip_path) as z:
+        for info in z.infolist():
+            if info.is_dir() or '..' in info.filename.split('/') or info.filename.startswith('/'):
+                continue
+            alvo = os.path.join(destino, *info.filename.split('/'))
+            if os.path.exists(alvo) and os.path.getsize(alvo) == info.file_size:
+                continue
+            os.makedirs(os.path.dirname(alvo), exist_ok=True)
+            with open(alvo, 'wb') as fh:
+                fh.write(z.read(info.filename))
+            n += 1
+    return n
+
+
 def processar(lista):
     feitos, erros = [], []
     for item in lista:
         try:
-            if item.get('copiar'):
+            if item.get('hidratar'):
+                feitos.append({'hidratar': item['hidratar'], 'novos': hidratar(item['hidratar'], item['destino'])})
+            elif item.get('copiar'):
                 os.makedirs(os.path.dirname(item['para']), exist_ok=True)
                 shutil.copyfile(item['copiar'], item['para'] + '.tmp')
                 os.replace(item['para'] + '.tmp', item['para'])
