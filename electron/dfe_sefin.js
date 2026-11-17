@@ -27,6 +27,8 @@ const NOME = { nfe: 'NF-e', nfce: 'NFC-e' };
 
 let D = null;                 // { userData(), notificar(canal, dados), runFiscal(args, out), pastaBase() }
 let _win = null, _cnpjAtivo = '', _certFaltou = false, _rodando = false, _espera = null;
+let _baixando = null;                         // download em andamento: { nome, rec, total }
+const _arqUrls = new Map();                   // endereços que responderam com arquivo (zip/xml) — para forçar o download se o site abrir o arquivo na tela
 const _filhas = new Set();
 let _capSeq = 0, _capPend = null, _parar = false;          // código da imagem pedido à pessoa (janela do FiscoCont+)
 const _sessoes = new Set();
@@ -78,7 +80,9 @@ function _janela(emp) {
     _log(`o site abriu uma janela nova: ${String(url).slice(0, 120)}`);
     return { action: 'allow', overrideBrowserWindowOptions: { show: false, webPreferences: { partition: PARTICAO(emp.cnpj), contextIsolation: true, nodeIntegration: false, sandbox: true } } };
   });
-  _win.webContents.on('did-create-window', (filha) => { _filhas.add(filha); filha.on('closed', () => _filhas.delete(filha)); setTimeout(() => { try { if (!filha.isDestroyed()) filha.close(); } catch (_) {} }, 120000); });
+  const forca = (wc) => { try { const u = wc.getURL(); if (_arqUrls.has(u) && !_baixando) { _arqUrls.delete(u); _log('o site abriu o arquivo na tela: baixando'); wc.downloadURL(u); } } catch (_) {} };
+  _win.webContents.on('did-finish-load', () => forca(_win.webContents));
+  _win.webContents.on('did-create-window', (filha) => { _filhas.add(filha); filha.webContents.on('did-finish-load', () => forca(filha.webContents)); filha.on('closed', () => _filhas.delete(filha)); setTimeout(() => { try { if (!filha.isDestroyed()) filha.close(); } catch (_) {} }, 120000); });
   _win.webContents.on('did-navigate', (_e, url) => _log(`abriu ${String(url).split('?')[0]}`));
   _win.webContents.on('did-fail-load', (_e, cod, desc, url) => { if (cod !== -3) _log(`falha ao abrir ${String(url).split('?')[0]}: ${desc} (${cod})`); });
   _win.on('closed', () => { _win = null; _filhas.forEach((f) => { try { f.close(); } catch (_) {} }); if (_espera) { const w = _espera; _espera = null; w({ state: 'fechada' }); } });
@@ -89,7 +93,10 @@ function _janela(emp) {
       const dest = path.join(os.tmpdir(), `fc_dfe_${Date.now()}_${item.getFilename().replace(/[^\w.-]+/g, '_')}`);
       item.setSavePath(dest);
       _log(`download começou: ${item.getFilename()} (${Math.round((item.getTotalBytes() || 0) / 1024)} KB) · ${String(item.getURL()).slice(0, 100)}`);
+      _baixando = { nome: item.getFilename(), rec: 0, total: item.getTotalBytes() || 0 };
+      item.on('updated', () => { if (_baixando) { _baixando.rec = item.getReceivedBytes(); _baixando.total = item.getTotalBytes() || _baixando.total; } });
       item.once('done', (_e, state) => {
+        _baixando = null;
         _log(`download ${state}: ${item.getFilename()}`);
         _filhas.forEach((f) => { try { f.close(); } catch (_) {} });
         if (_espera) { const w = _espera; _espera = null; w({ state, dest, nome: item.getFilename() }); }
@@ -101,7 +108,10 @@ function _janela(emp) {
         const h = det.responseHeaders || {};
         const ct = String((h['content-type'] || h['Content-Type'] || [''])[0]);
         const cd = String((h['content-disposition'] || h['Content-Disposition'] || [''])[0]);
-        if (cd || /zip|octet|xml|pdf/i.test(ct)) _log(`resposta ${det.statusCode} ${ct} ${cd} · ${String(det.url).split('?')[0].slice(0, 100)}`);
+        if (cd || /zip|octet|xml|pdf/i.test(ct)) {
+          _log(`resposta ${det.statusCode} ${ct} ${cd} · ${String(det.url).split('?')[0].slice(0, 100)}`);
+          if (det.statusCode === 200 && /zip|octet|xml/i.test(ct) && !/attachment/i.test(cd) && /mainFrame|subFrame/.test(det.resourceType || '')) _arqUrls.set(det.url, Date.now());
+        }
       } catch (_) {}
       cb({ responseHeaders: det.responseHeaders });
     });
@@ -359,11 +369,11 @@ async function _login(emp) {
         if (st.temEntrar && entrou < 3) {
           const outro = st.cnpjs.find((c) => c !== emp.cnpj);
           if (st.cnpjs.length && !st.cnpjs.includes(emp.cnpj)) throw new Error(`o acesso mostrou outro CNPJ (${_fmtCnpj(outro)}). Nada foi baixado.`);
-          await _js(JS_CLICA('/^ENTRAR$/')); entrou++; _log('clicou em Entrar'); await _sleep(3500); continue;
+          await _js(JS_CLICA('/^ENTRAR$/')); entrou++; _log('clicou em Entrar'); await _sleep(2000); continue;
         }
         if (st.temAba && aba < 2) { await _js(JS_CLICA('/CERT\\.?\\s*DIGITAL/')); aba++; _log('abriu a aba do certificado digital'); await _sleep(2500); continue; }
       } else if (st.temAcessar && acessar < 3) {
-        await _js(JS_CLICA('/^ACESSAR$/')); acessar++; _log('clicou em Acessar'); await _sleep(3500); continue;
+        await _js(JS_CLICA('/^ACESSAR$/')); acessar++; _log('clicou em Acessar'); await _sleep(2000); continue;
       }
     }
     await _sleep(1500);
@@ -450,7 +460,7 @@ async function _esperaQuadro(espera, ms) {
 // baixa UM arquivo (parte) do pedido: clica, mostra o código no FiscoCont+, envia o que a pessoa digitou, espera o download
 async function _baixarParte(emp, tipo, achado, a, n, tot) {
   const k = achado.det.arquivos.findIndex((x) => x.texto === a.texto);
-  const espera = _esperaDownload(5 * 60 * 1000);
+  const espera = _esperaDownload(20 * 60 * 1000);
   const clicou = await _js(JS_CLICA_ARQ(k, a.texto)).catch(() => false);
   if (!clicou) { _log(`não achei o link "${a.texto}" na tela de Detalhes`); await _print(); return { state: 'sem_link' }; }
   let msgSefin = '', aviso = '', raioX = false;
@@ -490,18 +500,26 @@ async function _baixarParte(emp, tipo, achado, a, n, tot) {
     // depois do ENVIAR: ou vem o arquivo, ou a SEFIN mostra uma mensagem/imagem nova
     msgSefin = ''; aviso = '';
     let volta = false;
-    for (let t = 0; t < 90 && !volta; t++) {
+    const limite = Date.now() + 15 * 60 * 1000;
+    for (let t = 0; t < 180 && !volta; t++) {
       const r = await Promise.race([espera.then((x) => ({ fim: x })), _sleep(1000).then(() => null)]);
       if (r && r.fim) return r.fim;
+      if (_baixando) {                                       // o arquivo está chegando: espera terminar (até 15 min)
+        const b = _baixando, mb = (x) => (x / 1048576).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+        _prog(`${emp.nome} · ${NOME[tipo]}: recebendo a parte ${n} de ${tot}${b.total ? ` · ${mb(b.rec)} de ${mb(b.total)} MB` : b.rec ? ` · ${mb(b.rec)} MB` : ''}…`);
+        if (Date.now() < limite) t--;
+        continue;
+      }
+      if (t === 30) _prog(`${emp.nome} · ${NOME[tipo]}: a SEFIN está preparando o arquivo (parte ${n} de ${tot})…`);
       if (t < 2) continue;
       const cc = await _js(JS_CAPTCHA).catch(() => null);
       if (!cc) continue;
       if (cc.msg && cc.msg !== c.msg) { msgSefin = cc.msg; _log(`mensagem da SEFIN: ${cc.msg}`); }
       if (cc.achou && cc.pronto && (cc.chave !== c.chave || (cc.msg && cc.msg !== c.msg))) { volta = true; break; }
       if (cc.achou && t === 25) { _log('o quadro do código continua aberto, sem mensagem e sem arquivo'); await _print(); aviso = 'A SEFIN não respondeu ao código. Digite de novo.'; volta = true; break; }
-      if (!cc.achou && t === 15 && await _js(JS_LINK_BAIXAR).catch(() => false)) _log('clicou no link de baixar que apareceu');
+      if (!cc.achou && (t === 15 || t === 60 || t === 120) && await _js(JS_LINK_BAIXAR).catch(() => false)) _log('clicou no link de baixar que apareceu');
     }
-    if (!volta) { await _print(); _log('o arquivo não chegou em 90 s depois do código'); return { state: 'tempo', msg: msgSefin }; }
+    if (!volta) { await _print(); _log('o arquivo não chegou em 3 min depois do código'); return { state: 'tempo', msg: msgSefin }; }
     _log('o código voltou: pede de novo');
   }
   return { state: 'tempo', msg: msgSefin };
@@ -617,7 +635,10 @@ async function _empresa(emp, comp, tipos, pasta, estado) {
       const rows = await _lista();
       const outro = rows.find((r) => r.cnpj && r.cnpj !== emp.cnpj);
       if (outro) throw new Error(`a lista mostra pedidos de outro CNPJ (${_fmtCnpj(outro.cnpj)}). Nada foi baixado.`);
-      const cands = rows.filter((r) => r.doc === DOCS[tipo] && r.temDet && (!_isoDe(r.data) || _isoDe(r.data) >= `${comp}-01`)).slice(0, 8);
+      // pedidos do tipo feitos a partir do mês; primeiro o já usado antes e os liberados para download (menos telas de Detalhes)
+      const cands = rows.filter((r) => r.doc === DOCS[tipo] && r.temDet && (!_isoDe(r.data) || _isoDe(r.data) >= `${comp}-01`))
+        .sort((a, b) => ((anterior.data && b.data === anterior.data) - (anterior.data && a.data === anterior.data)) || (/DOWNLOAD/.test(b.estado) - /DOWNLOAD/.test(a.estado)))
+        .slice(0, 8);
       let achado = null;
       for (const c of cands) {
         const det = await _detalhes(c.i);
@@ -629,6 +650,7 @@ async function _empresa(emp, comp, tipos, pasta, estado) {
         await _vai(`${BASE}/solicitacoes`);
       }
       let r;
+      if (achado) anterior.data = achado.row.data;
       if (achado && /DOWNLOAD/.test(achado.row.estado)) {
         r = await _baixar(emp, tipo, comp, achado, anterior, pasta);
       } else if (achado && /NAO ENCONTRAD/.test(_norm(achado.row.estado))) {

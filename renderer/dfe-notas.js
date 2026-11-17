@@ -140,6 +140,10 @@
   function celSaida(x, uf) {
     if (uf && uf !== 'RO') return chip('dfe-nr', 'fora de RO: só entradas');
     if (!x) return chip('dfe-nr', 'não buscado');
+    if (x.status === 'aguardando_codigo' && /^faltam \d+ parte/.test(x.msg || '')) {   // aviso gravado por versão anterior: parte do arquivo já baixada
+      const f = +(x.msg.match(/\d+/) || [1])[0];
+      x = { ...x, status: 'parcial', msg: `Falta${f > 1 ? 'm' : ''} ${f} parte(s) do arquivo da SEFIN; a outra já está na pasta. Clique em Baixar notas para baixar só o que falta.` };
+    }
     const [c, t] = SAI[x.status] || ['dfe-nr', x.status || '—'];
     const det = [];
     if (x.status === 'baixado' || (x.status === 'parcial' && x.qtd)) det.push(`${x.qtd || 0} nota(s) · R$ ${brl(x.valor)}${x.canceladas ? ` · ${x.canceladas} cancelada(s)` : ''}`);
