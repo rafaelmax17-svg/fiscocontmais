@@ -14,8 +14,9 @@ TIPOS = [
      'O C191 (FCP) só pode existir quando o CST do C190 pai é 00, 10, 20, 51, 70 ou 90 (Guia Prático da EFD, registro C191).'),
     ('e500', 'Linhas do bloco de IPI removidas', 'E500/E510/E520 sem ser contribuinte de IPI',
      'Os registros de apuração do IPI (E500 e filhos) só existem para estabelecimento contribuinte do IPI (industrial ou equiparado).'),
-    ('gtin', 'GTIN limpos', 'Código de barras "SEM GTIN" no cadastro do item (0200)',
-     'O campo COD_BARRA do 0200 deve ser o GTIN válido ou ficar vazio; o texto "SEM GTIN" é usado só na NF-e.'),
+    ('gtin', 'GTIN limpos', 'Código de barras inválido no cadastro do item (0200/0220)',
+     'O campo COD_BARRA só aceita GTIN-8, 12, 13 ou 14 com dígito verificador certo, e só "se houver" (Guia Prático da EFD, registro 0200, campo 04). '
+     '"SEM GTIN", o próprio código interno do produto ou número inventado são retirados: o campo fica vazio.'),
     ('cest', 'CEST limpos', 'CEST fora da tabela oficial no cadastro do item (0200)',
      'O CEST informado no 0200 deve existir na tabela do Convênio ICMS 142/2018; códigos inválidos são retirados.'),
     ('nat', 'COD_NAT corrigidos', 'Natureza da operação "0" no item da nota (C170)',

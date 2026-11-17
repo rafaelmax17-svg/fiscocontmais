@@ -4048,13 +4048,25 @@ def _acerta_c100_e110(linhas, resumo):
     resumo['avisos_c100_e110'].extend(r2.get('avisos') or [])
 
 
+def gtin_valido(g):
+    """GTIN-8/12/13/14 com dígito verificador certo (módulo 10 da GS1, pesos 3 e 1 da direita para a esquerda)."""
+    g = str(g or '').strip()
+    if not g.isdigit() or len(g) not in (8, 12, 13, 14) or not g.strip('0'):
+        return False
+    soma = sum(int(d) * (3 if i % 2 == 0 else 1) for i, d in enumerate(reversed(g[:-1])))
+    return (10 - soma % 10) % 10 == int(g[-1])
+
+
 def corrigir_sped_fiscal(texto, cest_invalidos=None):
     """Corrige erros de validação comuns do SPED Fiscal (EFD ICMS/IPI) — MÓDULO
     RESTRITO AO ADMIN, altera o arquivo que será reenviado ao governo:
     1) Remove C191 cujo C190 pai tem CST fora de {00,10,20,51,70,90} (regra
        oficial: o campo VL_FCP_OP só pode ser preenchido nesses casos);
     2) Remove o bloco E500/E510.../E520 quando a empresa não é contribuinte de IPI;
-    3) Limpa COD_BARRA (campo 4) do 0200 quando for literalmente "SEM GTIN";
+    3) Limpa COD_BARRA (campo 4) do 0200 e do 0220 quando não for um GTIN válido: "SEM GTIN", o próprio código
+       interno (ex.: 00027037), número inventado ou dígito verificador errado. O campo só aceita GTIN-8, GTIN-12,
+       GTIN-13 ou GTIN-14 com dígito verificador certo e é preenchido "se houver" (Guia Prático da EFD ICMS/IPI,
+       registro 0200, campo 04) — o PVA acusa "Código de barras inválido". Sem GTIN válido, o campo fica vazio;
     4) Limpa CEST (campo 13) do 0200 quando estiver na lista de CEST inválidos
        informada (lista que cresce conforme repassado pelo usuário — não há
        como validar contra a Tabela CEST oficial completa sem ela);
@@ -4129,8 +4141,12 @@ def corrigir_sped_fiscal(texto, cest_invalidos=None):
             continue
         reg = campos[1]
         alterado = False
+        if reg == '0220' and len(campos) > 4 and campos[4].strip() and not gtin_valido(campos[4]):
+            campos[4] = ''
+            resumo['gtin_limpos'] += 1
+            alterado = True
         if reg == '0200' and len(campos) > 13:
-            if campos[4] == 'SEM GTIN':
+            if campos[4].strip() and not gtin_valido(campos[4]):
                 campos[4] = ''
                 resumo['gtin_limpos'] += 1
                 alterado = True
