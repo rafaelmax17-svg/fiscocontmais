@@ -3,6 +3,15 @@
 Itens de administração que **não** entram nas "Novidades" mostradas a todos no sistema.
 As notas em `release-notes/` são vistas por toda a equipe: nelas vai só o que muda para quem usa o sistema no dia a dia.
 
+## 2.3.33
+
+- **Corretor do SPED Fiscal:** saiu a etapa "DIFAL do Acre · uso e consumo e ativo", que estava em teste. No AC o DIFAL não é apurado na EFD: a SEFAZ notifica na entrada e a empresa paga por DAE (RICMS-AC, art. 93, VI). O lançamento do manual da EFD do AC (C197 AC7000000x, E110 campo 15, E116 1641/1642) vale só para estabelecimento com regime especial.
+- **O cálculo foi para a Conferência NF-e Entradas × SPED, só como informativo:**
+  - aparece quando a empresa do SPED é do AC;
+  - mostra o DIFAL de cada nota pela base dupla, com 19%, frete e IPI;
+  - mostra o passo a passo para emitir o DAE: o da notificação no SEFAZ Online, ou um DAE avulso com receita 1641/1642 quando não houver notificação;
+  - não altera nada no SPED.
+
 ## 2.3.30
 
 - **Corretor do SPED Fiscal · "DIFAL do Acre · uso e consumo e ativo" (EM TESTE, só Admin).** Nova conferência da Análise Inteligente. Aparece só quando o SPED é de empresa do Acre (UF do registro 0000). A equipe só recebe quando você ligar em "O que a equipe recebe".

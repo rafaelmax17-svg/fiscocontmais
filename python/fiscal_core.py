@@ -2098,6 +2098,65 @@ def _tabela_pendencias_paginada(faltantes, divergencias, campo_nome_chave, vazio
     </script>'''
 
 
+def _html_difal_ac(d):
+    """Quadro informativo do DIFAL do Acre na Conferência de Entradas (empresa do AC)."""
+    if not d:
+        return ''
+    def dt(x):
+        x = re.sub(r'[^0-9]', '', x or '')
+        return f'{x[:2]}/{x[2:4]}/{x[4:]}' if len(x) == 8 else (x or '')
+    sit = {'faltando': '', 'divergente': '', 'ok': '', 'zero': 'sem DIFAL', 'st_nota': 'ST retido na nota', 'transferencia': 'transferência da mesma empresa'}
+    linhas = []
+    for n in d['notas']:
+        its = ''.join(
+            f'<tr><td>{_esc(i["cod"])}</td><td>{_esc(i["descr"])[:60]}</td><td>{_esc(i["cfop"])}</td>'
+            f'<td>{"ativo" if i["tipo"] == "ativo" else "uso e consumo"}</td><td class="n">R$ {_brl(i["valor"])}</td>'
+            f'<td class="n">{"ST" if i["st"] else _brl(i["aliq"]) + "%"}</td><td class="n">{"—" if i["st"] else "R$ " + _brl(i["base"])}</td>'
+            f'<td class="n"><b>{"retido" if i["st"] else "R$ " + _brl(i["difal"])}</b></td><td>{_esc(i["fonte"])}</td></tr>' for i in n['itens'])
+        nota = sit.get(n['status'], '')
+        obs = ''.join(f'<div class="dac-obs">{_esc(o)}</div>' for o in n['obs'])
+        linhas.append(
+            f'<tr class="{"dac-zero" if n["difal"] <= 0 else ""}"><td>{_esc(dt(n["data"]))}</td><td><b>{_esc(n["num"])}</b></td>'
+            f'<td>{_esc(n["fornecedor"])[:42]}</td><td>{_esc(n["uf"])}</td><td>{" e ".join("ativo" if t == "ativo" else "uso e consumo" for t in n["tipos"])}</td>'
+            f'<td class="n">{("R$ " + _brl(n["valor"])) if n["itens"] else "—"}</td><td class="n"><b>{("R$ " + _brl(n["difal"])) if n["difal"] > 0 else _esc(nota or "—")}</b></td>'
+            + (f'<td><span class="dac-bt" onclick="var r=this.closest(\'tr\').nextElementSibling;r.hidden=!r.hidden;this.classList.toggle(\'on\')">{len(n["itens"])} item(ns)</span></td></tr>'
+               f'<tr class="dac-det" hidden><td colspan="8"><table class="dac-it"><tr><th>Código</th><th>Produto</th><th>CFOP</th><th>Tipo</th>'
+               f'<th class="n">Valor + frete e IPI</th><th class="n">Alíq. inter.</th><th class="n">Base dupla</th><th class="n">DIFAL</th><th>Valor de</th></tr>{its}</table>{obs}</td></tr>'
+               if n['itens'] else f'<td>{obs}</td></tr>'))
+    corpo = ''.join(linhas) or '<tr><td colspan="8" class="dac-vazio">Nenhuma entrada de uso e consumo ou ativo vinda de outro estado neste SPED.</td></tr>'
+    sem_xml = (f'<div class="dac-av">{d["sem_xml"]} nota(s) sem o XML na pasta importada: o valor saiu do SPED, com o frete da nota rateado pelos itens.</div>'
+               if d.get('sem_xml') else '')
+    return f"""<div class="conf sec dac" style="animation-delay:.4s">
+  <style>.dac h3{{font-size:15px;color:var(--navy);display:flex;align-items:center;gap:8px;margin:0 0 4px}}
+  .dac .tg{{font-size:10.5px;font-weight:800;letter-spacing:.05em;background:#eef1fb;color:#2f4090;border-radius:20px;padding:3px 9px}}
+  .dac-sub{{font-size:12.5px;color:#5a6785;margin-bottom:12px;line-height:1.5}}
+  .dac-k{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}}.dac-k div{{border:1px solid #e6e9f2;border-radius:12px;padding:10px 12px}}
+  .dac-k small{{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#6b7392}}.dac-k b{{display:block;font-size:20px;margin-top:2px;color:#1f2a5a}}
+  .dac table{{width:100%;border-collapse:collapse;font-size:12.3px}}.dac th{{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#6b7392;padding:7px 6px;border-bottom:1.5px solid #e3e6f0}}
+  .dac td{{padding:7px 6px;border-bottom:1px solid #f0f2f7;vertical-align:top}}.dac .n{{text-align:right;white-space:nowrap}}.dac-zero td{{color:#8a93ad}}
+  .dac-bt{{cursor:pointer;color:#2f4090;font-weight:600;font-size:11.5px;white-space:nowrap}}.dac-bt:before{{content:'▸ '}}.dac-bt.on:before{{content:'▾ '}}.dac-det>td{{background:#fafbfe;padding:4px 10px 10px}}.dac-it td,.dac-it th{{border-bottom:1px solid #eceff6}}.dac-obs{{font-size:11.3px;color:#6b7392;margin-top:4px}}
+  .dac-av{{font-size:12px;color:#8a5b00;background:#fff7e0;border:1px solid #f3d27a;border-radius:10px;padding:8px 12px;margin-bottom:10px}}
+  .dac-dae{{margin-top:14px;background:linear-gradient(135deg,#f5f7fc,#fff);border:1px solid #dfe4f1;border-radius:14px;padding:14px 16px;font-size:12.6px;line-height:1.6;color:#2b3352}}
+  .dac-dae b.t{{color:#1f2a5a;font-size:13.5px}}.dac-dae ol{{margin:6px 0 0 18px;padding:0}}.dac-lei{{font-size:11px;color:#6b7392;margin-top:8px}}.dac-vazio{{text-align:center;color:#6b7392;padding:14px}}</style>
+  <h3><span class="dot" style="background:var(--orange);width:8px;height:18px;border-radius:3px;display:inline-block"></span>DIFAL do Acre · uso e consumo e ativo <span class="tg">INFORMATIVO</span></h3>
+  <div class="dac-sub">Empresa do Acre (registro 0000). No AC o diferencial de alíquotas é calculado pela SEFAZ na entrada da mercadoria e cobrado por
+  Notificação de Lançamento, pago em DAE. <b>Não é apurado na EFD</b>: não entra em C197, E110 nem E116. Os valores abaixo servem para conferir a notificação antes de pagar.</div>
+  <div class="dac-k"><div><small>Notas com DIFAL</small><b>{d['qtd']}</b></div><div><small>DIFAL calculado</small><b>R$ {_brl(d['total'])}</b></div>
+  <div><small>Uso e consumo</small><b>R$ {_brl(d['uso'])}</b></div><div><small>Ativo imobilizado</small><b>R$ {_brl(d['ativo'])}</b></div></div>
+  {sem_xml}
+  <table><tr><th>Entrada</th><th>NF-e</th><th>Fornecedor</th><th>UF</th><th>Tipo</th><th class="n">Valor</th><th class="n">DIFAL calculado</th><th>Itens</th></tr>{corpo}</table>
+  <div class="dac-dae"><b class="t">Como pagar o DIFAL (DAE), se for preciso</b><ol>
+  <li><b>Notificação:</b> a SEFAZ-AC lança o ICMS da entrada (inclusive o diferencial de alíquotas) e emite a Notificação de Lançamento, avisada pelo DEC (caixa postal eletrônica da SEFAZ-AC).</li>
+  <li><b>Emitir o DAE:</b> no SEFAZ Online (sefazonline.ac.gov.br), com o acesso da empresa ou do escritório, consulte as notificações da inscrição estadual e emita o DAE da notificação.</li>
+  <li><b>Conferir antes de pagar:</b> compare o valor notificado com o DIFAL calculado aqui. Se for diferente, veja na nota a alíquota interestadual, o frete e o IPI; se o erro for da notificação, peça a revisão à SEFAZ-AC.</li>
+  <li><b>Prazo:</b> entradas até o dia 15 vencem no dia 15 do mês seguinte; entradas do dia 16 em diante vencem no penúltimo dia útil do mês seguinte.</li>
+  <li><b>Nota sem notificação:</b> se o DIFAL é devido e a SEFAZ não notificou, emita um DAE avulso no SEFAZ Online (Emissão de DAE Avulso), com o código de receita do diferencial de alíquotas (1641 uso e consumo, 1642 ativo imobilizado), o mês de referência e o valor calculado. Vencido, paga com acréscimos.</li></ol>
+  <div class="dac-lei">Base dupla, com o imposto por dentro: LC 55/1997 (AC), art. 6º, XI e § 8º, e art. 8º (LC 417/2022); RICMS-AC, art. 5º, IX-A, §§ 8º e 9º, e art. 7º (Decreto 11.206/2023).
+  Alíquota interna de 19% (LC 422/2022). Frete na base, fornecedor do Simples e transferência: RICMS-AC, art. 97, §§ 3º, 5º e 7º-B. Prazo: RICMS-AC, art. 93, VI.
+  Lançamento na EFD só para estabelecimento com regime especial (Manual da EFD do AC, IN DIAT 2/2018, itens 8 e 9).</div></div>
+</div>"""
+
+
 def gerar_conferencia_html(cf, compras_cfop=None, cliente=False):
     emp = cf['empresa']
     logo = _logo_uri()
@@ -2210,6 +2269,7 @@ def gerar_conferencia_html(cf, compras_cfop=None, cliente=False):
     <div class="conf sec" style="animation-delay:.3s"><h3 style="font-size:15px;color:var(--navy);display:flex;align-items:center;gap:8px;margin-bottom:6px"><span class="dot" style="background:var(--orange);width:8px;height:18px;border-radius:3px;display:inline-block"></span>Pendências</h3>{pend_table}</div>
   </div>
   {'' if cliente else f'<div class="conf sec" style="animation-delay:.35s"><h3 style="font-size:15px;color:var(--navy);display:flex;align-items:center;gap:8px;margin-bottom:6px"><span class="dot" style="background:var(--orange);width:8px;height:18px;border-radius:3px;display:inline-block"></span>Escriturado no SPED sem o XML correspondente</h3>{sped_sx_table}</div>'}
+  {'' if cliente else _html_difal_ac(cf.get('difal_ac'))}
   <footer>{'Liddera | Inteligência em Negócios Ltda' if cliente else 'FiscoCont+ · Conferência interna · Liddera | Inteligência em Negócios Ltda'}</footer>
 </div>{_COUNT_JS}</body></html>"""
 
@@ -3495,6 +3555,16 @@ def main(argv):
         xmls = coletar_xmls(caminhos)
         cf = conferencia(sped, xmls)
         cf['compras_cfop'] = sped['compras_cfop']
+        # empresa do Acre: DIFAL de uso e consumo e ativo, só informativo (pago por notificação, fora da EFD)
+        try:
+            texto_ac, _enc = _ler_sped(sped_path)
+            if '|0000|' in texto_ac[:600] and texto_ac.split('|0000|', 1)[1].split('|')[7:8] == ['AC']:
+                import difal_ac as _dac
+                from xml_entradas import ler_xmls as _ler_xe
+                _xd, _l, _e = _ler_xe(caminhos)
+                cf['difal_ac'] = _dac.informativo(texto_ac, _xd)
+        except Exception as _ex:
+            cf['difal_ac_erro'] = str(_ex)
         if '--json' in args:
             _out(opt('--json', 'conf.json'), json.dumps(cf, ensure_ascii=False))
             print('JSON gerado')

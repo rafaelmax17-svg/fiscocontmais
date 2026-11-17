@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """DIFAL do Acre — uso e consumo e ativo imobilizado vindos de outro estado (empresa do AC, UF do registro 0000).
-Etapa do Corretor do SPED Fiscal (EM TESTE, só Admin). Gera arquivo NOVO; o original nunca é alterado.
+Quadro INFORMATIVO da Conferência NF-e Entradas × SPED (função informativo): no AC o DIFAL é calculado pela SEFAZ e
+notificado na entrada (RICMS-AC, art. 93, VI) e pago por DAE — não é apurado na EFD. O lançamento na EFD (aplicar_texto)
+fica só para o estabelecimento com regime especial do manual (não é chamado hoje).
 
 Cálculo (base dupla, com o imposto por dentro)
   • LC 55/1997 (AC), art. 6º, XI e §§ 7º e 8º, e art. 8º (redação da LC 417/2022, DOE 19/12/2022);
@@ -396,3 +398,27 @@ def aplicar_texto(texto, ids_docs, ids_cst=None, regime_especial=None, xmls=None
         return texto, res
     novo = dr.monta_arquivo(linhas, remover, insercoes, novos_0460, [], novas_e116, quebra, final_vazio)
     return novo, res
+
+
+# ------------------------------------------------------------------ informativo (Conferência de Entradas)
+def informativo(texto, xmls=None):
+    """DIFAL calculado por nota para conferir com a Notificação de Lançamento da SEFAZ-AC. Nada é escriturado."""
+    an = analisar_texto(texto, xmls, regime_especial=False)
+    if not an['aplica']:
+        return None
+    notas = []
+    for d in an['docs']:
+        its = [i for i in d['itens']]
+        notas.append({
+            'num': (d['num'] or '').lstrip('0'), 'serie': d['serie'], 'data': d['data'], 'fornecedor': d['fornecedor'],
+            'uf': d['uf_origem'], 'status': d['status'], 'tem_xml': d.get('tem_xml', False), 'difal': d['difal_calculado'],
+            'valor': float(_d(sum(Decimal(str(i['valor'])) for i in its))),
+            'tipos': sorted({i['tipo'] for i in its}), 'obs': d['obs'],
+            'itens': [{'cod': i['cod'], 'descr': i['descr'], 'cfop': i['cfop'], 'tipo': i['tipo'], 'valor': i['valor'],
+                       'aliq': i['aliq_inter'], 'base': i['base'], 'difal': i['difal'], 'st': i['st'], 'fonte': i['fonte_valor']} for i in its]})
+    notas.sort(key=lambda n: (_aaaammdd(n['data']), n['num']))
+    devidas = [n for n in notas if n['difal'] > 0]
+    tot = lambda tipo: float(_d(sum(Decimal(str(i['difal'])) for n in devidas for i in n['itens'] if i['tipo'] == tipo)))
+    return {'empresa': an['empresa'], 'notas': notas, 'qtd': len(devidas), 'total': float(_d(sum(Decimal(str(n['difal'])) for n in devidas))),
+            'uso': tot('uso'), 'ativo': tot('ativo'), 'sem_xml': sum(1 for n in devidas if not n['tem_xml']),
+            'fora': sum(1 for n in notas if n['difal'] <= 0)}
