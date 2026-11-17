@@ -344,7 +344,7 @@ async function _gravaResultados(comp, res, resumo, cfg) {
           upd[`empresas.${x.id}.alteradoPor`] = 'Robô (Receita Federal)';
           upd[`empresas.${x.id}.alteradoEm`] = f.serverTimestamp();
           const novo = { ...r, pgdas: 'Sim' };
-          upd[`empresas.${x.id}.fin`] = (_ok(novo.esc) && _ok(novo.pgdas) && _ok(novo.das)) ? (r.fin || _hojeBr()) : '';
+          upd[`empresas.${x.id}.fin`] = (_ok(novo.esc) && _ok(novo.pgdas)) ? (r.fin || _hojeBr()) : '';
         }
         if (r.pgdas === 'N/A') resumo.verificar++;
         resumo.arquivos += Object.keys(rc.arquivos).length;

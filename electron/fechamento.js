@@ -27,7 +27,13 @@ function _hojeBr() {
   const d = new Date();
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
-function _concluida(r) { return ETAPAS.every((k) => r[k] === 'Sim' || r[k] === 'N/A'); }
+// Concluída = Escrituração e PGDAS (transmitido / confirmado na Receita). O "DAS enviado ao cliente" saiu do fechamento (Rafael, 17/11/2026).
+const ETAPAS_FIM = ['esc', 'pgdas'];
+function _concluida(r) { return ETAPAS_FIM.every((k) => r[k] === 'Sim' || r[k] === 'N/A'); }
+function _dataBr(ts) {
+  const d = ts && ts.toDate ? ts.toDate() : null;
+  return d ? `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}` : _hojeBr();
+}
 function _novoId() { return 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function _prox(c) { let [a, m] = c.split('-').map(Number); m++; if (m > 12) { m = 1; a++; } return `${a}-${String(m).padStart(2, '0')}`; }
 function _semMovimento(obs) { return /zerad|sem\s+movimento/i.test(String(obs || '')); }
@@ -97,11 +103,14 @@ async function abrir(comp) {
       if (!atual[id] && _vale(c, comp)) faltam[id] = { nome: c.nome, analista: c.analista || '', esc: '', pgdas: '', das: '', obs: '', fin: '' };
       if (atual[id] && c.ativa === false && c.saida && comp >= c.saida) sobram.push(id);     // inativada num mês anterior
     }
+    // regra nova (só Escrituração + PGDAS): quem já cumpre e está sem data de finalização ganha a data da última marcação
+    const semData = Object.entries(atual).filter(([id, r]) => !sobram.includes(id) && _concluida(r) && !r.fin);
     if (!s.exists()) tx.set(ref, { empresas: faltam, criadoPor: _quem(), criadoEm: f.serverTimestamp() });
-    else if (Object.keys(faltam).length || sobram.length) {
+    else if (Object.keys(faltam).length || sobram.length || semData.length) {
       const upd = {};
       for (const [id, r] of Object.entries(faltam)) upd[`empresas.${id}`] = r;
       for (const id of sobram) upd[`empresas.${id}`] = f.deleteField();
+      for (const [id, r] of semData) upd[`empresas.${id}.fin`] = _dataBr(r.alteradoEm);
       tx.update(ref, upd);
     }
   });
