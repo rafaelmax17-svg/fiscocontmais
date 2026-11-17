@@ -2302,6 +2302,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       if (z.validacao && z.validacao.feito) lin.push(`Validação do PVA: ${z.validacao.feito} correção(ões)`);
       if (z.chave) lin.push(`Chave de acesso × XML: ${z.chave.itens} nota(s) com a chave do XML (${z.chave.entradas} entrada · ${z.chave.saidas} saída)`);
       if (z.ncm) lin.push(`NCM × XML das entradas: ${z.ncm.produtos} produto(s) com o NCM do XML no cadastro (0200)`);
+      const ncmPdf = z.ncm && (z.ncm.feitos || []).length ? `<button class="act inv-export" id="tdNcmPdf" title="PDF informativo para o cliente, com a logo da Liddera: só os produtos que tiveram o NCM alterado">PDF para o cliente · NCM</button>` : '';
       if (z.ucons) lin.push(`Uso e consumo lançado como revenda: ${z.ucons.itens} item(ns) em ${z.ucons.notas} nota(s) passaram para o CFOP de uso e consumo${z.ucons.c190 ? ` · ${z.ucons.c190} C190 dividido(s)` : ''}`);
       if (z.stent) lin.push(`ICMS-ST na entrada: ${z.stent.itens} item(ns) em ${z.stent.notas} nota(s)${z.stent.st ? ` · ${z.stent.st} produto(s) da ST → 1.403/1.401 e CST 60` : ''}${z.stent.cst ? ` · ${z.stent.cst} com CST 60 pelo XML` : ''}${z.stent.trib ? ` · ${z.stent.trib} de 1.403 para 1.102 (tributado no XML)` : ''}${z.stent.credito ? ` · crédito retirado R$ ${z.stent.credito.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''}`);
       if (z.comb) lin.push(`Combustível × uso e consumo: ${z.comb.itens} item(ns) em ${z.comb.notas} nota(s) passaram para x.653${z.comb.c190 ? ` · ${z.comb.c190} C190 dividido(s)` : ''}`);
@@ -2320,8 +2321,12 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
           <div><span>Saldo credor depois</span><b>R$ ${fmR(r.credor_depois)}</b></div></div>
         <div class="dif-av ok"><ul>${lin.map((t) => `<li>${esc(t)}</li>`).join('') || '<li>Nada foi alterado.</li>'}</ul></div>
         ${(r.avisos || []).length ? `<div class="dif-av"><ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
-        <div class="dif-acts"><button class="act inv-export" id="tdReconf">Analisar de novo</button><button class="act inv-export sn-big" id="tdBaixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button></div></div>`;
+        <div class="dif-acts"><button class="act inv-export" id="tdReconf">Analisar de novo</button>${ncmPdf}<button class="act inv-export sn-big" id="tdBaixar" style="background:#0ea472;color:#fff;border-color:transparent">Baixar SPED corrigido</button></div></div>`;
       $('#tdReconf').addEventListener('click', tdAbrir);
+      if ($('#tdNcmPdf')) $('#tdNcmPdf').addEventListener('click', async () => {
+        const x = await window.fiscocont.admin.ncmPdf(z.ncm);
+        if (x && x.error) toast(x.error, true); else if (x && x.ok) toast('PDF para o cliente salvo.');
+      });
       $('#tdBaixar').addEventListener('click', corrBaixar);
       out.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }

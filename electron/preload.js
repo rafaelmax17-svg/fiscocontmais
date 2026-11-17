@@ -290,6 +290,7 @@ contextBridge.exposeInMainWorld('fiscocont', {
     macaAplicar: (params) => ipcRenderer.invoke('admin:macaAplicar', params),
     tudoAnalisar: (params) => ipcRenderer.invoke('admin:tudoAnalisar', params),
     tudoAplicar: (params) => ipcRenderer.invoke('admin:tudoAplicar', params),
+    ncmPdf: (ncm) => ipcRenderer.invoke('admin:ncmPdf', { ncm }),
     equipeLer: () => ipcRenderer.invoke('corr:equipeLer'),
     equipeSalvar: (key, ligada) => ipcRenderer.invoke('corr:equipeSalvar', { key, ligada }),
     descAnalisar: (params) => ipcRenderer.invoke('admin:descAnalisar', params),

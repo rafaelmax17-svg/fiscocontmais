@@ -3542,6 +3542,33 @@ ipcMain.handle('admin:tudoAplicar', async (_evt, { spedPath, usarCorrigido, xmls
     return { ok: true, resumo: res, origem: base.origem };
   } catch (e) { return { error: String(e.message || e) }; }
 });
+// PDF ao cliente com o que foi alterado de fato no NCM (0200) — informativo, com a logo da Liddera
+ipcMain.handle('admin:ncmPdf', async (_evt, { ncm } = {}) => {
+  const bloq = _soCorretor(); if (bloq) return bloq;
+  if (!ncm || !(ncm.feitos || []).length) return { error: 'Nenhum NCM foi alterado neste arquivo.' };
+  const ncmPdf = require('./ncm_pdf');
+  const hoje = new Date().toLocaleDateString('pt-BR');
+  let logo = '';
+  try { logo = 'data:image/png;base64,' + fs.readFileSync(logoPath()).toString('base64'); } catch (_) {}
+  const nome = String((ncm.empresa || {}).nome || 'cliente').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+  const per = ncmPdf.periodo(ncm.empresa || {}).replace(/\//g, '-').replace(/ a /g, ' a ');
+  const save = await dialog.showSaveDialog(mainWindow, { title: 'Salvar PDF para o cliente', defaultPath: `Ajuste de NCM - ${nome}${per ? ' - ' + per : ''}.pdf`, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+  if (save.canceled || !save.filePath) return { canceled: true };
+  const htmlOut = path.join(os.tmpdir(), `fc_ncm_${Date.now()}.html`);
+  const worker = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, sandbox: true } });
+  try {
+    fs.writeFileSync(htmlOut, ncmPdf.html(ncm, logo, hoje), 'utf-8');
+    await worker.loadFile(htmlOut);
+    await new Promise((r) => setTimeout(r, 300));
+    const pdf = await worker.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, displayHeaderFooter: true,
+      headerTemplate: '<span></span>', footerTemplate: ncmPdf.rodape(hoje) });
+    fs.writeFileSync(save.filePath, pdf);
+    shell.openPath(save.filePath);
+    return { ok: true, path: save.filePath };
+  } catch (e) {
+    return { error: String(e.message || e) };
+  } finally { worker.destroy(); fs.unlink(htmlOut, () => {}); }
+});
 // Unidade × XML (só Admin): o código da unidade do C170 ("1") vira a unidade da nota ("UN") — inconsistência do portal, aba Estoque
 ipcMain.handle('admin:unidAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
   const bloq = _soAdminCorretor(); if (bloq) return bloq;

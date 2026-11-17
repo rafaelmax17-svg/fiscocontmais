@@ -528,11 +528,12 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
     # 1·) NCM × XML das entradas (antes da ICMS-ST, que usa o NCM)
     if xmls and liga('ncm'):
         en = esc.get('ncm') or {}
+        an_ncm = nx.analisar_texto(final, xmls)
         cods = {i['cod']: (en.get(i['cod']) if isinstance(en.get(i['cod']), str) else i['opcoes'][0]['v'])
-                for i in nx.analisar_texto(final, xmls)['itens'] if en.get(i['cod'], True) is not False}
+                for i in an_ncm['itens'] if en.get(i['cod'], True) is not False}
         if cods:
             final, r = nx.aplicar_texto(final, cods, xmls)
-            resumo['ncm'] = {'produtos': r['produtos']}
+            resumo['ncm'] = {'produtos': r['produtos'], **nx.detalhe_pdf(final, an_ncm, r['feitos'])}
     # 1a) uso e consumo lançado como revenda (antes do DIFAL)
     if liga('ucons'):
         eu = esc.get('ucons') or {}

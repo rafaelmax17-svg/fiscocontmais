@@ -147,6 +147,33 @@ def aplicar_texto(texto, cods, xmls=None):
     return quebra.join(linhas) + (quebra if final_vazio else ''), {'produtos': len(feitos), 'feitos': feitos}
 
 
+
+def detalhe_pdf(texto, analise, feitos):
+    """O que foi alterado de fato, para o PDF ao cliente: empresa (0000), produtos e a nota usada como referência."""
+    emp = {}
+    for l in texto.splitlines()[:5]:
+        if l.startswith('|0000|'):
+            c = l.split('|')
+            if len(c) > 10:
+                emp = {'nome': c[6], 'cnpj': c[7] or c[8], 'uf': c[9], 'ie': c[10], 'dt_ini': c[4], 'dt_fin': c[5]}
+            break
+    por_cod = {i['cod']: i for i in analise['itens']}
+    lista, notas = [], set()
+    for f in feitos:
+        i = por_cod.get(f['cod']) or {}
+        para = _so(f['para'])
+        nfs = [n for n in i.get('nfs', []) if _so(n['ncm']) == para]
+        ref = max(nfs, key=lambda n: (_ord_data(n['data']), str(n['num']))) if nfs else {}
+        for n in nfs:
+            notas.add((n['num'], n['serie'], n['forn']))
+        lista.append({'cod': f['cod'], 'descr': i.get('descr', ''), 'de': fmt(_so(f['de'])) if _valido(_so(f['de'])) else (f['de'] or ''),
+                      'para': fmt(para), 'xprod': ref.get('xprod') or i.get('xprod', ''),
+                      'ref': f"NF {ref['num']} · {ref['forn']}" if ref else i.get('nota_ex', ''),
+                      'notas': len({(n['num'], n['serie'], n['forn']) for n in nfs}), 'st': (i.get('st') or {}).get(para, '')})
+    lista.sort(key=lambda z: z['descr'])
+    return {'empresa': emp, 'feitos': lista, 'notas': len(notas), 'conferidos': analise['resumo'].get('conferidos', 0),
+            'st_muda': sum(1 for z in lista if z['st'])}
+
 if __name__ == '__main__':
     import sys
     import json
