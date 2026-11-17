@@ -509,6 +509,12 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
   display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(232,99,43,.4);font-size:24px}
 .ia-dot{position:absolute;top:-1px;right:-1px;width:13px;height:13px;background:#0ea472;border-radius:50%;border:2px solid #fff}
 .ia-bubble.hide{display:none}
+.ia-bubble{padding-top:6px}
+.ia-xb{position:absolute;top:-4px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;padding:0;background:#1f2a5a;color:#fff;font-size:10px;line-height:20px;text-align:center;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25);opacity:.85;transition:opacity .15s,transform .15s}
+.ia-xb:hover{opacity:1;transform:scale(1.1)}
+/* Baixas DF-e · lista de certificados: altura menor com rolagem e cabeçalho fixo */
+.dl-cert-wrap{max-height:360px;overflow-y:auto;border-radius:8px}
+.dl-cert-wrap thead th{position:sticky;top:0;background:var(--panel);z-index:1;box-shadow:0 1px 0 var(--line)}
 
 /* ===== Balão de notícias contábeis ===== */
 .news-toast{position:fixed;right:26px;bottom:92px;width:300px;background:#fff;border-radius:12px;

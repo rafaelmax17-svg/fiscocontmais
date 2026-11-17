@@ -3152,6 +3152,12 @@ def main(argv):
     if modo == 'inutilizadas':
         import inutilizadas as _inu
         return _inu.main_cli(argv[1:])
+    if modo == 'dfe-notas':
+        import dfe_notas as _dfn
+        return _dfn.main_cli(argv[1:])
+    if modo == 'dfe-extrair':
+        import dfe_notas as _dfn
+        return _dfn.main_cli(['extrair'] + argv[1:])
     if modo == 'auditoria-icms-am':
         import auditoria_am as _am
         return _am.main_cli(argv[1:])

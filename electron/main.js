@@ -579,6 +579,13 @@ ipcMain.handle('fisc:visualizar', (_evt, codigo) => _fisc(() => fisconforme.visu
 ipcMain.handle('fisc:mostrarJanela', (_evt, sim) => _adm(() => fisconforme.mostrarJanela(sim)));
 ipcMain.handle('fisc:pastaDados', () => _adm(() => fisconforme.abrirPastaDados()));
 // ---- Débitos e DARE (SEFIN-RO · Portal do Contribuinte): mesma entrada por certificado do Fisconforme (electron/dare.js)
+const dfeSefin = require('./dfe_sefin');
+dfeSefin.init({
+  userData: () => app.getPath('userData'),
+  notificar: (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} },
+  runFiscal: (args, out) => runFiscal(args, out),
+  pastaBase: () => { try { return JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase || ''; } catch (_) { return ''; } },
+});
 const dare = require('./dare');
 dare.init({ userData: () => app.getPath('userData'), notificar: (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} } });
 const _dare = async (fn) => {
@@ -1598,6 +1605,95 @@ ipcMain.handle('nfech:consultar', (_evt, { empresaId, chaves, baixar, ciencia, p
   _nfechCacheGravar(cache);
   return { empresa: { nome: empresa.razaoSocial, cnpj: empresa.cnpj }, pasta, itens, consultadas: faltam.length, quando: new Date().toISOString() };
 }));
+// ---------------------------------------------------------------------------
+// Baixas DF-e · NF-e e CT-e de ENTRADA (todas as empresas, Ambiente Nacional) e NF-e/NFC-e de SAÍDA (empresas de RO,
+// DFe-Download da SEFIN) — quem tem o módulo Baixas DF-e. Posição da sequência (NSU) por empresa em dfe-nsu.json; resultado das
+// saídas em dfe-ro.json (dfe_sefin.js). UF da empresa pelo cadastro público do CNPJ, guardada em dfe-uf.json.
+// ---------------------------------------------------------------------------
+const _dfeArq = (n) => path.join(app.getPath('userData'), n);
+const _dfeLer = (n) => { try { return JSON.parse(fs.readFileSync(_dfeArq(n), 'utf-8')); } catch (_) { return {}; } };
+const _dfeGrava = (n, d) => { try { fs.writeFileSync(_dfeArq(n), JSON.stringify(d, null, 1)); } catch (_) {} };
+let _dfeRodando = false;
+async function _dfeUf(cnpj, limite = 40) {
+  const cache = _dfeLer('dfe-uf.json');
+  if (cache[cnpj]) return cache[cnpj];
+  if (limite <= 0) return '';
+  const api = await _consultaCnpjApi(cnpj).catch(() => null);
+  const uf = api ? String(api.uf || (api.estabelecimento && api.estabelecimento.estado && api.estabelecimento.estado.sigla) || '').toUpperCase() : '';
+  if (uf) { cache[cnpj] = uf; _dfeGrava('dfe-uf.json', cache); }
+  return uf;
+}
+function _dfeEmpresas() {
+  return (_lerIndiceCert().empresas || []).filter((e) => (e.tipo || 'matriz') !== 'procuracao')
+    .map((e) => ({ id: e.id, cnpj: e.cnpj, nome: e.razaoSocial, validade: e.validade || '', vencido: !!(e.validade && new Date(e.validade) < new Date()) }))
+    .sort((a, b) => a.nome.localeCompare(b.nome));
+}
+ipcMain.handle('dfe:estado', (_evt, { competencia } = {}) => _mod('fiscal-downloads')(async () => {
+  const lst = _dfeEmpresas();
+  let busca = 15;
+  const nsu = _dfeLer('dfe-nsu.json'), ro = dfeSefin.lerEstado();
+  for (const e of lst) { e.uf = await _dfeUf(e.cnpj, busca); if (!_dfeLer('dfe-uf.json')[e.cnpj]) busca--; }
+  return {
+    pasta: (() => { try { return JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase || ''; } catch (_) { return ''; } })(),
+    empresas: lst.map((e) => ({ ...e, entradas: ((nsu[e.cnpj] || {}).ultimo || {})[competencia] || null, saidas: (ro[e.cnpj] || {})[competencia] || null })),
+  };
+}));
+ipcMain.handle('dfe:entradas', (_evt, { ids, competencia, tipos, ciencia }) => _mod('fiscal-downloads')(async () => {
+  if (_dfeRodando) throw new Error('Já existe uma busca em andamento.');
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia || '')) throw new Error('Competência inválida.');
+  let pasta = '';
+  try { pasta = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase || ''; } catch (_) {}
+  if (!pasta) throw new Error('Escolha a pasta das Baixas DF-e primeiro.');
+  const indice = _lerIndiceCert();
+  const alvo = _dfeEmpresas().filter((e) => !ids || ids.includes(e.id));
+  const env = (d) => { try { mainWindow && mainWindow.webContents.send('dfe:progresso', d); } catch (_) {} };
+  const saida = [];
+  _dfeRodando = true;
+  try {
+    for (const [n, e] of alvo.entries()) {
+      env({ txt: `Entradas · ${e.nome} (${n + 1} de ${alvo.length}): consultando o Ambiente Nacional…` });
+      const emp = (indice.empresas || []).find((x) => x.id === e.id);
+      const cred = _credDe(indice, emp);
+      if (cred.error) { saida.push({ cnpj: e.cnpj, nome: e.nome, erro: cred.error }); continue; }
+      const uf = await _dfeUf(e.cnpj);
+      const nsu = _dfeLer('dfe-nsu.json');
+      const tag = `${Date.now()}_${n}`;
+      const entrada = path.join(os.tmpdir(), `fc_dfe_in_${tag}.json`), out = path.join(os.tmpdir(), `fc_dfe_out_${tag}.json`);
+      fs.writeFileSync(entrada, JSON.stringify({ pfx: cred.pfxPath, senha: cred.senha, cnpj: e.cnpj, empresa: e.nome, uf, pasta,
+        estado: (nsu[e.cnpj] || {}).estado || {}, tipos: tipos && tipos.length ? tipos : ['nfe', 'cte'], ciencia: sessionRole === 'admin' ? !!ciencia : true, competencia }));
+      try {
+        await runFiscal(['dfe-notas', '--entrada', entrada, '--json', out], out);
+      } finally { fs.unlink(entrada, () => {}); }
+      const r = JSON.parse(fs.readFileSync(out, 'utf-8')); fs.unlink(out, () => {});
+      if (r.erro) { saida.push({ cnpj: e.cnpj, nome: e.nome, erro: r.erro }); continue; }
+      const resumo = {};
+      for (const [t, x] of Object.entries(r.res || {})) {
+        if (!x) continue;
+        resumo[t] = { baixadas: x.baixadas.length, mes: x.mes, resumos: x.resumos.length, canceladas: x.canceladas.length, ciencias: x.ciencias,
+          ciencia_erros: x.ciencia_erros.length, aviso: x.aviso, erro: x.erro, quando: new Date().toISOString(),
+          pasta: x.baixadas.length ? path.dirname(x.baixadas[x.baixadas.length - 1].xml) : '' };
+      }
+      const novo = _dfeLer('dfe-nsu.json');
+      novo[e.cnpj] = { ...(novo[e.cnpj] || {}), estado: r.estado, ultimo: { ...((novo[e.cnpj] || {}).ultimo || {}), [competencia]: resumo } };
+      _dfeGrava('dfe-nsu.json', novo);
+      saida.push({ cnpj: e.cnpj, nome: e.nome, uf, ...resumo });
+    }
+  } finally { _dfeRodando = false; env({ txt: '' }); }
+  return { empresas: saida };
+}));
+ipcMain.handle('dfe:saidas', (_evt, { ids, competencia, tipos }) => _mod('fiscal-downloads')(async () => {
+  const alvo = [];
+  for (const e of _dfeEmpresas().filter((x) => !ids || ids.includes(x.id))) if ((await _dfeUf(e.cnpj)) === 'RO') alvo.push({ cnpj: e.cnpj, nome: e.nome });
+  if (!alvo.length) throw new Error('Nenhuma empresa de Rondônia na seleção: as saídas pelo DFe-Download são só para empresas de RO.');
+  return dfeSefin.baixar(alvo, competencia, tipos && tipos.length ? tipos : ['nfe', 'nfce']);
+}));
+ipcMain.handle('dfe:abrir', (_evt, caminho) => _mod('fiscal-downloads')(async () => {
+  if (!caminho || !fs.existsSync(caminho)) throw new Error('Pasta não encontrada.');
+  await shell.openPath(caminho);
+  return {};
+}));
+ipcMain.handle('dfe:log', () => _mod('fiscal-downloads')(async () => { await shell.openPath(app.getPath('userData')); return {}; }));
+
 ipcMain.handle('nfech:abrir', (_evt, { caminho, pasta }) => _mod('fiscal-nfechave')(async () => {
   if (!caminho || !fs.existsSync(caminho)) throw new Error('Arquivo não encontrado (foi movido ou apagado?).');
   if (pasta) shell.showItemInFolder(caminho); else await shell.openPath(caminho);

@@ -5943,7 +5943,7 @@ function bindChatIA() {
   let enviando = false;
 
   function abrir() { bubble.classList.add('hide'); panel.hidden = false; input.focus(); }
-  function fechar() { panel.hidden = true; bubble.classList.remove('hide'); }
+  function fechar() { panel.hidden = true; if (!bubble.dataset.fechado) bubble.classList.remove('hide'); }
   function addBolha(texto, tipo) {
     const div = document.createElement('div');
     div.className = tipo === 'user' ? 'ia-user' : 'ia-bot';
@@ -5982,6 +5982,9 @@ function bindChatIA() {
   }
 
   bubble.addEventListener('click', abrir);
+  // ✕ no robô: some até o sistema ser aberto de novo (quem quiser a ajuda depois, é só reabrir o FiscoCont+)
+  const xb = $('#iaBubbleX');
+  if (xb) xb.addEventListener('click', (ev) => { ev.stopPropagation(); bubble.dataset.fechado = '1'; bubble.classList.add('hide'); });
   $('#iaClose').addEventListener('click', fechar);
   send.addEventListener('click', enviar);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') enviar(); });

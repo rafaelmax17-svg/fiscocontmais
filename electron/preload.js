@@ -31,6 +31,14 @@ contextBridge.exposeInMainWorld('fiscocont', {
     onProgresso: (cb) => { ipcRenderer.removeAllListeners('plan:progresso'); ipcRenderer.on('plan:progresso', (_e, d) => cb(d)); },
     abrir: (caminho, pasta) => ipcRenderer.invoke('plan:abrir', { caminho, pasta }),
   },
+  dfe: {
+    estado: (o) => ipcRenderer.invoke('dfe:estado', o),
+    entradas: (o) => ipcRenderer.invoke('dfe:entradas', o),
+    saidas: (o) => ipcRenderer.invoke('dfe:saidas', o),
+    abrir: (caminho) => ipcRenderer.invoke('dfe:abrir', caminho),
+    log: () => ipcRenderer.invoke('dfe:log'),
+    onProgresso: (cb) => { ipcRenderer.removeAllListeners('dfe:progresso'); ipcRenderer.on('dfe:progresso', (_e, d) => cb(d)); },
+  },
   nfech: {
     empresas: () => ipcRenderer.invoke('nfech:empresas'),
     importar: () => ipcRenderer.invoke('nfech:importar'),

@@ -667,7 +667,7 @@
           <svg viewBox="0 0 24 24" width="22" height="22" style="color:#854f0b;flex:0 0 auto"><path d="M12 4v11M7.5 11.5L12 16l4.5-4.5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <div>
             <h2 style="margin:0;font-size:18px;color:var(--ink)">Baixas DF-e</h2>
-            <div style="font-size:12px;color:var(--ink2)">Download automático de NFS-e via certificado digital — sem CAPTCHA, sem portal manual</div>
+            <div style="font-size:12px;color:var(--ink2)">Download de NFS-e, NF-e, NFC-e e CT-e com o certificado digital da empresa</div>
           </div>
         </div>
         <div id="dlKpis" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">
@@ -695,6 +695,7 @@
             </div>
           </div>
           <div id="dlSemEmpresas" style="font-size:12.5px;color:var(--ink2)">Nenhuma empresa cadastrada ainda — cadastre um certificado pra começar.</div>
+          <div class="dl-cert-wrap">
           <table id="dlTabelaEmpresas" hidden style="width:100%;border-collapse:collapse;font-size:13px">
             <thead><tr style="color:var(--ink2);font-size:10.5px;text-transform:uppercase">
               <th style="text-align:left;padding:6px 8px">Empresa</th>
@@ -705,6 +706,7 @@
             </tr></thead>
             <tbody id="dlTabelaEmpresasBody"></tbody>
           </table>
+          </div>
         </div>
 
         <div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px">
@@ -725,11 +727,12 @@
           </div>
           <div style="margin-bottom:14px">
             <label style="font-size:11px;color:var(--ink2);display:block;margin-bottom:6px">Tipos de documento</label>
-            <div style="display:flex;flex-wrap:wrap;gap:8px">
-              <span style="background:#faeeda;color:#854f0b;font-size:12px;padding:5px 12px;border-radius:16px">NFS-e</span>
-              <span style="background:var(--bg,#f4f6fb);color:var(--ink2);font-size:12px;padding:5px 12px;border-radius:16px">NF-e · em breve</span>
-              <span style="background:var(--bg,#f4f6fb);color:var(--ink2);font-size:12px;padding:5px 12px;border-radius:16px">NFC-e · em breve</span>
-              <span style="background:var(--bg,#f4f6fb);color:var(--ink2);font-size:12px;padding:5px 12px;border-radius:16px">CT-e · em breve</span>
+            <div class="dl-tipos" id="dlTipos">
+              <button type="button" class="dl-tipo on" data-tipo="nfse">NFS-e</button>
+              <button type="button" class="dl-tipo" data-tipo="nfe-e">NF-e Entradas<em class="dl-novo">NOVO</em></button>
+              <button type="button" class="dl-tipo" data-tipo="nfe-s" title="Só empresas de Rondônia (DFe-Download da SEFIN)">NF-e Saídas<em class="dl-novo">NOVO</em></button>
+              <button type="button" class="dl-tipo" data-tipo="nfce-s" title="Só empresas de Rondônia (DFe-Download da SEFIN)">NFC-e Saídas<em class="dl-novo">NOVO</em></button>
+              <button type="button" class="dl-tipo" data-tipo="cte-e">CT-e Entradas<em class="dl-novo">NOVO</em></button>
             </div>
           </div>
           <div id="dlPastaInfo" style="font-size:11.5px;color:var(--ink2);margin-bottom:14px;display:flex;align-items:center;gap:8px">
@@ -740,12 +743,18 @@
             <input type="checkbox" id="dlGerarPdf" checked style="width:15px;height:15px">
             Gerar também o PDF (DANFSe) de cada nota
           </label>
+          <label id="dlCienciaBox" hidden style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);margin:-6px 0 14px;cursor:pointer">
+            <input type="checkbox" id="dlCiencia" checked style="width:15px;height:15px">
+            Ciência da Operação automática nas NF-e de entrada <span style="color:var(--ink2);font-size:11.5px">· só nas que vierem como resumo; nota que já tem ciência é só baixada</span>
+          </label>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="act inv-export" id="btnDlBaixar" style="background:#e8632b;color:#fff;border-color:transparent" disabled>Baixar NFS-e</button>
           <button class="act inv-export" id="btnNflBaixar" style="background:#1f2a5a;color:#fff;border-color:transparent" disabled>Baixar em lote (todas as empresas)</button>
           </div>
         </div>
 
+        <!-- NF-e, NFC-e e CT-e (Admin, em teste): entradas pelo Ambiente Nacional · saídas de RO pelo DFe-Download da SEFIN -->
+        <div id="dfeCard" class="dfe-card" hidden></div>
         <div id="dlResultado" hidden style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-top:14px"></div>
         <div id="nflResultado" hidden style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-top:14px">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
@@ -1596,6 +1605,7 @@
 <div class="ia-bubble" id="iaBubble">
   <div class="ia-msg">💬 Alguma ajuda tributária?</div>
   <div class="ia-fab"><span>🤖</span><span class="ia-dot"></span></div>
+  <button class="ia-xb" id="iaBubbleX" type="button" title="Fechar a ajuda (volta quando o sistema for aberto de novo)">✕</button>
 </div>
 <div class="ia-panel" id="iaPanel" hidden>
   <div class="ia-phead">
@@ -1621,5 +1631,6 @@
   <script src="planilhas.js"></script>
 <script src="pop.js"></script>
   <script src="dare.js"></script>
+  <script src="dfe-notas.js"></script>
 </body>
 </html>
