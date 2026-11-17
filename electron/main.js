@@ -581,6 +581,7 @@ ipcMain.handle('fisc:pastaDados', () => _adm(() => fisconforme.abrirPastaDados()
 // ---- Débitos e DARE (SEFIN-RO · Portal do Contribuinte): mesma entrada por certificado do Fisconforme (electron/dare.js)
 const dfeSefin = require('./dfe_sefin');
 dfeSefin.init({
+  pastaDe: (emp, pasta) => _dfeBaseDe(emp, pasta),
   userData: () => app.getPath('userData'),
   notificar: (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} },
   runFiscal: (args, out) => runFiscal(args, out),
@@ -1383,6 +1384,16 @@ async function _baixarNfseEmpresa(empresa, dataInicial, dataFinal, gerarPdf) {
         _salvarIndiceCert(indice);
       }
     }
+    if (!resultado.erro) {
+      try {
+        const meses = [];
+        for (let d = new Date(`${dataInicial.slice(0, 7)}-01T12:00:00`); d <= new Date(`${dataFinal}T12:00:00`); d.setMonth(d.getMonth() + 1)) meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+        const pub = await _publicarCliente({ nome: empresa.razaoSocial, cnpj: empresa.cnpj }, pastaBase, meses, empresa.razaoSocial);
+        resultado.pastaCliente = Object.values(pub.destinos)[0] || '';
+        resultado.semPastaCliente = !!pub.semPasta;
+        if (pub.erros.length) resultado.avisoPastaCliente = pub.erros.join('; ');
+      } catch (e) { resultado.avisoPastaCliente = String(e.message || e); }
+    }
     return resultado.erro ? { error: resultado.erro, tipo: 'erro' } : { ok: true, resultado };
   } catch (e) { return { error: String(e.message || e), tipo: 'erro' }; }
 }
@@ -1628,6 +1639,48 @@ function _dfeEmpresas() {
     .map((e) => ({ id: e.id, cnpj: e.cnpj, nome: e.razaoSocial, validade: e.validade || '', vencido: !!(e.validade && new Date(e.validade) < new Date()) }))
     .sort((a, b) => a.nome.localeCompare(b.nome));
 }
+// ---------------------------------------------------------------------------
+// Pasta de cada empresa no drive (Fiscal - Lucro Presumido | Lucro Real | Simples Nacional \ <Empresa>\Relatórios\AAAA\mês)
+// (pedido do Rafael, 17/11/2026). Empresa com pasta encontrada: os XML/PDF ficam numa cópia de trabalho deste computador
+// e vão para a pasta do cliente em zips ("NFe Entradas 102026 - XML.zip" / "- PDF.zip"). Sem pasta: tudo como antes,
+// na pasta escolhida nas Baixas DF-e, com aviso. O sistema nunca cria a pasta da empresa.
+// ---------------------------------------------------------------------------
+const pastaCliente = require('./pasta_cliente');
+function _dfeTrabalho() { const d = path.join(app.getPath('userData'), 'DF-e trabalho'); fs.mkdirSync(d, { recursive: true }); return d; }
+function _cliDe(e) { try { return pastaCliente.achar({ nome: e.nome || e.razaoSocial, cnpj: e.cnpj }); } catch (_) { return null; } }
+function _dfeBaseDe(e, pasta) { return _cliDe(e) ? _dfeTrabalho() : pasta; }
+const ROT_ZIP = { 'NF-e Entradas': 'NFe Entradas', 'NF-e Saídas': 'NFe Saidas', 'NFC-e Saídas': 'NFC-e Saidas', 'CT-e Entradas': 'CT-e Entradas', 'NFS-e': 'NFS-e' };
+// zips do(s) mês(es) na pasta do cliente · base/<MM-AAAA>/<nomePasta>/<tipo>/{XML,PDF} · extras: [{copiar, para}]
+async function _publicarCliente(e, base, meses, nomePasta, extras = []) {
+  const cli = _cliDe(e);
+  if (!cli) return { destinos: {}, erros: [], semPasta: true };
+  const lista = [...extras], destinos = {};
+  for (const comp of new Set(meses || [])) {
+    if (!/^\d{4}-\d{2}$/.test(comp)) continue;
+    const [a, m] = comp.split('-');
+    const dEmp = path.join(base, `${m}-${a}`, nomePasta);
+    if (!fs.existsSync(dEmp)) continue;
+    const dCli = pastaCliente.pastaMes(cli.dir, a, m, true);
+    if (!dCli) continue;
+    destinos[comp] = dCli;
+    for (const [sub, rot] of Object.entries(ROT_ZIP)) {
+      for (const k of ['XML', 'PDF']) {
+        const o = path.join(dEmp, sub, k);
+        if (fs.existsSync(o)) lista.push({ origem: o, zip: path.join(dCli, `${rot} ${m}${a} - ${k}.zip`) });
+      }
+    }
+  }
+  if (!lista.length) return { destinos, erros: [] };
+  const tag = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const ent = path.join(os.tmpdir(), `fc_pub_${tag}.json`), out = path.join(os.tmpdir(), `fc_pub_out_${tag}.json`);
+  fs.writeFileSync(ent, JSON.stringify(lista));
+  try { await runFiscal(['publicar-zip', '--entrada', ent, '--json', out], out); } finally { fs.unlink(ent, () => {}); }
+  let r = {};
+  try { r = JSON.parse(fs.readFileSync(out, 'utf-8')); } catch (_) {}
+  fs.unlink(out, () => {});
+  return { destinos, erros: r.erros || (r.erro ? [r.erro] : []) };
+}
+
 // mesmo nome de pasta que o Python usa (nfe_chave._limpa_nome)
 function _dfeNomePasta(nome) { return String(nome || '').replace(/[\\/:*?"<>|]+/g, ' ').trim().replace(/\.+$/, '').replace(/\s+/g, ' ').slice(0, 120) || 'Empresa'; }
 ipcMain.handle('dfe:estado', (_evt, { competencia } = {}) => _mod('fiscal-downloads')(async () => {
@@ -1638,7 +1691,9 @@ ipcMain.handle('dfe:estado', (_evt, { competencia } = {}) => _mod('fiscal-downlo
   return {
     pasta: (() => { try { return JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase || ''; } catch (_) { return ''; } })(),
     empresas: lst.map((e) => ({ ...e, entradas: ((nsu[e.cnpj] || {}).ultimo || {})[competencia] || null, saidas: (ro[e.cnpj] || {})[competencia] || null,
-      relatorio: (() => { const r = (rel[e.cnpj] || {})[competencia]; return r && r.html && fs.existsSync(r.html) ? { quando: r.quando, pdfs: r.pdfs, pdfTotal: r.pdfTotal } : null; })() })),
+      relatorio: (() => { const r = (rel[e.cnpj] || {})[competencia]; return r && r.html && fs.existsSync(r.html) ? { quando: r.quando, pdfs: r.pdfs, pdfTotal: r.pdfTotal } : null; })(),
+      cliente: (() => { const c = _cliDe(e); return c ? { pasta: c.nome, regime: c.regime } : null; })() })),
+    drive: pastaCliente.disponivel(),
   };
 }));
 ipcMain.handle('dfe:entradas', (_evt, { ids, competencia, tipos, ciencia }) => _mod('fiscal-downloads')(async () => {
@@ -1662,21 +1717,26 @@ ipcMain.handle('dfe:entradas', (_evt, { ids, competencia, tipos, ciencia }) => _
       const nsu = _dfeLer('dfe-nsu.json');
       const tag = `${Date.now()}_${n}`;
       const entrada = path.join(os.tmpdir(), `fc_dfe_in_${tag}.json`), out = path.join(os.tmpdir(), `fc_dfe_out_${tag}.json`);
-      fs.writeFileSync(entrada, JSON.stringify({ pfx: cred.pfxPath, senha: cred.senha, cnpj: e.cnpj, empresa: e.nome, uf, pasta,
+      const base = _dfeBaseDe(e, pasta);
+      fs.writeFileSync(entrada, JSON.stringify({ pfx: cred.pfxPath, senha: cred.senha, cnpj: e.cnpj, empresa: e.nome, uf, pasta: base,
         estado: (nsu[e.cnpj] || {}).estado || {}, tipos: tipos && tipos.length ? tipos : ['nfe', 'cte'], ciencia: sessionRole === 'admin' ? !!ciencia : true, competencia }));
       try {
         await runFiscal(['dfe-notas', '--entrada', entrada, '--json', out], out);
       } finally { fs.unlink(entrada, () => {}); }
       const r = JSON.parse(fs.readFileSync(out, 'utf-8')); fs.unlink(out, () => {});
       if (r.erro) { saida.push({ cnpj: e.cnpj, nome: e.nome, erro: r.erro }); continue; }
+      // pasta do cliente: zips de cada mês que recebeu nota
+      const mesesPub = new Set([competencia]);
+      for (const x of Object.values(r.res || {})) if (x) Object.keys(x.meses || {}).forEach((m) => mesesPub.add(m));
+      const pub = base !== pasta ? await _publicarCliente(e, base, [...mesesPub], _dfeNomePasta(e.nome)) : null;
       const resumo = {};
       for (const [t, x] of Object.entries(r.res || {})) {
         if (!x) continue;
         // pasta do mês escolhido (as notas ficam na pasta do mês de emissão; a sequência da SEFAZ traz todos os meses)
         const [ca, cm] = competencia.split('-');
-        const pastaMes = path.join(pasta, `${cm}-${ca}`, _dfeNomePasta(e.nome), t === 'cte' ? 'CT-e Entradas' : 'NF-e Entradas', 'XML');
+        const pastaMes = pub && pub.destinos[competencia] ? pub.destinos[competencia] : path.join(base, `${cm}-${ca}`, _dfeNomePasta(e.nome), t === 'cte' ? 'CT-e Entradas' : 'NF-e Entradas', 'XML');
         resumo[t] = { baixadas: x.baixadas.length, mes: x.mes, meses: x.meses || {}, resumos: x.resumos.length, canceladas: x.canceladas.length, ciencias: x.ciencias,
-          ciencia_erros: x.ciencia_erros.length, aviso: x.aviso, erro: x.erro, quando: new Date().toISOString(),
+          ciencia_erros: x.ciencia_erros.length, aviso: x.aviso, erro: x.erro, quando: new Date().toISOString(), cliente: !!pub, pubErros: pub ? pub.erros : [],
           pasta: fs.existsSync(pastaMes) ? pastaMes : (x.baixadas.length ? path.dirname(x.baixadas[x.baixadas.length - 1].xml) : '') };
       }
       const novo = _dfeLer('dfe-nsu.json');
@@ -1691,7 +1751,21 @@ ipcMain.handle('dfe:saidas', (_evt, { ids, competencia, tipos }) => _mod('fiscal
   const alvo = [];
   for (const e of _dfeEmpresas().filter((x) => !ids || ids.includes(x.id))) if ((await _dfeUf(e.cnpj)) === 'RO') alvo.push({ cnpj: e.cnpj, nome: e.nome });
   if (!alvo.length) throw new Error('Nenhuma empresa de Rondônia na seleção: as saídas pelo DFe-Download são só para empresas de RO.');
-  return dfeSefin.baixar(alvo, competencia, tipos && tipos.length ? tipos : ['nfe', 'nfce']);
+  const r = await dfeSefin.baixar(alvo, competencia, tipos && tipos.length ? tipos : ['nfe', 'nfce']);
+  const pasta = (() => { try { return JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase || ''; } catch (_) { return ''; } })();
+  for (const x of r.empresas || []) {
+    const base = _dfeBaseDe(x, pasta);
+    if (base === pasta) continue;
+    const pub = await _publicarCliente(x, base, [competencia], _dfeNomePasta(x.nome));
+    const dCli = pub.destinos[competencia];
+    if (dCli) {                                   // "Abrir pasta" leva à pasta do cliente
+      const est = dfeSefin.lerEstado();
+      const s2 = ((est[x.cnpj] || {})[competencia]) || {};
+      for (const t of Object.keys(s2)) if (s2[t] && typeof s2[t] === 'object') s2[t].pasta = dCli;
+      dfeSefin.gravaEstado(est);
+    }
+  }
+  return r;
 }));
 // Relatório DF-e (HTML com painel) e PDF das NF-e/CT-e: gerados a partir dos XMLs já baixados e salvos na pasta da empresa
 ipcMain.handle('dfe:relatorio', (_evt, { ids, competencias, pdf } = {}) => _mod('fiscal-downloads')(async () => {
@@ -1708,12 +1782,20 @@ ipcMain.handle('dfe:relatorio', (_evt, { ids, competencias, pdf } = {}) => _mod(
       for (const c of comps) {
         env({ txt: `Relatório${pdf ? ' e PDFs' : ''} · ${e.nome} (${n + 1} de ${alvo.length}) · ${c.split('-').reverse().join('/')}…` });
         const out = path.join(os.tmpdir(), `fc_dfe_rel_${Date.now()}_${n}.json`);
-        await runFiscal(['dfe-relatorio', '--pasta', pasta, '--empresa', e.nome, '--cnpj', e.cnpj, '--competencia', c, '--pdf', pdf ? '1' : '0', '--json', out], out);
+        const base = _dfeBaseDe(e, pasta);
+        const [ra, rm] = c.split('-');
+        const cli = base !== pasta ? _cliDe(e) : null;
+        const dCli = cli ? pastaCliente.pastaMes(cli.dir, ra, rm, true) : null;
+        const pub = dCli ? path.join(dCli, `Relatório DF-e ${rm}${ra}.html`) : '';
+        await runFiscal(['dfe-relatorio', '--pasta', base, '--empresa', e.nome, '--cnpj', e.cnpj, '--competencia', c, '--pdf', pdf ? '1' : '0',
+          ...(pub ? ['--publico', pub] : []), '--json', out], out);
         const r = JSON.parse(fs.readFileSync(out, 'utf-8')); fs.unlink(out, () => {});
         if (r.erro) { saida.push({ id: e.id, nome: e.nome, competencia: c, erro: r.erro }); continue; }
         const pdfTotal = ['nfe-e', 'cte-e', 'nfe-s'].reduce((s, k) => s + (((r.resumo || {})[k] || {}).qtd || 0), 0);
         const rel = _dfeLer('dfe-rel.json');
-        rel[e.cnpj] = { ...(rel[e.cnpj] || {}), [c]: { html: r.html, quando: new Date().toISOString(), pdfs: r.pdfs, pdfTotal, pdfErros: r.pdf_erros } };
+        const zp = dCli ? await _publicarCliente(e, base, [c], _dfeNomePasta(e.nome)) : null;
+        rel[e.cnpj] = { ...(rel[e.cnpj] || {}), [c]: { html: r.html, publico: r.publico || '', pastaCliente: dCli || '', quando: new Date().toISOString(), pdfs: r.pdfs, pdfTotal, pdfErros: r.pdf_erros } };
+        if (zp && zp.erros.length) saida.push({ id: e.id, nome: e.nome, competencia: c, erro: `zips na pasta do cliente: ${zp.erros.join('; ')}` });
         _dfeGrava('dfe-rel.json', rel);
         saida.push({ id: e.id, nome: e.nome, competencia: c, ok: true, pdfs: r.pdfs, pdf_erros: r.pdf_erros });
       }
@@ -1724,8 +1806,9 @@ ipcMain.handle('dfe:relatorio', (_evt, { ids, competencias, pdf } = {}) => _mod(
 ipcMain.handle('dfe:relatorioAbrir', (_evt, { id, competencia } = {}) => _mod('fiscal-downloads')(async () => {
   const e = _dfeEmpresas().find((x) => x.id === id);
   const r = e && (_dfeLer('dfe-rel.json')[e.cnpj] || {})[competencia];
-  if (!r || !r.html || !fs.existsSync(r.html)) throw new Error('O relatório deste mês ainda não foi gerado.');
-  const erro = await shell.openPath(r.html);
+  const alvo = r && r.publico && fs.existsSync(r.publico) ? r.publico : r && r.html;
+  if (!alvo || !fs.existsSync(alvo)) throw new Error('O relatório deste mês ainda não foi gerado.');
+  const erro = await shell.openPath(alvo);
   if (erro) throw new Error(erro);
   return {};
 }));

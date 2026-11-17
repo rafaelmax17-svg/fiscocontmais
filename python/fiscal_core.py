@@ -3155,6 +3155,9 @@ def main(argv):
     if modo == 'dfe-notas':
         import dfe_notas as _dfn
         return _dfn.main_cli(argv[1:])
+    if modo == 'publicar-zip':
+        import publicar_zip as _pz
+        return _pz.main_cli(argv[1:])
     if modo == 'dfe-relatorio':
         import dfe_relatorio as _dfr
         return _dfr.main_cli(argv[1:])

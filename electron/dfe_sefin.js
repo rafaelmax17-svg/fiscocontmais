@@ -692,7 +692,7 @@ async function baixar(empresas, comp, tipos) {
       if (_parar) { saida.push({ cnpj: emp.cnpj, nome: emp.nome, parado: true }); continue; }
       _prog(`Saídas · ${emp.nome} (${n + 1} de ${empresas.length})…`);
       _log(`===== ${emp.nome} (${_fmtCnpj(emp.cnpj)}) · ${comp}`);
-      const r = await _empresa(emp, comp, tipos, pasta, estado);
+      const r = await _empresa(emp, comp, tipos, D.pastaDe ? D.pastaDe(emp, pasta) : pasta, estado);
       saida.push({ cnpj: emp.cnpj, nome: emp.nome, ...r });
     }
   } finally { _rodando = false; _prog(''); }
@@ -701,4 +701,6 @@ async function baixar(empresas, comp, tipos) {
 
 function cancelar() { _parar = true; if (_capPend) respostaCodigo(_capPend.id, null); try { if (_vivo()) _win.close(); } catch (_) {} return { ok: true }; }
 
-module.exports = { init, baixar, lerEstado, respostaCodigo, cancelar };
+function gravaEstado(est) { _gravaEstado(est); }
+
+module.exports = { init, baixar, lerEstado, gravaEstado, respostaCodigo, cancelar };

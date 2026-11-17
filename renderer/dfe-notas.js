@@ -31,7 +31,9 @@
   .dfe-ok{background:#e3f7ee;color:#0f7a52}.dfe-ag{background:#fff4dd;color:#9a6200}.dfe-pr{background:#e8f0ff;color:#2f4090}.dfe-er{background:#fdeaea;color:#b42323}.dfe-nr{background:#eef0f6;color:#475569}
   .dfe-lk{color:#2f4090;font-weight:700;font-size:11.5px;cursor:pointer;background:none;border:none;padding:0;margin-top:3px}
   .dfe-uf{font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 6px;background:#eef0f6;color:#475569}.dfe-uf.ro{background:#e8f0ff;color:#2f4090}
-  .dfe-pasta{font-size:11.5px;color:var(--ink2);margin-top:10px}
+  .dfe-pasta{font-size:11.5px;color:var(--ink2);margin-top:10px;line-height:1.5}
+  .dfe-cli{display:block;font-size:10.5px;color:#0f6e48;margin-top:2px}
+  .dfe-cli.sem{color:#a8471b}
   .dl-so{display:inline-block;margin-left:6px;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:#e8632b;color:#fff;border-radius:8px;padding:1px 7px;vertical-align:1px}
   .dfe-rel{display:inline-flex;align-items:center;gap:6px;margin-top:6px;font:inherit;font-size:11.5px;font-weight:700;color:#fff;background:linear-gradient(90deg,#2f4090,#4f46e5);border:none;border-radius:8px;padding:4px 10px;cursor:pointer;box-shadow:0 3px 10px rgba(79,70,229,.25)}
   .dfe-rel svg{width:13px;height:13px}
@@ -166,18 +168,22 @@
       const en = m.entradas || {}, sa = m.saidas || {};
       const rel = m.relatorio ? `<button class="dfe-rel" data-rel="${e(m.id)}" title="Abre o relatório com o painel do mês (arquivo HTML salvo na pasta da empresa)">${ICO_REL}Abrir relatório</button>`
         + `<span class="dfe-rel-q">gerado em ${new Date(m.relatorio.quando).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}${m.relatorio.pdfTotal ? ' · PDFs na pasta' : ''}</span>` : '';
-      return `<tr><td><b>${e(m.nome)}</b>${m.vencido ? '<small style="color:#b42323">certificado vencido</small>' : ''}${rel}</td>
+      const cli = m.cliente ? `<span class="dfe-cli" title="Os arquivos vão para esta pasta, em Relatórios › AAAA › mês">📁 ${e(m.cliente.regime)} › ${e(m.cliente.pasta)}</span>`
+        : `<span class="dfe-cli sem" title="Não achei a pasta desta empresa em Fiscal - Lucro Presumido, Lucro Real ou Simples Nacional">pasta da empresa não encontrada · salvo na pasta de sempre</span>`;
+      return `<tr><td><b>${e(m.nome)}</b>${m.vencido ? '<small style="color:#b42323">certificado vencido</small>' : ''}${cli}${rel}</td>
         <td><span class="dfe-uf ${m.uf === 'RO' ? 'ro' : ''}">${e(m.uf || '?')}</span></td>
         <td>${celEntrada(en.nfe, 'nfe')}</td><td>${celEntrada(en.cte, 'cte')}</td><td>${celSaida(sa.nfe, m.uf)}</td><td>${celSaida(sa.nfce, m.uf)}</td></tr>`;
     }).join('') || '';
-    q('#dfePasta').innerHTML = X.pasta ? `Pastas: <b>${e(X.pasta)}</b> › MM-AAAA › empresa › <b>NF-e Entradas</b> · <b>CT-e Entradas</b> · <b>NF-e Saídas</b> · <b>NFC-e Saídas</b> (XML)` : '';
+    q('#dfePasta').innerHTML = `Onde salva: na pasta de cada empresa em <b>Fiscal - Lucro Presumido · Lucro Real · Simples Nacional</b> › empresa › <b>Relatórios › AAAA › mês</b>, em zips por tipo (ex.: <b>NFe Entradas 102026 - XML.zip</b> e <b>- PDF.zip</b>) e o Relatório DF-e.`
+      + (X.pasta ? ` Empresa sem pasta encontrada: <b>${e(X.pasta)}</b> › MM-AAAA › empresa, como antes.` : '')
+      + (X.drive === false ? ' <b style="color:#b42323">O drive G: não está disponível neste computador: tudo vai para a pasta de sempre.</b>' : '');
   }
   async function atualizar() {
     X.comp = meses()[0] || X.comp || '';
     if (!X.comp) { q('#dfeTab').hidden = true; q('#dfePasta').textContent = 'Informe a Data inicial e a Data final acima.'; return; }
     const r = await window.fiscocont.dfe.estado({ competencia: X.comp });
     if (!r || r.error) { if (r && r.error) aviso(r.error, true); return; }
-    X.emps = r.empresas || []; X.pasta = r.pasta || '';
+    X.emps = r.empresas || []; X.pasta = r.pasta || ''; X.drive = r.drive;
     desenhar();
   }
 

@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const auth = require('./auth');
 const fisc = require('./fisconforme');
+const pastaCliente = require('./pasta_cliente');
 
 const P = fisc.portal;
 const URL_CONSULTA = 'https://portalcontribuinte.sefin.ro.gov.br/app/consultadebitos/';
@@ -377,14 +378,29 @@ async function dados(ano) {
 }
 
 // ------------------------------------------------------------------ nomes e pasta da empresa
+// Pasta da empresa no drive (pedido do Rafael, 17/11/2026): <Empresa>\Relatórios\AAAA\<mês>, solto, com a IE no fim do
+// nome. O mês é a competência: o mês ANTERIOR ao do vencimento (vence em 11/2026 → pasta 10 de 2026).
+// Sem pasta da empresa (ou sem vencimento): como antes, em "DARES Automáticos\<EMPRESA> - IE <IE>".
+function _pastaCliente(x) {
+  const m = String(x.venc || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  let mes = parseInt(m[2], 10) - 1, ano = parseInt(m[3], 10);
+  if (mes === 0) { mes = 12; ano--; }
+  const p = pastaCliente.achar({ nome: x.razao || x.nome, cnpj: x.cnpj });
+  return p ? pastaCliente.pastaMes(p.dir, ano, mes, false) : null;
+}
 function _nomes(x) {
   const emp = _limpaNome(x.nome);
   const tipo = /^1\d{3}$/.test(x.rec) ? `ICMS ${x.rec}` : `${x.rec}`;
   const parc = x.parc && !/^0+$/.test(x.parc) ? ` Parcela ${x.parc}` : '';
+  const cli = _pastaCliente(x);
+  if (cli) return { dir: cli, cliente: true, dare: path.join(cli, `DARE ${tipo} Nº ${x.nr}${parc} - ${emp} - IE ${x.ie}.pdf`), extrato: path.join(cli, `Extrato Ref DARE ${tipo} Nº ${x.nr}${parc} - ${emp} - IE ${x.ie}.pdf`) };
   const dir = path.join(pasta(), `${emp} - IE ${x.ie}`);
-  return { dir, dare: path.join(dir, `DARE ${tipo} Nº ${x.nr}${parc} - ${emp}.pdf`), extrato: path.join(dir, `Extrato Ref DARE ${tipo} Nº ${x.nr}${parc} - ${emp}.pdf`) };
+  return { dir, cliente: false, dare: path.join(dir, `DARE ${tipo} Nº ${x.nr}${parc} - ${emp}.pdf`), extrato: path.join(dir, `Extrato Ref DARE ${tipo} Nº ${x.nr}${parc} - ${emp}.pdf`) };
 }
 function _garantePasta(dir) {
+  // pasta da empresa no drive: ela já existe (o sistema nunca cria a pasta da empresa); cria só Relatórios\AAAA\mês
+  if (pastaCliente.RAIZES.some((r) => dir.toLowerCase().startsWith(r.toLowerCase()))) { fs.mkdirSync(dir, { recursive: true }); return; }
   const raiz = pasta();
   if (!fs.existsSync(raiz)) throw new Error(`Não encontrei a pasta "${raiz}" neste computador. Confira se o Google Drive está aberto e com o drive G: disponível.`);
   fs.mkdirSync(dir, { recursive: true });

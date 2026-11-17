@@ -249,7 +249,7 @@
   async function baixarExtrato(x) {
     if (!x) return;
     const prog = $('#drProg'); if (prog) { prog.hidden = false; prog.querySelector('span').textContent = 'Baixando o extrato…'; }
-    const r = await window.fiscocont.dare.extrato({ ie: x.ie, nome: x.nome, nr: x.nr, parc: x.parc || '00', rec: x.rec, ano: x.ano });
+    const r = await window.fiscocont.dare.extrato({ ie: x.ie, nome: x.nome, razao: x.razao, cnpj: x.cnpj, venc: x.venc, nr: x.nr, parc: x.parc || '00', rec: x.rec, ano: x.ano });
     if (prog) prog.hidden = true;
     if (r && r.error) { toast(r.error, true); return; }
     toast('Extrato salvo na pasta da empresa.');
@@ -284,7 +284,7 @@
   async function abrirAtual() {
     const x = M.lista[M.i];
     carregando(x, 'Abrindo o DARE na SEFIN…');
-    const p = await window.fiscocont.dare.preparar({ ie: x.ie, nome: x.nome, nr: x.nr, parc: x.parc || '00', rec: x.rec, ano: x.ano, ref: x.ref });
+    const p = await window.fiscocont.dare.preparar({ ie: x.ie, nome: x.nome, razao: x.razao, cnpj: x.cnpj, venc: x.venc, nr: x.nr, parc: x.parc || '00', rec: x.rec, ano: x.ano, ref: x.ref });
     if (!$('#drOv')) return;                                   // cancelado no meio
     if (p && p.error) { erroModal(x, p.error); return; }
     M.p = p;
@@ -537,7 +537,7 @@
   async function extratoPago(x) {
     if (!x || R.semCert) return;
     const prog = $('#drProg'); if (prog) { prog.hidden = false; prog.querySelector('span').textContent = 'Baixando o extrato…'; }
-    const r = await window.fiscocont.dare.extratoPago({ ie: x.ie, nome: x.nome, nr: x.nr, parc: x.parc || '00', rec: x.rec, mes: x.mes });
+    const r = await window.fiscocont.dare.extratoPago({ ie: x.ie, nome: x.nome, razao: x.razao, cnpj: x.cnpj, venc: x.venc, nr: x.nr, parc: x.parc || '00', rec: x.rec, mes: x.mes });
     if (prog) prog.hidden = true;
     if (r && r.error) { toast(r.error, true); return; }
     toast('Extrato salvo na pasta da empresa.');

@@ -274,7 +274,9 @@ $('#tImp').innerHTML='<thead><tr><th>Documento</th><th>Valor total</th><th>ICMS<
 
 // lista das notas
 const L={g:G.findIndex((x)=>x.docs.length)>=0?G.findIndex((x)=>x.docs.length):0,q:'',pg:0,ord:'dia',asc:true,por:50};
-const COLS=[{k:'n',t:'Nº / série'},{k:'dia',t:'Emissão'},{k:'part',t:'Emitente / destinatário'},{k:'uf',t:'UF'},{k:'valor',t:'Valor',n:1},{k:'icms',t:'ICMS',n:1},{k:'arq',t:'Arquivos'}];
+// na cópia da pasta do cliente os XML/PDF estão dentro dos zips: sem a coluna de arquivos
+const temArq=G.some((x)=>x.docs.some((d)=>d[15]));
+const COLS=[{k:'n',t:'Nº / série'},{k:'dia',t:'Emissão'},{k:'part',t:'Emitente / destinatário'},{k:'uf',t:'UF'},{k:'valor',t:'Valor',n:1},{k:'icms',t:'ICMS',n:1},...(temArq?[{k:'arq',t:'Arquivos'}]:[])];
 function linhas(){const x=G[L.g],ent=!!ENTRADA[x.id],q=L.q.trim().toLowerCase().replace(/[.\-\/]/g,'');
   let ds=x.docs.map((d)=>({d,n:+d[1]||0,dia:d[3],part:ent?d[4]:(d[7]||'Consumidor'),doc:ent?d[5]:d[8],uf:ent?d[6]:d[9],valor:d[10],icms:d[11]}));
   if(q)ds=ds.filter((r)=>(r.d[1]+' '+r.d[0]+' '+r.part+' '+r.doc).toLowerCase().replace(/[.\-\/]/g,'').includes(q));
@@ -287,10 +289,10 @@ function lista(){
   const tb=pag.map((r)=>{const d=r.d;return `<tr><td><b>${esc(d[1])}</b>${d[2]?` <span class="ch">/${esc(d[2])}</span>`:''}${d[14]?'<span class="cn">CANCELADA</span>':''}<span class="d ch">${esc(d[0])}</span></td>
     <td>${dataBr(d[3])}</td><td>${esc(r.part)}<span class="d">${esc(docf(r.doc))}</span></td><td>${esc(r.uf)}</td>
     <td class="n">R$ ${brl(d[10])}</td><td class="n">R$ ${brl(d[11])}</td>
-    <td><a class="lk" href="${encodeURI(d[15])}">XML</a>${d[16]?`<a class="lk" href="${encodeURI(d[16])}">PDF</a>`:''}</td></tr>`;}).join('');
+    ${temArq?`<td>${d[15]?`<a class="lk" href="${encodeURI(d[15])}">XML</a>`:''}${d[16]?`<a class="lk" href="${encodeURI(d[16])}">PDF</a>`:''}</td>`:''}</tr>`;}).join('');
   const at=ds.filter((r)=>!r.d[14]);
-  const ft=ds.length?`<tfoot><tr><td colspan="4">${ds.length.toLocaleString('pt-BR')} documento(s)${ds.length!==at.length?` · total sem as ${ds.length-at.length} cancelada(s)`:''}</td><td class="n">R$ ${brl(at.reduce((s,r)=>s+r.valor,0))}</td><td class="n">R$ ${brl(at.reduce((s,r)=>s+r.icms,0))}</td><td></td></tr></tfoot>`:'';
-  $('#tLista').innerHTML=`<thead><tr>${th}</tr></thead><tbody>${tb||`<tr><td colspan="7" class="vazio-g">${x.docs.length?'Nada encontrado na busca':'Sem documentos deste tipo no mês'}</td></tr>`}</tbody>${ft}`;
+  const ft=ds.length?`<tfoot><tr><td colspan="4">${ds.length.toLocaleString('pt-BR')} documento(s)${ds.length!==at.length?` · total sem as ${ds.length-at.length} cancelada(s)`:''}</td><td class="n">R$ ${brl(at.reduce((s,r)=>s+r.valor,0))}</td><td class="n">R$ ${brl(at.reduce((s,r)=>s+r.icms,0))}</td>${temArq?'<td></td>':''}</tr></tfoot>`:'';
+  $('#tLista').innerHTML=`<thead><tr>${th}</tr></thead><tbody>${tb||`<tr><td colspan="${COLS.length}" class="vazio-g">${x.docs.length?'Nada encontrado na busca':'Sem documentos deste tipo no mês'}</td></tr>`}</tbody>${ft}`;
   $('#pgInfo').textContent=ds.length?`Mostrando ${(L.pg*L.por+1).toLocaleString('pt-BR')}–${Math.min(ds.length,(L.pg+1)*L.por).toLocaleString('pt-BR')} de ${ds.length.toLocaleString('pt-BR')}`:'';
   $('#pgAnt').disabled=L.pg<=0;$('#pgProx').disabled=L.pg>=paginas-1;
 }

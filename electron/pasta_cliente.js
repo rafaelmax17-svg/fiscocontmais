@@ -1,0 +1,98 @@
+'use strict';
+// Pasta de cada empresa no drive do escritório (pedido do Rafael, 17/11/2026):
+//   G:\Drives compartilhados\Fiscal - Lucro Presumido | Fiscal - Lucro Real | Fiscal - Simples Nacional \ <Empresa>
+// Os arquivos do mês vão para  <Empresa>\Relatórios\<AAAA>\<mês>.
+//
+// • A pasta da empresa é achada pelo nome (sem diferença de maiúscula, acento e pontuação). Filial: o CNPJ diz se é
+//   matriz (0001) ou filial; filial só usa pasta com "Filial" no nome — nunca a pasta da matriz.
+// • O sistema NUNCA cria a pasta da empresa. Dentro dela, cria só o que faltar de Relatórios\AAAA\mês.
+// • O mês usa a pasta que já existir, com qualquer um destes nomes: 10, 102026, 10-2026, 10.2026, 2026-10, "10 - Outubro"…
+//   Se não houver, cria "10" (dois dígitos).
+// • Sem pasta encontrada: quem chama salva no caminho de sempre e avisa.
+
+const fs = require('fs');
+const path = require('path');
+
+const RAIZES = process.env.FC_RAIZES_CLIENTE ? JSON.parse(process.env.FC_RAIZES_CLIENTE) : [
+  'G:\\Drives compartilhados\\Fiscal - Lucro Presumido',
+  'G:\\Drives compartilhados\\Fiscal - Lucro Real',
+  'G:\\Drives compartilhados\\Fiscal - Simples Nacional',
+];
+const CACHE_MS = 10 * 60 * 1000;
+let _cache = { em: 0, lista: [] };
+
+const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  .replace(/&/g, ' e ').replace(/[^a-z0-9]+/g, ' ').trim();
+// tira o tipo societário (Ltda, ME, EPP, EIRELI, S/A) para "Comercio X Ltda." e "COMERCIO X LTDA" serem o mesmo nome
+const chave = (s) => norm(s).replace(/\b(ltda|me|epp|eireli|s a|sa|ss)\b/g, ' ').replace(/\s+/g, ' ').trim();
+
+function _lista() {
+  if (Date.now() - _cache.em < CACHE_MS && _cache.lista.length) return _cache.lista;
+  const lista = [];
+  for (const raiz of RAIZES) {
+    let nomes = [];
+    try { nomes = fs.readdirSync(raiz, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch (_) { continue; }
+    for (const nome of nomes) lista.push({ nome, dir: path.join(raiz, nome), k: chave(nome), regime: path.basename(raiz).replace(/^Fiscal - /, '') });
+  }
+  _cache = { em: Date.now(), lista };
+  return lista;
+}
+function limparCache() { _cache = { em: 0, lista: [] }; }
+function disponivel() { return RAIZES.some((r) => { try { return fs.statSync(r).isDirectory(); } catch (_) { return false; } }); }
+
+// { dir, regime } da pasta da empresa, ou null
+function achar({ nome, cnpj } = {}) {
+  const k = chave(nome);
+  if (!k) return null;
+  const lista = _lista();
+  if (!lista.length) return null;
+  const doc = String(cnpj || '').replace(/\D/g, '');
+  const ordem = doc.length === 14 ? parseInt(doc.slice(8, 12), 10) : 1;
+  // o próprio nome cadastrado já diz a filial ("... - Filial 01 - Guajara Mirim"): nome exato resolve
+  const exatos = lista.filter((d) => d.k === k);
+  if (/\bfilial\b/.test(k)) return exatos.length === 1 ? exatos[0] : null;
+  // sem CNPJ não dá para saber se é matriz ou filial: se a empresa tem pasta de filial, não arrisca
+  if (doc.length !== 14 && lista.some((d) => d.k.startsWith(`${k} `) && /\bfilial\b/.test(d.k))) return null;
+  if (ordem <= 1) return exatos.length === 1 ? exatos[0] : null;
+  // filial: só pastas "<nome> ... filial N ..."
+  const filiais = lista.filter((d) => d.k.startsWith(`${k} `) && /\bfilial\b/.test(d.k));
+  if (filiais.length === 1) return filiais[0];
+  const numero = (d) => { const m = d.k.match(/\bfilial\s*0*(\d+)/); return m ? parseInt(m[1], 10) : null; };
+  for (const alvo of [ordem - 1, ordem]) {
+    const c = filiais.filter((d) => numero(d) === alvo);
+    if (c.length === 1) return c[0];
+  }
+  return null;
+}
+
+function _filho(dir, teste) {
+  try { return fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).find(teste) || null; } catch (_) { return null; }
+}
+// <Empresa>\Relatórios\<AAAA>\<mês> — usa o que existir, cria só o que faltar (nunca a pasta da empresa)
+function pastaMes(dirEmp, ano, mes, criar = true) {
+  if (!dirEmp || !fs.existsSync(dirEmp)) return null;
+  ano = String(ano); const mm = String(mes).padStart(2, '0'), m = String(parseInt(mes, 10));
+  const rel = _filho(dirEmp, (n) => /^relatorios?$/.test(norm(n))) || 'Relatórios';
+  const dRel = path.join(dirEmp, rel);
+  const a = _filho(dRel, (n) => norm(n) === ano) || ano;
+  const dAno = path.join(dRel, a);
+  const okMes = (n) => {
+    const d = String(n).replace(/\D+/g, ' ').trim().split(' ');
+    const j = d.join('');
+    if (j === mm || j === m || j === mm + ano || j === m + ano || j === ano + mm || j === ano + m) return true;
+    return (d[0] === mm || d[0] === m) && (d.length === 1 || d[1] === ano) && !/^\d{3,}$/.test(d[0]);
+  };
+  const ms = _filho(dAno, okMes) || mm;
+  const dMes = path.join(dAno, ms);
+  if (criar) fs.mkdirSync(dMes, { recursive: true });
+  return dMes;
+}
+
+// atalho: pasta do mês da empresa (ou null, sem criar nada se a empresa não tiver pasta)
+function pastaDoMes(emp, ano, mes, criar = true) {
+  const p = achar(emp);
+  if (!p) return null;
+  try { return pastaMes(p.dir, ano, mes, criar); } catch (_) { return null; }
+}
+
+module.exports = { RAIZES, achar, pastaMes, pastaDoMes, disponivel, limparCache, chave };

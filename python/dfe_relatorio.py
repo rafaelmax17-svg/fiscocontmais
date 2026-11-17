@@ -166,7 +166,7 @@ def _compacto(grupos):
     return out
 
 
-def gerar(base, empresa, cnpj, competencia, pdf=True, progresso=None):
+def gerar(base, empresa, cnpj, competencia, pdf=True, progresso=None, publico=None):
     if not re.match(r'^\d{4}-\d{2}$', competencia or ''):
         return {'erro': 'Competência inválida.'}
     a, m = competencia.split('-')
@@ -183,10 +183,17 @@ def gerar(base, empresa, cnpj, competencia, pdf=True, progresso=None):
     destino = os.path.join(pasta_emp, f'Relatório DF-e - {m}-{a}.html')
     with open(destino, 'w', encoding='utf-8') as fh:
         fh.write(html)
+    if publico:                       # cópia para a pasta do cliente: sem os links (os arquivos estão nos zips)
+        dados_pub = dict(dados, grupos=[dict(g, docs=[d[:15] + ['', ''] + d[17:] for d in g['docs']]) for g in dados['grupos']])
+        js_pub = json.dumps(dados_pub, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
+        os.makedirs(os.path.dirname(publico), exist_ok=True)
+        with open(publico + '.tmp', 'w', encoding='utf-8') as fh:
+            fh.write(HTML.replace('/*__DADOS__*/null', js_pub).replace('__TITULO__', _esc(f'Relatório DF-e · {empresa} · {m}/{a}')))
+        os.replace(publico + '.tmp', publico)
     resumo = {g['id']: {'qtd': len(g['docs']), 'valor': round(sum(d['valor'] for d in g['docs'] if not d['canc']), 2),
                         'canceladas': sum(1 for d in g['docs'] if d['canc'])} for g in grupos}
     return {'ok': True, 'html': destino, 'pdfs': pdfs, 'pdf_erros': len(pdf_erros), 'pdf_erros_det': pdf_erros[:10],
-            'resumo': resumo, 'pasta': pasta_emp}
+            'resumo': resumo, 'pasta': pasta_emp, 'publico': publico or ''}
 
 
 def _esc(s):
@@ -198,7 +205,7 @@ def main_cli(argv):
         return argv[argv.index(n) + 1] if n in argv and argv.index(n) + 1 < len(argv) else d
     try:
         r = gerar(opt('--pasta'), opt('--empresa', ''), opt('--cnpj', ''), opt('--competencia', ''),
-                  pdf=opt('--pdf', '1') != '0', progresso=opt('--progresso'))
+                  pdf=opt('--pdf', '1') != '0', progresso=opt('--progresso'), publico=opt('--publico'))
     except Exception as e:
         r = {'erro': str(e)[:400]}
     saida = opt('--json')
