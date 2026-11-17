@@ -199,6 +199,11 @@ def baixar_entradas(sess, pfx, senha, cnpj, empresa, uf, base, estado, tipos, co
                     elif re.search(r'<(?:\w+:)?(resEvento|procEventoNFe)\b', doc) and mf._txt(doc, 'tpEvento') == '110111':
                         ch = mf._txt(doc, 'chNFe')
                         resumos.pop(ch, None)
+                        try:
+                            nc._grava(os.path.join(_pasta(base, mf._txt(doc, 'dhEvento') or mf._txt(doc, 'dhRecbto'), empresa, 'NF-e Entradas'),
+                                                   f'{ch}-evento-110111.xml'), '<?xml version="1.0" encoding="UTF-8"?>' + doc)
+                        except OSError:
+                            pass
                         r['canceladas'].append({'chave': ch, 'emitente': '', 'valor': 0.0, 'dh': mf._txt(doc, 'dhEvento'), 'csit': '3'})
                 else:
                     if re.search(r'<(?:\w+:)?cteProc\b', doc):
@@ -260,6 +265,11 @@ def baixar_entradas(sess, pfx, senha, cnpj, empresa, uf, base, estado, tipos, co
                 f"Ciência registrada em {r['ciencias']} nota(s): o XML completo das que ainda faltam chega na próxima busca (depois de 1 hora)."
         no_mes = [b for b in r['baixadas'] if (b['dh'] or '')[:7] == comp] if comp else r['baixadas']
         r['mes'] = {'qtd': len(no_mes), 'valor': round(sum(b['valor'] for b in no_mes), 2)}
+        por_mes = {}
+        for b in r['baixadas']:          # a sequência da SEFAZ traz todos os meses: cada nota fica na pasta do mês de emissão
+            k = (b['dh'] or '')[:7] or 'sem-data'
+            por_mes[k] = por_mes.get(k, 0) + 1
+        r['meses'] = por_mes
         estado[tipo] = st
         res[tipo] = r
     return res, estado

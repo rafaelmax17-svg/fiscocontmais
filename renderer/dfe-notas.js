@@ -32,6 +32,10 @@
   .dfe-lk{color:#2f4090;font-weight:700;font-size:11.5px;cursor:pointer;background:none;border:none;padding:0;margin-top:3px}
   .dfe-uf{font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 6px;background:#eef0f6;color:#475569}.dfe-uf.ro{background:#e8f0ff;color:#2f4090}
   .dfe-pasta{font-size:11.5px;color:var(--ink2);margin-top:10px}
+  .dfe-rel{display:inline-flex;align-items:center;gap:6px;margin-top:6px;font:inherit;font-size:11.5px;font-weight:700;color:#fff;background:linear-gradient(90deg,#2f4090,#4f46e5);border:none;border-radius:8px;padding:4px 10px;cursor:pointer;box-shadow:0 3px 10px rgba(79,70,229,.25)}
+  .dfe-rel svg{width:13px;height:13px}
+  .dfe-rel:hover{filter:brightness(1.08)}
+  .dfe-rel-q{display:block;color:var(--ink2);font-size:10.5px;margin-top:3px}
   .dfe-cod-bg{position:fixed;inset:0;background:rgba(20,24,50,.55);z-index:9700;display:flex;align-items:center;justify-content:center;animation:dfeIn .18s ease}
   @keyframes dfeIn{from{opacity:0}to{opacity:1}}
   .dfe-cod{background:#fff;border-radius:18px;width:min(440px,92vw);overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.35)}
@@ -72,7 +76,16 @@
     const so = t.length === 1 && t[0] === 'nfse';
     const b = q('#btnDlBaixar'); if (b) b.textContent = so || !t.length ? 'Baixar NFS-e' : 'Baixar notas';
     const cb = q('#dlCienciaBox'); if (cb) cb.hidden = !(ehAdmin() && t.includes('nfe-e'));
-    const pdf = q('#dlGerarPdf'); if (pdf) pdf.closest('label').hidden = !t.includes('nfse');
+    const pdf = q('#dlGerarPdf');
+    if (pdf) {
+      const lab = pdf.closest('label'), docs = [];
+      if (t.includes('nfse')) docs.push('DANFSe');
+      if (t.includes('nfe-e') || t.includes('nfe-s')) docs.push('DANFE');
+      if (t.includes('cte-e')) docs.push('DACTE');
+      lab.hidden = !docs.length;
+      const tx = [...lab.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim());
+      if (tx) tx.textContent = ` Gerar também o PDF de cada nota (${docs.join(' · ')})`;
+    }
     const card = q('#dfeCard');
     if (card) { card.hidden = !novos().length && !X.mostrou; if (!card.hidden) { montarCard(); atualizar(); } }
   }
@@ -83,24 +96,37 @@
     box.dataset.ok = '1';
     box.innerHTML = `
       <div class="dfe-h"><b>NF-e, NFC-e e CT-e · situação</b><span id="dfeComp" style="font-size:12px;color:var(--ink2)"></span><span class="sp"></span>
+        <button class="act inv-export" id="dfeGeraRel" title="Gera de novo o relatório (e os PDFs que faltarem) com os XMLs que já estão na pasta">Gerar relatório</button>
         <button class="act inv-export" id="dfeAtualiza">Atualizar</button>
         <button class="act inv-export" id="dfeLog" title="Abre a pasta de dados: dfe_ro_log.txt (passo a passo no site da SEFIN) e dfe_ro_ultima.png">Passo a passo</button></div>
       <div class="dfe-prog" id="dfeProg"></div>
       <table class="dfe-t" id="dfeTab" hidden><thead><tr><th>Empresa</th><th>UF</th><th>NF-e Entradas</th><th>CT-e Entradas</th><th>NF-e Saídas</th><th>NFC-e Saídas</th></tr></thead><tbody id="dfeBody"></tbody></table>
       <div class="dfe-pasta" id="dfePasta"></div>`;
     q('#dfeAtualiza').addEventListener('click', atualizar);
+    q('#dfeGeraRel').addEventListener('click', async () => {
+      if (X.rodando) return;
+      const ms = meses(); if (!ms.length) { aviso('Escolha o período (data inicial e final).', true); return; }
+      const id = q('#dlSelectEmpresa') ? q('#dlSelectEmpresa').value : '';
+      X.rodando = true;
+      try { await gerarRelatorios(X.todas || !id ? null : [id], ms); } finally { X.rodando = false; }
+    });
     q('#dfeLog').addEventListener('click', () => window.fiscocont.dfe.log());
+    q('#dfeBody').addEventListener('click', (ev) => { const r = ev.target.closest('[data-rel]'); if (r) window.fiscocont.dfe.relatorioAbrir({ id: r.dataset.rel, competencia: X.comp }).then((x) => x && x.error && aviso(x.error, true)); });
     q('#dfeBody').addEventListener('click', (ev) => { const b = ev.target.closest('[data-pasta]'); if (b) window.fiscocont.dfe.abrir(b.dataset.pasta).then((r) => r && r.error && aviso(r.error, true)); });
     window.fiscocont.dfe.onProgresso((d) => { const p = q('#dfeProg'); if (p) { p.textContent = d.txt || ''; p.classList.toggle('esp', !!d.espera); } });
   }
 
+  const ICO_REL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>';
   const chip = (cls, t) => `<span class="dfe-st ${cls}">${e(t)}</span>`;
   const pastaBt = (p) => p ? `<button class="dfe-lk" data-pasta="${e(p)}">Abrir pasta</button>` : '';
   function celEntrada(x, tipo) {
     if (!x) return chip('dfe-nr', 'não buscado');
     if (x.erro) return chip('dfe-er', 'erro') + `<small>${e(x.erro)}</small>`;
     const det = [];
-    if (x.mes && x.mes.qtd) det.push(`${x.mes.qtd} nota(s) do mês · R$ ${brl(x.mes.valor)}`);
+    if (x.mes && x.mes.qtd) det.push(`${x.mes.qtd} ${tipo === 'cte' ? 'CT-e' : 'nota(s)'} de ${compRot(X.comp)} · R$ ${brl(x.mes.valor)}`);
+    // a SEFAZ entrega por sequência (todos os meses): cada nota vai para a pasta do mês de emissão
+    const outros = Object.entries(x.meses || {}).filter(([m]) => m !== X.comp).sort((a, b) => b[0].localeCompare(a[0]));
+    if (outros.length) det.push(`${x.mes && x.mes.qtd ? 'Também vieram' : `Nenhuma de ${compRot(X.comp)} nesta busca. Vieram`} ${outros.map(([m, n]) => `${n} de ${m === 'sem-data' ? 'sem data' : compRot(m)}`).join(', ')}, salvas na pasta do mês de emissão`);
     const extra = [x.resumos && `${x.resumos} só resumo`, x.ciencias && `${x.ciencias} ciência(s) feita(s)`, x.canceladas && `${x.canceladas} cancelada(s)`].filter(Boolean);
     if (extra.length) det.push(extra.join(' · '));
     if (x.resumos && x.ciencias) det.push('o XML que falta chega na próxima busca (depois de 1 hora)');
@@ -127,7 +153,9 @@
     q('#dfeTab').hidden = !lst.length;
     q('#dfeBody').innerHTML = lst.map((m) => {
       const en = m.entradas || {}, sa = m.saidas || {};
-      return `<tr><td><b>${e(m.nome)}</b>${m.vencido ? '<small style="color:#b42323">certificado vencido</small>' : ''}</td>
+      const rel = m.relatorio ? `<button class="dfe-rel" data-rel="${e(m.id)}" title="Abre o relatório com o painel do mês (arquivo HTML salvo na pasta da empresa)">${ICO_REL}Abrir relatório</button>`
+        + `<span class="dfe-rel-q">gerado em ${new Date(m.relatorio.quando).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}${m.relatorio.pdfTotal ? ' · PDFs na pasta' : ''}</span>` : '';
+      return `<tr><td><b>${e(m.nome)}</b>${m.vencido ? '<small style="color:#b42323">certificado vencido</small>' : ''}${rel}</td>
         <td><span class="dfe-uf ${m.uf === 'RO' ? 'ro' : ''}">${e(m.uf || '?')}</span></td>
         <td>${celEntrada(en.nfe, 'nfe')}</td><td>${celEntrada(en.cte, 'cte')}</td><td>${celSaida(sa.nfe, m.uf)}</td><td>${celSaida(sa.nfce, m.uf)}</td></tr>`;
     }).join('') || '';
@@ -167,7 +195,19 @@
         await atualizar();
       }
     }
+    if (ent().length || sai().length) await gerarRelatorios(ids, ms);
     q('#dfeProg').textContent = '';
+  }
+
+  // relatório (HTML) e PDF das NF-e/CT-e, a partir dos XMLs já salvos na pasta de cada empresa
+  const querPdf = () => { const c = q('#dlGerarPdf'); return !!(c && c.checked && !c.closest('label').hidden); };
+  async function gerarRelatorios(ids, ms) {
+    const r = await window.fiscocont.dfe.relatorio({ ids, competencias: ms, pdf: querPdf() });
+    if (r && r.error) { aviso(r.error, true); return; }
+    const ok = (r.empresas || []).filter((x) => x.ok), pdfs = ok.reduce((s, x) => s + (x.pdfs || 0), 0), errosPdf = ok.reduce((s, x) => s + (x.pdf_erros || 0), 0);
+    if (ok.length) aviso(`Relatório gerado para ${ok.length} empresa(s)${pdfs ? ` · ${pdfs} PDF(s) novos` : ''}${errosPdf ? ` · ${errosPdf} XML(s) sem PDF` : ''}. Use "Abrir relatório" no quadro.`);
+    else if ((r.empresas || []).length && ids) aviso(r.empresas[0].erro || 'Nenhum XML para o relatório.', true);
+    await atualizar();
   }
 
   function ligarBotoes() {

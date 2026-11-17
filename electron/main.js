@@ -1628,14 +1628,17 @@ function _dfeEmpresas() {
     .map((e) => ({ id: e.id, cnpj: e.cnpj, nome: e.razaoSocial, validade: e.validade || '', vencido: !!(e.validade && new Date(e.validade) < new Date()) }))
     .sort((a, b) => a.nome.localeCompare(b.nome));
 }
+// mesmo nome de pasta que o Python usa (nfe_chave._limpa_nome)
+function _dfeNomePasta(nome) { return String(nome || '').replace(/[\\/:*?"<>|]+/g, ' ').trim().replace(/\.+$/, '').replace(/\s+/g, ' ').slice(0, 120) || 'Empresa'; }
 ipcMain.handle('dfe:estado', (_evt, { competencia } = {}) => _mod('fiscal-downloads')(async () => {
   const lst = _dfeEmpresas();
   let busca = 15;
-  const nsu = _dfeLer('dfe-nsu.json'), ro = dfeSefin.lerEstado();
+  const nsu = _dfeLer('dfe-nsu.json'), ro = dfeSefin.lerEstado(), rel = _dfeLer('dfe-rel.json');
   for (const e of lst) { e.uf = await _dfeUf(e.cnpj, busca); if (!_dfeLer('dfe-uf.json')[e.cnpj]) busca--; }
   return {
     pasta: (() => { try { return JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase || ''; } catch (_) { return ''; } })(),
-    empresas: lst.map((e) => ({ ...e, entradas: ((nsu[e.cnpj] || {}).ultimo || {})[competencia] || null, saidas: (ro[e.cnpj] || {})[competencia] || null })),
+    empresas: lst.map((e) => ({ ...e, entradas: ((nsu[e.cnpj] || {}).ultimo || {})[competencia] || null, saidas: (ro[e.cnpj] || {})[competencia] || null,
+      relatorio: (() => { const r = (rel[e.cnpj] || {})[competencia]; return r && r.html && fs.existsSync(r.html) ? { quando: r.quando, pdfs: r.pdfs, pdfTotal: r.pdfTotal } : null; })() })),
   };
 }));
 ipcMain.handle('dfe:entradas', (_evt, { ids, competencia, tipos, ciencia }) => _mod('fiscal-downloads')(async () => {
@@ -1669,9 +1672,12 @@ ipcMain.handle('dfe:entradas', (_evt, { ids, competencia, tipos, ciencia }) => _
       const resumo = {};
       for (const [t, x] of Object.entries(r.res || {})) {
         if (!x) continue;
-        resumo[t] = { baixadas: x.baixadas.length, mes: x.mes, resumos: x.resumos.length, canceladas: x.canceladas.length, ciencias: x.ciencias,
+        // pasta do mês escolhido (as notas ficam na pasta do mês de emissão; a sequência da SEFAZ traz todos os meses)
+        const [ca, cm] = competencia.split('-');
+        const pastaMes = path.join(pasta, `${cm}-${ca}`, _dfeNomePasta(e.nome), t === 'cte' ? 'CT-e Entradas' : 'NF-e Entradas', 'XML');
+        resumo[t] = { baixadas: x.baixadas.length, mes: x.mes, meses: x.meses || {}, resumos: x.resumos.length, canceladas: x.canceladas.length, ciencias: x.ciencias,
           ciencia_erros: x.ciencia_erros.length, aviso: x.aviso, erro: x.erro, quando: new Date().toISOString(),
-          pasta: x.baixadas.length ? path.dirname(x.baixadas[x.baixadas.length - 1].xml) : '' };
+          pasta: fs.existsSync(pastaMes) ? pastaMes : (x.baixadas.length ? path.dirname(x.baixadas[x.baixadas.length - 1].xml) : '') };
       }
       const novo = _dfeLer('dfe-nsu.json');
       novo[e.cnpj] = { ...(novo[e.cnpj] || {}), estado: r.estado, ultimo: { ...((novo[e.cnpj] || {}).ultimo || {}), [competencia]: resumo } };
@@ -1686,6 +1692,42 @@ ipcMain.handle('dfe:saidas', (_evt, { ids, competencia, tipos }) => _mod('fiscal
   for (const e of _dfeEmpresas().filter((x) => !ids || ids.includes(x.id))) if ((await _dfeUf(e.cnpj)) === 'RO') alvo.push({ cnpj: e.cnpj, nome: e.nome });
   if (!alvo.length) throw new Error('Nenhuma empresa de Rondônia na seleção: as saídas pelo DFe-Download são só para empresas de RO.');
   return dfeSefin.baixar(alvo, competencia, tipos && tipos.length ? tipos : ['nfe', 'nfce']);
+}));
+// Relatório DF-e (HTML com painel) e PDF das NF-e/CT-e: gerados a partir dos XMLs já baixados e salvos na pasta da empresa
+ipcMain.handle('dfe:relatorio', (_evt, { ids, competencias, pdf } = {}) => _mod('fiscal-downloads')(async () => {
+  let pasta = '';
+  try { pasta = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase || ''; } catch (_) {}
+  if (!pasta) throw new Error('Escolha a pasta das Baixas DF-e primeiro.');
+  const comps = (competencias || []).filter((c) => /^\d{4}-(0[1-9]|1[0-2])$/.test(c));
+  if (!comps.length) throw new Error('Competência inválida.');
+  const alvo = _dfeEmpresas().filter((e) => !ids || ids.includes(e.id));
+  const env = (d) => { try { mainWindow && mainWindow.webContents.send('dfe:progresso', d); } catch (_) {} };
+  const saida = [];
+  try {
+    for (const [n, e] of alvo.entries()) {
+      for (const c of comps) {
+        env({ txt: `Relatório${pdf ? ' e PDFs' : ''} · ${e.nome} (${n + 1} de ${alvo.length}) · ${c.split('-').reverse().join('/')}…` });
+        const out = path.join(os.tmpdir(), `fc_dfe_rel_${Date.now()}_${n}.json`);
+        await runFiscal(['dfe-relatorio', '--pasta', pasta, '--empresa', e.nome, '--cnpj', e.cnpj, '--competencia', c, '--pdf', pdf ? '1' : '0', '--json', out], out);
+        const r = JSON.parse(fs.readFileSync(out, 'utf-8')); fs.unlink(out, () => {});
+        if (r.erro) { saida.push({ id: e.id, nome: e.nome, competencia: c, erro: r.erro }); continue; }
+        const pdfTotal = ['nfe-e', 'cte-e', 'nfe-s'].reduce((s, k) => s + (((r.resumo || {})[k] || {}).qtd || 0), 0);
+        const rel = _dfeLer('dfe-rel.json');
+        rel[e.cnpj] = { ...(rel[e.cnpj] || {}), [c]: { html: r.html, quando: new Date().toISOString(), pdfs: r.pdfs, pdfTotal, pdfErros: r.pdf_erros } };
+        _dfeGrava('dfe-rel.json', rel);
+        saida.push({ id: e.id, nome: e.nome, competencia: c, ok: true, pdfs: r.pdfs, pdf_erros: r.pdf_erros });
+      }
+    }
+  } finally { env({ txt: '' }); }
+  return { empresas: saida };
+}));
+ipcMain.handle('dfe:relatorioAbrir', (_evt, { id, competencia } = {}) => _mod('fiscal-downloads')(async () => {
+  const e = _dfeEmpresas().find((x) => x.id === id);
+  const r = e && (_dfeLer('dfe-rel.json')[e.cnpj] || {})[competencia];
+  if (!r || !r.html || !fs.existsSync(r.html)) throw new Error('O relatório deste mês ainda não foi gerado.');
+  const erro = await shell.openPath(r.html);
+  if (erro) throw new Error(erro);
+  return {};
 }));
 ipcMain.handle('dfe:captcha', (_evt, { id, texto } = {}) => _mod('fiscal-downloads')(async () => dfeSefin.respostaCodigo(id, texto)));
 ipcMain.handle('dfe:cancelar', () => _mod('fiscal-downloads')(async () => dfeSefin.cancelar()));

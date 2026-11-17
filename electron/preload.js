@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('fiscocont', {
     saidas: (o) => ipcRenderer.invoke('dfe:saidas', o),
     abrir: (caminho) => ipcRenderer.invoke('dfe:abrir', caminho),
     log: () => ipcRenderer.invoke('dfe:log'),
+    relatorio: (o) => ipcRenderer.invoke('dfe:relatorio', o),
+    relatorioAbrir: (o) => ipcRenderer.invoke('dfe:relatorioAbrir', o),
     codigo: (id, texto) => ipcRenderer.invoke('dfe:captcha', { id, texto }),
     cancelar: () => ipcRenderer.invoke('dfe:cancelar'),
     onCodigo: (cb) => { ipcRenderer.removeAllListeners('dfe:captcha'); ipcRenderer.on('dfe:captcha', (_e, d) => cb(d)); },
