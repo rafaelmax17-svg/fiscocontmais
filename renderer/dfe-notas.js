@@ -110,13 +110,13 @@
     return c + (det.length ? `<small>${det.map(e).join('<br>')}</small>` : '') + pastaBt(x.pasta);
   }
   const SAI = { baixado: ['dfe-ok', '✓ baixado'], aguardando: ['dfe-ag', '◷ SEFIN preparando'], solicitado: ['dfe-pr', 'pedido feito'], sem_notas: ['dfe-nr', 'nenhuma nota no período'],
-    aguardando_codigo: ['dfe-pr', 'falta digitar o código'], cancelado: ['dfe-nr', 'cancelado'], erro: ['dfe-er', 'erro'] };
+    aguardando_codigo: ['dfe-pr', 'falta digitar o código'], parcial: ['dfe-ag', 'falta parte do arquivo'], cancelado: ['dfe-nr', 'cancelado'], erro: ['dfe-er', 'erro'] };
   function celSaida(x, uf) {
     if (uf && uf !== 'RO') return chip('dfe-nr', 'fora de RO: só entradas');
     if (!x) return chip('dfe-nr', 'não buscado');
     const [c, t] = SAI[x.status] || ['dfe-nr', x.status || '—'];
     const det = [];
-    if (x.status === 'baixado') det.push(`${x.qtd || 0} nota(s) · R$ ${brl(x.valor)}${x.canceladas ? ` · ${x.canceladas} cancelada(s)` : ''}`);
+    if (x.status === 'baixado' || (x.status === 'parcial' && x.qtd)) det.push(`${x.qtd || 0} nota(s) · R$ ${brl(x.valor)}${x.canceladas ? ` · ${x.canceladas} cancelada(s)` : ''}`);
     if (x.msg) det.push(x.msg);
     return chip(c, t) + (det.length ? `<small>${det.map(e).join('<br>')}</small>` : '') + pastaBt(x.pasta);
   }

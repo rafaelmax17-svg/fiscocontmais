@@ -212,8 +212,10 @@ const JS_DETALHES = `(() => { ${JS_BASE}
     .map((b, k) => ({ k, texto: b.innerText.replace(/\\s+/g, ' ').trim() }));
   return { ok: !!(kv['PERIODO'] || kv['TIPO DE DOCUMENTO']), kv, arquivos, url: location.href };
 })()`;
-const JS_CLICA_ARQ = (k) => `(() => { ${JS_BASE}
-  const b = [...document.querySelectorAll('a, button')].filter(vis).filter((b) => /(ARQUIVO|PARTE)\\s*\\d+/.test(norm(b.innerText)))[${k}];
+const JS_CLICA_ARQ = (k, texto) => `(() => { ${JS_BASE}
+  const todos = [...document.querySelectorAll('a, button')].filter(vis).filter((b) => /(ARQUIVO|PARTE)\\s*\\d+/.test(norm(b.innerText)));
+  const alvo = ${JSON.stringify(texto || '')} ? norm(${JSON.stringify(texto || '')}) : '';
+  const b = (alvo && todos.find((b) => norm(b.innerText) === alvo)) || todos[${k}];
   if (b) { b.click(); return true; } return false; })()`;
 
 const JS_AVISO = (txt) => `(() => {
@@ -449,7 +451,8 @@ async function _esperaQuadro(espera, ms) {
 async function _baixarParte(emp, tipo, achado, a, n, tot) {
   const k = achado.det.arquivos.findIndex((x) => x.texto === a.texto);
   const espera = _esperaDownload(5 * 60 * 1000);
-  await _js(JS_CLICA_ARQ(k));
+  const clicou = await _js(JS_CLICA_ARQ(k, a.texto)).catch(() => false);
+  if (!clicou) { _log(`não achei o link "${a.texto}" na tela de Detalhes`); await _print(); return { state: 'sem_link' }; }
   let msgSefin = '', aviso = '', raioX = false;
   for (let tent = 1; tent <= 6; tent++) {
     const q = await _esperaQuadro(espera, 12000);
@@ -504,6 +507,30 @@ async function _baixarParte(emp, tipo, achado, a, n, tot) {
   return { state: 'tempo', msg: msgSefin };
 }
 
+// antes da próxima parte: continua na tela de Detalhes se ela ainda estiver aberta; se não, volta pela lista
+async function _voltaDetalhes(achado, a) {
+  for (let t = 0; t < 4; t++) {
+    const d = await _js(JS_DETALHES).catch(() => null);
+    if (d && d.ok && d.arquivos.some((x) => x.texto === a.texto)) return true;
+    await _sleep(800);
+  }
+  _log('voltando aos Detalhes do pedido pela lista de solicitações');
+  await _vai(`${BASE}/solicitacoes`);
+  await _sleep(1500);
+  const rows = await _lista().catch(() => []);
+  const row = rows.find((r) => r.data === achado.row.data && r.doc === achado.row.doc) || rows[achado.row.i];
+  if (row) {
+    const d = await _detalhes(row.i);
+    if (d && d.arquivos.some((x) => x.texto === a.texto)) return true;
+  }
+  if (achado.det.url && !/\/solicitacoes\/?$/.test(achado.det.url)) {
+    await _vai(achado.det.url); await _sleep(1500);
+    const d = await _js(JS_DETALHES).catch(() => null);
+    if (d && d.ok && d.arquivos.some((x) => x.texto === a.texto)) return true;
+  }
+  return false;
+}
+
 async function _baixar(emp, tipo, comp, achado, est, pasta) {
   const feitos = est.arquivos || [];
   const todos = achado.det.arquivos;
@@ -512,15 +539,18 @@ async function _baixar(emp, tipo, comp, achado, est, pasta) {
   if (!arqs.length) return { ...est, status: 'baixado', msg: 'já baixado antes' };
   _log(`${NOME[tipo]}: ${todos.length} arquivo(s)/parte(s) no pedido: ${todos.map((a) => a.texto).join(' | ')}`);
   const baixados = [];
+  let motivo = '', estMotivo = '';
   for (const [n, a] of arqs.entries()) {
     if (!_vivo()) return { status: 'cancelado', msg: 'a busca foi interrompida.' };
-    if (n > 0) { await _vai(achado.det.url); await _sleep(1500); }
+    if (n > 0) { _prog(`${emp.nome} · ${NOME[tipo]}: indo para a parte ${n + 1} de ${arqs.length}…`); await _sleep(1500); await _voltaDetalhes(achado, a); }
     const r = await _baixarParte(emp, tipo, achado, a, n + 1, arqs.length);
     if (r.state !== 'completed') {
-      const msg = r.msg ? `a SEFIN respondeu: ${r.msg}` : { cancelado: 'o código não foi digitado (cancelado).', fechada: 'a busca foi interrompida.', tempo: 'o arquivo não chegou depois do código. Veja o "Passo a passo".',
-        sem_codigo: 'o site não mostrou o código nem o arquivo. Veja o "Passo a passo".' }[r.state] || `download ${r.state}`;
+      motivo = r.msg ? `a SEFIN respondeu: ${r.msg}` : { cancelado: 'o código não foi digitado (pulado).', fechada: 'a busca foi interrompida.', tempo: 'o arquivo não chegou depois do código.',
+        sem_codigo: 'o site não mostrou o código nem o arquivo.', sem_link: `não achei o link "${a.texto}" nos Detalhes.` }[r.state] || `download ${r.state}`;
+      estMotivo = r.state;
+      _log(`${a.texto}: ${motivo}`);
       if (baixados.length) break;                           // extrai o que já veio; o resto fica para a próxima
-      return { status: r.state === 'cancelado' ? 'aguardando_codigo' : 'erro', msg };
+      return { status: r.state === 'cancelado' ? 'aguardando_codigo' : 'erro', msg: motivo + (r.state === 'cancelado' ? '' : ' Veja o "Passo a passo".') };
     }
     baixados.push({ dest: r.dest, chave: `${achado.conf.id}|${a.texto}` });
   }
@@ -535,7 +565,8 @@ async function _baixar(emp, tipo, comp, achado, est, pasta) {
   baixados.forEach((b) => feitos.push(b.chave));
   const falta = todos.length - todos.filter((a) => feitos.includes(`${achado.conf.id}|${a.texto}`)).length;
   _log(`${NOME[tipo]}: ${x.qtd} nota(s) extraídas de ${baixados.length} parte(s) · R$ ${x.valor}`);
-  return { status: falta ? 'aguardando_codigo' : 'baixado', msg: falta ? `faltam ${falta} parte(s) do arquivo: clique em Baixar notas de novo.` : '',
+  return { status: falta ? 'parcial' : 'baixado', msg: falta ? `${todos.length - falta} de ${todos.length} parte(s) baixada(s). A parte que faltou: ${motivo || 'não baixada'} Clique em Baixar notas de novo para baixar só ela.` : '',
+    partes: todos.length, faltam: falta,
     qtd: (est.qtd || 0) + x.qtd, valor: Math.round(((est.valor || 0) + x.valor) * 100) / 100, canceladas: (est.canceladas || 0) + x.canceladas,
     pasta: x.pasta || est.pasta || '', arquivos: feitos, id: achado.conf.id };
 }
