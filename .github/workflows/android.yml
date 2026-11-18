@@ -1,0 +1,95 @@
+name: App Android (APK)
+
+# Monta o FiscoCont+ para Android (pasta mobile/) e publica o APK assinado no repositório de instaladores, na release
+# "android" (marcada como pré-lançamento e NUNCA como "latest", para não interferir na atualização do sistema no
+# computador). O link do APK é sempre o mesmo:
+#   https://github.com/rafaelmax17-svg/fiscocontmais-releases/releases/download/android/FiscoContMais.apk
+# Roda só à mão: Actions > App Android (APK) > Run workflow. A versão vem de mobile/package.json.
+# Segredos: ANDROID_KEYSTORE_B64 (chave de assinatura em base64), ANDROID_KEYSTORE_PASS, ANDROID_KEY_ALIAS e RELEASES_TOKEN.
+on:
+  workflow_dispatch:
+    inputs:
+      publicar:
+        description: 'Publicar o APK na release "android" (desmarque para só montar e baixar o APK aqui)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Dependências e páginas do app
+        working-directory: mobile
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          npx cap sync android
+
+      - name: Chave de assinatura
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$KS" ] || [ -z "$KS_PASS" ] || [ -z "$KS_ALIAS" ]; then
+            echo "::error::Segredos da assinatura (ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASS, ANDROID_KEY_ALIAS) não configurados."
+            exit 1
+          fi
+          printf '%s' "$KS" | base64 -d > "$RUNNER_TEMP/fc.jks"
+          {
+            echo "FC_KEYSTORE=$RUNNER_TEMP/fc.jks"
+            echo "FC_KEYSTORE_PASS=$KS_PASS"
+            echo "FC_KEY_ALIAS=$KS_ALIAS"
+          } >> "$GITHUB_ENV"
+
+      - name: Montar o APK
+        working-directory: mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          V=$(node -p "require('../package.json').version")
+          mkdir -p "$GITHUB_WORKSPACE/saida"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/saida/FiscoContMais.apk"
+          SHA=$(sha256sum "$GITHUB_WORKSPACE/saida/FiscoContMais.apk" | cut -d' ' -f1)
+          printf '{"versao":"%s","sha256":"%s","em":"%s"}\n' "$V" "$SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$GITHUB_WORKSPACE/saida/versao.json"
+          echo "V=$V" >> "$GITHUB_ENV"
+          rm -f "$RUNNER_TEMP/fc.jks"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FiscoContMais-apk
+          path: saida/
+          retention-days: 14
+
+      - name: Publicar na release "android" (fiscocontmais-releases)
+        if: ${{ inputs.publicar }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "::error::Segredo RELEASES_TOKEN não configurado."; exit 1; fi
+          R=rafaelmax17-svg/fiscocontmais-releases
+          NOTAS="mobile/release-notes/$V.md"
+          [ -f "$NOTAS" ] || { echo "FiscoCont+ para Android $V" > "$RUNNER_TEMP/notas.md"; NOTAS="$RUNNER_TEMP/notas.md"; }
+          if gh release view android -R "$R" >/dev/null 2>&1; then
+            gh release upload android -R "$R" saida/FiscoContMais.apk saida/versao.json --clobber
+            gh release edit android -R "$R" --title "FiscoCont+ Android $V" --notes-file "$NOTAS" --prerelease --latest=false
+          else
+            gh release create android -R "$R" --title "FiscoCont+ Android $V" --notes-file "$NOTAS" --prerelease --latest=false saida/FiscoContMais.apk saida/versao.json
+          fi
+          echo "::notice title=APK publicado::$V em https://github.com/$R/releases/download/android/FiscoContMais.apk"

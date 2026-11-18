@@ -159,6 +159,21 @@ service cloud.firestore {
       allow write: if admin();
     }
 
+    // App do celular (equipe e gestores) — versão 2.4.3.
+    // Totais de cada SPED analisado no computador: só os números do mês (faturamento, débitos, créditos, ICMS a
+    // recolher e alíquota efetiva), como no BI. Nada de notas, itens ou participantes.
+    match /sped_totais/{id} {
+      allow read: if ativo();
+      allow write: if ativo() && id.matches('^[0-9]{14}_[0-9]{4}-(0[1-9]|1[0-2])$')
+        && request.resource.data.keys().hasOnly(['cnpj', 'comp', 'faturamento', 'debitos', 'creditos', 'recolher', 'aliquota', 'em', 'por']);
+    }
+    // Validade dos certificados digitais (só nome, CNPJ e data; o arquivo e a senha nunca saem do computador)
+    match /certificados/{cnpj} {
+      allow read: if ativo();
+      allow write: if ativo() && cnpj.matches('^[0-9]{14}$')
+        && request.resource.data.keys().hasOnly(['nome', 'validade', 'tipo', 'em']);
+    }
+
     // qualquer outra coleção: fechada
     match /{document=**} {
       allow read, write: if false;

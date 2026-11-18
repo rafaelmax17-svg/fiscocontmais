@@ -1,0 +1,7 @@
+{
+  "appId": "br.com.liddera.fiscocont",
+  "appName": "FiscoCont+",
+  "webDir": "www",
+  "android": { "allowMixedContent": false, "captureInput": true, "webContentsDebuggingEnabled": false },
+  "plugins": { "StatusBar": { "overlaysWebView": false, "style": "DARK", "backgroundColor": "#18214a" } }
+}

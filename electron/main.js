@@ -1147,9 +1147,27 @@ async function _recuperarCertificadosPF() {
   } catch (_) {}
 }
 
+// App do celular: só nome, CNPJ e validade de cada certificado (nunca o arquivo nem a senha), para o alerta de vencimento.
+// Procuração fica de fora: a validade ali é a do certificado do escritório, não a do cliente.
+let _certNuvemEm = 0;
+async function _certNuvem(indice) {
+  if (Date.now() - _certNuvemEm < 10 * 60000) return;
+  const db = auth.db(), f = auth.fsMod(); if (!db || !f) return;
+  _certNuvemEm = Date.now();
+  try {
+    const em = new Date().toISOString();
+    for (const e of indice.empresas) {
+      const cnpj = String(e.cnpj || '').replace(/\D/g, '');
+      if (e.tipo === 'procuracao' || cnpj.length !== 14 || !e.validade) continue;
+      await f.setDoc(f.doc(db, 'certificados', cnpj), { nome: e.razaoSocial || '', validade: e.validade, tipo: e.tipo || 'matriz', em }, { merge: true });
+    }
+  } catch (_) { _certNuvemEm = 0; }
+}
+
 ipcMain.handle('fiscal:certListar', async () => {
   await _recuperarCertificadosPF();
   const indice = _lerIndiceCert();
+  _certNuvem(indice);
   return indice.empresas.map((e) => {
     const pr = e.tipo === 'procuracao' ? indice.empresas.find((x) => x.id === e.procuradorId) : null;
     return {
@@ -4342,13 +4360,28 @@ ipcMain.handle('fiscal:efdCorrigirSalvar', async (_evt, corrigidoPath, nomeOrigi
   } catch (e) { return { error: String(e.message || e) }; }
 });
 
+// App do celular: os números do mês de cada SPED analisado (só totais, como no BI) em sped_totais/{cnpj}_{AAAA-MM}
+function _spedTotaisNuvem(arq) {
+  setTimeout(async () => {
+    try {
+      const t = JSON.parse(fs.readFileSync(arq, 'utf-8')); fs.unlink(arq, () => {});
+      const db = auth.db(), f = auth.fsMod();
+      if (!db || !f || !/^\d{14}$/.test(t.cnpj) || !/^\d{4}-\d{2}$/.test(t.comp)) return;
+      const ses = auth.sessao() || {};
+      await f.setDoc(f.doc(db, 'sped_totais', `${t.cnpj}_${t.comp}`), { ...t, em: new Date().toISOString(), por: ses.nome || ses.email || '' });
+    } catch (_) { /* sem internet ou sem o arquivo: o celular só não mostra este mês */ }
+  }, 300);
+}
+
 ipcMain.handle('fiscal:dashboard', async (_evt, spedPath) => {
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const htmlOut = path.join(os.tmpdir(), `fc_sped_${Date.now()}.html`);
+  const totOut = htmlOut.replace(/\.html$/, '_tot.json');
   try {
-    await runFiscal(['sped', spedPath, '--dashboard-html', htmlOut], htmlOut);
+    await runFiscal(['sped', spedPath, '--dashboard-html', htmlOut, '--totais-json', totOut], htmlOut);
     const html = fs.readFileSync(htmlOut, 'utf-8');
     fs.unlink(htmlOut, () => {});
+    _spedTotaisNuvem(totOut);
     let empresa = '';
     const m = html.match(/<h1>([^<]+)<\/h1>/); if (m) empresa = m[1];
     return { ok: true, html, empresa };

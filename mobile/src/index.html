@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.googleapis.com https://*.cloudfunctions.net https://*.run.app https://brasilapi.com.br https://api.github.com wss://*.firebaseio.com">
+<title>FiscoCont+</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<!-- Entrar -->
+<section id="telaLogin" class="login" hidden>
+  <img src="logo.png" alt="Liddera" class="lg-logo">
+  <h1>FiscoCont<span>+</span></h1>
+  <p class="lg-sub">Equipe Liddera</p>
+  <form id="fLogin" autocomplete="on">
+    <input id="lEmail" type="email" placeholder="E-mail" autocomplete="username" required>
+    <input id="lSenha" type="password" placeholder="Senha" autocomplete="current-password" required>
+    <button type="submit" id="lBtn">Entrar</button>
+    <div id="lErro" class="lg-erro" hidden></div>
+  </form>
+  <p class="lg-rod">Mesmo login do sistema · só com internet<br><span id="lVer"></span></p>
+</section>
+
+<!-- Travado por inatividade -->
+<section id="telaTrava" class="login" hidden>
+  <img src="logo.png" alt="Liddera" class="lg-logo">
+  <h1>FiscoCont<span>+</span></h1>
+  <p class="lg-sub" id="tSub">O app ficou um tempo sem uso. Digite a sua senha para continuar.</p>
+  <form id="fTrava">
+    <input id="tSenha" type="password" placeholder="Senha" autocomplete="current-password" required>
+    <button type="submit">Continuar</button>
+    <div id="tErro" class="lg-erro" hidden></div>
+  </form>
+  <button class="lg-link" id="tSair">Entrar com outro usuário</button>
+</section>
+
+<!-- App -->
+<section id="telaApp" hidden>
+  <header class="hd">
+    <div class="hd-l"><button id="hVolta" class="hd-volta" hidden aria-label="Voltar">‹</button><div><small id="hSub"></small><h2 id="hTit"></h2></div></div>
+    <button id="hMenu" class="hd-menu" aria-label="Conta">⋯</button>
+  </header>
+  <div id="aviso" class="aviso" hidden></div>
+  <main id="conteudo"></main>
+  <nav class="tb">
+    <button data-aba="inicio" class="on"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9H3z"/></svg>Início</button>
+    <button data-aba="empresas"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Empresas</button>
+    <button data-aba="consultas"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Consultas</button>
+    <button data-aba="ajuda"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4z"/></svg>Ajuda</button>
+  </nav>
+</section>
+
+<!-- sem internet -->
+<div id="offline" class="offline" hidden><div><b>Sem internet</b><span>O FiscoCont+ só funciona conectado. Assim que a internet voltar, o app continua.</span></div></div>
+
+<!-- conta -->
+<div id="folha" class="folha" hidden><div class="folha-c">
+  <b id="fNome"></b><span id="fEmail"></span><span id="fVer" class="fver"></span>
+  <button id="fAtualiza" class="f-bt" hidden>Baixar a nova versão</button>
+  <button id="fSair" class="f-bt sair">Sair</button>
+  <button id="fFecha" class="f-bt leve">Fechar</button>
+</div></div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -3503,6 +3503,15 @@ def main(argv):
         if '--documentos-html' in args:
             _out(opt('--documentos-html', 'documentos.html'), gerar_documentos_html(sped))
             print('Documentos HTML gerado')
+        if '--totais-json' in args:
+            # só os totais do mês, para o app do celular (nada de notas, itens ou participantes)
+            emp, ap = sped.get('empresa') or {}, sped.get('apuracao') or {}
+            ini = (emp.get('periodo_ini') or '').split('/')
+            tot = {'cnpj': re.sub(r'\D', '', emp.get('cnpj') or ''), 'comp': f'{ini[2]}-{ini[1]}' if len(ini) == 3 else '',
+                   'faturamento': round(float(sped.get('faturamento_bruto') or 0), 2), 'debitos': round(float(ap.get('debitos') or 0), 2),
+                   'creditos': round(float(ap.get('creditos') or 0), 2), 'recolher': round(float(ap.get('icms_recolher') or 0), 2),
+                   'aliquota': round(float(sped.get('aliquota_efetiva') or 0), 2)}
+            _out(opt('--totais-json', 'totais.json'), json.dumps(tot, ensure_ascii=False))
         return 0
 
     if modo == 'preparar-inclusao':
