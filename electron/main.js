@@ -598,6 +598,56 @@ const _dare = async (fn) => {
 const agendaSefin = require('./agenda_sefin');
 agendaSefin.init({ notificar: (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} } });
 ipcMain.handle('sefin:agenda', () => ({ ok: true, ...agendaSefin.estado() }));
+// ---- Conferência da EFD-Reinf (eCAC · certificado do escritório) — 2.4.6 (electron/reinf.js e agenda_reinf.js)
+const reinf = require('./reinf');
+const _notifica = (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} };
+reinf.init({
+  userData: () => app.getPath('userData'), notificar: _notifica, runFiscal: (args, out) => runFiscal(args, out), janelaPai: () => mainWindow,
+  empresasLocais: () => (_lerIndiceCert().empresas || []).filter((e) => (e.tipo || 'matriz') !== 'procuracao').map((e) => ({ cnpj: e.cnpj, nome: e.razaoSocial })),
+});
+const agendaReinf = require('./agenda_reinf');
+agendaReinf.init({ notificar: _notifica, ocupado: () => { try { return fisconforme.portal.ocupado(); } catch (_) { return false; } } });
+const _reinf = async (fn) => {
+  if (!reinf.podeUsar()) return { error: 'Sem acesso ao módulo EFD-Reinf.' };
+  if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
+  try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String(e.message || e) }; }
+};
+ipcMain.handle('reinf:dados', (_evt, comp) => _reinf(async () => {
+  const c = comp || agendaReinf.compAnterior();
+  return { ...(await reinf.dados(c)), proxima: agendaReinf.proxima(), compPadrao: agendaReinf.compAnterior(), certificadoAqui: await reinf.certificadoInstalado().catch(() => false) };
+}));
+ipcMain.handle('reinf:conferir', (_evt, o) => _reinf(() => reinf.conferir(o || {})));
+ipcMain.handle('reinf:parar', () => _reinf(async () => reinf.parar()));
+ipcMain.handle('reinf:empresas', (_evt, lista) => _reinf(async () => (lista ? reinf.salvarEmpresas(lista) : { lista: await reinf.empresas() })));
+ipcMain.handle('reinf:abrir', (_evt, { caminho, pasta }) => _reinf(async () => {
+  if (!caminho || !fs.existsSync(caminho)) throw new Error('Arquivo não encontrado neste computador (a conferência pode ter sido feita em outro computador, ou o arquivo foi movido).');
+  if (pasta) shell.showItemInFolder(caminho); else await shell.openPath(caminho);
+  return {};
+}));
+// "Gerar lista": PDF (página montada na tela, impressa aqui) e Excel (python reinf.py)
+ipcMain.handle('reinf:listaPdf', (_evt, { html, nome }) => _reinf(async () => {
+  const r = await dialog.showSaveDialog(mainWindow, { title: 'Salvar a lista da EFD-Reinf', defaultPath: path.join(app.getPath('documents'), `${nome || 'EFD-Reinf'}.pdf`), filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+  if (r.canceled || !r.filePath) return { cancelado: true };
+  const w = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, javascript: false } });
+  try {
+    await w.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    const pdf = await w.webContents.printToPDF({ landscape: true, printBackground: true, pageSize: 'A4', margins: { marginType: 'custom', top: 0.35, bottom: 0.35, left: 0.35, right: 0.35 } });
+    fs.writeFileSync(r.filePath, pdf);
+  } finally { w.destroy(); }
+  shell.openPath(r.filePath);
+  return { arquivo: r.filePath };
+}));
+ipcMain.handle('reinf:listaXlsx', (_evt, { dados, nome }) => _reinf(async () => {
+  const r = await dialog.showSaveDialog(mainWindow, { title: 'Salvar a lista da EFD-Reinf', defaultPath: path.join(app.getPath('documents'), `${nome || 'EFD-Reinf'}.xlsx`), filters: [{ name: 'Excel', extensions: ['xlsx'] }] });
+  if (r.canceled || !r.filePath) return { cancelado: true };
+  const ent = path.join(os.tmpdir(), `fc_reinf_l_${Date.now()}.json`), out = ent.replace(/\.json$/, '_r.json');
+  fs.writeFileSync(ent, JSON.stringify(dados));
+  try { await runFiscal(['reinf-lista', '--entrada', ent, '--xlsx', r.filePath, '--json', out], out); } finally { fs.unlink(ent, () => {}); }
+  const x = JSON.parse(fs.readFileSync(out, 'utf-8')); fs.unlink(out, () => {});
+  if (x.erro) throw new Error(x.erro);
+  shell.openPath(r.filePath);
+  return { arquivo: r.filePath };
+}));
 ipcMain.handle('dare:ler', (_evt, ano) => _dare(() => dare.ler(ano)));
 ipcMain.handle('dare:dados', (_evt, ano) => _dare(() => dare.dados(ano)));
 ipcMain.handle('dare:resumo', (_evt, ano) => _dare(() => dare.resumo(ano)));

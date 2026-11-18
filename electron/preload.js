@@ -126,6 +126,18 @@ contextBridge.exposeInMainWorld('fiscocont', {
     exportar: (html, nome) => ipcRenderer.invoke('dare:exportar', { html, nome }),
     onProgresso: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('dare:progresso', h); return () => ipcRenderer.removeListener('dare:progresso', h); },
   },
+  reinf: {
+    dados: (comp) => ipcRenderer.invoke('reinf:dados', comp),
+    conferir: (o) => ipcRenderer.invoke('reinf:conferir', o),
+    parar: () => ipcRenderer.invoke('reinf:parar'),
+    empresas: (lista) => ipcRenderer.invoke('reinf:empresas', lista),
+    abrir: (o) => ipcRenderer.invoke('reinf:abrir', o),
+    listaPdf: (o) => ipcRenderer.invoke('reinf:listaPdf', o),
+    listaXlsx: (o) => ipcRenderer.invoke('reinf:listaXlsx', o),
+    onProgresso: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('reinf:progresso', h); return () => ipcRenderer.removeListener('reinf:progresso', h); },
+    onEmpresa: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('reinf:empresa', h); return () => ipcRenderer.removeListener('reinf:empresa', h); },
+    onAuto: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('reinf:auto', h); return () => ipcRenderer.removeListener('reinf:auto', h); },
+  },
   sefin: {
     agenda: () => ipcRenderer.invoke('sefin:agenda'),
     onAuto: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('sefin:auto', h); return () => ipcRenderer.removeListener('sefin:auto', h); },

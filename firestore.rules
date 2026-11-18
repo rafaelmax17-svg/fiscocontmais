@@ -147,6 +147,19 @@ service cloud.firestore {
     match /dare/{doc} {
       allow read, write: if dareOk();
     }
+    // Conferência da EFD-Reinf (eCAC): resultado por competência e empresa, a lista de empresas e a vez do dia (12h).
+    // Admin, perfil Fiscal (padrão) ou quem recebeu o módulo "fiscal-reinf".
+    function reinfOk() {
+      return admin() || (ativo() && (
+        (cadastro().get('modulos', null) == null && cadastro().perfil == 'fiscal')
+        || (cadastro().get('modulos', null) != null && 'fiscal-reinf' in cadastro().modulos)));
+    }
+    match /reinf/{doc} {
+      allow read, write: if reinfOk();
+    }
+    match /agenda_reinf/{doc} {
+      allow read, write: if reinfOk();
+    }
     // Consulta automática da SEFIN: a vez de cada horário (quem pegou, quando, resultado) — mesmo acesso dos dois módulos
     match /agenda_sefin/{doc} {
       allow read, write: if fisconforme() || dareOk();

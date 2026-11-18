@@ -285,6 +285,12 @@
         <div class="nc-tx"><span>Débitos e DARE</span><small id="dareResumo">Débitos da SEFIN</small></div>
         <i class="nc-cnt" id="dareCnt" hidden></i>
       </button>
+      <div class="nav-group nav-group-rf" data-group="fiscal">Receita Federal · eCAC</div>
+      <button class="nav-item nav-card nc-reinf" data-group="fiscal" data-view="fiscal-reinf" title="Conferência da EFD-Reinf · eCAC">
+        <b class="nc-ic nc-ic-img"><img src="img/efd-reinf.png" alt=""></b>
+        <div class="nc-tx"><span>EFD-Reinf</span><small id="reinfResumo">Conferência no eCAC</small></div>
+        <em class="nav-new" id="reinfNewBadge" hidden>NOVO</em>
+      </button>
       <div class="nav-group" data-group="contabil">Contábil</div>
       <button class="nav-item active" data-group="contabil" data-view="overview">
         <svg viewBox="0 0 24 24" class="ic"><path d="M4 13h6V4H4zM14 20h6V4h-6zM4 20h6v-4H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
@@ -1235,6 +1241,7 @@
       <div class="view" id="view-fiscal-nfechave" hidden><div id="ncRaiz" class="nc"></div></div>
       <div class="view" id="view-admin-planilhas" hidden><div id="plRaiz" class="pl"></div></div>
       <div class="view" id="view-fiscal-dare" hidden><div id="drRaiz" class="fc dr"></div></div>
+      <div class="view" id="view-fiscal-reinf" hidden><div id="rfRaiz" class="rf"></div></div>
       <div class="view" id="view-admin-integra" hidden><div id="igRaiz" class="ig"></div></div>
 
       <div class="view" id="view-admin-lic" hidden>
@@ -1631,6 +1638,7 @@
   <script src="planilhas.js"></script>
 <script src="pop.js"></script>
   <script src="dare.js"></script>
+  <script src="reinf.js"></script>
   <script src="dfe-notas.js"></script>
 </body>
 </html>

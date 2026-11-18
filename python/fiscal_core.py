@@ -3161,6 +3161,9 @@ def main(argv):
     if modo == 'dfe-relatorio':
         import dfe_relatorio as _dfr
         return _dfr.main_cli(argv[1:])
+    if modo in ('reinf-xml', 'reinf-lista'):
+        import reinf as _rf
+        return _rf.main_cli([modo.split('-')[1]] + argv[1:])
     if modo == 'dfe-extrair':
         import dfe_notas as _dfn
         return _dfn.main_cli(['extrair'] + argv[1:])
