@@ -28,6 +28,7 @@ const nfePortal = require('./nfe_portal');
 const MODULO = 'fiscal-reinf';
 const COL = 'reinf';
 const URL_LOGIN = 'https://cav.receita.fazenda.gov.br/autenticacao/login';
+const URL_GOVBRSSO = 'https://cav.receita.fazenda.gov.br/autenticacao/login/govbrsso';   // destino do botão "Entrar com gov.br"
 const URL_ECAC = 'https://cav.receita.fazenda.gov.br/ecac/';
 const URL_REINF = 'https://www3.cav.receita.fazenda.gov.br/reinfweb/#/home';
 const PARTICAO = 'persist:reinf-ecac';
@@ -151,7 +152,7 @@ function _esperaDownload(ms = 60000) {
 
 // ------------------------------------------------------------------ JS das páginas (por texto, sem depender de ids)
 const JS_BASE = `
-  const vis = (e) => !!e && e.offsetParent !== null && getComputedStyle(e).visibility !== 'hidden';
+  const vis = (e) => { if (!e || !e.getClientRects || !e.getClientRects().length) return false; const cs = getComputedStyle(e); const b = e.getBoundingClientRect(); return cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity > 0.05 && b.width > 0 && b.height > 0; };
   const norm = (s) => String(s || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, ' ').trim().toUpperCase();
   const txt = (e) => norm(e && (e.value || e.innerText || e.textContent || e.alt || e.title || (e.getAttribute && e.getAttribute('aria-label'))));
   const clicaveis = () => [...document.querySelectorAll('a, button, input[type=button], input[type=submit], input[type=image], [role=button], [role=tab], [role=menuitem], li, span, div.card, mat-card')].filter(vis);
@@ -201,13 +202,23 @@ const JS_SO_CAPTCHA = `(() => {
 })()`;
 const JS_TIRA_FAIXA = `(() => { ['fcEstilo', 'fcFaixa'].forEach((i) => { const e = document.getElementById(i); if (e) e.remove(); }); document.querySelectorAll('.fc-alvo').forEach((e) => e.classList.remove('fc-alvo')); })()`;
 // "Entrar com gov.br": o botão é texto + imagem do gov.br (achado real 18/11: o sistema clicava no título "ACESSO GOVBR")
-const JS_GOVBR = `(() => { ${JS_BASE}
-  const cands = [...document.querySelectorAll('a, button, input[type=image], input[type=button], input[type=submit]')].filter(vis);
-  const alvo = cands.find((x) => /sso\\.acesso\\.gov\\.br|govbr|gov\\.br\\/login/i.test(x.getAttribute('href') || '') && !/SAIBA MAIS/.test(txt(x)))
-    || cands.find((x) => /ENTRAR COM/.test(txt(x)) || [...x.querySelectorAll('img')].some((i) => /GOV\\.?BR/.test(norm(i.alt + ' ' + i.src))));
+const JS_GOVBR = (modo) => `(() => { ${JS_BASE}
+  // qualquer elemento (a, button, input, div, img…) do botão: link para o gov.br, texto "Entrar com" ou imagem do gov.br
+  const docs = [document, ...[...document.querySelectorAll('iframe')].map((f) => { try { return f.contentDocument; } catch (_) { return null; } }).filter(Boolean)];
+  const todos = docs.flatMap((d) => [...d.querySelectorAll('a, button, input, [onclick], [role=button], img, div, span')]).filter(vis);
+  const ehLink = (x) => /govbrsso|sso\\.acesso\\.gov\\.br/i.test((x.getAttribute('href') || '') + ' ' + (x.getAttribute('onclick') || '') + ' ' + (x.getAttribute('formaction') || ''));
+  const ehTexto = (x) => /^ENTRAR COM/.test(txt(x)) || (x.tagName === 'IMG' && /GOV\\.?BR/.test(norm((x.alt || '') + ' ' + (x.src || ''))) && !/SAIBA/.test(txt(x.parentElement)));
+  let alvo = todos.find(ehLink) || todos.filter(ehTexto).sort((a, b) => txt(a).length - txt(b).length)[0];
   if (!alvo) return false;
-  alvo.click(); return txt(alvo).slice(0, 60) || 'Entrar com gov.br';
+  alvo = alvo.closest('a, button, [onclick], [role=button], input') || alvo;
+  const r = alvo.getBoundingClientRect();
+  if ('${modo || 'clica'}' === 'rect') return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), tag: alvo.tagName };
+  alvo.scrollIntoView({ block: 'center' }); alvo.click(); return (txt(alvo) || alvo.tagName).slice(0, 60);
 })()`;
+// para o passo a passo: o que a página tem de gov.br / entrar (para ajustar ao site real)
+const JS_DIAG = `(() => { const out = [];
+  document.querySelectorAll('a, button, input, form, iframe, img, [onclick]').forEach((x) => { const h = x.outerHTML; if (/gov\\.?br|entrar|sso|captcha/i.test(h) && out.length < 18) out.push(h.replace(/\\s+/g, ' ').slice(0, 220)); });
+  return out.join(' || '); })()`;
 // "Alterar perfil de acesso" › Procurador de pessoa jurídica - CNPJ
 const JS_PERFIL = (cnpj, modo) => `(() => { ${JS_BASE}
   // o rótulo mais interno (o próprio texto, não a caixa que também o contém — senão pegava o campo do CPF de cima)
@@ -336,13 +347,21 @@ async function _login() {
   await _vai(URL_ECAC);
   if (/cav\.receita\.fazenda\.gov\.br\/ecac/i.test(_url()) && !/autenticacao/.test(_url())) { _log('sessão do eCAC ainda aberta'); return; }
   if (!/autenticacao\/login/.test(_url())) await _vai(URL_LOGIN);
-  for (let tent = 0; tent < 3; tent++) {
-    const t = await _js(JS_GOVBR).catch(() => false) || await _js(JS_CLICA('/^ENTRAR COM/', '/SAIBA MAIS|ACESSO GOVBR/')).catch(() => false);
+  for (let tent = 0; tent < 4 && !/sso\.acesso\.gov\.br/.test(_url()); tent++) {
+    await _sleep(1500);                                         // a página monta o botão depois de carregar
+    let t = false;
+    if (tent < 2) t = await _js(JS_GOVBR('clica')).catch(() => false);
+    else if (tent === 2) {                                      // clique "de verdade" (mouse) no botão
+      const r = await _js(JS_GOVBR('rect')).catch(() => false);
+      if (r && r.x) { for (const type of ['mouseMove', 'mouseDown', 'mouseUp']) _win.webContents.sendInputEvent({ type, x: r.x, y: r.y, button: 'left', clickCount: 1 }); t = `mouse em ${r.tag}`; }
+    } else { _log('login: indo direto para o endereço do botão "Entrar com gov.br"'); await _vai(URL_GOVBRSSO); t = 'endereço direto'; }
     _log(`login: ${t ? `clicou em "${t}"` : 'botão gov.br não encontrado'}`);
+    if (!t && tent === 0) _log(`login · página: ${await _js(JS_DIAG).catch(() => '')}`);
+    for (let i = 0; i < 16 && !/sso\.acesso\.gov\.br/.test(_url()); i++) await _sleep(500);
     await _pronto();
-    if (/sso\.acesso\.gov\.br/.test(_url())) break;
-    await _sleep(1500);
+    if (!/sso\.acesso\.gov\.br/.test(_url())) await _humano('login do eCAC');   // captcha do botão, se aparecer de verdade
   }
+  if (!/sso\.acesso\.gov\.br|cav\.receita\.fazenda\.gov\.br\/ecac/i.test(_url())) _log(`login: continuou em ${_url().split('?')[0]}`);
   if (/sso\.acesso\.gov\.br/.test(_url())) {
     await _humano('gov.br (antes do certificado)');
     const c = await _js(JS_CLICA('/SEU CERTIFICADO DIGITAL$|CERTIFICADO DIGITAL$/', '/NUVEM/')).catch(() => false);
