@@ -1801,24 +1801,29 @@ ipcMain.handle('dfe:entradas', (_evt, { ids, competencia, tipos, ciencia }) => _
       _dfeGrava('dfe-nsu.json', novo);
       saida.push({ cnpj: e.cnpj, nome: e.nome, uf, ...resumo });
     }
-    // Segunda opção (2.4.5): o Ambiente Nacional mandou aguardar 1 hora → empresas de RO buscam as NF-e RECEBIDAS do mês
-    // pelo DFe-Download da SEFIN (mesmo caminho das saídas: e-CNPJ do Windows e o código digitado pela pessoa).
+    // Segunda opção (2.4.5): o Ambiente Nacional mandou aguardar 1 hora → empresas de RO pegam as NF-e recebidas do mês no
+    // arquivo de NF-e do DFe-Download da SEFIN (o mesmo das saídas, que traz emitidas e recebidas; e-CNPJ do Windows e o
+    // código digitado pela pessoa). Se o arquivo do mês já foi baixado nas saídas, as entradas dele já estão na pasta.
     const bloq = saida.filter((x) => x.uf === 'RO' && x.nfe && !x.nfe.erro && /libera nova consulta|aguardar/.test(x.nfe.aviso || ''));
     if (bloq.length) {
       env({ txt: `Entradas · o Ambiente Nacional pediu para aguardar 1 hora: buscando as NF-e recebidas pelo DFe-Download da SEFIN…` });
       let rs = { empresas: [] };
-      try { rs = await dfeSefin.baixar(bloq.map((x) => ({ cnpj: x.cnpj, nome: x.nome })), competencia, ['nfe_ent']); }
-      catch (err) { rs = { empresas: bloq.map((x) => ({ cnpj: x.cnpj, nfe_ent: { status: 'erro', msg: String(err.message || err) } })) }; }
+      try { rs = await dfeSefin.baixar(bloq.map((x) => ({ cnpj: x.cnpj, nome: x.nome })), competencia, ['nfe']); }
+      catch (err) { rs = { empresas: bloq.map((x) => ({ cnpj: x.cnpj, nfe: { status: 'erro', msg: String(err.message || err) } })) }; }
       const novo = _dfeLer('dfe-nsu.json');
       for (const y of rs.empresas || []) {
-        const x = saida.find((z) => z.cnpj === y.cnpj); const r2 = y.nfe_ent || (y.parado ? { status: 'cancelado', msg: 'a busca foi interrompida.' } : null);
+        const x = saida.find((z) => z.cnpj === y.cnpj); const r2 = y.nfe || (y.parado ? { status: 'cancelado', msg: 'a busca foi interrompida.' } : null);
         if (!x || !r2) continue;
         const base = _dfeBaseDe(x, pasta);
+        let pastaEnt = (r2.entradas || {}).pasta || '';
         if (base !== pasta && ['baixado', 'parcial'].includes(r2.status)) {
           const pub = await _publicarCliente(x, base, [competencia], _dfeNomePasta(x.nome));
-          if (pub.destinos[competencia]) r2.pasta = pub.destinos[competencia];
+          if (pub.destinos[competencia]) pastaEnt = pub.destinos[competencia];
         }
-        x.nfe = { ...x.nfe, sefin: { status: r2.status, msg: r2.msg || '', qtd: r2.qtd || 0, valor: r2.valor || 0, canceladas: r2.canceladas || 0, quando: new Date().toISOString() } };
+        r2.pasta = pastaEnt;
+        const en = r2.entradas || {};
+        const msg2 = ['baixado', 'parcial'].includes(r2.status) && !en.qtd ? 'o arquivo de NF-e da SEFIN não trouxe notas recebidas por esta empresa.' : (r2.msg === 'já baixado antes' ? '' : r2.msg || '');
+        x.nfe = { ...x.nfe, sefin: { status: r2.status, msg: msg2, qtd: en.qtd || 0, valor: en.valor || 0, canceladas: en.canceladas || 0, quando: new Date().toISOString() } };
         if (r2.pasta) x.nfe.pasta = r2.pasta;
         const ult = ((novo[x.cnpj] || {}).ultimo || {})[competencia];
         if (ult && ult.nfe) { ult.nfe.sefin = x.nfe.sefin; if (r2.pasta) ult.nfe.pasta = r2.pasta; }

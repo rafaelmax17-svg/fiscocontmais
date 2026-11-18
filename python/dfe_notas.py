@@ -349,10 +349,11 @@ def _itens_das_partes(caminhos):
 
 
 def extrair_saidas(zip_path, base, empresa, cnpj, tipo, competencia=''):
-    # nfe_ent (2.4.5): NF-e RECEBIDAS pelo DFe-Download da SEFIN (segunda opção quando o Ambiente Nacional manda aguardar
-    # 1 hora). Ficam junto das entradas do Ambiente Nacional, com o mesmo nome de arquivo (sem duplicar).
-    entrada = tipo == 'nfe_ent'
-    sub = 'NF-e Entradas' if entrada else 'NFC-e Saídas' if tipo == 'nfce' else 'NF-e Saídas'
+    # O arquivo de NF-e do DFe-Download traz as notas EMITIDAS e as RECEBIDAS pela empresa (2.4.5): emitente = empresa vai
+    # para NF-e Saídas; destinatário = empresa vai para NF-e Entradas, com o mesmo nome de arquivo das entradas do Ambiente
+    # Nacional (<chave>-procNFe.xml), sem duplicar. É a segunda opção quando o Ambiente Nacional manda aguardar 1 hora.
+    sub = 'NFC-e Saídas' if tipo == 'nfce' else 'NF-e Saídas'
+    ent = {}
     cnpj = re.sub(r'\D', '', cnpj or '')
     caminhos = zip_path if isinstance(zip_path, (list, tuple)) else [zip_path]
     itens = _itens_das_partes(caminhos)
@@ -367,13 +368,18 @@ def extrair_saidas(zip_path, base, empresa, cnpj, tipo, competencia=''):
         if re.search(r'<(?:\w+:)?(nfeProc|NFe)\b', corpo):
             ch = re.search(r'Id="NFe(\d{44})"', corpo)
             ch = ch.group(1) if ch else ''
-            parte = (mf._blocos(corpo, 'dest' if entrada else 'emit') or [''])[0]
-            if cnpj and _cnpj_de(parte) != cnpj:
-                outras_emp += 1
-                continue
+            emit = (mf._blocos(corpo, 'emit') or [''])[0]
+            dest = (mf._blocos(corpo, 'dest') or [''])[0]
             dh = mf._txt(corpo, 'dhEmi') or mf._txt(corpo, 'dEmi')
-            arq = f'{ch}-procNFe.xml' if entrada and ch else f'{ch or os.path.splitext(os.path.basename(nome))[0]}-nfe.xml'
-            cam = nc._grava(os.path.join(_pasta(base, dh, empresa, sub), arq),
+            if cnpj and _cnpj_de(emit) != cnpj:
+                if tipo == 'nfe' and ch and _cnpj_de(dest) == cnpj:          # nota recebida pela empresa: entrada
+                    cam = nc._grava(os.path.join(_pasta(base, dh, empresa, 'NF-e Entradas'), f'{ch}-procNFe.xml'),
+                                    '<?xml version="1.0" encoding="UTF-8"?>' + corpo)
+                    ent[ch] = {'chave': ch, 'dh': dh, 'valor': _num(mf._txt(corpo, 'vNF')), 'xml': cam}
+                else:
+                    outras_emp += 1
+                continue
+            cam = nc._grava(os.path.join(_pasta(base, dh, empresa, sub), f'{ch or os.path.splitext(os.path.basename(nome))[0]}-nfe.xml'),
                             '<?xml version="1.0" encoding="UTF-8"?>' + corpo)
             notas[ch or cam] = {'chave': ch, 'dh': dh, 'valor': _num(mf._txt(corpo, 'vNF')), 'mod': mf._txt(corpo, 'mod'), 'xml': cam}
         elif re.search(r'<(?:\w+:)?(procEventoNFe|evento)\b', corpo):
@@ -384,7 +390,7 @@ def extrair_saidas(zip_path, base, empresa, cnpj, tipo, competencia=''):
         else:
             outros += 1
     for ch, corpo in eventos:       # evento guardado junto da nota
-        n = notas.get(ch)
+        n = notas.get(ch) or ent.get(ch)
         if n:
             tp = mf._txt(corpo, 'tpEvento') or 'evento'
             nc._grava(os.path.join(os.path.dirname(n['xml']), f'{ch}-evento-{tp}.xml'), '<?xml version="1.0" encoding="UTF-8"?>' + corpo)
@@ -394,6 +400,15 @@ def extrair_saidas(zip_path, base, empresa, cnpj, tipo, competencia=''):
     return {'ok': True, 'tipo': tipo, 'qtd': len(lista), 'canceladas': sum(1 for n in lista if n['chave'] in canc),
             'valor': round(sum(n['valor'] for n in ativos), 2), 'mes': {'qtd': len(no_mes), 'valor': round(sum(n['valor'] for n in no_mes), 2)},
             'outras_empresas': outras_emp, 'ignorados': outros,
+            'pasta': os.path.dirname(lista[0]['xml']) if lista else '',
+            'entradas': _resumo_ent(list(ent.values()), canc, competencia)}
+
+
+def _resumo_ent(lista, canc, competencia):
+    ativos = [n for n in lista if n['chave'] not in canc]
+    no_mes = [n for n in ativos if not competencia or (n['dh'] or '')[:7] == competencia]
+    return {'qtd': len(lista), 'canceladas': sum(1 for n in lista if n['chave'] in canc), 'valor': round(sum(n['valor'] for n in ativos), 2),
+            'mes': {'qtd': len(no_mes), 'valor': round(sum(n['valor'] for n in no_mes), 2)},
             'pasta': os.path.dirname(lista[0]['xml']) if lista else ''}
 
 

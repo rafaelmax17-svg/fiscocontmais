@@ -164,6 +164,7 @@
     const [c, t] = SAI[x.status] || ['dfe-nr', x.status || '—'];
     const det = [];
     if (x.status === 'baixado' || (x.status === 'parcial' && x.qtd)) det.push(`${x.qtd || 0} nota(s) · R$ ${brl(x.valor)}${x.canceladas ? ` · ${x.canceladas} cancelada(s)` : ''}`);
+    if (x.entradas && x.entradas.qtd) det.push(`No mesmo arquivo: ${x.entradas.qtd} nota(s) de entrada · R$ ${brl(x.entradas.valor)}, salvas em NF-e Entradas`);
     if (x.msg) det.push(x.msg);
     return chip(c, t) + (det.length ? `<small>${det.map(e).join('<br>')}</small>` : '') + pastaBt(x.pasta);
   }

@@ -22,12 +22,12 @@ const { app, BrowserWindow, session } = require('electron');
 const BASE = 'https://download.dfe.sefin.ro.gov.br';
 const HOST = 'download.dfe.sefin.ro.gov.br';
 const PARTICAO = (cnpj) => `persist:dfe-ro-${cnpj}`;
-const DOCS = { nfe: 'NFE', nfce: 'NFCE', nfe_ent: 'NFE' };
-const NOME = { nfe: 'NF-e', nfce: 'NFC-e', nfe_ent: 'NF-e Entradas' };
-// operação do pedido: saídas = notas EMITIDAS pela empresa; entradas (2.4.5) = notas RECEBIDAS (empresa destinatária).
-// Entradas pelo DFe-Download: segunda opção quando o Ambiente Nacional manda aguardar 1 hora.
-const OP = { nfe: { re: '^EMITIDAS?$', rot: 'Emitida' }, nfce: { re: '^EMITIDAS?$', rot: 'Emitida' },
-  nfe_ent: { re: '^(RECEBIDAS?|DESTINADAS?|DESTINATARIO|ENTRADAS?)$', rot: 'Recebida' } };
+const DOCS = { nfe: 'NFE', nfce: 'NFCE' };
+const NOME = { nfe: 'NF-e', nfce: 'NFC-e' };
+// operação do pedido. O arquivo de NF-e traz as emitidas e as recebidas (2.4.5): o sistema separa saídas e entradas.
+// Na Nova Solicitação, escolhe a opção que traz as duas quando o site tiver (Ambas/Todas), senão Emitida.
+const OP = { nfe: { escolhe: ['^(AMBAS|TODAS|EMITIDAS? E RECEBIDAS?|ENTRADAS? E SAIDAS?)$', '^EMITIDAS?$'], aceita: /EMITIDA|AMBAS|TODAS/, rot: 'Emitida e recebida' },
+  nfce: { escolhe: ['^EMITIDAS?$'], aceita: /EMITIDA/, rot: 'Emitida' } };
 
 let D = null;                 // { userData(), notificar(canal, dados), runFiscal(args, out), pastaBase() }
 let _win = null, _cnpjAtivo = '', _certFaltou = false, _rodando = false, _espera = null;
@@ -320,7 +320,7 @@ const JS_LINK_BAIXAR = `(() => { ${JS_BASE}
   if (b) { b.click(); return true; } return false; })()`;
 
 // Nova Solicitação: preenche o que reconhecer (Período, documento, operação Emitida, datas). A pessoa confere e confirma.
-const JS_NOVA = (doc, ini, fim, iniIso, fimIso, op) => `(() => { ${JS_BASE}
+const JS_NOVA = (doc, ini, fim, iniIso, fimIso, ops) => `(() => { ${JS_BASE}
   const set = (el, v) => { const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value'); d.set.call(el, v);
     ['input', 'change', 'blur'].forEach((t) => el.dispatchEvent(new Event(t, { bubbles: true }))); };
   const feito = {};
@@ -333,11 +333,12 @@ const JS_NOVA = (doc, ini, fim, iniIso, fimIso, op) => `(() => { ${JS_BASE}
   const sd = sels.find((s) => [...s.options].some((o) => /^CTE$/.test(norm(o.text).replace(/[^A-Z]/g, ''))));
   if (sd) { const o = [...sd.options].find((o) => norm(o.text).replace(/[^A-Z]/g, '') === '${doc}');
     if (o) { sd.value = o.value; ['input', 'change'].forEach((t) => sd.dispatchEvent(new Event(t, { bubbles: true }))); feito.doc = o.text; } }
-  const reOp = new RegExp(${JSON.stringify(op)});
-  const opRad = rad.find((r) => reOp.test(rotulo(r).trim()));
-  if (opRad && !opRad.checked) { opRad.click(); feito.op = 'radio'; }
+  const reOps = ${JSON.stringify(ops)}.map((r) => new RegExp(r));
+  let opRad = null; for (const re of reOps) { opRad = rad.find((r) => re.test(rotulo(r).trim())); if (opRad) break; }
+  if (opRad && !opRad.checked) { opRad.click(); feito.op = rotulo(opRad); }
   const so = sels.find((s) => [...s.options].some((o) => /EMITIDA/.test(norm(o.text))));
-  if (so) { const o = [...so.options].find((o) => reOp.test(norm(o.text).trim())); if (o) { so.value = o.value; so.dispatchEvent(new Event('change', { bubbles: true })); feito.op = o.text; } }
+  if (so) { let o = null; for (const re of reOps) { o = [...so.options].find((x) => re.test(norm(x.text).trim())); if (o) break; }
+    if (o) { so.value = o.value; so.dispatchEvent(new Event('change', { bubbles: true })); feito.op = o.text; } }
   const datas = [...document.querySelectorAll('input')].filter(vis).filter((i) => i.type === 'date' || /DATA|INICI|FINAL|FIM|PERIODO|ATE/.test(norm(i.placeholder + ' ' + i.name + ' ' + i.id + ' ' + rotulo(i))) && !/CHAVE|NUMERO|NNF/.test(norm(i.name + i.id)));
   if (datas.length >= 2) {
     set(datas[0], datas[0].type === 'date' ? '${iniIso}' : '${ini}'); set(datas[1], datas[1].type === 'date' ? '${fimIso}' : '${fim}'); feito.datas = true;
@@ -417,7 +418,7 @@ function _confere(det, comp, tipo) {
   const datas = periodo.match(/\d{2}\/\d{2}\/\d{4}/g) || [];
   const okPer = datas.length === 2 && datas[0] === per.ini && datas[1] === per.fim;
   const okTipo = /PERIODO/.test(_norm(kv['TIPO DE PESQUISA']));
-  const okOp = new RegExp(OP[tipo || 'nfe'].re.replace(/[\^$]/g, '')).test(_norm(kv['TIPO DE OPERACAO']));
+  const okOp = OP[tipo || 'nfe'].aceita.test(_norm(kv['TIPO DE OPERACAO']));
   const okSit = !kv['SITUACAO'] || /ATIVO/.test(_norm(kv['SITUACAO']));
   const exp = _isoDe(kv['DATA DE EXPIRACAO']);
   const expirado = !!exp && exp < new Date().toISOString().slice(0, 10);
@@ -592,7 +593,10 @@ async function _baixar(emp, tipo, comp, achado, est, pasta) {
   return { status: falta ? 'parcial' : 'baixado', msg: falta ? `${todos.length - falta} de ${todos.length} parte(s) baixada(s). A parte que faltou: ${motivo || 'não baixada'} Clique em Baixar notas de novo para baixar só ela.` : '',
     partes: todos.length, faltam: falta,
     qtd: (est.qtd || 0) + x.qtd, valor: Math.round(((est.valor || 0) + x.valor) * 100) / 100, canceladas: (est.canceladas || 0) + x.canceladas,
-    pasta: x.pasta || est.pasta || '', arquivos: feitos, id: achado.conf.id };
+    pasta: x.pasta || est.pasta || '', arquivos: feitos, id: achado.conf.id,
+    // notas recebidas que vieram no mesmo arquivo (salvas em NF-e Entradas)
+    entradas: x.entradas && x.entradas.qtd ? { qtd: ((est.entradas || {}).qtd || 0) + x.entradas.qtd, valor: Math.round((((est.entradas || {}).valor || 0) + x.entradas.valor) * 100) / 100,
+      canceladas: ((est.entradas || {}).canceladas || 0) + x.entradas.canceladas, pasta: x.entradas.pasta } : est.entradas };
 }
 
 async function _novaSolicitacao(emp, tipo, comp) {
@@ -603,12 +607,12 @@ async function _novaSolicitacao(emp, tipo, comp) {
   const clicou = await _js(JS_CLICA('/NOVA SOLICITACAO/')).catch(() => false);
   if (!clicou) return { status: 'erro', msg: 'não achei "Nova Solicitação".' };
   await _sleep(2000);
-  let f = await _js(JS_NOVA(DOCS[tipo], per.ini, per.fim, per.iniIso, per.fimIso, OP[tipo].re)).catch(() => ({}));
+  let f = await _js(JS_NOVA(DOCS[tipo], per.ini, per.fim, per.iniIso, per.fimIso, OP[tipo].escolhe)).catch(() => ({}));
   await _sleep(1200);
-  f = { ...f, ...(await _js(JS_NOVA(DOCS[tipo], per.ini, per.fim, per.iniIso, per.fimIso, OP[tipo].re)).catch(() => ({}))) };       // campos que aparecem depois de escolher Período
+  f = { ...f, ...(await _js(JS_NOVA(DOCS[tipo], per.ini, per.fim, per.iniIso, per.fimIso, OP[tipo].escolhe)).catch(() => ({}))) };       // campos que aparecem depois de escolher Período
   _log(`nova solicitação ${NOME[tipo]} preenchida: ${JSON.stringify(f)}`);
   _mostra(true);                                            // a pessoa confere e confirma o pedido na página da SEFIN
-  await _js(JS_AVISO(`confira o pedido (Período ${per.ini} a ${per.fim} · ${DOCS[tipo] === 'NFE' ? 'NF-e' : NOME[tipo]} · ${OP[tipo].rot}, ativas e canceladas) e confirme no botão do site. Depois a SEFIN prepara o arquivo.`)).catch(() => {});
+  await _js(JS_AVISO(`confira o pedido (Período ${per.ini} a ${per.fim} · ${NOME[tipo]} · ${OP[tipo].rot}, ativas e canceladas) e confirme no botão do site. Depois a SEFIN prepara o arquivo.`)).catch(() => {});
   _prog(`${emp.nome} · ${NOME[tipo]}: confira e confirme a Nova Solicitação na janela da SEFIN…`, { espera: true });
   const antes = Date.now(), ate = antes + 5 * 60 * 1000;
   while (Date.now() < ate) {
