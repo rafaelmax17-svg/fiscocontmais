@@ -153,8 +153,8 @@ function _esperaDownload(ms = 60000) {
 const JS_BASE = `
   const vis = (e) => !!e && e.offsetParent !== null && getComputedStyle(e).visibility !== 'hidden';
   const norm = (s) => String(s || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, ' ').trim().toUpperCase();
-  const txt = (e) => norm(e && (e.value || e.innerText || e.textContent));
-  const clicaveis = () => [...document.querySelectorAll('a, button, input[type=button], input[type=submit], [role=button], [role=tab], [role=menuitem], li, span, div.card, mat-card')].filter(vis);
+  const txt = (e) => norm(e && (e.value || e.innerText || e.textContent || e.alt || e.title || (e.getAttribute && e.getAttribute('aria-label'))));
+  const clicaveis = () => [...document.querySelectorAll('a, button, input[type=button], input[type=submit], input[type=image], [role=button], [role=tab], [role=menuitem], li, span, div.card, mat-card')].filter(vis);
   const setVal = (inp, v) => { inp.focus(); const d = Object.getOwnPropertyDescriptor(inp.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value');
     d.set.call(inp, ''); inp.dispatchEvent(new Event('input', { bubbles: true }));
     d.set.call(inp, v); inp.dispatchEvent(new InputEvent('input', { bubbles: true, data: v, inputType: 'insertText' }));
@@ -169,10 +169,44 @@ const JS_CLICA = (re, nao) => `(() => { ${JS_BASE}
   alvo.scrollIntoView({ block: 'center' }); alvo.click(); return txt(alvo).slice(0, 80);
 })()`;
 const JS_TEXTO = `(() => document.body ? document.body.innerText.slice(0, 20000) : '')()`;
+// Captcha que a PESSOA vê de verdade. Achado real (18/11): a página de login do eCAC carrega o hCaptcha invisível — o
+// sistema achou que era para a pessoa e mostrou a página do eCAC. Agora só conta a caixa "Sou humano" ou o desafio de
+// imagens quando estão visíveis na tela (nada escondido, transparente ou fora da tela).
 const JS_CAPTCHA = `(() => {
   const r = document.querySelector('[name="h-captcha-response"], [name="g-recaptcha-response"]');
-  const vis = !![...document.querySelectorAll('iframe[src*="hcaptcha"], iframe[src*="recaptcha"]')].find((f) => f.offsetParent !== null && f.getBoundingClientRect().height > 30);
-  return { tem: vis, ok: !!(r && r.value) };
+  const vista = (f) => { const b = f.getBoundingClientRect(); if (b.width < 60 || b.height < 60 || b.bottom <= 0 || b.top >= innerHeight || b.right <= 0 || b.left >= innerWidth) return false;
+    for (let el = f; el && el !== document.documentElement; el = el.parentElement) { const cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity < 0.1) return false; } return true; };
+  const fr = [...document.querySelectorAll('iframe[src*="hcaptcha"], iframe[src*="recaptcha"]')].filter(vista);
+  const desafio = fr.some((f) => /challenge|desafio/i.test(f.title || '') || f.getBoundingClientRect().height > 200);
+  const caixa = fr.some((f) => /checkbox|caixa/i.test(f.title || '') || f.getBoundingClientRect().height <= 110);
+  return { tem: desafio || caixa, desafio, caixa, ok: !!(r && r.value) };
+})()`;
+// Na janela fica só o quadro do captcha (e o desafio de imagens), com a faixa do FiscoCont+ — nada da página do eCAC.
+const JS_SO_CAPTCHA = `(() => {
+  if (!document.getElementById('fcFaixa')) {
+    const st = document.createElement('style'); st.id = 'fcEstilo';
+    st.textContent = 'html,body{overflow:hidden!important;background:#f3f5fa!important}body *{visibility:hidden!important}'
+      + 'iframe[src*="hcaptcha"],iframe[src*="recaptcha"],#fcFaixa,#fcFaixa *{visibility:visible!important}'
+      + '.fc-alvo{position:fixed!important;top:150px!important;left:50%!important;transform:translateX(-50%)!important;margin:0!important;z-index:2147483000!important}'
+      + '#fcFaixa{position:fixed;top:0;left:0;right:0;z-index:2147483001;background:linear-gradient(135deg,#2563eb,#0891b2);color:#fff;padding:16px 18px;font:14px/1.4 "Segoe UI",system-ui,sans-serif}'
+      + '#fcFaixa b{display:block;font-size:15px}#fcFaixa span{display:block;opacity:.92;font-size:12.5px;margin-top:4px}';
+    document.head.appendChild(st);
+    const f = document.createElement('div'); f.id = 'fcFaixa';
+    f.innerHTML = '<b>Conferência da EFD-Reinf</b><span>Marque “Sou humano”. Depois disso o sistema continua sozinho e fecha esta janela.</span>';
+    document.body.appendChild(f);
+  }
+  const cx = [...document.querySelectorAll('iframe[src*="hcaptcha"], iframe[src*="recaptcha"]')].find((f) => f.getBoundingClientRect().height <= 110 && f.getBoundingClientRect().height > 40);
+  if (cx) (cx.closest('.h-captcha, .g-recaptcha') || cx.parentElement).classList.add('fc-alvo');
+  return true;
+})()`;
+const JS_TIRA_FAIXA = `(() => { ['fcEstilo', 'fcFaixa'].forEach((i) => { const e = document.getElementById(i); if (e) e.remove(); }); document.querySelectorAll('.fc-alvo').forEach((e) => e.classList.remove('fc-alvo')); })()`;
+// "Entrar com gov.br": o botão é texto + imagem do gov.br (achado real 18/11: o sistema clicava no título "ACESSO GOVBR")
+const JS_GOVBR = `(() => { ${JS_BASE}
+  const cands = [...document.querySelectorAll('a, button, input[type=image], input[type=button], input[type=submit]')].filter(vis);
+  const alvo = cands.find((x) => /sso\\.acesso\\.gov\\.br|govbr|gov\\.br\\/login/i.test(x.getAttribute('href') || '') && !/SAIBA MAIS/.test(txt(x)))
+    || cands.find((x) => /ENTRAR COM/.test(txt(x)) || [...x.querySelectorAll('img')].some((i) => /GOV\\.?BR/.test(norm(i.alt + ' ' + i.src))));
+  if (!alvo) return false;
+  alvo.click(); return txt(alvo).slice(0, 60) || 'Entrar com gov.br';
 })()`;
 // "Alterar perfil de acesso" › Procurador de pessoa jurídica - CNPJ
 const JS_PERFIL = (cnpj) => `(() => { ${JS_BASE}
@@ -246,22 +280,34 @@ const JS_TOTALIZADOR = `(() => { ${JS_BASE}
 
 // ------------------------------------------------------------------ passos
 async function _humano(rotulo) {
-  // captcha / autorização do gov.br: quem faz é a pessoa; a janela aparece só nessa hora
-  const c = await _js(JS_CAPTCHA).catch(() => ({}));
-  const consent = /AUTORIZAR/.test((await _js(JS_TEXTO).catch(() => '')).normalize('NFD').toUpperCase()) && /sso\.acesso\.gov\.br/.test(_url());
-  if (!(c.tem && !c.ok) && !consent) return false;
-  _log(`${rotulo}: esperando a pessoa (${consent ? 'autorização do gov.br' : 'captcha'})`);
-  _prog(consent ? 'O gov.br pediu autorização: confira e autorize na janela do eCAC que abriu.' : 'Marque o "Sou humano" na janela do eCAC que abriu.', { humano: true });
+  // captcha ou autorização do gov.br: quem faz é a pessoa. A janela só aparece se continuar parado nisso por alguns
+  // segundos, e mostra só o quadro do captcha (nada da página do eCAC) — para não confundir a equipe.
+  const precisa = async () => {
+    const c = await _js(JS_CAPTCHA).catch(() => ({}));
+    const consent = /sso\.acesso\.gov\.br/.test(_url()) && /\bAUTORIZAR\b/.test((await _js(JS_TEXTO).catch(() => '')).normalize('NFD').toUpperCase());
+    return { cap: !!(c.tem && !c.ok), consent };
+  };
+  let p = await precisa();
+  if (!p.cap && !p.consent) return false;
+  const u0 = _url();
+  await _sleep(5000);
+  if (_url() !== u0) return true;                       // seguiu sozinho
+  p = await precisa();
+  if (!p.cap && !p.consent) return true;
+  _log(`${rotulo}: esperando a pessoa (${p.consent ? 'autorização do gov.br' : 'captcha'})`);
+  _prog(p.consent ? 'O gov.br pediu autorização: confira e autorize na janela que abriu.' : 'Marque o "Sou humano" na janela que abriu.', { humano: true });
+  if (p.cap && !p.consent) { await _js(JS_SO_CAPTCHA).catch(() => {}); _win.setSize(500, 660); }
   _mostra(true);
   const fim = Date.now() + 5 * 60000;
   while (Date.now() < fim && _vivo() && !_parar) {
     await _sleep(1000);
-    const u = _url();
-    if (/cav\.receita\.fazenda\.gov\.br\/ecac|reinfweb/.test(u)) break;
+    if (_url() !== u0) break;
     const c2 = await _js(JS_CAPTCHA).catch(() => ({}));
-    if (!consent && c2.ok) { await _sleep(1500); break; }
+    if (!p.consent && (c2.ok || !c2.tem)) { await _sleep(1200); break; }
   }
   _mostra(false);
+  await _js(JS_TIRA_FAIXA).catch(() => {});
+  try { _win.setSize(1280, 880); } catch (_) {}
   return true;
 }
 
@@ -271,7 +317,7 @@ async function _login() {
   if (/cav\.receita\.fazenda\.gov\.br\/ecac/i.test(_url()) && !/autenticacao/.test(_url())) { _log('sessão do eCAC ainda aberta'); return; }
   if (!/autenticacao\/login/.test(_url())) await _vai(URL_LOGIN);
   for (let tent = 0; tent < 3; tent++) {
-    const t = await _js(JS_CLICA('/GOV\\.?BR/', '/SAIBA MAIS/')).catch(() => false);
+    const t = await _js(JS_GOVBR).catch(() => false) || await _js(JS_CLICA('/^ENTRAR COM/', '/SAIBA MAIS|ACESSO GOVBR/')).catch(() => false);
     _log(`login: ${t ? `clicou em "${t}"` : 'botão gov.br não encontrado'}`);
     await _pronto();
     if (/sso\.acesso\.gov\.br/.test(_url())) break;
