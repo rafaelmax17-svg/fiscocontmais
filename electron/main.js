@@ -598,6 +598,22 @@ const _dare = async (fn) => {
 const agendaSefin = require('./agenda_sefin');
 agendaSefin.init({ notificar: (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} } });
 ipcMain.handle('sefin:agenda', () => ({ ok: true, ...agendaSefin.estado() }));
+// ---- Recibos GIAM/SPED Fiscal (SEFIN-RO · Portal do Contribuinte, e-CPF do contador) — electron/giam.js
+const giam = require('./giam');
+giam.init({ userData: () => app.getPath('userData'), notificar: (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} } });
+const _giam = async (fn) => {
+  if (!giam.podeUsar()) return { error: 'Sem acesso ao módulo Recibos GIAM/SPED.' };
+  if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
+  try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String(e.message || e) }; }
+};
+ipcMain.handle('giam:dados', (_evt, comp) => _giam(async () => ({ ...(await giam.dados(comp || giam.compAnterior())), compPadrao: giam.compAnterior(), proxima: (agendaSefin.estado().proximoGiam || '') })));
+ipcMain.handle('giam:ler', (_evt, o) => _giam(() => giam.ler((o && o.comp) || giam.compAnterior(), { ie: o && o.ie })));
+ipcMain.handle('giam:abrir', (_evt, { caminho, pasta }) => _giam(async () => {
+  if (!caminho || !fs.existsSync(caminho)) throw new Error('Arquivo não encontrado neste computador (o recibo pode ter sido salvo em outro computador sem o drive G:, ou foi movido).');
+  if (pasta) shell.showItemInFolder(caminho); else await shell.openPath(caminho);
+  return {};
+}));
+
 // ---- Conferência da EFD-Reinf (eCAC · certificado do escritório) — 2.4.6 (electron/reinf.js e agenda_reinf.js)
 const reinf = require('./reinf');
 const _notifica = (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} };

@@ -18,11 +18,13 @@ const os = require('os');
 const auth = require('./auth');
 const fisc = require('./fisconforme');
 const dare = require('./dare');
+const giam = require('./giam');
 
 // horários (dias úteis, hora do computador)
 const HORARIOS = ['07:45', '10:45', '13:45', '16:45'];                       // Fisconforme
 const HORARIOS_D = ['07:45', '09:45', '11:45', '13:45', '15:45', '17:45'];    // DAREs em aberto (Débitos e DARE)
 const HORARIOS_PG = ['08:15', '10:15', '12:30', '14:30', '16:15', '18:00'];   // DAREs pagos (Conta Corrente)
+const HORARIOS_G = ['08:00'];                                                 // recibos GIAM/SPED (1x ao dia, competência anterior)
 // Cada horário vale até o próximo do mesmo grupo (no máximo 2 h): se o computador que pegou a vez for fechado no meio
 // da consulta (ou atualizar o sistema), outro computador assume depois do prazo, ainda dentro da janela.
 // Achado real (16/11/2026): a janela era de 55 min e o prazo de 40 — a consulta das 07:45 ficou "rodando" e ninguém
@@ -59,6 +61,8 @@ function _grade() {
   return [
     ...lista(Object.keys(fd), (h) => ({ tipo: 'debitos', f: fd[h].f, d: fd[h].d })),
     ...lista(HORARIOS_PG, () => ({ tipo: 'pagos', f: false, d: false })),
+    // a GIAM tem a janela até as 18h: se ninguém estava com o e-CPF às 8h, o primeiro computador do dia faz
+    ...HORARIOS_G.map((h) => ({ h, fim: _min('18:00'), tipo: 'giam', f: false, d: false })),
   ];
 }
 
@@ -69,7 +73,7 @@ function slotsAtuais(agora = new Date()) {
   const m = agora.getHours() * 60 + agora.getMinutes();
   const data = `${agora.getFullYear()}${_2(agora.getMonth() + 1)}${_2(agora.getDate())}`;
   return _grade().filter((g) => m >= _min(g.h) && m < g.fim).sort((a, b) => _min(a.h) - _min(b.h))
-    .map((g) => ({ ...g, id: `${data}_${g.h.replace(':', '')}${g.tipo === 'pagos' ? '_pg' : ''}` }));
+    .map((g) => ({ ...g, id: `${data}_${g.h.replace(':', '')}${g.tipo === 'pagos' ? '_pg' : g.tipo === 'giam' ? '_giam' : ''}` }));
 }
 const slotAtual = (agora) => slotsAtuais(agora)[0] || null;
 
@@ -116,7 +120,7 @@ async function _pegarVez(slot) {
         const x = d.data();
         if (x.status === 'ok') return false;
         const idadeMin = (Date.now() - Date.parse(x.em || 0)) / 60000;
-        if (x.status === 'rodando' && idadeMin < (slot.tipo === 'pagos' ? PRAZO_PG_MIN : PRAZO_MIN)) return false;
+        if (x.status === 'rodando' && idadeMin < (['pagos', 'giam'].includes(slot.tipo) ? PRAZO_PG_MIN : PRAZO_MIN)) return false;
         if (x.status === 'erro' && idadeMin < 10) return false;        // espera um pouco antes de tentar de novo
         if ((x.tentativas || 0) >= 3) return false;
         t.set(ref, { ...eu, tentativas: (x.tentativas || 0) + 1 });
@@ -142,9 +146,10 @@ async function tick() {
   const slots = slotsAtuais();
   if (!slots.length) return;
   for (const slot of slots) {
-    const podeD = (slot.tipo === 'pagos' || slot.d) && dare.podeUsar(s);
+    const podeG = slot.tipo === 'giam' && giam.podeUsar(s);
+    const podeD = slot.tipo !== 'giam' && (slot.tipo === 'pagos' || slot.d) && dare.podeUsar(s);
     const podeF = slot.f && fisc.podeUsar(s);
-    if (!podeF && !podeD) continue;
+    if (!podeF && !podeD && !podeG) continue;
     if (fisc.portal.ocupado()) return;                            // alguém está usando a SEFIN agora: espera
     if (!(await _temCertificado())) return;
     if (!(await _pegarVez(slot))) continue;                       // outro computador já fez (ou está fazendo)
@@ -162,7 +167,12 @@ async function _executa(slot, podeF, podeD) {
       try { const r = await fisc.ler({ auto: true }); res.fisconforme = { novas: r.novas || 0 }; }
       catch (e) { res.fisconforme = { erro: String(e.message || e).slice(0, 200) }; }
     }
-    if (podeD && slot.tipo === 'pagos') {
+    if (slot.tipo === 'giam') {
+      await espera();
+      const comp = giam.compAnterior();
+      try { const r = await giam.ler(comp, { auto: true }); res.giam = { comp, processado: r.processado || 0, nao: r.nao_processado || 0, erros: r.erro || 0 }; }
+      catch (e) { res.giam = { erro: String(e.message || e).slice(0, 200) }; }
+    } else if (podeD && slot.tipo === 'pagos') {
       res.pagos = {};
       for (const mes of mesesPagos()) {
         await espera();
@@ -176,7 +186,7 @@ async function _executa(slot, podeF, podeD) {
     }
     // erro só quando TUDO o que rodou deu erro (assim outro computador tenta de novo); antes, uma consulta só de
     // DAREs com erro ficava marcada como "ok" e não era repetida
-    const feitos = [res.fisconforme, res.dare, ...Object.values(res.pagos || {})].filter(Boolean);
+    const feitos = [res.fisconforme, res.dare, res.giam, ...Object.values(res.pagos || {})].filter(Boolean);
     if (!feitos.length || feitos.every((x) => x.erro)) res.status = 'erro';
   } finally {
     await _marca(slot, res);
@@ -186,7 +196,16 @@ async function _executa(slot, podeF, podeD) {
 }
 
 function estado() {
-  return { horarios: HORARIOS, horariosDare: HORARIOS_D, horariosPagos: HORARIOS_PG, rodando: _rodando, proximo: _proximo() };
+  return { horarios: HORARIOS, horariosDare: HORARIOS_D, horariosPagos: HORARIOS_PG, horariosGiam: HORARIOS_G, rodando: _rodando, proximo: _proximo(), proximoGiam: _proximoGiam() };
+}
+function _proximoGiam(agora = new Date()) {
+  for (let k = 0; k < 8; k++) {
+    const d = new Date(agora); d.setDate(d.getDate() + k);
+    if (d.getDay() === 0 || d.getDay() === 6) continue;
+    const [hh, mm] = HORARIOS_G[0].split(':').map(Number); const x = new Date(d); x.setHours(hh, mm, 0, 0);
+    if (x > agora) return x.toISOString();
+  }
+  return '';
 }
 function _proximo(agora = new Date()) {
   for (let k = 0; k < 8; k++) {

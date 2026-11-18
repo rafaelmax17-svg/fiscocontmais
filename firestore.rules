@@ -147,6 +147,15 @@ service cloud.firestore {
     match /dare/{doc} {
       allow read, write: if dareOk();
     }
+    // Recibos GIAM/SPED Fiscal (SEFIN-RO): resultado por competência e inscrição estadual.
+    function giamOk() {
+      return admin() || (ativo() && (
+        (cadastro().get('modulos', null) == null && cadastro().perfil == 'fiscal')
+        || (cadastro().get('modulos', null) != null && 'fiscal-giam' in cadastro().modulos)));
+    }
+    match /giam/{doc} {
+      allow read, write: if giamOk();
+    }
     // Conferência da EFD-Reinf (eCAC): resultado por competência e empresa, a lista de empresas e a vez do dia (12h).
     // Admin, perfil Fiscal (padrão) ou quem recebeu o módulo "fiscal-reinf".
     function reinfOk() {

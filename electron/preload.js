@@ -126,6 +126,13 @@ contextBridge.exposeInMainWorld('fiscocont', {
     exportar: (html, nome) => ipcRenderer.invoke('dare:exportar', { html, nome }),
     onProgresso: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('dare:progresso', h); return () => ipcRenderer.removeListener('dare:progresso', h); },
   },
+  giam: {
+    dados: (comp) => ipcRenderer.invoke('giam:dados', comp),
+    ler: (o) => ipcRenderer.invoke('giam:ler', o),
+    abrir: (o) => ipcRenderer.invoke('giam:abrir', o),
+    onProgresso: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('giam:progresso', h); return () => ipcRenderer.removeListener('giam:progresso', h); },
+    onEmpresa: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('giam:empresa', h); return () => ipcRenderer.removeListener('giam:empresa', h); },
+  },
   reinf: {
     dados: (comp) => ipcRenderer.invoke('reinf:dados', comp),
     conferir: (o) => ipcRenderer.invoke('reinf:conferir', o),
