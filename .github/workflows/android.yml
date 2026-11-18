@@ -47,8 +47,12 @@ jobs:
           KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           if [ -z "$KS" ] || [ -z "$KS_PASS" ] || [ -z "$KS_ALIAS" ]; then
-            echo "::error::Segredos da assinatura (ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASS, ANDROID_KEY_ALIAS) não configurados."
-            exit 1
+            if [ "${{ inputs.publicar }}" = "true" ]; then
+              echo "::error::Segredos da assinatura (ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASS, ANDROID_KEY_ALIAS) não configurados."
+              exit 1
+            fi
+            echo "::warning::Sem a chave: monta só um APK de teste, sem assinatura (não instala no celular)."
+            exit 0
           fi
           printf '%s' "$KS" | base64 -d > "$RUNNER_TEMP/fc.jks"
           {
@@ -64,7 +68,7 @@ jobs:
           ./gradlew assembleRelease --no-daemon --stacktrace
           V=$(node -p "require('../package.json').version")
           mkdir -p "$GITHUB_WORKSPACE/saida"
-          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/saida/FiscoContMais.apk"
+          cp "$(ls app/build/outputs/apk/release/*.apk | head -1)" "$GITHUB_WORKSPACE/saida/FiscoContMais.apk"
           SHA=$(sha256sum "$GITHUB_WORKSPACE/saida/FiscoContMais.apk" | cut -d' ' -f1)
           printf '{"versao":"%s","sha256":"%s","em":"%s"}\n' "$V" "$SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$GITHUB_WORKSPACE/saida/versao.json"
           echo "V=$V" >> "$GITHUB_ENV"
