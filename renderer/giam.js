@@ -1,13 +1,18 @@
 'use strict';
 // Recibos GIAM/SPED Fiscal (SEFIN-RO): o recibo de processamento de cada inscrição na competência, salvo na pasta do
-// cliente (Relatórios › AAAA › MM). Sem recibo: "Não processado". Simples Nacional sem recibo fica fora da conferência.
+// cliente (Relatórios › AAAA › MM). Sem recibo: "Não processado". Fora da conferência (não é alarme): Simples Nacional,
+// CNPJ baixado antes da competência e inscrição sem nenhuma entrega nos últimos 12 meses.
 // O sistema verifica sozinho 1x por dia útil às 08:00 (um computador com o e-CPF do contador) ou no botão.
 (function () {
   const e = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const compBr = (c) => (c ? `${c.slice(5, 7)}/${c.slice(0, 4)}` : '');
   const ieFmt = (ie) => String(ie || '').replace(/\D/g, '').padStart(14, '0');
   const curta = (s) => { const d = new Date(s); if (isNaN(d)) return s || ''; return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-  const ST = { processado: ['ok', 'Processado'], nao_processado: ['er', 'Não processado'], simples: ['nm', 'Simples Nacional · sem recibo'], erro: ['ab', 'Erro na verificação'] };
+  const ST = { processado: ['ok', 'Processado'], nao_processado: ['er', 'Não processado'], simples: ['nm', 'Simples Nacional'], baixada: ['nm', 'CNPJ baixado'],
+    sem_entregas: ['nm', 'Sem entregas (12 meses)'], erro: ['ab', 'Erro na verificação'] };
+  const FORA = ['simples', 'baixada', 'sem_entregas'];
+  const ORD = ['nao_processado', 'erro', 'processado', 'simples', 'baixada', 'sem_entregas'];
+  const refBr = (r) => (/^\d{6}$/.test(r || '') ? `${r.slice(4)}/${r.slice(0, 4)}` : '');
   const G = { comp: '', d: null, ie: '', prog: null, anim: true };
   let ligado = false;
   const raiz = () => document.getElementById('gmRaiz');
@@ -31,10 +36,11 @@
   }
   function meses() { const out = []; const d = new Date(); for (let i = 1; i <= 14; i++) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); out.push(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`); } return out; }
   function desenhar() {
-    const todas = (G.d.emps || []).slice().sort((a, b) => (a.status === b.status ? a.nome.localeCompare(b.nome, 'pt-BR') : ['nao_processado', 'erro', 'processado', 'simples'].indexOf(a.status) - ['nao_processado', 'erro', 'processado', 'simples'].indexOf(b.status)));
+    const todas = (G.d.emps || []).slice().sort((a, b) => (a.status === b.status ? a.nome.localeCompare(b.nome, 'pt-BR') : ORD.indexOf(a.status) - ORD.indexOf(b.status)));
     const emps = G.ie ? todas.filter((x) => x.ie === G.ie) : todas;
     const n = (s) => todas.filter((x) => x.status === s).length;
-    const conf = todas.filter((x) => x.status !== 'simples').length;
+    const conf = todas.filter((x) => !FORA.includes(x.status)).length;
+    const fora = todas.filter((x) => FORA.includes(x.status)).length;
     const ret = todas.filter((x) => x.retificadora).length;
     const m = G.d.meta || {};
     const pct = (v, t) => `${t ? Math.round(v / t * 100) : 0}%`;
@@ -43,7 +49,7 @@
         <h1>Recibos GIAM/SPED Fiscal</h1>
         <div class="rf-s">SEFIN-RO · Portal do Contribuinte · competência ${compBr(G.comp)} · ${m.ultimaLeitura ? `verificado em ${curta(m.ultimaLeitura)}${m.por ? ` (${e(m.por)})` : ''}` : 'ainda não verificado'}${G.d.proxima ? ` · próxima verificação automática ${curta(G.d.proxima)}` : ''}</div>
         <div class="rf-big"><div><small>Recibos de processamento</small><b>${n('processado')} / ${conf}</b></div>
-          <div class="rf-mini"><div><b>${n('processado')}</b><small>processados</small></div><div><b>${n('nao_processado')}</b><small>não processados</small></div><div><b>${ret}</b><small>retificadora(s)</small></div><div><b>${n('simples')}</b><small>Simples (fora)</small></div></div></div>
+          <div class="rf-mini"><div><b>${n('processado')}</b><small>processados</small></div><div><b>${n('nao_processado')}</b><small>não processados</small></div><div><b>${ret}</b><small>retificadora(s)</small></div><div><b>${fora}</b><small>fora da conferência</small></div></div></div>
         <div class="rf-prog" id="gmProg" ${G.prog ? '' : 'hidden'}><i></i><span>${e((G.prog || {}).txt || '')}</span></div>
       </div><div class="rf-ctl"><div><select class="rf-pill rf-sel" id="gmComp">${meses().map((c) => `<option value="${c}" ${c === G.comp ? 'selected' : ''}>Competência ${compBr(c)}</option>`).join('')}</select>
         <select class="rf-pill rf-sel" id="gmEmp"><option value="">🔍 Empresa: Todas</option>${todas.map((x) => `<option value="${e(x.ie)}" ${x.ie === G.ie ? 'selected' : ''}>${e(x.nome)}</option>`).join('')}</select></div>
@@ -52,13 +58,14 @@
         <div class="rf-k" style="--c:#16a34a"><div class="ic">✓</div><small>Processados</small><b>${n('processado')}</b><div class="bar"><i style="--w:${pct(n('processado'), conf)}"></i></div><span>recibo salvo na pasta do cliente</span></div>
         <div class="rf-k" style="--c:#dc2626"><div class="ic">!</div><small>Não processados</small><b>${n('nao_processado')}</b><div class="bar"><i style="--w:${pct(n('nao_processado'), conf)}"></i></div><span>a SEFIN não tem recibo da competência</span></div>
         <div class="rf-k" style="--c:#7c3aed"><div class="ic">↻</div><small>Retificadoras</small><b>${ret}</b><div class="bar"><i style="--w:${pct(ret, conf)}"></i></div><span>recibo da última entrega</span></div>
-        <div class="rf-k" style="--c:#64748b"><div class="ic">SN</div><small>Simples Nacional</small><b>${n('simples')}</b><div class="bar"><i style="--w:${pct(n('simples'), todas.length)}"></i></div><span>sem recibo · fora da conferência</span></div></div>
+        <div class="rf-k" style="--c:#64748b"><div class="ic">—</div><small>Fora da conferência</small><b>${fora}</b><div class="bar"><i style="--w:${pct(fora, todas.length)}"></i></div><span>${n('simples')} Simples · ${n('baixada')} baixada(s) · ${n('sem_entregas')} sem entregas</span></div></div>
       <div class="rf-card rf-tab"><h3>Empresas · recibo de processamento da GIAM/SPED <small>${emps.length ? 'clique em "Abrir recibo" para ver o PDF salvo' : ''}</small></h3>
         ${emps.length ? `<table><thead><tr><th>Empresa</th><th>Inscrição estadual</th><th>Regime</th><th>Situação</th><th>Entrega</th><th>Retificadora</th><th>Recibo</th></tr></thead><tbody>
         ${emps.map((x) => `<tr><td><b>${e(x.nome)}</b></td><td>${e(ieFmt(x.ie))}</td><td>${e(x.regime || '—')}</td><td><span class="rf-chip ${(ST[x.status] || ST.erro)[0]}">● ${e((ST[x.status] || ST.erro)[1])}</span></td>
           <td>${e(x.entrega || '—')}</td><td>${x.status === 'processado' ? (x.retificadora ? 'SIM' : 'NÃO') : '—'}</td>
           <td>${x.status === 'processado' ? `<button class="gm-ab" data-arq="${e(x.arquivo)}">📄 Abrir recibo</button><small title="${e(x.arquivo)}">${x.cliente ? 'pasta do cliente · Relatórios' : 'pasta da empresa não encontrada · Notas Automáticas'}</small>`
-            : x.status === 'nao_processado' ? '<span class="gm-np">a SEFIN não tem recibo desta competência</span>' : x.status === 'erro' ? `<span class="gm-np">${e(x.erro || 'erro')}</span>` : '—'}</td></tr>`).join('')}</tbody></table>`
+            : x.status === 'nao_processado' ? `<span class="gm-np">a SEFIN não tem recibo desta competência${x.ultimaRef ? ` · última entrega: ref. ${refBr(x.ultimaRef)}` : ''}${x.msg && /Receita/.test(x.msg) ? ` · ${e(x.msg)}` : ''}</span>`
+            : x.status === 'erro' ? `<span class="gm-np">${e(x.erro || 'erro')}</span>` : FORA.includes(x.status) ? `<span class="gm-fo">${e(x.msg || 'fora da conferência')}</span>` : '—'}</td></tr>`).join('')}</tbody></table>`
           : `<div class="rf-vz">${m.ultimaLeitura ? 'Nenhuma inscrição na lista.' : 'Clique em "Verificar recibos agora" — o sistema também verifica sozinho todo dia útil às 8h.'}</div>`}</div>`;
     ligar(); animar();
   }

@@ -600,7 +600,7 @@ agendaSefin.init({ notificar: (c, d) => { try { mainWindow && mainWindow.webCont
 ipcMain.handle('sefin:agenda', () => ({ ok: true, ...agendaSefin.estado() }));
 // ---- Recibos GIAM/SPED Fiscal (SEFIN-RO · Portal do Contribuinte, e-CPF do contador) — electron/giam.js
 const giam = require('./giam');
-giam.init({ userData: () => app.getPath('userData'), notificar: (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} } });
+giam.init({ userData: () => app.getPath('userData'), cnpjApi: (c) => _cnpjApiCache(c), notificar: (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} } });
 const _giam = async (fn) => {
   if (!giam.podeUsar()) return { error: 'Sem acesso ao módulo Recibos GIAM/SPED.' };
   if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
@@ -3631,8 +3631,10 @@ function _cab0000(arq) {
 }
 function _isoDeSped(d) { return /^\d{8}$/.test(d || '') ? `${d.slice(4)}-${d.slice(2, 4)}-${d.slice(0, 2)}` : ''; }
 function _brDeIso(d) { return /^\d{4}-\d{2}-\d{2}/.test(d || '') ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : ''; }
-async function _regimeDoCnpj(cnpj, dtIni, dtFin) {
-  if (!cnpj || cnpj.length !== 14) return null;
+// cadastro público do CNPJ (BrasilAPI / minhareceita), guardado 30 dias em legalizacao.json
+async function _cnpjApiCache(cnpj) {
+  cnpj = String(cnpj || '').replace(/\D/g, '');
+  if (cnpj.length !== 14) return null;
   const base = _jsonUser('legalizacao.json', { clientes: {} });
   const cache = base.clientes[cnpj];
   let api = cache && cache.api;
@@ -3645,6 +3647,11 @@ async function _regimeDoCnpj(cnpj, dtIni, dtFin) {
       try { _salvarJsonUser('legalizacao.json', base); } catch (_) {}
     }
   }
+  return api || null;
+}
+async function _regimeDoCnpj(cnpj, dtIni, dtFin) {
+  if (!cnpj || cnpj.length !== 14) return null;
+  const api = await _cnpjApiCache(cnpj);
   if (!api) return null;
   const ini = _isoDeSped(dtIni), fim = _isoDeSped(dtFin);
   const op = String(api.data_opcao_pelo_simples || '').slice(0, 10);
