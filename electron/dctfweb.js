@@ -67,8 +67,10 @@ function comparar(esperado, naDctf, situacao) {
   const difs = [...cods].map((c) => ({ cod: c, reinf: _r2(e[c] || 0), dctf: _r2(d[c] || 0) })).filter((x) => Math.abs(x.reinf - x.dctf) > 0.01);
   return { comparacao: difs.length ? 'diverge' : te > 0 ? 'confere' : 'sem_debito', diferenca: _r2(td - te), codigosDivergentes: difs };
 }
+// débitos que não vieram da REINF (eSocial / MIT): a transmissão pela equipe fica bloqueada (decisão de 18/11)
+const outrasOrigens = (doc) => Object.entries((doc && doc.origens) || {}).filter(([k, v]) => !/^REINF/.test(k) && Number(v) > 0.009);
 function podeTransmitir(doc) {
-  return !!(doc && doc.situacao === 'em_andamento' && doc.comparacao === 'confere' && doc.reinfStatus === 'fechado' && _soma(doc.esperado) > 0);
+  return !!(doc && doc.situacao === 'em_andamento' && doc.comparacao === 'confere' && doc.reinfStatus === 'fechado' && _soma(doc.esperado) > 0 && !outrasOrigens(doc).length);
 }
 
 // ------------------------------------------------------------------ equipe: ver e pedir
@@ -109,6 +111,7 @@ async function pedir({ tipo, comp, cnpjs, cnpj, auto } = {}) {
   if (tipo === 'transmitir') {
     if (lista.length !== 1) throw new Error('Escolha uma empresa para transmitir.');
     const d = await f.getDoc(f.doc(db, COL, `${comp}_${lista[0]}`));
+    if (d.exists() && outrasOrigens(d.data()).length) throw new Error('A DCTFWeb desta empresa também tem débitos de eSocial/MIT: a transmissão não é feita pelo sistema.');
     if (!d.exists() || !podeTransmitir(d.data())) throw new Error('A transmissão só é liberada com a DCTFWeb em andamento, a REINF fechada e todos os códigos conferindo.');
     // não deixa dois pedidos de transmissão da mesma empresa na fila
     const ab = await f.getDocs(f.query(f.collection(db, COL_P), f.where('comp', '==', comp)));
@@ -248,7 +251,7 @@ async function _transmitir(p) {
   const ref = f.doc(db, COL, `${comp}_${cnpj}`);
   const s = await f.getDoc(ref);
   const doc = s.exists() ? s.data() : null;
-  if (!podeTransmitir(doc)) return { status: 'erro', msg: 'A empresa não está liberada para transmitir (atualize a conferência).' };
+  if (!podeTransmitir(doc)) return { status: 'erro', msg: outrasOrigens(doc).length ? 'A DCTFWeb tem débitos de eSocial/MIT: a transmissão não é feita pelo sistema.' : 'A empresa não está liberada para transmitir (atualize a conferência).' };
   const [rf] = await _reinfDocs(comp, [cnpj]);
   const esperado = esperadoDaReinf(rf);
   if (!rf || rf.status !== 'fechado' || _assinatura(esperado) !== doc.reinfAssinatura) return { status: 'erro', msg: 'A EFD-Reinf mudou depois da conferência: atualize a conferência antes de transmitir.' };
@@ -269,4 +272,4 @@ async function _transmitir(p) {
   return { status: 'feito', msg: x.jaTransmitida ? 'A DCTFWeb já estava transmitida.' : `Transmitida${x.recibo ? ` · recibo ${x.recibo}` : ''}${x.aviso ? ` · ${x.aviso}` : ''}` };
 }
 
-module.exports = { init, podeUsar, dados, pedir, pedirAuto, ligarRobo, desligarRobo, esperadoDaReinf, comparar, podeTransmitir };
+module.exports = { init, podeUsar, dados, pedir, pedirAuto, ligarRobo, desligarRobo, esperadoDaReinf, comparar, podeTransmitir, outrasOrigens };

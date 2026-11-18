@@ -277,14 +277,14 @@
         ${cods.map((c) => { const r = (x.esperado || {})[c] || 0, d = (x.naDctf || {})[c]; const ok = d != null && Math.abs(r - d) <= 0.01;
           return `<tr><td>${e(c)} · ${e(NOMECR[c] || NOMECR[+c] || 'código de receita')}</td><td class="n">${brl(r)}</td><td class="n ${ok ? '' : 'dif'}">${d == null ? '—' : brl(d)} ${ok ? '✓' : '✕'}</td></tr>`; }).join('')}
         <tr class="tot"><td>Total</td><td class="n">${brl(somaM(x.esperado))}</td><td class="n">${x.naDctf ? brl(somaM(x.naDctf)) : '—'}</td></tr></tbody></table>` : ''}
-      ${outras.length ? `<div class="dc-orig">A declaração também tem débitos de: ${outras.map(([k, v]) => `<b>${e(k)}</b> ${e(brl(v))}`).join(' · ')}</div>` : ''}
+      ${outras.length ? `<div class="dc-orig">A declaração também tem débitos de: ${outras.map(([k, v]) => `<b>${e(k)}</b> ${e(brl(v))}`).join(' · ')}${x.situacao === 'em_andamento' ? '. Com eSocial ou MIT na declaração, o sistema não transmite: a DCTFWeb é transmitida pelo e-CAC depois que a folha e o MIT estiverem fechados.' : ''}</div>` : ''}
       ${x.situacao === 'transmitida'
         ? `<div class="dc-ok">✓ Transmitida${x.transmitidaEm ? ` em ${e(curta(x.transmitidaEm))}` : ''}${x.transmitidaPor ? ` por ${e(x.transmitidaPor)}` : ''}${x.recibo ? `<br>Recibo ${e(x.recibo)}` : ''}</div>${x.arquivo ? '<button class="btn-dc sec" id="dcRecibo">📄 Abrir o recibo</button>' : ''}${x.reciboAviso ? `<div class="dc-msg">${e(x.reciboAviso)}</div>` : ''}`
         : x.podeTransmitir ? `<button class="btn-dc go" id="dcTransmitir" ${naFila ? 'disabled' : ''}>${naFila ? 'Transmissão na fila…' : `Transmitir DCTFWeb ${compBr(R.comp)}`}</button>`
-          : `<button class="btn-dc off" disabled>${x.comparacao === 'diverge' || x.comparacao === 'nao_apareceu' ? 'Diverge / não apareceu: transmissão bloqueada' : x.reinfStatus !== 'fechado' ? 'Transmissão bloqueada até fechar a REINF' : 'Nada a transmitir'}</button>`}
+          : `<button class="btn-dc off" disabled>${x.comparacao === 'diverge' || x.comparacao === 'nao_apareceu' ? 'Diverge / não apareceu: transmissão bloqueada' : x.reinfStatus !== 'fechado' ? 'Transmissão bloqueada até fechar a REINF' : outras.length && x.situacao === 'em_andamento' ? 'Tem eSocial/MIT: transmitir pelo e-CAC' : 'Nada a transmitir'}</button>`}
       ${x.ultimoErro ? `<div class="dc-msg">Última tentativa: ${e(x.ultimoErro)}</div>` : ''}
       <div class="dc-nota"><b>Como funciona</b>
-        <div><span>1</span><p>O botão só fica ativo quando a REINF está <b>fechada</b>, a DCTFWeb está <b>em andamento</b> e todos os códigos <b>conferem</b>.</p></div>
+        <div><span>1</span><p>O botão só fica ativo quando a REINF está <b>fechada</b>, a DCTFWeb está <b>em andamento</b>, todos os códigos <b>conferem</b> e a declaração só tem débitos da REINF (sem eSocial nem MIT).</p></div>
         <div><span>2</span><p>Você confirma; o pedido vai para o computador do escritório que tem o Integra Contador, que confere de novo e transmite.</p></div>
         <div><span>3</span><p>Transmitida: o recibo fica na linha e o PDF vai para a pasta do cliente (Relatórios › ${R.comp.slice(0, 4)} › ${R.comp.slice(5, 7)}).</p></div></div>`;
   }
@@ -295,8 +295,7 @@
       const m = document.createElement('div'); m.className = 'rf-modal';
       m.innerHTML = `<div class="rf-mc dc-conf"><h3>Transmitir a DCTFWeb ${compBr(R.comp)}?</h3>
         <p><b>${e(l.nome)}</b> · ${e(fmtCnpj(l.cnpj))}<br>Débitos da REINF: <b>${e(brl(somaM(x.esperado)))}</b> (conferem com o fechamento).</p>
-        <p>${outras.length ? `A declaração também leva: ${outras.map(([k, v]) => `<b>${e(k)}</b> ${e(brl(v))}`).join(' · ')}.` : 'Hoje a declaração só tem os débitos da REINF.'}
-        A DCTFWeb junta REINF, eSocial (folha) e MIT. Se esta empresa tiver folha ou MIT na competência, confira se já foram fechados: o que entrar depois exige retificação.</p>
+        <p>A declaração só tem os débitos da REINF. Se ainda entrar folha (eSocial) ou MIT nesta competência, a DCTFWeb terá de ser retificada.</p>
         <p class="dc-irr">A transmissão é feita na Receita Federal e não pode ser desfeita por aqui.</p>
         <div class="rf-mb"><button class="rf-pill" id="dcNao">Cancelar</button><button class="rf-pill g" id="dcSim">Transmitir</button></div></div>`;
       m.querySelector('#dcNao').onclick = () => { m.remove(); ok(false); };

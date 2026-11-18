@@ -679,6 +679,10 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
         if not esperado or any(abs(d['reinf'].get(k, 0.0) - v) > 0.01 for k, v in esperado.items()) or any(k not in esperado and v > 0.01 for k, v in d['reinf'].items()):
             r.update(msg='Os débitos da REINF na DCTFWeb mudaram desde a conferência; nada foi transmitido. Atualize a conferência.', reinf=d['reinf'])
             return r
+        outras = {k: v for k, v in d['origens'].items() if not k.startswith('REINF') and v > 0.009}
+        if outras:                                       # eSocial / MIT na declaração: não transmite pelo sistema
+            r.update(msg='A DCTFWeb tem débitos de ' + ', '.join(sorted(outras)) + ': a transmissão não é feita pelo sistema.', origens=d['origens'])
+            return r
         assinado = assinar_dctf(xml, chave_priv, cert_b64)
         dados = {**_periodo_dctf(comp), 'xmlAssinadoBase64': base64.b64encode(assinado.encode('utf-8')).decode('ascii')}
         rt = _dctf(tok, cert, contratante, cnpj, 'Declarar', 'TRANSDECLARACAO310', dados, consumo, 'declaracao')
