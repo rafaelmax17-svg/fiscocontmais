@@ -209,23 +209,43 @@ const JS_GOVBR = `(() => { ${JS_BASE}
   alvo.click(); return txt(alvo).slice(0, 60) || 'Entrar com gov.br';
 })()`;
 // "Alterar perfil de acesso" › Procurador de pessoa jurídica - CNPJ
-const JS_PERFIL = (cnpj) => `(() => { ${JS_BASE}
-  const rot = [...document.querySelectorAll('label, span, div, td, p, h4, h5')].filter(vis).filter((x) => /PROCURADOR DE PESSOA JURIDICA/.test(txt(x)) && txt(x).length < 80)
-    .sort((a, b) => txt(a).length - txt(b).length)[0];
+const JS_PERFIL = (cnpj, modo) => `(() => { ${JS_BASE}
+  // o rótulo mais interno (o próprio texto, não a caixa que também o contém — senão pegava o campo do CPF de cima)
+  const reP = /PROCURADOR DE PESSOA JURIDICA/;
+  const rot = [...document.querySelectorAll('label, span, div, td, p, h4, h5, legend, strong, b')].filter(vis).filter((x) => reP.test(txt(x)) && txt(x).length < 80)
+    .filter((x) => ![...x.children].some((c) => reP.test(txt(c))))[0];
   if (!rot) return { ok: false, motivo: 'campo "Procurador de pessoa jurídica - CNPJ" não encontrado' };
   let box = rot, inp = null, bt = null;
   for (let i = 0; i < 5 && box && !(inp && bt); i++) {
     box = box.parentElement;
-    inp = inp || [...box.querySelectorAll('input[type=text], input:not([type])')].filter(vis)[0];
+    inp = inp || [...box.querySelectorAll('input[type=text], input[type=tel], input:not([type])')].filter(vis)[0];
     bt = [...box.querySelectorAll('input[type=button], input[type=submit], button, a')].filter(vis).find((b) => /^ALTERAR$/.test(txt(b)));
   }
-  if (!inp) { const todos = [...document.querySelectorAll('input[type=text], input:not([type])')].filter(vis); inp = todos.find((x) => rot.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING); }
+  if (!inp) { const todos = [...document.querySelectorAll('input[type=text], input[type=tel], input:not([type])')].filter(vis); inp = todos.find((x) => rot.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING); }
   if (!inp) return { ok: false, motivo: 'campo do CNPJ não encontrado' };
-  setVal(inp, '${cnpj}');
   if (!bt) { const bs = [...document.querySelectorAll('input[type=button], input[type=submit], button')].filter(vis).filter((b) => /^ALTERAR$/.test(txt(b)));
     bt = bs.find((b) => inp.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) || bs[0]; }
   if (!bt) return { ok: false, motivo: 'botão Alterar não encontrado' };
-  bt.click(); return { ok: true };
+  const m = '${modo || 'valor'}';
+  if (m === 'foca') { inp.scrollIntoView({ block: 'center' }); inp.focus(); inp.select && inp.select(); inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); return { ok: true, max: inp.maxLength, mascara: inp.getAttribute('onkeypress') || inp.getAttribute('data-mask') || '' }; }
+  if (m === 'valor') setVal(inp, '${cnpj}');
+  if (m === 'clica' || m === 'valor') { bt.click(); return { ok: true, campo: inp.value }; }
+  return { ok: true, campo: inp.value };
+})()`;
+// mensagem que o eCAC mostrou depois do Alterar (o parágrafo inteiro, com o motivo)
+const JS_MSG_PERFIL = `(() => { ${JS_BASE}
+  const els = [...document.querySelectorAll('div, p, span, td, li')].filter(vis).filter((x) => /NAO FOI POSSIVEL|PROCURAC|NAO (EXISTE|HA|POSSUI)|INVALID|ATENCAO/.test(txt(x)) && txt(x).length < 600)
+    .sort((a, b) => txt(a).length - txt(b).length);
+  const alvo = els.find((x) => txt(x).length > 40) || els[0];
+  return alvo ? (alvo.closest('div') || alvo).innerText.replace(/\\s+/g, ' ').trim().slice(0, 400) : '';
+})()`;
+// "Alterar perfil de acesso" escondido (menu do usuário fechado no portal novo): abre o menu ou clica direto
+const JS_ABRE_PERFIL = `(() => { ${JS_BASE}
+  const todos = [...document.querySelectorAll('a, button, input[type=button], li, span')].filter((x) => /ALTERAR PERFIL/.test(txt(x)) && txt(x).length < 60);
+  if (todos.length) { const a = todos.sort((x, y) => txt(x).length - txt(y).length)[0]; (a.closest('a, button, li') || a).click(); return txt(a).slice(0, 60); }
+  const menu = [...document.querySelectorAll('a, button, [role=button]')].filter(vis).find((x) => /^PERFIL$|MEU PERFIL|PERFIL DE ACESSO|OPCOES DO USUARIO/.test(txt(x)));
+  if (menu) { menu.click(); return 'menu:' + txt(menu).slice(0, 40); }
+  return false;
 })()`;
 // período de apuração (dois campos MM/AAAA) e Listar
 const JS_PERIODO = (mmaaaa) => `(() => { ${JS_BASE}
@@ -350,28 +370,40 @@ async function _portalAntigo() {
 
 // troca o perfil para a empresa. Devolve { ok } ou { semProcuracao } ou { erro }
 async function _perfil(emp) {
-  await _vai(URL_ECAC);
-  await _portalAntigo();
-  const ab = await _js(JS_CLICA('/ALTERAR PERFIL/')).catch(() => false);
-  if (!ab) { await _print(); return { erro: '"Alterar perfil de acesso" não encontrado no eCAC.' }; }
-  await _sleep(1800);
-  const r = await _js(JS_PERFIL(_so(emp.cnpj))).catch((e) => ({ ok: false, motivo: e.message }));
-  if (!r.ok) { await _print(); return { erro: r.motivo }; }
-  await _sleep(2500); await _pronto();
-  const t = (await _js(JS_TEXTO).catch(() => '')).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
-  if (/PROCURAC/.test(t) && /(NAO|INEXIST|SEM) .{0,60}PROCURAC|PROCURAC.{0,80}(NAO|INEXIST|EXPIRAD|VENCID)/.test(t) && !t.includes(_fmtCnpj(emp.cnpj).toUpperCase())) {
-    _log(`${emp.nome}: sem procuração`); return { semProcuracao: true };
-  }
-  await _portalAntigo();
-  if (!t.includes(_fmtCnpj(emp.cnpj)) && !t.includes(_so(emp.cnpj))) {
-    const msg = (t.match(/[^.\n]*(PROCURAC|NAO FOI POSSIVEL|ERRO)[^.\n]*/) || [''])[0].slice(0, 200);
-    _log(`${emp.nome}: perfil não confirmado na tela ${msg ? `(${msg})` : ''}`);
-    if (/PROCURAC/.test(msg)) return { semProcuracao: true };
+  const norm = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  for (let tent = 0; tent < 3; tent++) {
+    await _vai(URL_ECAC);
+    // achado real (18/11): depois de um "não foi possível alterar o perfil", as empresas seguintes não achavam o botão —
+    // a sessão do eCAC cai ou fica um aviso aberto. Agora entra de novo se precisar e fecha o aviso antes.
+    if (/autenticacao|sso\.acesso/.test(_url())) { _log('a sessão do eCAC caiu: entrando de novo'); await _login(); await _vai(URL_ECAC); }
+    await _portalAntigo();
+    await _js(JS_CLICA('/^(OK|FECHAR|X)$/')).catch(() => false);
+    let ab = await _js(JS_CLICA('/ALTERAR PERFIL/')).catch(() => false);
+    if (!ab) { ab = await _js(JS_ABRE_PERFIL).catch(() => false); if (ab && /^menu:/.test(ab)) { await _sleep(1000); ab = await _js(JS_ABRE_PERFIL).catch(() => false); } }
+    if (!ab) {
+      _log(`${emp.nome}: "Alterar perfil de acesso" não encontrado (tela: ${(await _js(JS_TEXTO).catch(() => '')).replace(/\s+/g, ' ').slice(0, 300)})`);
+      if (tent < 2) { await _sleep(2000); continue; }
+      await _print(); return { erro: '"Alterar perfil de acesso" não encontrado no eCAC.' };
+    }
+    await _sleep(1800);
+    // digita o CNPJ de verdade (a máscara do campo formata), em vez de só preencher o valor
+    const f = await _js(JS_PERFIL(_so(emp.cnpj), 'foca')).catch((e) => ({ ok: false, motivo: e.message }));
+    if (!f.ok) { await _print(); return { erro: f.motivo }; }
+    _win.webContents.insertText(tent === 1 ? _fmtCnpj(emp.cnpj) : _so(emp.cnpj));
+    await _sleep(500);
+    const c = await _js(JS_PERFIL(_so(emp.cnpj), 'clica')).catch((e) => ({ ok: false, motivo: e.message }));
+    _log(`${emp.nome}: perfil · campo ficou "${c.campo || ''}" (tentativa ${tent + 1})`);
+    await _sleep(2500); await _pronto();
+    const t = norm(await _js(JS_TEXTO).catch(() => ''));
+    const msg = norm(await _js(JS_MSG_PERFIL).catch(() => ''));
+    if (t.includes(_fmtCnpj(emp.cnpj)) || (t.includes(_so(emp.cnpj)) && !/NAO FOI POSSIVEL/.test(msg))) { await _portalAntigo(); _log(`${emp.nome}: perfil de procurador ok`); return { ok: true }; }
+    _log(`${emp.nome}: o eCAC respondeu "${msg || '(sem mensagem)'}"`);
+    if (/PROCURAC/.test(msg) && /(NAO|INEXIST|SEM|EXPIRAD|VENCID|CANCELAD)/.test(msg)) return { semProcuracao: true, msg };
+    if (tent < 2 && /NAO FOI POSSIVEL/.test(msg)) { await _print(); continue; }       // tenta de novo com o CNPJ formatado
     await _print();
     return { erro: msg ? `o eCAC respondeu: ${msg.toLowerCase()}` : 'não consegui confirmar a troca de perfil no eCAC.' };
   }
-  _log(`${emp.nome}: perfil de procurador ok`);
-  return { ok: true };
+  return { erro: 'não consegui trocar o perfil no eCAC.' };
 }
 
 async function _abreReinf() {
@@ -570,7 +602,7 @@ async function _empresa(emp, comp) {
   const ant = await _docAnterior(comp, emp.cnpj);
   const lidos = new Map(((ant && ant.eventos) || []).filter((x) => x.recibo && x.evento).map((x) => [x.recibo, x]));
   const p = await _perfil(emp);
-  if (p.semProcuracao) return { status: 'sem_procuracao', msg: 'A Liddera não tem procuração eletrônica desta empresa para a EFD-Reinf (ou ela venceu).' };
+  if (p.semProcuracao) return { status: 'sem_procuracao', msg: p.msg ? `o eCAC respondeu: ${p.msg.toLowerCase()}` : 'A Liddera não tem procuração eletrônica desta empresa para a EFD-Reinf (ou ela venceu).' };
   if (p.erro) return { status: 'erro', msg: p.erro };
   await _abreReinf();
   const pasta = _pastaEmp(emp, comp);
