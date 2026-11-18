@@ -38,7 +38,7 @@ const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const _fmtCnpj = (c) => c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 function _cnpjDoCert(c) {
   const cn = String((c.subject && c.subject.commonName) || c.subjectName || '');
-  const m = cn.match(/:(\d{14})\b/);
+  const m = cn.match(/:(\d{14})\b/) || String(c.subjectName || '').match(/(?<!\d)(\d{14})(?!\d)/);
   return m ? m[1] : '';
 }
 
@@ -50,7 +50,8 @@ function init(deps) {
     _log(`o site pediu certificado (${String(url).split('?')[0]}): ${lista.length} no Windows · ${alvo ? 'usando o e-CNPJ da empresa' : 'o e-CNPJ da empresa NÃO está instalado'}`);
     event.preventDefault();
     if (!alvo) _certFaltou = true;
-    callback(alvo || undefined);
+    // sem o certificado: null (o Electron recusa undefined com "Must pass valid certificate object" e derruba o sistema)
+    callback(alvo || null);
   });
 }
 

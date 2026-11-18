@@ -32,7 +32,8 @@ function init(deps) {
     const alvo = lista.find((c) => _cpfDoCert(c) === _cpfAtivo);
     _log(`o site pediu certificado (${url.split('?')[0]}): ${lista.length} disponível(is) · ${alvo ? 'usando o e-CPF do contador' : 'o e-CPF escolhido NÃO está na lista'}`);
     event.preventDefault();
-    callback(alvo || undefined);
+    // sem o certificado: null (o Electron recusa undefined com "Must pass valid certificate object" e derruba o sistema)
+    callback(alvo || null);
   });
 }
 

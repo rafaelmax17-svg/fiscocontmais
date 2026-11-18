@@ -1775,6 +1775,7 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .nc-st{display:inline-block;padding:3px 9px;border-radius:8px;font-weight:800;font-size:11px}
 .nc-st.ok{background:#dcfce7;color:#15803d}.nc-st.ca{background:#fee2e2;color:#b91c1c}.nc-st.de{background:#fef3c7;color:#b45309}.nc-st.nf{background:#e5e7eb;color:#4b5563}.nc-st.er{background:#fde68a;color:#92400e}
 .nc-ev{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:7px;background:#eef2ff;color:#4338ca;margin:0 3px 3px 0}
+.nc-ev small{display:block!important;font-weight:600;color:inherit!important;opacity:.8;margin:0!important}.nc-ev.ult{background:#dcfce7;color:#15803d;box-shadow:0 0 0 1.5px #86efac}
 .nc-fx{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:7px;margin-right:4px}.nc-fx.ok{background:#dbeafe;color:#1d4ed8;cursor:pointer}.nc-fx.ok:hover{background:#bfdbfe}.nc-fx.no{background:#f1f3f8;color:#6b7590}
 .nc-nota{margin-top:10px;font-size:11px;color:#8a93ad}
 .nc-dt{position:sticky;top:12px}.nc-dt dl{display:grid;grid-template-columns:100px 1fr;gap:6px 8px;font-size:12px;margin:0 0 12px}.nc-dt dt{color:#8a93ad;font-weight:700}.nc-dt dd{margin:0;font-weight:600;word-break:break-word}.nc-dt dd small{display:block;color:#8a93ad;font-weight:600}

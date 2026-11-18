@@ -1879,6 +1879,45 @@ ipcMain.handle('dfe:abrir', (_evt, caminho) => _mod('fiscal-downloads')(async ()
 }));
 ipcMain.handle('dfe:log', () => _mod('fiscal-downloads')(async () => { await shell.openPath(app.getPath('userData')); return {}; }));
 
+// Eventos pelo Portal Nacional da NF-e (2.4.4): só as NF-e autorizadas que voltaram SEM eventos do serviço da SEFAZ.
+// A pessoa marca o "Sou humano"; o resto (consulta completa com o e-CNPJ da empresa instalado no Windows) é escondido.
+// Nota com eventos lidos não volta ao portal; nota que o portal mostrou sem eventos só volta depois de 24 h.
+const nfePortal = require('./nfe_portal');
+nfePortal.init({ userData: () => app.getPath('userData'), janelaPai: () => mainWindow });
+const _nfechPortalPrecisa = (it) => it && it.modelo === '55' && it.situacao === 'autorizada' && !(it.eventos || []).length
+  && !(it.portal && it.portal.em && !it.portal.erro && Date.now() - Date.parse(it.portal.em) < 24 * 3600000);
+let _nfechPortalRodando = false;
+ipcMain.handle('nfech:eventosPortal', (_evt, { empresaId, chaves }) => _mod('fiscal-nfechave')(async () => {
+  if (_nfechPortalRodando) throw new Error('Os eventos já estão sendo consultados.');
+  const empresa = (_lerIndiceCert().empresas || []).find((e) => e.id === empresaId);
+  if (!empresa) throw new Error('Empresa não encontrada.');
+  const cache = _nfechCacheLer();
+  const ck = (c) => `${empresa.cnpj}|${c}`;
+  const lista = [...new Set((chaves || []).map((c) => String(c).replace(/\D/g, '')))].filter((c) => _nfechPortalPrecisa((cache.itens[ck(c)] || {}).item));
+  if (!lista.length) return { itens: [], semCert: false };
+  const env = (d) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('nfech:progresso', { portal: true, ...d }); };
+  _nfechPortalRodando = true;
+  let res;
+  try {
+    res = await nfePortal.eventos(lista.map((c) => ({ chave: c, numero: cache.itens[ck(c)].item.numero, cnpjEmpresa: empresa.cnpj })), env);
+  } finally { _nfechPortalRodando = false; }
+  const fresco = _nfechCacheLer();               // outra consulta pode ter gravado enquanto a pessoa marcava o captcha
+  const em = new Date().toISOString();
+  let semCert = false;
+  for (const c of lista) {
+    const h = fresco.itens[ck(c)]; const r = res[c] || {};
+    if (!h || !h.item) continue;
+    if (r.ok) {
+      h.item.eventos = r.eventos;
+      h.item.portal = { em, n: r.eventos.length };
+      if (r.autorizacao) { if (!h.item.dh_autorizacao) h.item.dh_autorizacao = r.autorizacao.quando; if (!h.item.protocolo) h.item.protocolo = r.autorizacao.protocolo; h.item.protAut = r.autorizacao; }
+      if (/cancelad/.test(r.situacao) || r.eventos.some((x) => x.tipo === '110111')) h.item.situacao = 'cancelada';
+    } else if (r.erro === 'cert') { h.item.portal = { em, erro: 'cert' }; semCert = true; }
+    else if (r.erro === 'site') h.item.portal = { em, erro: 'site', motivo: r.motivo || '' };
+  }
+  _nfechCacheGravar(fresco);
+  return { itens: lista.map((c) => ({ ...(fresco.itens[ck(c)] || {}).item, chave: c, consultadoEm: (fresco.itens[ck(c)] || {}).em || '' })), semCert, empresa: empresa.razaoSocial };
+}));
 ipcMain.handle('nfech:abrir', (_evt, { caminho, pasta }) => _mod('fiscal-nfechave')(async () => {
   if (!caminho || !fs.existsSync(caminho)) throw new Error('Arquivo não encontrado (foi movido ou apagado?).');
   if (pasta) shell.showItemInFolder(caminho); else await shell.openPath(caminho);

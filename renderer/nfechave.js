@@ -46,7 +46,9 @@
     window.fiscocont.nfech.onProgresso((p) => {
       const el = $('#ncProg'); if (!el) return;
       el.hidden = false;
-      el.querySelector('span').textContent = `Consultando ${p.feitas} de ${p.total}${p.guardadas ? ` · ${p.guardadas} já estavam guardadas` : ''}…`;
+      el.querySelector('span').textContent = p.portal
+        ? (p.feitas < p.total ? `Buscando os eventos · nota ${p.feitas + 1} de ${p.total} · marque “Sou humano” na janela que abriu` : 'Eventos lidos.')
+        : `Consultando ${p.feitas} de ${p.total}${p.guardadas ? ` · ${p.guardadas} já estavam guardadas` : ''}…`;
       el.querySelector('i').style.width = `${p.total ? (p.feitas / p.total * 100).toFixed(1) : 100}%`;
     });
     desenhar();
@@ -98,6 +100,13 @@
     return '<small>—</small>';
   }
 
+  // eventos em ordem, com a data; o último fica em destaque
+  function celEventos(i) {
+    const ev = (i.eventos || []).slice().sort((a, b) => (a.quando || '').localeCompare(b.quando || ''));
+    if (!ev.length) return `<small>sem eventos${i.portal && i.portal.erro === 'cert' ? ' · certificado não instalado' : ''}</small>`;
+    return ev.map((x, k) => `<span class="nc-ev${k === ev.length - 1 && ev.length > 1 ? ' ult' : ''}">${e(EV[x.nome] || x.nome)}${x.quando ? `<small>${dhBr(x.quando)}${k === ev.length - 1 && ev.length > 1 ? ' · último' : ''}</small>` : ''}</span>`).join('');
+  }
+
   function resultado(itens, c) {
     const vis = itens.filter((i) => N.filtro === 'todas' || (N.filtro === 'nao_encontrada' ? ['nao_encontrada', 'erro'].includes(i.situacao) : N.filtro === 'xml' ? !!i.xml : i.situacao === N.filtro));
     const ch = (f, t, n) => `<button class="${N.filtro === f ? 'on' : ''}" data-fl="${f}">${t} ${n}</button>`;
@@ -106,12 +115,13 @@
     return `<div class="nc-row">
       <div class="fc-card"><div class="nc-h3"><h3>Resultado <small>${e(N.res.empresa.nome)} · ${N.res.consultadas} consultada${N.res.consultadas === 1 ? '' : 's'} agora${itens.length - N.res.consultadas ? ` · ${itens.length - N.res.consultadas} já guardada${itens.length - N.res.consultadas === 1 ? '' : 's'}` : ''}</small></h3>
         <div class="nc-ch">${ch('todas', 'Todas', c.todas)}${ch('autorizada', 'Autorizadas', c.autorizada)}${ch('cancelada', 'Canceladas', c.cancelada)}${ch('denegada', 'Denegadas', c.denegada)}${ch('nao_encontrada', 'Não encontradas', c.nao_encontrada + c.erro)}${ch('xml', 'Com XML', c.xml)}</div></div>
+        ${N.avisoCert ? `<div class="nc-aviso er" style="margin:0 0 8px">⚠ Eventos não consultados: o certificado de ${e(N.avisoCert)} não está instalado no Windows deste computador.</div>` : ''}
         <div class="nc-tw"><table class="nc-t"><thead><tr><th>Chave</th><th>Nota</th><th>Situação</th><th>Eventos</th><th>XML / PDF</th></tr></thead><tbody>
         ${vis.map((i) => { const s = SIT[i.situacao] || [i.situacao || '—', 'nf'];
           return `<tr data-ch="${i.chave}"${i.chave === N.sel ? ' class="sel"' : ''}><td class="nc-k">${fmtCh(i.chave.slice(0, 20))}<br>${fmtCh(i.chave.slice(20))}</td>
             <td><b>${e(i.emitente || '—')}</b><small>${MOD[i.modelo] || 'mod. ' + e(i.modelo)} ${Number(i.numero).toLocaleString('pt-BR')} · série ${e(i.serie)} · ${i.dh_emissao ? dBr(i.dh_emissao) : e(i.aamm)}${i.valor ? ' · ' + brl(i.valor) : ''}</small><small>${fmtCnpj(i.cnpj_emit)} · ${e(i.uf)}</small></td>
             <td><span class="nc-st ${s[1]}">${s[0]}</span><small>${i.situacao === 'cancelada' ? 'em ' + dhBr((i.eventos || []).find((x) => x.tipo === '110111')?.quando) : i.situacao === 'erro' || i.situacao === 'nao_encontrada' ? e(i.motivo || '') : ''}</small></td>
-            <td>${(i.eventos || []).map((x) => `<span class="nc-ev">${e(EV[x.nome] || x.nome)}</span>`).join('') || '<small>sem eventos</small>'}</td>
+            <td>${celEventos(i)}</td>
             <td>${linhaXml(i)}</td></tr>`; }).join('') || '<tr><td colspan="5" class="nc-nada">Nada neste filtro.</td></tr>'}
         </tbody></table></div>
         <div class="nc-nota">Chave com dígito errado é apontada antes de consultar (não gasta consulta na SEFAZ). Nota já baixada, cancelada ou denegada não é consultada de novo.</div></div>
@@ -121,9 +131,11 @@
   function detalhe(i) {
     const s = SIT[i.situacao] || [i.situacao || '—', 'nf'];
     const tl = [];
-    if (i.dh_autorizacao) tl.push(['#16a34a', 'Autorizada', dhBr(i.dh_autorizacao)]);
-    (i.eventos || []).slice().sort((a, b) => (a.quando || '').localeCompare(b.quando || ''))
-      .forEach((x) => tl.push([x.tipo === '110111' ? '#dc2626' : x.tipo === '110110' ? '#f59e0b' : '#6366f1', EV[x.nome] || x.nome, dhBr(x.quando)]));
+    const extra = (x) => [x.protocolo ? `prot. ${x.protocolo}` : '', x.orgao ? `Órgão autor: ${x.orgao}` : '', x.inclusaoAN ? `incluído no AN ${dhBr(x.inclusaoAN)}` : ''].filter(Boolean).join(' · ');
+    if (i.dh_autorizacao) tl.push(['#16a34a', 'Autorização de uso', [dhBr(i.dh_autorizacao), i.protAut ? `prot. ${i.protAut.protocolo}` : ''].filter(Boolean).join(' · ')]);
+    const evs = (i.eventos || []).slice().sort((a, b) => (a.quando || '').localeCompare(b.quando || ''));
+    evs.forEach((x, k) => tl.push([x.tipo === '110111' ? '#dc2626' : x.tipo === '110110' ? '#f59e0b' : k === evs.length - 1 ? '#16a34a' : '#6366f1',
+      `${EV[x.nome] || x.nome}${k === evs.length - 1 && evs.length > 1 ? ' · último' : ''}`, [dhBr(x.quando), extra(x)].filter(Boolean).join(' · ')]));
     return `<div class="fc-card nc-dt"><div class="nc-h3"><h3>Detalhes da nota <small>${MOD[i.modelo] || ''} ${e(i.numero)}</small></h3></div>
       <dl><dt>Situação</dt><dd><span class="nc-st ${s[1]}">${s[0]}</span></dd>
         <dt>Emitente</dt><dd>${e(i.emitente || '—')}<small>CNPJ ${fmtCnpj(i.cnpj_emit)}</small></dd>
@@ -176,6 +188,7 @@
       if (novo && N.res) N.res.itens = N.res.itens.map((x) => (x.chave === novo.chave ? novo : x));
       toast('Chave consultada de novo.');
       desenhar();
+      if (novo) await eventosFaltando([novo.chave]);
     });
     q('[data-cp]').forEach((b) => b.onclick = () => { navigator.clipboard.writeText(b.dataset.cp); toast('Chave copiada.'); });
   }
@@ -188,9 +201,27 @@
     const r = await window.fiscocont.nfech.consultar({ empresaId: N.empId, chaves: ok, baixar: N.baixar, ciencia: N.ciencia, pdf: N.baixar });
     N.rodando = false;
     if (r && r.error) { toast(r.error, true); desenhar(); return; }
-    N.res = r; N.filtro = 'todas'; N.sel = '';
+    N.res = r; N.filtro = 'todas'; N.sel = ''; N.avisoCert = '';
     const c = contar(r.itens);
     toast(`Consulta concluída: ${c.autorizada} autorizada(s), ${c.cancelada} cancelada(s)${c.xml ? ` · ${c.xml} XML salvo(s)` : ''}.`);
+    desenhar();
+    await eventosFaltando(r.itens.map((i) => i.chave));
+  }
+
+  // NF-e autorizada que voltou sem eventos: o sistema busca os eventos (a pessoa só marca o "Sou humano")
+  async function eventosFaltando(chaves) {
+    const alvo = (N.res ? N.res.itens : []).filter((i) => chaves.includes(i.chave) && i.modelo === '55' && i.situacao === 'autorizada' && !(i.eventos || []).length);
+    if (!alvo.length) return;
+    N.rodando = true;
+    const p = $('#ncProg'); if (p) { p.hidden = false; p.querySelector('i').style.width = '0%'; p.querySelector('span').textContent = 'Buscando os eventos…'; }
+    const r = await window.fiscocont.nfech.eventosPortal({ empresaId: N.empId, chaves: alvo.map((i) => i.chave) });
+    N.rodando = false;
+    if (r && r.error) { toast(r.error, true); desenhar(); return; }
+    const novos = new Map((r.itens || []).map((i) => [i.chave, i]));
+    if (N.res) N.res.itens = N.res.itens.map((x) => (novos.has(x.chave) ? { ...x, ...novos.get(x.chave), guardada: x.guardada } : x));
+    if (r.semCert) N.avisoCert = r.empresa || 'a empresa';
+    const lidos = (r.itens || []).filter((i) => (i.eventos || []).length).length;
+    if (lidos) toast(`Eventos lidos em ${lidos} nota(s).`);
     desenhar();
   }
 
