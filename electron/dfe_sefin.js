@@ -22,8 +22,12 @@ const { app, BrowserWindow, session } = require('electron');
 const BASE = 'https://download.dfe.sefin.ro.gov.br';
 const HOST = 'download.dfe.sefin.ro.gov.br';
 const PARTICAO = (cnpj) => `persist:dfe-ro-${cnpj}`;
-const DOCS = { nfe: 'NFE', nfce: 'NFCE' };
-const NOME = { nfe: 'NF-e', nfce: 'NFC-e' };
+const DOCS = { nfe: 'NFE', nfce: 'NFCE', nfe_ent: 'NFE' };
+const NOME = { nfe: 'NF-e', nfce: 'NFC-e', nfe_ent: 'NF-e Entradas' };
+// operação do pedido: saídas = notas EMITIDAS pela empresa; entradas (2.4.5) = notas RECEBIDAS (empresa destinatária).
+// Entradas pelo DFe-Download: segunda opção quando o Ambiente Nacional manda aguardar 1 hora.
+const OP = { nfe: { re: '^EMITIDAS?$', rot: 'Emitida' }, nfce: { re: '^EMITIDAS?$', rot: 'Emitida' },
+  nfe_ent: { re: '^(RECEBIDAS?|DESTINADAS?|DESTINATARIO|ENTRADAS?)$', rot: 'Recebida' } };
 
 let D = null;                 // { userData(), notificar(canal, dados), runFiscal(args, out), pastaBase() }
 let _win = null, _cnpjAtivo = '', _certFaltou = false, _rodando = false, _espera = null;
@@ -316,7 +320,7 @@ const JS_LINK_BAIXAR = `(() => { ${JS_BASE}
   if (b) { b.click(); return true; } return false; })()`;
 
 // Nova Solicitação: preenche o que reconhecer (Período, documento, operação Emitida, datas). A pessoa confere e confirma.
-const JS_NOVA = (doc, ini, fim, iniIso, fimIso) => `(() => { ${JS_BASE}
+const JS_NOVA = (doc, ini, fim, iniIso, fimIso, op) => `(() => { ${JS_BASE}
   const set = (el, v) => { const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value'); d.set.call(el, v);
     ['input', 'change', 'blur'].forEach((t) => el.dispatchEvent(new Event(t, { bubbles: true }))); };
   const feito = {};
@@ -329,10 +333,11 @@ const JS_NOVA = (doc, ini, fim, iniIso, fimIso) => `(() => { ${JS_BASE}
   const sd = sels.find((s) => [...s.options].some((o) => /^CTE$/.test(norm(o.text).replace(/[^A-Z]/g, ''))));
   if (sd) { const o = [...sd.options].find((o) => norm(o.text).replace(/[^A-Z]/g, '') === '${doc}');
     if (o) { sd.value = o.value; ['input', 'change'].forEach((t) => sd.dispatchEvent(new Event(t, { bubbles: true }))); feito.doc = o.text; } }
-  const opRad = rad.find((r) => /^EMITIDA$/.test(rotulo(r)));
+  const reOp = new RegExp(${JSON.stringify(op)});
+  const opRad = rad.find((r) => reOp.test(rotulo(r).trim()));
   if (opRad && !opRad.checked) { opRad.click(); feito.op = 'radio'; }
   const so = sels.find((s) => [...s.options].some((o) => /EMITIDA/.test(norm(o.text))));
-  if (so) { const o = [...so.options].find((o) => /^EMITIDAS?$/.test(norm(o.text))); if (o) { so.value = o.value; so.dispatchEvent(new Event('change', { bubbles: true })); feito.op = o.text; } }
+  if (so) { const o = [...so.options].find((o) => reOp.test(norm(o.text).trim())); if (o) { so.value = o.value; so.dispatchEvent(new Event('change', { bubbles: true })); feito.op = o.text; } }
   const datas = [...document.querySelectorAll('input')].filter(vis).filter((i) => i.type === 'date' || /DATA|INICI|FINAL|FIM|PERIODO|ATE/.test(norm(i.placeholder + ' ' + i.name + ' ' + i.id + ' ' + rotulo(i))) && !/CHAVE|NUMERO|NNF/.test(norm(i.name + i.id)));
   if (datas.length >= 2) {
     set(datas[0], datas[0].type === 'date' ? '${iniIso}' : '${ini}'); set(datas[1], datas[1].type === 'date' ? '${fimIso}' : '${fim}'); feito.datas = true;
@@ -405,14 +410,14 @@ async function _detalhes(i) {
   return null;
 }
 
-function _confere(det, comp) {
+function _confere(det, comp, tipo) {
   const kv = det.kv;
   const per = _periodoDe(comp);
   const periodo = (kv['PERIODO'] || '').replace(/\s+/g, ' ');
   const datas = periodo.match(/\d{2}\/\d{2}\/\d{4}/g) || [];
   const okPer = datas.length === 2 && datas[0] === per.ini && datas[1] === per.fim;
   const okTipo = /PERIODO/.test(_norm(kv['TIPO DE PESQUISA']));
-  const okOp = /EMITIDA/.test(_norm(kv['TIPO DE OPERACAO']));
+  const okOp = new RegExp(OP[tipo || 'nfe'].re.replace(/[\^$]/g, '')).test(_norm(kv['TIPO DE OPERACAO']));
   const okSit = !kv['SITUACAO'] || /ATIVO/.test(_norm(kv['SITUACAO']));
   const exp = _isoDe(kv['DATA DE EXPIRACAO']);
   const expirado = !!exp && exp < new Date().toISOString().slice(0, 10);
@@ -593,15 +598,17 @@ async function _baixar(emp, tipo, comp, achado, est, pasta) {
 async function _novaSolicitacao(emp, tipo, comp) {
   const per = _periodoDe(comp);
   await _vai(`${BASE}/solicitacoes`);
+  const hoje0 = new Date().toISOString().slice(0, 10);
+  const antesN = ((await _js(JS_LISTA).catch(() => ({ rows: [] }))).rows || []).filter((r) => r.doc === DOCS[tipo] && _isoDe(r.data) === hoje0).length;
   const clicou = await _js(JS_CLICA('/NOVA SOLICITACAO/')).catch(() => false);
   if (!clicou) return { status: 'erro', msg: 'não achei "Nova Solicitação".' };
   await _sleep(2000);
-  let f = await _js(JS_NOVA(DOCS[tipo], per.ini, per.fim, per.iniIso, per.fimIso)).catch(() => ({}));
+  let f = await _js(JS_NOVA(DOCS[tipo], per.ini, per.fim, per.iniIso, per.fimIso, OP[tipo].re)).catch(() => ({}));
   await _sleep(1200);
-  f = { ...f, ...(await _js(JS_NOVA(DOCS[tipo], per.ini, per.fim, per.iniIso, per.fimIso)).catch(() => ({}))) };       // campos que aparecem depois de escolher Período
+  f = { ...f, ...(await _js(JS_NOVA(DOCS[tipo], per.ini, per.fim, per.iniIso, per.fimIso, OP[tipo].re)).catch(() => ({}))) };       // campos que aparecem depois de escolher Período
   _log(`nova solicitação ${NOME[tipo]} preenchida: ${JSON.stringify(f)}`);
   _mostra(true);                                            // a pessoa confere e confirma o pedido na página da SEFIN
-  await _js(JS_AVISO(`confira o pedido (Período ${per.ini} a ${per.fim} · ${NOME[tipo]} · Emitida, ativas e canceladas) e confirme no botão do site. Depois a SEFIN prepara o arquivo.`)).catch(() => {});
+  await _js(JS_AVISO(`confira o pedido (Período ${per.ini} a ${per.fim} · ${DOCS[tipo] === 'NFE' ? 'NF-e' : NOME[tipo]} · ${OP[tipo].rot}, ativas e canceladas) e confirme no botão do site. Depois a SEFIN prepara o arquivo.`)).catch(() => {});
   _prog(`${emp.nome} · ${NOME[tipo]}: confira e confirme a Nova Solicitação na janela da SEFIN…`, { espera: true });
   const antes = Date.now(), ate = antes + 5 * 60 * 1000;
   while (Date.now() < ate) {
@@ -610,7 +617,7 @@ async function _novaSolicitacao(emp, tipo, comp) {
     if (st && st.temTabela) {
       const rows = await _js(JS_LISTA).catch(() => ({ rows: [] }));
       const hoje = new Date().toISOString().slice(0, 10);
-      if ((rows.rows || []).some((r) => r.doc === DOCS[tipo] && _isoDe(r.data) === hoje)) {
+      if ((rows.rows || []).filter((r) => r.doc === DOCS[tipo] && _isoDe(r.data) === hoje).length > antesN) {
         _log(`pedido ${NOME[tipo]} feito`);
         _mostra(false);
         return { status: 'solicitado', msg: 'pedido feito; a SEFIN prepara o arquivo. Clique em Baixar notas de novo mais tarde.', pedidoEm: new Date().toISOString() };
@@ -644,7 +651,7 @@ async function _empresa(emp, comp, tipos, pasta, estado) {
       for (const c of cands) {
         const det = await _detalhes(c.i);
         if (det) {
-          const conf = _confere(det, comp);
+          const conf = _confere(det, comp, tipo);
           _log(`pedido ${c.data} ${c.doc} ${c.estado}: ${JSON.stringify(det.kv)} → ${conf.ok ? 'é o do mês' : 'outro'}`);
           if (conf.ok && !conf.expirado) { achado = { row: c, det, conf }; break; }
         }

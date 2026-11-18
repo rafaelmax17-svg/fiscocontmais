@@ -349,7 +349,10 @@ def _itens_das_partes(caminhos):
 
 
 def extrair_saidas(zip_path, base, empresa, cnpj, tipo, competencia=''):
-    sub = 'NFC-e Saídas' if tipo == 'nfce' else 'NF-e Saídas'
+    # nfe_ent (2.4.5): NF-e RECEBIDAS pelo DFe-Download da SEFIN (segunda opção quando o Ambiente Nacional manda aguardar
+    # 1 hora). Ficam junto das entradas do Ambiente Nacional, com o mesmo nome de arquivo (sem duplicar).
+    entrada = tipo == 'nfe_ent'
+    sub = 'NF-e Entradas' if entrada else 'NFC-e Saídas' if tipo == 'nfce' else 'NF-e Saídas'
     cnpj = re.sub(r'\D', '', cnpj or '')
     caminhos = zip_path if isinstance(zip_path, (list, tuple)) else [zip_path]
     itens = _itens_das_partes(caminhos)
@@ -364,12 +367,13 @@ def extrair_saidas(zip_path, base, empresa, cnpj, tipo, competencia=''):
         if re.search(r'<(?:\w+:)?(nfeProc|NFe)\b', corpo):
             ch = re.search(r'Id="NFe(\d{44})"', corpo)
             ch = ch.group(1) if ch else ''
-            emit = (mf._blocos(corpo, 'emit') or [''])[0]
-            if cnpj and _cnpj_de(emit) != cnpj:
+            parte = (mf._blocos(corpo, 'dest' if entrada else 'emit') or [''])[0]
+            if cnpj and _cnpj_de(parte) != cnpj:
                 outras_emp += 1
                 continue
             dh = mf._txt(corpo, 'dhEmi') or mf._txt(corpo, 'dEmi')
-            cam = nc._grava(os.path.join(_pasta(base, dh, empresa, sub), f'{ch or os.path.splitext(os.path.basename(nome))[0]}-nfe.xml'),
+            arq = f'{ch}-procNFe.xml' if entrada and ch else f'{ch or os.path.splitext(os.path.basename(nome))[0]}-nfe.xml'
+            cam = nc._grava(os.path.join(_pasta(base, dh, empresa, sub), arq),
                             '<?xml version="1.0" encoding="UTF-8"?>' + corpo)
             notas[ch or cam] = {'chave': ch, 'dh': dh, 'valor': _num(mf._txt(corpo, 'vNF')), 'mod': mf._txt(corpo, 'mod'), 'xml': cam}
         elif re.search(r'<(?:\w+:)?(procEventoNFe|evento)\b', corpo):

@@ -141,7 +141,15 @@
     if (x.resumos && x.ciencias) det.push('o XML que falta chega na próxima busca (depois de 1 hora)');
     else if (x.resumos && tipo === 'nfe') det.push('o XML completo sai depois da Ciência da Operação');
     if (/libera nova consulta|aguardar/.test(x.aviso || '')) det.push(x.aviso.replace(/ \(regra da SEFAZ[^)]*\)/, ''));
-    const c = x.baixadas ? chip('dfe-ok', '✓ baixado') : x.resumos ? chip('dfe-ag', 'só resumo') : /libera nova consulta|aguardar/.test(x.aviso || '') ? chip('dfe-nr', 'aguardando 1 h') : chip('dfe-nr', 'nada novo');
+    // segunda opção: NF-e recebidas pelo DFe-Download da SEFIN enquanto o Ambiente Nacional pede 1 hora
+    const sf = tipo === 'nfe' && x.sefin;
+    if (sf) {
+      if (sf.status === 'baixado' || (sf.status === 'parcial' && sf.qtd)) det.push(`Pela SEFIN (DFe-Download): ${sf.qtd} nota(s) · R$ ${brl(sf.valor)}${sf.canceladas ? ` · ${sf.canceladas} cancelada(s)` : ''}`);
+      else det.push(`Pela SEFIN (DFe-Download): ${(SAI[sf.status] || [0, sf.status])[1]}`);
+      if (sf.msg) det.push(sf.msg);
+    }
+    const c = (x.baixadas || (sf && ['baixado', 'parcial'].includes(sf.status) && sf.qtd)) ? chip('dfe-ok', '✓ baixado') : sf ? chip(...(SAI[sf.status] || ['dfe-nr', sf.status]))
+      : x.resumos ? chip('dfe-ag', 'só resumo') : /libera nova consulta|aguardar/.test(x.aviso || '') ? chip('dfe-nr', 'aguardando 1 h') : chip('dfe-nr', 'nada novo');
     return c + (det.length ? `<small>${det.map(e).join('<br>')}</small>` : '') + pastaBt(x.pasta);
   }
   const SAI = { baixado: ['dfe-ok', '✓ baixado'], aguardando: ['dfe-ag', '◷ SEFIN preparando'], solicitado: ['dfe-pr', 'pedido feito'], sem_notas: ['dfe-nr', 'nenhuma nota no período'],
