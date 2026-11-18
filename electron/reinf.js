@@ -28,7 +28,6 @@ const nfePortal = require('./nfe_portal');
 const MODULO = 'fiscal-reinf';
 const COL = 'reinf';
 const URL_LOGIN = 'https://cav.receita.fazenda.gov.br/autenticacao/login';
-const URL_GOVBRSSO = 'https://cav.receita.fazenda.gov.br/autenticacao/login/govbrsso';   // destino do botão "Entrar com gov.br"
 const URL_ECAC = 'https://cav.receita.fazenda.gov.br/ecac/';
 const URL_REINF = 'https://www3.cav.receita.fazenda.gov.br/reinfweb/#/home';
 const PARTICAO = 'persist:reinf-ecac';
@@ -206,8 +205,10 @@ const JS_GOVBR = (modo) => `(() => { ${JS_BASE}
   // qualquer elemento (a, button, input, div, img…) do botão: link para o gov.br, texto "Entrar com" ou imagem do gov.br
   const docs = [document, ...[...document.querySelectorAll('iframe')].map((f) => { try { return f.contentDocument; } catch (_) { return null; } }).filter(Boolean)];
   const todos = docs.flatMap((d) => [...d.querySelectorAll('a, button, input, [onclick], [role=button], img, div, span')]).filter(vis);
-  const ehLink = (x) => /govbrsso|sso\\.acesso\\.gov\\.br/i.test((x.getAttribute('href') || '') + ' ' + (x.getAttribute('onclick') || '') + ' ' + (x.getAttribute('formaction') || ''));
-  const ehTexto = (x) => /^ENTRAR COM/.test(txt(x)) || (x.tagName === 'IMG' && /GOV\\.?BR/.test(norm((x.alt || '') + ' ' + (x.src || ''))) && !/SAIBA/.test(txt(x.parentElement)));
+  // achado real (18/11): o botão é <input type="image" src=".../gov-br.png" alt="Acesso Gov BR" onclick="validarHcaptcha('govBr')">
+  const ehLink = (x) => /govbrsso|sso\\.acesso\\.gov\\.br|validarHcaptcha\\(\\s*'govBr'/i.test((x.getAttribute('href') || '') + ' ' + (x.getAttribute('onclick') || '') + ' ' + (x.getAttribute('formaction') || ''));
+  const ehImg = (x) => (x.tagName === 'IMG' || (x.tagName === 'INPUT' && x.type === 'image')) && /GOV[\\s._-]?BR/i.test((x.alt || '') + ' ' + (x.getAttribute('src') || '')) && !/SAIBA/.test(txt(x.parentElement));
+  const ehTexto = (x) => /^ENTRAR COM/.test(txt(x)) || ehImg(x);
   let alvo = todos.find(ehLink) || todos.filter(ehTexto).sort((a, b) => txt(a).length - txt(b).length)[0];
   if (!alvo) return false;
   alvo = alvo.closest('a, button, [onclick], [role=button], input') || alvo;
@@ -354,7 +355,9 @@ async function _login() {
     else if (tent === 2) {                                      // clique "de verdade" (mouse) no botão
       const r = await _js(JS_GOVBR('rect')).catch(() => false);
       if (r && r.x) { for (const type of ['mouseMove', 'mouseDown', 'mouseUp']) _win.webContents.sendInputEvent({ type, x: r.x, y: r.y, button: 'left', clickCount: 1 }); t = `mouse em ${r.tag}`; }
-    } else { _log('login: indo direto para o endereço do botão "Entrar com gov.br"'); await _vai(URL_GOVBRSSO); t = 'endereço direto'; }
+    } else {                                                    // a função que o próprio botão chama (hCaptcha invisível + envio)
+      t = await _js(`(() => { if (typeof validarHcaptcha === 'function') { validarHcaptcha('govBr'); return 'validarHcaptcha'; } const f = document.getElementById('frmLoginCert'); if (f) { f.submit(); return 'formulário'; } return false; })()`).catch(() => false);
+    }
     _log(`login: ${t ? `clicou em "${t}"` : 'botão gov.br não encontrado'}`);
     if (!t && tent === 0) _log(`login · página: ${await _js(JS_DIAG).catch(() => '')}`);
     for (let i = 0; i < 16 && !/sso\.acesso\.gov\.br/.test(_url()); i++) await _sleep(500);
@@ -418,11 +421,27 @@ async function _perfil(emp) {
     if (t.includes(_fmtCnpj(emp.cnpj)) || (t.includes(_so(emp.cnpj)) && !/NAO FOI POSSIVEL/.test(msg))) { await _portalAntigo(); _log(`${emp.nome}: perfil de procurador ok`); return { ok: true }; }
     _log(`${emp.nome}: o eCAC respondeu "${msg || '(sem mensagem)'}"`);
     if (/PROCURAC/.test(msg) && /(NAO|INEXIST|SEM|EXPIRAD|VENCID|CANCELAD)/.test(msg)) return { semProcuracao: true, msg };
-    if (tent < 2 && /NAO FOI POSSIVEL/.test(msg)) { await _print(); continue; }       // tenta de novo com o CNPJ formatado
+    if (tent < 2 && /NAO FOI POSSIVEL/.test(msg)) {
+      // achado real (18/11): depois de uma empresa, a troca para a próxima dava "não foi possível alterar o perfil" (a
+      // seguinte funcionava). Começa uma sessão nova (perfil do titular) e tenta de novo.
+      await _print();
+      _log(`${emp.nome}: saindo do eCAC e entrando de novo para trocar o perfil`);
+      await _novaSessao();
+      continue;
+    }
     await _print();
     return { erro: msg ? `o eCAC respondeu: ${msg.toLowerCase()}` : 'não consegui confirmar a troca de perfil no eCAC.' };
   }
   return { erro: 'não consegui trocar o perfil no eCAC.' };
+}
+
+async function _novaSessao() {
+  try {
+    const ses = session.fromPartition(PARTICAO);
+    await ses.clearStorageData({ origins: ['https://cav.receita.fazenda.gov.br', 'https://www3.cav.receita.fazenda.gov.br'] });
+    await ses.clearStorageData({ storages: ['cookies'] }).catch(() => {});
+  } catch (e) { _log(`limpar a sessão: ${e.message || e}`); }
+  await _login();
 }
 
 async function _abreReinf() {
@@ -626,13 +645,13 @@ async function _empresa(emp, comp) {
   await _abreReinf();
   const pasta = _pastaEmp(emp, comp);
   const pastaXml = path.join(pasta, `EFD-Reinf ${comp.slice(5, 7)}${comp.slice(0, 4)}`);
-  const eventos = [], avisos = [];
+  const eventos = [], avisos = [], falhaLista = {};
   const fech = {};
   for (const serie of ['4000', '2000']) {
     if (_parar) break;
     _prog(`${emp.nome}: lendo a série R-${serie}…`);
     const l = await _lista(serie, comp);
-    if (l.erro) { avisos.push(l.erro); _log(`${emp.nome} R-${serie}: ${l.erro}`); }
+    if (l.erro || l.aviso) { avisos.push(l.erro || l.aviso); falhaLista[serie] = l.erro || l.aviso; _log(`${emp.nome} R-${serie}: ${l.erro || l.aviso}`); }
     const rows = (l.rows || []).filter((r) => r.recibo);
     const novos = [];
     for (const r of rows) {
@@ -675,7 +694,10 @@ async function _empresa(emp, comp) {
   const f4 = fech['4000'] || {}, f2 = fech['2000'] || {};
   const temEv = eventos.length > 0;
   const fechado = !!(f4.fechado || f2.fechado);
-  const status = fechado ? (temEv ? 'fechado' : 'sem_movimento') : temEv ? 'aberto' : 'nada_enviado';
+  let status = fechado ? (temEv ? 'fechado' : 'sem_movimento') : temEv ? 'aberto' : 'nada_enviado';
+  if (status === 'nada_enviado' && falhaLista['4000']) {
+    return { status: 'erro', msg: `não consegui ler a REINF desta empresa no eCAC (${falhaLista['4000']})`, eventos, avisos, pasta };
+  }
   // série com evento e sem fechamento, mesmo com a outra fechada: continua aberto
   const abertaSerie = (eventos.some((x) => /^R-40/.test(x.evento)) && !f4.fechado) || (eventos.some((x) => /^R-20/.test(x.evento)) && !f2.fechado);
   return { status: status === 'fechado' && abertaSerie ? 'aberto' : status, eventos, totais, somaEventos: somaEv, fech4099: f4, fech2099: f2, avisos, pasta };
