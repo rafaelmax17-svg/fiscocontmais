@@ -16,7 +16,8 @@
   const SIG = { irrf: 'IR', csll: 'CS', cofins: 'CO', pis: 'PI', agreg: 'AG', inss: 'IN' };
   const ST = { fechado: ['ok', 'Fechado'], tarde: ['er', 'Fechado após o dia 15'], aberto: ['ab', 'Aberto (sem fechamento)'], sem_movimento: ['nm', 'Sem movimento'],
     nada_enviado: ['nm', 'Nada enviado'], sem_procuracao: ['er', 'Sem procuração'], erro: ['er', 'Erro na conferência'], nao: ['nm', 'Não conferida'] };
-  const R = { comp: '', d: null, emp: '', busca: '', prog: null, anim: true };
+  const R = { comp: '', d: null, emp: '', busca: '', prog: null, anim: true, aba: 'ret', dc: null, dcSel: '' };
+  const NOVO_DCTF = new Date(2026, 10, 25, 23, 59, 59) > new Date();         // aba nova: selo NOVO por 7 dias
   let desliga = null, recarga = null;
   const raiz = () => document.getElementById('rfRaiz');
 
@@ -55,6 +56,7 @@
         const bt = document.getElementById('rfConferir'); if (bt) bt.outerHTML = botaoConferir(); ligaConferir(); if (p.fim) carregar(); });
       window.fiscocont.reinf.onEmpresa(() => { clearTimeout(recarga); recarga = setTimeout(() => carregar(true), 1200); });
       window.fiscocont.reinf.onAuto(() => carregar());
+      if (window.fiscocont.reinf.onDctf) window.fiscocont.reinf.onDctf(() => { if (R.aba === 'dctf') carregarDctf(true); });
     }
     await carregar();
   }
@@ -63,7 +65,7 @@
     if (d && d.error) { raiz().innerHTML = `<div class="lic-empty">${e(d.error)}</div>`; return; }
     R.d = d; R.comp = d.comp; R.anim = !quieto;
     if (d.rodando && !R.prog) R.prog = { txt: 'Conferência em andamento…' };
-    desenhar();
+    if (R.aba === 'dctf') { await carregarDctf(quieto, true); } else desenhar();
     menu();
   }
   const docDe = (cnpj) => (R.d.docs || []).find((x) => x.cnpj === cnpj);
@@ -90,6 +92,7 @@
     const ls = linhas();
     if (R.emp && !ls.find((l) => l.cnpj === R.emp)) R.emp = '';
     if (R.emp) { desenharEmpresa(ls.find((l) => l.cnpj === R.emp), ls); return; }
+    if (R.aba === 'dctf') { desenharDctf(ls); return; }
     const t = totais(ls), T = KS.reduce((a, k) => a + t[k], 0);
     const conf = ls.filter((l) => l.doc), fech = ls.filter((l) => ['fechado', 'tarde'].includes(l.sit)).length;
     const nEv = conf.reduce((a, l) => a + ((l.doc.eventos || []).length), 0), nRet = conf.reduce((a, l) => a + (l.doc.eventos || []).filter((x) => x.tipo === 'Retificador').length, 0);
@@ -101,6 +104,7 @@
       <div class="rf-hero"><div>
         <h1><img src="img/efd-reinf.png" alt="">Conferência da EFD-Reinf</h1>
         <div class="rf-s">Competência ${compBr(R.comp)} · ${tp.quando}${R.d.proxima ? ` · próxima conferência automática ${curta(R.d.proxima)}` : ''}</div>
+        ${abas()}
         <div class="rf-big"><div><small>Total retido no mês</small><b data-cont="${T}">${brl(T)}</b></div>
           <div class="rf-mini"><div><b>${conf.length} / ${ls.length}</b><small>empresas conferidas</small></div><div><b>${fech}</b><small>fechadas</small></div><div><b>${nEv}</b><small>eventos</small></div><div><b>${nRet}</b><small>retificadores</small></div></div></div>
         <div class="rf-prog" id="rfProg" ${R.prog ? '' : 'hidden'}><i></i><span>${e((R.prog || {}).txt || '')}</span></div>
@@ -196,6 +200,126 @@
     animar();
   }
 
+
+  // ------------------------------------------------------------------ REINF × DCTFWeb (Integra Contador)
+  const abas = () => `<div class="rf-abas"><button class="${R.aba === 'ret' ? 'on' : ''}" data-aba="ret">Retenções</button><button class="${R.aba === 'dctf' ? 'on' : ''}" data-aba="dctf">REINF × DCTFWeb${NOVO_DCTF ? '<em class="nav-new">NOVO</em>' : ''}</button></div>`;
+  const CMP = { confere: ['ok', '✓ Confere'], diverge: ['er', '✕ Diverge'], nao_apareceu: ['ab', '! Não apareceu'], aguarda: ['nm', 'aguarda fechar a REINF'], sem_debito: ['nm', 'sem débito da REINF'], erro: ['er', 'Erro na consulta'] };
+  const SDC = { em_andamento: ['ab', 'Em andamento'], transmitida: ['in', 'Transmitida'], sem_declaracao: ['nm', 'Sem declaração'], semproc: ['er', 'Sem procuração'], erro: ['er', 'Erro'] };
+  const RST = { fechado: ['ok', 'Fechada'], aberto: ['ab', 'Aberta'], sem_movimento: ['nm', 'Sem movimento'], nada_enviado: ['nm', 'Nada enviado'], sem_procuracao: ['er', 'Sem procuração'], erro: ['er', 'Erro'] };
+  const NOMECR = { 1708: 'IRRF · serviços PJ', 5952: 'CSRF (PIS/Cofins/CSLL)', 1162: 'INSS retido (cessão de mão de obra)', '0561': 'IRRF · trabalho assalariado', '0588': 'IRRF · trabalho sem vínculo', 3208: 'IRRF · aluguéis e royalties PF', 8045: 'IRRF · comissões e corretagens', 3280: 'IRRF · cooperativas', 5960: 'Cofins retida', 5979: 'PIS retido', 5987: 'CSLL retida', 6228: 'CSLL · órgão público', 6230: 'PIS · órgão público', 6243: 'Cofins · órgão público', 1099: 'CPRB', 1141: 'INSS · produção rural', 1176: 'INSS · aquisição de produção rural' };
+  const ch2 = (m, k) => (m[k] ? `<span class="rf-chip ${m[k][0]}">${e(m[k][1])}</span>` : '<span class="rf-chip nm">—</span>');
+  const hm = (ms) => { const d = new Date(ms); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const somaM = (m) => Object.values(m || {}).reduce((a, v) => a + (Number(v) || 0), 0);
+  let pollDc = null;
+  async function carregarDctf(quieto, semRe) {
+    const d = await window.fiscocont.reinf.dctfDados(R.comp);
+    R.dc = d && !d.error ? d : { erro: (d && d.error) || 'falha', docs: [], pedidos: [], robo: {} };
+    if (!quieto) R.anim = true;
+    desenhar();
+    clearTimeout(pollDc);
+    if ((R.dc.pedidos || []).some((p) => ['novo', 'rodando'].includes(p.status)) && R.aba === 'dctf') pollDc = setTimeout(() => carregarDctf(true), 6000);
+  }
+  function linhasDctf(ls) {
+    const by = new Map((R.dc && R.dc.docs || []).map((x) => [x.cnpj, x]));
+    return ls.filter((l) => l.doc && !['nao'].includes(l.sit)).map((l) => {
+      const x = by.get(l.cnpj) || null;
+      const tReinf = x && Object.keys(x.esperado || {}).length ? somaM(x.esperado) : KS.reduce((a, k) => a + ((l.doc.totais || {})[k] || 0), 0);
+      return { ...l, dc: x, tReinf, tDctf: x && x.naDctf ? somaM(x.naDctf) : null, cmp: x ? x.comparacao : l.doc.status === 'aberto' ? 'aguarda' : '' };
+    }).sort((a, b) => ['diverge', 'nao_apareceu', 'erro', 'confere', 'aguarda', 'sem_debito', ''].indexOf(a.cmp) - ['diverge', 'nao_apareceu', 'erro', 'confere', 'aguarda', 'sem_debito', ''].indexOf(b.cmp) || a.nome.localeCompare(b.nome, 'pt-BR'));
+  }
+  function desenharDctf(ls) {
+    if (!R.dc) { raiz().innerHTML = '<div class="lic-empty">Carregando a DCTFWeb…</div>'; carregarDctf(); return; }
+    const L = linhasDctf(ls);
+    if (R.dcSel && !L.find((l) => l.cnpj === R.dcSel)) R.dcSel = '';
+    if (!R.dcSel) { const pri = L.find((l) => l.dc && l.dc.podeTransmitir) || L.find((l) => l.dc); R.dcSel = pri ? pri.cnpj : ''; }
+    const n = (c) => L.filter((l) => l.cmp === c).length, ntr = L.filter((l) => l.dc && l.dc.situacao === 'transmitida').length;
+    const tp = topo(ls), rb = R.dc.robo || {};
+    const fila = (R.dc.pedidos || []).filter((p) => ['novo', 'rodando'].includes(p.status));
+    const ult = (R.dc.pedidos || []).find((p) => p.tipo === 'conferir' && ['feito', 'erro'].includes(p.status));
+    const nomeDe = (c) => (ls.find((l) => l.cnpj === c) || {}).nome || c;
+    const sel = L.find((l) => l.cnpj === R.dcSel);
+    raiz().innerHTML = `
+      <div class="rf-hero"><div>
+        <h1><img src="img/efd-reinf.png" alt="">Conferência da EFD-Reinf</h1>
+        <div class="rf-s">Competência ${compBr(R.comp)} · DCTFWeb pelo Integra Contador · ${rb.ativo ? `computador do escritório ${rb.online ? 'online' : '<b style="color:#fecaca">offline</b>'}` : '<b style="color:#fecaca">Integra Contador não configurado</b>'}${ult ? ` · última conferência ${e(hm(ult.fimMs || ult.emMs))}` : ''}</div>
+        ${abas()}
+        <div class="rf-big"><div class="dc-k"><small>Confere</small><b data-n="${n('confere')}">${n('confere')}</b></div><div class="dc-k"><small>Diverge</small><b data-n="${n('diverge')}">${n('diverge')}</b></div><div class="dc-k"><small>Não apareceu</small><b data-n="${n('nao_apareceu')}">${n('nao_apareceu')}</b></div><div class="dc-k"><small>Transmitidas</small><b data-n="${ntr}">${ntr}</b></div></div>
+        ${fila.length ? `<div class="rf-prog dc-fila"><i style="width:100%"></i><span>${fila.map((p) => `${p.tipo === 'transmitir' ? `Transmitindo ${e(nomeDe(p.cnpjs[0]))}` : 'Conferindo a DCTFWeb'}${p.status === 'novo' ? ' (na fila)' : '…'}`).join(' · ')}</span></div>` : ''}
+      </div><div class="rf-ctl"><div>${tp.sel}</div><div><button class="rf-pill g" id="dcAtualizar" ${fila.some((p) => p.tipo === 'conferir') || !rb.ativo ? 'disabled' : ''}>Atualizar DCTFWeb</button></div></div></div>
+      ${R.dc.erro ? `<div class="rf-aviso">${e(R.dc.erro)}</div>` : ''}
+      ${rb.ativo && !rb.online ? '<div class="rf-aviso">O computador do escritório que fala com o Integra Contador está desligado ou com o FiscoCont+ fechado: os pedidos ficam na fila e são atendidos quando ele voltar.</div>' : ''}
+      <div class="dc-g">
+        <div class="rf-card rf-tab"><h3>Débitos da REINF na DCTFWeb <small>por código de receita · clique na empresa</small></h3>
+          ${L.length ? `<table><thead><tr><th>Empresa</th><th class="n">Débitos REINF</th><th class="n">Na DCTFWeb</th><th>DCTFWeb</th><th>Situação</th></tr></thead><tbody>
+          ${L.map((l) => `<tr data-dc="${e(l.cnpj)}" class="${l.cnpj === R.dcSel ? 'sel' : ''}"><td class="dc-emp"><b>${e(l.nome)}</b><small>${e(fmtCnpj(l.cnpj))} · <i class="dc-rs ${(RST[l.doc.status] || ['nm'])[0]}">REINF ${e(((RST[l.doc.status] || ['', l.doc.status])[1] || '').toLowerCase())}</i></small></td>
+            <td class="n">${brl(l.tReinf)}</td><td class="n">${l.tDctf == null ? '—' : brl(l.tDctf)}</td>
+            <td>${l.cmp === 'diverge' ? `<span class="rf-chip er">✕ Diverge ${e(brl(Math.abs(l.dc.diferenca || 0)))}</span>` : l.cmp ? ch2(CMP, l.cmp) : '<span class="rf-chip nm">ainda não conferida</span>'}</td>
+            <td>${l.dc && l.dc.situacao ? ch2(SDC, l.dc.situacao) : '<span class="rf-chip nm">—</span>'}</td></tr>`).join('')}</tbody></table>`
+            : '<div class="rf-vz">Nenhuma empresa conferida na REINF nesta competência. Faça a conferência na aba Retenções.</div>'}</div>
+        <div class="rf-card dc-lado">${painelDctf(sel, fila)}</div>
+      </div>`;
+    ligarDctf(sel);
+    if (R.anim) { R.anim = false; raiz().querySelectorAll('[data-n]').forEach((b) => { const alvo = +b.dataset.n, t0 = performance.now(); const p = (now) => { const k = Math.min(1, (now - t0) / 800); b.textContent = Math.round(alvo * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(p); }; requestAnimationFrame(p); }); }
+  }
+  function painelDctf(l, fila) {
+    if (!l) return '<div class="rf-vz">Escolha uma empresa na lista.</div>';
+    const x = l.dc;
+    if (!x) return `<h3><span>${e(l.nome)}</span>${ch2(RST, l.doc.status)}</h3><div class="rf-vz">${l.doc.status === 'aberto' ? 'A REINF está aberta: feche o período (R-4099/R-2099) para os débitos irem para a DCTFWeb.' : 'Ainda não conferida na DCTFWeb. Clique em "Atualizar DCTFWeb".'}</div>`;
+    const cods = [...new Set([...Object.keys(x.esperado || {}), ...Object.keys(x.naDctf || {})])].sort();
+    const [a, m] = R.comp.split('-').map(Number);
+    let venc = new Date(a, m + 1, 0); while ([0, 6].includes(venc.getDay())) venc.setDate(venc.getDate() - 1);
+    const naFila = fila.some((p) => p.tipo === 'transmitir' && p.cnpjs.includes(l.cnpj));
+    const orig = x.origens || {}, outras = Object.entries(orig).filter(([k, v]) => !/^REINF/.test(k) && v > 0);
+    return `<h3><span>${e(l.nome)}</span>${x.comparacao === 'diverge' ? `<span class="rf-chip er">✕ Diverge ${e(brl(Math.abs(x.diferenca || 0)))}</span>` : ch2(CMP, x.comparacao)}</h3>
+      <div class="dc-sub">DCTFWeb ${compBr(R.comp)} · categoria Geral · <b>${e((SDC[x.situacao] || ['', x.situacao || '—'])[1].toLowerCase())}</b> · vence ${venc.toLocaleDateString('pt-BR')} (último dia útil)</div>
+      ${x.msg && ['erro', 'semproc', 'sem_declaracao'].includes(x.situacao) ? `<div class="dc-msg">${e(x.msg)}</div>` : ''}
+      ${cods.length ? `<table class="dc-cmp"><thead><tr><th>Código de receita</th><th class="n">REINF</th><th class="n">DCTFWeb</th></tr></thead><tbody>
+        ${cods.map((c) => { const r = (x.esperado || {})[c] || 0, d = (x.naDctf || {})[c]; const ok = d != null && Math.abs(r - d) <= 0.01;
+          return `<tr><td>${e(c)} · ${e(NOMECR[c] || NOMECR[+c] || 'código de receita')}</td><td class="n">${brl(r)}</td><td class="n ${ok ? '' : 'dif'}">${d == null ? '—' : brl(d)} ${ok ? '✓' : '✕'}</td></tr>`; }).join('')}
+        <tr class="tot"><td>Total</td><td class="n">${brl(somaM(x.esperado))}</td><td class="n">${x.naDctf ? brl(somaM(x.naDctf)) : '—'}</td></tr></tbody></table>` : ''}
+      ${outras.length ? `<div class="dc-orig">A declaração também tem débitos de: ${outras.map(([k, v]) => `<b>${e(k)}</b> ${e(brl(v))}`).join(' · ')}</div>` : ''}
+      ${x.situacao === 'transmitida'
+        ? `<div class="dc-ok">✓ Transmitida${x.transmitidaEm ? ` em ${e(curta(x.transmitidaEm))}` : ''}${x.transmitidaPor ? ` por ${e(x.transmitidaPor)}` : ''}${x.recibo ? `<br>Recibo ${e(x.recibo)}` : ''}</div>${x.arquivo ? '<button class="btn-dc sec" id="dcRecibo">📄 Abrir o recibo</button>' : ''}${x.reciboAviso ? `<div class="dc-msg">${e(x.reciboAviso)}</div>` : ''}`
+        : x.podeTransmitir ? `<button class="btn-dc go" id="dcTransmitir" ${naFila ? 'disabled' : ''}>${naFila ? 'Transmissão na fila…' : `Transmitir DCTFWeb ${compBr(R.comp)}`}</button>`
+          : `<button class="btn-dc off" disabled>${x.comparacao === 'diverge' || x.comparacao === 'nao_apareceu' ? 'Diverge / não apareceu: transmissão bloqueada' : x.reinfStatus !== 'fechado' ? 'Transmissão bloqueada até fechar a REINF' : 'Nada a transmitir'}</button>`}
+      ${x.ultimoErro ? `<div class="dc-msg">Última tentativa: ${e(x.ultimoErro)}</div>` : ''}
+      <div class="dc-nota"><b>Como funciona</b>
+        <div><span>1</span><p>O botão só fica ativo quando a REINF está <b>fechada</b>, a DCTFWeb está <b>em andamento</b> e todos os códigos <b>conferem</b>.</p></div>
+        <div><span>2</span><p>Você confirma; o pedido vai para o computador do escritório que tem o Integra Contador, que confere de novo e transmite.</p></div>
+        <div><span>3</span><p>Transmitida: o recibo fica na linha e o PDF vai para a pasta do cliente (Relatórios › ${R.comp.slice(0, 4)} › ${R.comp.slice(5, 7)}).</p></div></div>`;
+  }
+  function confirmar(l) {
+    return new Promise((ok) => {
+      const x = l.dc, orig = x.origens || {};
+      const outras = Object.entries(orig).filter(([k, v]) => !/^REINF/.test(k) && v > 0);
+      const m = document.createElement('div'); m.className = 'rf-modal';
+      m.innerHTML = `<div class="rf-mc dc-conf"><h3>Transmitir a DCTFWeb ${compBr(R.comp)}?</h3>
+        <p><b>${e(l.nome)}</b> · ${e(fmtCnpj(l.cnpj))}<br>Débitos da REINF: <b>${e(brl(somaM(x.esperado)))}</b> (conferem com o fechamento).</p>
+        <p>${outras.length ? `A declaração também leva: ${outras.map(([k, v]) => `<b>${e(k)}</b> ${e(brl(v))}`).join(' · ')}.` : 'Hoje a declaração só tem os débitos da REINF.'}
+        A DCTFWeb junta REINF, eSocial (folha) e MIT. Se esta empresa tiver folha ou MIT na competência, confira se já foram fechados: o que entrar depois exige retificação.</p>
+        <p class="dc-irr">A transmissão é feita na Receita Federal e não pode ser desfeita por aqui.</p>
+        <div class="rf-mb"><button class="rf-pill" id="dcNao">Cancelar</button><button class="rf-pill g" id="dcSim">Transmitir</button></div></div>`;
+      m.querySelector('#dcNao').onclick = () => { m.remove(); ok(false); };
+      m.querySelector('#dcSim').onclick = () => { m.remove(); ok(true); };
+      document.body.appendChild(m);
+    });
+  }
+  function ligarDctf(sel) {
+    const r = raiz();
+    r.querySelectorAll('[data-aba]').forEach((b) => b.addEventListener('click', () => { R.aba = b.dataset.aba; R.anim = true; if (R.aba === 'dctf') carregarDctf(); else { clearTimeout(pollDc); desenhar(); } }));
+    const c = document.getElementById('rfComp'); if (c) c.onchange = () => { R.comp = c.value; R.dc = null; R.dcSel = ''; carregar(); };
+    r.querySelectorAll('[data-dc]').forEach((t) => t.addEventListener('click', () => { R.dcSel = t.dataset.dc; desenhar(); }));
+    const at = document.getElementById('dcAtualizar');
+    if (at) at.onclick = async () => { at.disabled = true; const x = await window.fiscocont.reinf.dctfPedir({ tipo: 'conferir', comp: R.comp });
+      if (x && x.error) toast(x.error, true); else toast(x.roboOnline ? 'Conferência da DCTFWeb pedida: o resultado aparece aqui em instantes.' : 'Pedido na fila: o computador do Integra Contador está offline e confere quando voltar.'); carregarDctf(true); };
+    const tr = document.getElementById('dcTransmitir');
+    if (tr && sel) tr.onclick = async () => { if (!(await confirmar(sel))) return; tr.disabled = true;
+      const x = await window.fiscocont.reinf.dctfPedir({ tipo: 'transmitir', comp: R.comp, cnpj: sel.cnpj });
+      if (x && x.error) toast(x.error, true); else toast('Transmissão pedida: acompanhe aqui.'); carregarDctf(true); };
+    const rc = document.getElementById('dcRecibo');
+    if (rc && sel) rc.onclick = async () => { const x = await window.fiscocont.reinf.dctfAbrir({ caminho: sel.dc.arquivo }); if (x && x.error) toast(x.error, true); };
+  }
+
   // ------------------------------------------------------------------ animação (pizza abrindo, números contando, barras)
   function animar() {
     const r = raiz();
@@ -248,11 +372,12 @@
   }
   function ligar() {
     const r = raiz();
-    const c = document.getElementById('rfComp'); if (c) c.onchange = () => { R.comp = c.value; carregar(); };
+    const c = document.getElementById('rfComp'); if (c) c.onchange = () => { R.comp = c.value; R.dc = null; R.dcSel = ''; carregar(); };
     const em = document.getElementById('rfEmp');
     if (em) em.onchange = () => { const v = em.value.trim(); const l = linhas().find((x) => x.nome === v || x.cnpj === v.replace(/\D/g, '')); R.emp = l ? l.cnpj : ''; R.anim = true; desenhar(); };
     r.querySelectorAll('[data-emp]').forEach((b) => b.addEventListener('click', () => { R.emp = b.dataset.emp; R.anim = true; desenhar(); r.scrollIntoView({ block: 'start' }); }));
     const v = document.getElementById('rfVolta'); if (v) v.onclick = (ev) => { ev.preventDefault(); R.emp = ''; R.anim = true; desenhar(); };
+    r.querySelectorAll('[data-aba]').forEach((b) => b.addEventListener('click', () => { R.aba = b.dataset.aba; R.anim = true; if (R.aba === 'dctf') carregarDctf(); else desenhar(); }));
     ligaConferir();
     const doc = R.emp ? docDe(R.emp) : null;
     r.querySelectorAll('[data-tot]').forEach((b) => b.addEventListener('click', async () => {

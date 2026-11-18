@@ -22,6 +22,7 @@ const os = require('os');
 const path = require('path');
 const { safeStorage } = require('electron');
 const auth = require('./auth');
+const dctfweb = require('./dctfweb');
 
 const COL = 'fechamento_sn';
 const DOC = 'integra';
@@ -32,7 +33,7 @@ const OFFLINE_MS = 12 * 60 * 1000;               // sem sinal do robô há 12 mi
 
 let D = null;                                    // dependências do main.js
 let _tok = null;                                 // acesso temporário do Serpro (só em memória)
-let _unsub = null, _hb = null, _rodando = false, _ultimoPedido = 0;
+let _unsub = null, _hb = null, _rodando = false, _ultimoPedido = 0, _souRobo = false;
 
 function init(deps) { D = deps; }
 function _ehAdmin() { const s = auth.sessao(); return !!(s && s.perfil === 'admin'); }
@@ -211,17 +212,19 @@ async function iniciarRobo() {
   const assumir = async () => {
     try {
       const s = await f.getDoc(_ref()); const d = s.exists() ? s.data() : {};
-      if (!d.ativo || d.roboMaquina === maq) return d.roboMaquina === maq;
+      if (!d.ativo || d.roboMaquina === maq) { _souRobo = !!d.ativo && d.roboMaquina === maq; return _souRobo; }
       const hb = d.heartbeat && d.heartbeat.toMillis ? d.heartbeat.toMillis() : 0;
       if (d.roboMaquina && hb && Date.now() - hb < OFFLINE_MS) return false;
       await f.updateDoc(_ref(), { roboMaquina: maq, roboNome: nome, heartbeat: f.serverTimestamp() });
+      _souRobo = true;
       return true;
     } catch (_) { return false; }
   };
   await assumir();
   _unsub = f.onSnapshot(_ref(), (s) => {
     const d = s.exists() ? s.data() : null;
-    if (!d || !d.ativo || d.roboMaquina !== maq) return;           // outro computador é o robô
+    _souRobo = !!(d && d.ativo && d.roboMaquina === maq);
+    if (!_souRobo) return;                                           // outro computador é o robô
     const p = d.pedido;
     if (p && p.n && p.n > (d.atendido || 0) && p.n !== _ultimoPedido && !_rodando) {
       _ultimoPedido = p.n;
@@ -234,8 +237,19 @@ async function iniciarRobo() {
     } catch (_) {}
   };
   _hb = setInterval(bate, 4 * 60 * 1000);
+  // REINF × DCTFWeb: os pedidos da equipe (conferir / transmitir) são atendidos por este mesmo computador
+  dctfweb.ligarRobo({
+    souRobo: () => _souRobo,
+    python: (p) => _python(p),
+    consumo: async (c) => {
+      const mesC = _mesAtual();
+      await f.updateDoc(_ref(), { [`consumo.${mesC}.consulta`]: f.increment(c.consulta || 0), [`consumo.${mesC}.declaracao`]: f.increment(c.declaracao || 0) });
+    },
+  });
 }
 function pararRobo() {
+  dctfweb.desligarRobo();
+  _souRobo = false;
   if (_unsub) { try { _unsub(); } catch (_) {} _unsub = null; }
   if (_hb) { clearInterval(_hb); _hb = null; }
 }

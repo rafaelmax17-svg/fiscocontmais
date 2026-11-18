@@ -621,6 +621,16 @@ reinf.init({
   userData: () => app.getPath('userData'), notificar: _notifica, runFiscal: (args, out) => runFiscal(args, out), janelaPai: () => mainWindow,
   empresasLocais: () => (_lerIndiceCert().empresas || []).filter((e) => (e.tipo || 'matriz') !== 'procuracao').map((e) => ({ cnpj: e.cnpj, nome: e.razaoSocial })),
 });
+// REINF × DCTFWeb (2.4.9): conferência e transmissão pelo Integra Contador; o robô do Admin atende (electron/dctfweb.js)
+const dctfweb = require('./dctfweb');
+dctfweb.init({ userData: () => app.getPath('userData'), notificar: _notifica });
+ipcMain.handle('dctf:dados', (_evt, comp) => _reinf(() => dctfweb.dados(comp || agendaReinf.compAnterior())));
+ipcMain.handle('dctf:pedir', (_evt, o) => _reinf(() => dctfweb.pedir(o || {})));
+ipcMain.handle('dctf:abrir', (_evt, { caminho }) => _reinf(async () => {
+  if (!caminho || !fs.existsSync(caminho)) throw new Error('O recibo não está acessível neste computador (pasta do cliente no Drive).');
+  await shell.openPath(caminho);
+  return {};
+}));
 const agendaReinf = require('./agenda_reinf');
 agendaReinf.init({ notificar: _notifica, ocupado: () => { try { return fisconforme.portal.ocupado(); } catch (_) { return false; } } });
 const _reinf = async (fn) => {

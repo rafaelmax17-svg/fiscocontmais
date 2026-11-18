@@ -735,6 +735,8 @@ async function conferir({ comp, cnpjs, auto } = {}) {
       try { D.notificar('reinf:empresa', { comp, cnpj: emp.cnpj }); } catch (_) {}
     }
     await f.setDoc(f.doc(db, COL, `_meta_${comp}`), { rodando: false, fim: new Date().toISOString(), por: s.nome || s.email || '', maquina: os.hostname(), auto: !!auto, ok: res.ok, erros: res.erros, total: lista.length }, { merge: true }).catch(() => {});
+    // REINF × DCTFWeb: o computador do Integra Contador confere a DCTFWeb das empresas que acabaram de ser conferidas
+    if (!_parar) { try { await require('./dctfweb').pedirAuto(comp, cnpjs && cnpjs.length ? lista.map((x) => x.cnpj) : []); } catch (_) {} }
   } finally {
     _rodando = false;
     try { if (_vivo()) _win.destroy(); } catch (_) {}

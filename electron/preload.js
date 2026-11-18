@@ -144,6 +144,10 @@ contextBridge.exposeInMainWorld('fiscocont', {
     onProgresso: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('reinf:progresso', h); return () => ipcRenderer.removeListener('reinf:progresso', h); },
     onEmpresa: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('reinf:empresa', h); return () => ipcRenderer.removeListener('reinf:empresa', h); },
     onAuto: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('reinf:auto', h); return () => ipcRenderer.removeListener('reinf:auto', h); },
+    dctfDados: (comp) => ipcRenderer.invoke('dctf:dados', comp),
+    dctfPedir: (o) => ipcRenderer.invoke('dctf:pedir', o),
+    dctfAbrir: (o) => ipcRenderer.invoke('dctf:abrir', o),
+    onDctf: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('dctf:mudou', h); return () => ipcRenderer.removeListener('dctf:mudou', h); },
   },
   sefin: {
     agenda: () => ipcRenderer.invoke('sefin:agenda'),

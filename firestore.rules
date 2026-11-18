@@ -169,6 +169,18 @@ service cloud.firestore {
     match /agenda_reinf/{doc} {
       allow read, write: if reinfOk();
     }
+    // REINF × DCTFWeb (Integra Contador): a equipe da REINF vê o resultado e PEDE conferir/transmitir; só o computador do
+    // Integra Contador (Admin) grava o resultado e atende os pedidos.
+    match /dctfweb/{doc} {
+      allow read: if reinfOk();
+      allow write: if admin();
+    }
+    match /dctfweb_pedidos/{id} {
+      allow read: if reinfOk();
+      allow create: if reinfOk() && request.resource.data.uid == request.auth.uid && request.resource.data.status == 'novo'
+        && request.resource.data.tipo in ['conferir', 'transmitir'];
+      allow update, delete: if admin();
+    }
     // Consulta automática da SEFIN: a vez de cada horário (quem pegou, quando, resultado) — mesmo acesso dos dois módulos
     match /agenda_sefin/{doc} {
       allow read, write: if fisconforme() || dareOk();
