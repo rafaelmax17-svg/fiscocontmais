@@ -2107,3 +2107,11 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .dc-nota div{display:flex;gap:9px;margin-top:8px}.dc-nota p{margin:0}.dc-emp{min-width:200px}.dc-rs{font-style:normal;font-weight:700;background:none!important}.dc-rs.ok{color:#15803d}.dc-rs.ab{color:#b45309}.dc-rs.er{color:#b91c1c}.dc-emp small{white-space:nowrap}.dc-g .rf-tab td{padding:9px 7px}.dc-nota div span{flex:none;width:21px;height:21px;border-radius:50%;background:#dbeafe;color:#1e40af;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center}
 .dc-conf{width:520px}.dc-conf p{margin:0;font-size:13px;line-height:1.5}.dc-irr{color:#b91c1c;font-weight:700}
 @media (max-width:1250px){.dc-g{grid-template-columns:1fr}.dc-lado{position:static}}
+/* Fisconforme · PDF para o cliente (2.4.11) */
+.fc-bpdf{background:linear-gradient(135deg,#dc2626,#b91c1c)!important;color:#fff!important;border-color:transparent!important}.fc-bpdf:hover{filter:brightness(1.08)}
+.fc-bpdf:disabled{opacity:.42;cursor:not-allowed;filter:none}
+.fc-modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;z-index:9999}
+.fc-mc{background:var(--panel,#fff);color:var(--ink,#0f172a);border-radius:16px;padding:18px 20px;width:640px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.fc-mc h3{margin:0 0 4px;font-size:16px}.fc-mc label{display:block;margin-top:14px;font-weight:700;font-size:12.5px}.fc-mc label small{font-weight:400;color:var(--ink2,#64748b)}
+.fc-mc textarea{width:100%;margin-top:6px;border:1.5px solid var(--line,#e2e8f0);border-radius:10px;padding:10px 12px;font:12.5px/1.5 inherit;font-family:inherit;background:var(--bg,#f8fafc);color:inherit;resize:vertical}
+.fc-mb{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.fc-mb .fc-b{padding:7px 14px;font-size:12.5px}

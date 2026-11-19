@@ -95,6 +95,7 @@ contextBridge.exposeInMainWorld('fiscocont', {
     visualizar: (codigo) => ipcRenderer.invoke('fisc:visualizar', codigo),
     abrirPortal: () => ipcRenderer.invoke('fisc:abrirPortal'),
     exportar: (html, formato, nome) => ipcRenderer.invoke('fisc:exportar', { html, formato, nome }),
+    pdfCliente: (codigo, orientacao) => ipcRenderer.invoke('fisc:pdfCliente', { codigo, orientacao }),
     resumo: () => ipcRenderer.invoke('fisc:resumo'),
     mostrarJanela: (sim) => ipcRenderer.invoke('fisc:mostrarJanela', sim),
     pastaDados: () => ipcRenderer.invoke('fisc:pastaDados'),

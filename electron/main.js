@@ -736,6 +736,39 @@ ipcMain.handle('fisc:exportar', async (_evt, { html, formato, nome }) => {
   } catch (e) { return { error: String(e.message || e) }; }
   finally { worker.destroy(); fs.unlink(tmp, () => {}); }
 });
+// PDF da notificação para encaminhar ao cliente: a pessoa escolhe onde salvar (a janela já abre na pasta do cliente)
+ipcMain.handle('fisc:pdfCliente', async (_evt, { codigo, orientacao }) => {
+  if (!fisconforme.podeUsar()) return { error: 'Sem acesso ao módulo Fisconforme.' };
+  let worker = null, tmp = '';
+  try {
+    const n = await fisconforme.notificacao(codigo);
+    if (!n.detalhe) return { error: 'Visualize a notificação antes: o PDF usa o conteúdo lido do portal.' };
+    let logo = '';
+    try { logo = 'data:image/png;base64,' + fs.readFileSync(path.join(__dirname, '..', 'renderer', 'img', 'liddera-logo.png')).toString('base64'); } catch (_) {}
+    const pc = require('./pasta_cliente');
+    const hoje = new Date();
+    let dir = '';
+    try {
+      const mes = pc.pastaDoMes({ nome: n.nome, cnpj: n.cnpj }, hoje.getFullYear(), hoje.getMonth() + 1, false);
+      const emp = pc.achar({ nome: n.nome, cnpj: n.cnpj });
+      dir = [mes, emp && emp.dir].find((d) => d && fs.existsSync(d)) || '';
+    } catch (_) {}
+    const nome = `Notificação Fisconforme ${n.codigo} - ${n.nome || ''}`.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 150);
+    const save = await dialog.showSaveDialog(mainWindow, {
+      title: 'Salvar a notificação em PDF', defaultPath: path.join(dir || app.getPath('documents'), `${nome}.pdf`), filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+    if (save.canceled || !save.filePath) return { canceled: true };
+    tmp = path.join(os.tmpdir(), `fc_notif_${Date.now()}.html`);
+    fs.writeFileSync(tmp, fisconforme.htmlCliente(n, orientacao, logo), 'utf-8');
+    worker = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, javascript: false } });
+    await worker.loadFile(tmp);
+    const buf = await worker.webContents.printToPDF({ printBackground: true, pageSize: 'A4', preferCSSPageSize: true });
+    fs.writeFileSync(save.filePath, buf);
+    shell.openPath(save.filePath);
+    return { path: save.filePath };
+  } catch (e) { return { error: String(e.message || e) }; }
+  finally { if (worker) worker.destroy(); if (tmp) fs.unlink(tmp, () => {}); }
+});
 ipcMain.handle('fisc:abrirPortal', () => { if (sessionRole !== 'admin') return { error: 'Acesso restrito ao Admin.' }; shell.openExternal('https://fisconforme.sefin.ro.gov.br/contribuintes/pendente'); return { ok: true }; });
 
 ipcMain.handle('integra:estado', () => _adm(async () => ({ local: await integra.estadoLocal(), nuvem: await integra.estadoNuvem().catch(() => null) })));

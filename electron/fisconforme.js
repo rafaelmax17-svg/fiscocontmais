@@ -394,6 +394,45 @@ async function visualizar(codigo) {
   }
 }
 
+// ------------------------------------------------------------------ PDF para o cliente (19/11/2026)
+// Só para notificação JÁ visualizada (com o texto guardado): não abre o portal, então nunca dá ciência por conta própria.
+// A orientação vem preenchida com a explicação do sistema e a equipe revisa/edita antes de gerar.
+async function notificacao(codigo) {
+  _exige();
+  const { db, f } = _fs();
+  const s = await f.getDoc(f.doc(db, COL, String(codigo)));
+  if (!s.exists()) throw new Error('Notificação não encontrada.');
+  return s.data();
+}
+const _esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const _perBr = (p) => (/^\d{6}$/.test(p || '') ? `${p.slice(4)}/${p.slice(0, 4)}` : (p || ''));
+const _cnpjBr = (c) => String(c || '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+function htmlCliente(n, orientacao, logo) {
+  const hoje = new Date().toLocaleDateString('pt-BR');
+  const ciencia = String(n.cienciaEm || '').slice(0, 10);
+  const kv = [['Empresa', n.nome], ['CNPJ', _cnpjBr(n.cnpj)], ['Inscrição estadual', n.ie], ['Notificação nº', n.codigo], ['Malha', n.desc], ['Período', _perBr(n.periodo)], ['Ciência', ciencia]]
+    .filter(([, v]) => v).map(([k, v]) => `<b>${_esc(k)}</b><span>${_esc(v)}</span>`).join('');
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Notificação Fisconforme ${_esc(n.codigo)}</title><style>
+  @page{size:A4;margin:16mm 15mm 16mm}*{box-sizing:border-box}body{margin:0;font:11.5pt/1.5 "Segoe UI",Arial,sans-serif;color:#0f172a}
+  .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #1e3a8a;padding-bottom:9px}.hd img{height:44px}
+  .hd .lg{font-weight:800;color:#1e3a8a;font-size:17pt}.hd .lg small{display:block;font-weight:600;color:#64748b;font-size:8.5pt}.hd .dt{color:#64748b;font-size:9pt;text-align:right}
+  h1{font-size:16pt;margin:16px 0 2px}.sub{color:#64748b;font-size:9.5pt}
+  .kv{display:grid;grid-template-columns:42mm 1fr;gap:4px 10px;margin-top:12px}.kv b{color:#475569;font-weight:600}
+  .pz{margin-top:14px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:7px;padding:8px 12px;font-weight:700}
+  h2{font-size:11.5pt;color:#1e3a8a;margin:18px 0 6px;border-bottom:1px solid #e2e8f0;padding-bottom:4px}
+  .txt{white-space:pre-wrap;color:#1f2937;font-size:10.5pt}.or{white-space:pre-wrap;background:#f0f9ff;border-left:4px solid #0284c7;padding:9px 12px;border-radius:6px;color:#0c4a6e;font-size:10.5pt}
+  .ft{margin-top:22px;color:#94a3b8;font-size:8.5pt;border-top:1px solid #e2e8f0;padding-top:7px}h2,.pz{break-after:avoid}
+  </style></head><body>
+  <div class="hd">${logo ? `<img src="${logo}" alt="Liddera">` : '<div class="lg">Liddera<small>Inteligência em Negócios</small></div>'}<div class="dt">Gerado em ${hoje}</div></div>
+  <h1>Notificação Fisconforme · SEFIN-RO</h1><div class="sub">Programa de autorregularização da SEFIN-RO (Decreto nº 23.856/2019)</div>
+  <div class="kv">${kv}</div>
+  ${n.prazo ? `<div class="pz">Prazo para regularizar ou contestar: ${_esc(n.prazo)}</div>` : ''}
+  <h2>O que a SEFIN apontou</h2><div class="txt">${_esc(String(n.detalhe || '').trim())}</div>
+  ${String(orientacao || '').trim() ? `<h2>Orientação da Liddera</h2><div class="or">${_esc(String(orientacao).trim())}</div>` : ''}
+  <div class="ft">Documento preparado pela Liddera | Inteligência em Negócios a partir do portal Fisconforme da SEFIN-RO.</div>
+  </body></html>`;
+}
+
 // Entrada por certificado e janela compartilhadas com o módulo Débitos e DARE (electron/dare.js).
 // Uma consulta por vez: as duas telas usam a mesma janela e a mesma sessão da SEFIN.
 const portal = {
@@ -407,4 +446,4 @@ const portal = {
   liberar(fechar = true) { _rodando = false; if (fechar && _win && !_win.isDestroyed()) { _win.destroy(); _win = null; } },
 };
 
-module.exports = { portal, init, podeUsar, resumo, estado, escolherCert, ler, dados, explicarMalha, visualizar, certificados, mostrarJanela, abrirPastaDados };
+module.exports = { portal, init, podeUsar, resumo, estado, escolherCert, ler, dados, explicarMalha, visualizar, certificados, mostrarJanela, abrirPastaDados, notificacao, htmlCliente };

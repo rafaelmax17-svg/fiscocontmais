@@ -259,7 +259,8 @@
       <td>${per(n.periodo)}</td><td>${e(n.codigo)}</td><td>${nova}<span class="fc-c ${cls}">${rot}</span></td>
       <td>${dBr(n.primeiraVez)}<small>${d === 0 ? 'hoje' : `há ${d} dia${d > 1 ? 's' : ''}`}</small></td>
       <td class="fc-ac"><button class="fc-b" data-x="${e(n.codigo)}">${ab ? 'Fechar' : 'Entenda esta malha'}</button>
-        ${n.detalhe ? `<button class="fc-b" data-v="${e(n.codigo)}" data-ja="1">Ver notificação</button>` : `<button class="fc-b fc-bv" data-v="${e(n.codigo)}"${F.semCert ? ' disabled title="Precisa do e-CPF do contador instalado neste computador"' : ''}>Visualizar</button>`}</td></tr>
+        ${n.detalhe ? `<button class="fc-b" data-v="${e(n.codigo)}" data-ja="1">Ver notificação</button>` : `<button class="fc-b fc-bv" data-v="${e(n.codigo)}"${F.semCert ? ' disabled title="Precisa do e-CPF do contador instalado neste computador"' : ''}>Visualizar</button>`}
+        <button class="fc-b fc-bpdf" data-pdf="${e(n.codigo)}" ${n.detalhe ? 'title="Gera o PDF da notificação para encaminhar ao cliente"' : 'disabled title="Primeiro visualize a notificação (dá ciência): o PDF usa o conteúdo lido do portal"'}>📄 PDF para o cliente</button></td></tr>
       ${ab ? `<tr class="fc-det"><td colspan="7">
         ${n.detalhe ? `<div class="fc-box"><h4>Notificação (aberta em ${e(n.cienciaEm || '')}${n.cienciaPor ? ' por ' + e(n.cienciaPor) : ''})</h4><pre>${e(n.detalhe)}</pre></div>` : ''}
         <div class="fc-box"><h4>${n.explicacao ? 'Explicação desta notificação' : 'Entenda esta malha'}</h4><div class="fc-ex" id="fcEx">${n.explicacao ? fmt(n.explicacao) : (expl ? fmt(expl) : '<span class="fc-sub">Preparando a explicação…</span>')}</div></div>
@@ -289,6 +290,37 @@
     const mais = $('#fcMais'); if (mais) mais.onclick = () => { F.mostrar += 200; desenhar(); };
     q('[data-x]').forEach((b) => b.onclick = () => abrir(b.dataset.x));
     q('[data-v]').forEach((b) => b.onclick = () => (b.dataset.ja ? abrir(b.dataset.v) : visualizar(b.dataset.v)));
+    q('[data-pdf]').forEach((b) => b.onclick = () => pdfCliente(b.dataset.pdf));
+  }
+
+  // PDF para o cliente: a orientação vem preenchida com a explicação do sistema; a equipe revisa antes de gerar
+  function textoOrientacao(n) {
+    let t = n.explicacao || (F.d.explicMalha[n.malha || ''] || {}).texto || '';
+    t = t.replace(/\*\*(.+?)\*\*/g, '$1').replace(/^#+\s*/gm, '').replace(/^\s*[-*]\s+/gm, '• ');
+    t = t.split('[EMPRESA]').join(n.nome || 'a empresa').split('[CNPJ]').join(fmtCnpj(n.cnpj) || 'CNPJ').split('[IE]').join(n.ie || 'IE');
+    return t.trim();
+  }
+  function pdfCliente(cod) {
+    const n = F.d.notif.find((x) => x.codigo === cod);
+    if (!n || !n.detalhe) return;
+    const m = document.createElement('div'); m.className = 'fc-modal';
+    m.innerHTML = `<div class="fc-mc"><h3>PDF da notificação para o cliente</h3>
+      <div class="fc-sub">${e(n.nome)} · notificação ${e(n.codigo)} · ${e(n.desc)}${n.prazo ? ` · prazo ${e(n.prazo)}` : ''}</div>
+      <label>Orientação da Liddera <small>revise antes de gerar · deixe em branco para sair só a notificação</small></label>
+      <textarea id="fcOr" rows="11"></textarea>
+      <div class="fc-mb"><button class="fc-b" id="fcOrNao">Cancelar</button><button class="fc-b fc-bpdf" id="fcOrSim">📄 Gerar PDF</button></div></div>`;
+    document.body.appendChild(m);
+    const ta = m.querySelector('#fcOr'); ta.value = textoOrientacao(n); ta.focus();
+    m.querySelector('#fcOrNao').onclick = () => m.remove();
+    m.onclick = (ev) => { if (ev.target === m) m.remove(); };
+    m.querySelector('#fcOrSim').onclick = async (ev) => {
+      ev.target.disabled = true; ev.target.textContent = 'Gerando…';
+      const r = await window.fiscocont.fisconforme.pdfCliente(cod, ta.value);
+      ev.target.disabled = false; ev.target.textContent = '📄 Gerar PDF';
+      if (r && r.error) { toast(r.error, true); return; }
+      if (r && r.canceled) return;
+      m.remove(); toast('PDF salvo e aberto: é só anexar e encaminhar ao cliente.');
+    };
   }
 
   async function abrir(cod) {
