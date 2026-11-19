@@ -217,7 +217,7 @@
     if (!rc || !rc.st) return { k: '', rot: '' };
     if (rc.st === 'ok' && r.pgdas === 'N/A') return { k: 'verificar', rot: 'marcado “N/A”, mas a Receita tem declaração do período' };
     // tirou o "Sim" de um PGDAS já confirmado = vai retificar; o robô espera a declaração nova
-    if (rc.st === 'ok' && rc.decl && r.pgdas !== 'Sim') return { k: 'retif', rot: 'Em retificação' };
+    if (rc.st === 'ok' && rc.decl && (r.pgdas !== 'Sim' || (r.retifDe && r.retifDe === rc.decl))) return { k: 'retif', rot: 'Em retificação' };
     if (rc.st === 'ok') return { k: 'ok', rot: rc.msg || 'Transmitido' };
     if (rc.st === 'nao' && r.pgdas === 'Sim') return { k: 'verificar', rot: 'marcado “Sim”, mas a Receita não tem declaração do período' };
     if (rc.st === 'nao') return { k: 'nao', rot: 'Ainda não transmitido' };
@@ -234,7 +234,9 @@
     const docs = Object.keys(rc.arquivos || {});
     const docsHtml = docs.length ? `<button class="fs-rf-docs" data-a="pasta" data-id="${r.id}" title="${e(rc.pasta || '')}">📄 ${docs.map((d) => ROT_DOC[d] || d).join(' · ')}${rc.dasValor ? ` · R$ ${Number(rc.dasValor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''}</button>` : '';
     const av = [rc.pastaAviso, rc.dasAviso].filter(Boolean).map((x) => `<small class="fs-rf-av">⚠ ${e(x)}</small>`).join('');
-    if (s.k === 'retif') return `<div class="fs-rf"${tt}><span class="fs-rf-b rt">↻ Em retificação</span><small class="fs-rf-t">aguardando a retificadora na Receita · a declaração atual é a <b>${e(rc.decl)}</b>${rc.retificadora ? '' : ' (original)'}</small><small class="fs-rf-t">o robô confere de novo e só marca “Sim” quando aparecer a declaração nova</small></div>`;
+    if (s.k === 'retif' && rc.consolidada) return `<div class="fs-rf"${tt}><span class="fs-rf-b rt">↻ Em retificação (na matriz)</span><small class="fs-rf-t">segue a PGDAS da matriz ${e(rc.matriz || '')}</small></div>`;
+    if (s.k === 'retif') return `<div class="fs-rf"${tt}><span class="fs-rf-b rt">↻ Em retificação</span><small class="fs-rf-t">aguardando a retificadora na Receita · a declaração atual é a <b>${e(rc.decl)}</b>${rc.retificadora ? '' : ' (original)'}</small><small class="fs-rf-t">${r.pgdas === 'Sim' ? 'marcado “Sim”, mas o robô ainda não achou a declaração nova: clique em “Iniciar robô” para salvar os documentos da retificadora' : 'o robô confere de novo e só marca “Sim” quando aparecer a declaração nova'}</small>${r.retifDe ? `<button class="fs-mini" data-a="semretif" data-id="${r.id}" title="A empresa não vai ser retificada: o robô para de procurar a declaração nova">não vai retificar</button>` : ''}</div>`;
+    if (s.k === 'ok' && rc.consolidada) return `<div class="fs-rf ok"${tt}>✓ ${e(s.rot)}<small class="fs-rf-ant">documentos na pasta da matriz${rc.matriz ? ` (${e(rc.matriz)})` : ''}</small></div>`;
     if (s.k === 'ok') return `<div class="fs-rf ok"${tt}>✓ ${e(s.rot)}${rc.retificadora && rc.anterior ? `<small class="fs-rf-ant">substitui a <s>${e(rc.anterior)}</s></small>` : ''}${docsHtml}${av}</div>`;
     if (s.k === 'verificar') return `<div class="fs-rf"${tt}><span class="fs-rf-b vf">⚠ Verificar</span><small class="fs-rf-t vf">${e(s.rot)}</small></div>`;
     if (s.k === 'semproc') return `<div class="fs-rf"><span class="fs-rf-b sp">Sem procuração</span><small class="fs-rf-t sp">${e(s.rot)}</small></div>`;
@@ -261,7 +263,7 @@
     let prog = '';
     if (rd) prog = `<div class="fs-rprog"><span>Conferindo na Receita · ${rd.feito} de ${rd.total} empresas</span><div class="fs-rbar"><i style="width:${rd.total ? Math.round(rd.feito / rd.total * 100) : 0}%"></i></div></div>`;
     else if (ig.pendente) prog = `<div class="fs-rprog"><span>${ig.online ? 'Pedido enviado ao robô…' : 'Pedido guardado: roda quando o computador do robô ligar.'}</span></div>`;
-    else if (u && u.comp === FS.comp) prog = `<div class="fs-rprog ${u.erro ? 'er' : ''}"><span>${u.erro ? '⚠ ' + e(u.erro) : `✓ Conferência concluída · ${u.total} empresa(s) consultada(s)${u.resumo && u.resumo.arquivos ? ` · ${u.resumo.arquivos} documento(s) salvo(s)` : ''}${u.resumo && u.resumo.confirmadas ? ` · ${u.resumo.confirmadas} já confirmada(s) antes` : ''}${u.resumo && u.resumo.semEsc ? ` · ${u.resumo.semEsc} sem Escrituração concluída (não entram)` : ''}${u.resumo && u.resumo.retificadas ? ` · ${u.resumo.retificadas} retificadora(s) encontrada(s)` : ''}${u.resumo && u.resumo.retif ? ` · ${u.resumo.retif} ainda aguardando a retificadora` : ''}`}</span><small>${e(u.emBr || '')}${u.por ? ' · ' + e(u.por) : ''}</small></div>`;
+    else if (u && u.comp === FS.comp) prog = `<div class="fs-rprog ${u.erro ? 'er' : ''}"><span>${u.erro ? '⚠ ' + e(u.erro) : `✓ Conferência concluída · ${u.total} empresa(s) consultada(s)${u.resumo && u.resumo.arquivos ? ` · ${u.resumo.arquivos} documento(s) salvo(s)` : ''}${u.resumo && u.resumo.confirmadas ? ` · ${u.resumo.confirmadas} já confirmada(s) antes` : ''}${u.resumo && u.resumo.semEsc ? ` · ${u.resumo.semEsc} sem Escrituração concluída (não entram)` : ''}${u.resumo && u.resumo.retificadas ? ` · ${u.resumo.retificadas} retificadora(s) encontrada(s)` : ''}${u.resumo && u.resumo.retif ? ` · ${u.resumo.retif} ainda aguardando a retificadora` : ''}${u.resumo && u.resumo.filiais ? ` · ${u.resumo.filiais} filial(is) seguem a matriz` : ''}`}</span><small>${e(u.emBr || '')}${u.por ? ' · ' + e(u.por) : ''}</small></div>`;
     if (!algum && !prog) { box.hidden = true; return; }
     const t = [['ok', 'PGDAS confirmados na Receita', '#059669'], ['nao', 'Ainda não transmitidos', '#6366f1'], ['verificar', 'Verificar (divergência)', '#d97706'],
       ['retif', 'Em retificação', '#7c3aed'], ['semproc', 'Sem procuração no e-CAC', '#dc2626'], ['semcnpj', 'Sem CNPJ no cadastro', '#64748b'], ['erro', 'Falha na consulta', '#9f1239']].filter(([k], i) => i < 3 || c[k]);
@@ -299,7 +301,8 @@
   const selEtapa = (r, campo) => {
     const v = r[campo] || '';
     const cls = v === 'Sim' ? 'v-sim' : v === 'Não' ? 'v-nao' : v === 'N/A' ? 'v-na' : 'v-vz';
-    return `<select class="fs-sel ${cls}" data-c="${campo}" data-id="${r.id}">${['', 'Sim', 'Não', 'N/A'].map((o) => `<option value="${o}" ${o === v ? 'selected' : ''}>${o || '—'}</option>`).join('')}</select>`;
+    const segue = campo === 'pgdas' && r.matriz;
+    return `<select class="fs-sel ${cls}" data-c="${campo}" data-id="${r.id}"${segue ? ` disabled title="Filial: a PGDAS é a da matriz (${e(r.matriz)})"` : ''}>${['', 'Sim', 'Não', 'N/A'].map((o) => `<option value="${o}" ${o === v ? 'selected' : ''}>${o || '—'}</option>`).join('')}</select>`;
   };
   const chaveAn = (n) => String(n || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   // Admin: troca a analista direto na linha (vale para este mês e para os próximos; os meses anteriores ficam como estavam).
@@ -313,7 +316,7 @@
     return `<td class="fs-n">${i + 1}</td>
       <td class="l"><span class="fs-dot" style="background:${ST[st].cor}" title="${ST[st].rot}"></span><b>${e(r.nome)}</b>${r.semMovimento ? '<span class="fs-tag">sem movimento</span>' : ''}${r.inativa && r.saida > FS.comp ? `<span class="fs-tag fs-tag-in">inativa a partir de ${e(compRot(r.saida))}</span>` : ''}${r.cnpj ? `<small>${e(r.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5'))}</small>` : ''}</td>
       <td class="l">${FS.admin ? selAnalista(r) : e(r.analista || '—')}</td>
-      <td>${selEtapa(r, 'esc')}</td><td>${selEtapa(r, 'pgdas')}${FS.ig.ativo && r.pgdasRobo && r.pgdas === 'Sim' ? '<small class="fs-robotag" title="Marcado pelo robô depois de confirmar na Receita Federal">robô</small>' : ''}</td>
+      <td>${selEtapa(r, 'esc')}</td><td>${selEtapa(r, 'pgdas')}${r.matriz ? '<small class="fs-robotag" title="A apuração do Simples é feita pela matriz">segue a matriz</small>' : ''}${FS.ig.ativo && r.pgdasRobo && r.pgdas === 'Sim' ? '<small class="fs-robotag" title="Marcado pelo robô depois de confirmar na Receita Federal">robô</small>' : ''}</td>
       <td class="l fs-rf-col" ${FS.ig.ativo ? '' : 'hidden'}>${celReceita(r)}</td>
       <td class="fs-fin" title="Preenchida sozinha quando as três etapas ficam Sim ou N/A">${r.fin ? e(r.fin) : '—'}</td>
       <td class="l"><input class="fs-obs" data-c="obs" data-id="${r.id}" value="${e(r.obs)}" placeholder="—">${st === 'alerta' ? '<small class="neg">⚠ PGDAS transmitido sem escrituração concluída</small>' : ''}</td>
@@ -336,7 +339,7 @@
     }
     $('#fsFoot').textContent = `Mostrando ${lst.length} de ${FS.linhas.length} empresas · clique na célula para escolher Sim, Não ou N/A · a data de finalização é preenchida sozinha quando a Escrituração e o PGDAS ficam Sim ou N/A`;
   }
-  const sig = (r, i) => [i, FS.ig.ativo, JSON.stringify(r.receita || ''), r.pgdasRobo, FS.listaAn.join(','), r.nome, r.analista, r.esc, r.pgdas, r.das, r.fin, r.obs, r.cnpj, FS.admin, r.inativa, r.saida].join('¦');
+  const sig = (r, i) => [i, FS.ig.ativo, JSON.stringify(r.receita || ''), r.pgdasRobo, FS.listaAn.join(','), r.nome, r.analista, r.esc, r.pgdas, r.das, r.fin, r.obs, r.cnpj, FS.admin, r.inativa, r.saida, r.retifDe, r.matriz].join('¦');
 
   async function onCelula(ev) {
     if (ev.target.dataset.an) return trocaAnalista(ev.target);
@@ -361,6 +364,11 @@
       if (!confirm(`Inativar "${r.nome}"?\n\nEla continua em ${compRot(FS.comp)} para terminar o fechamento e não aparece mais a partir de ${compRot(prox)}.`)) return;
       const x = await window.fiscocont.fechamento.inativar(FS.comp, r.id);
       if (x && x.error) toast(x.error, true); else toast(`Empresa inativada a partir de ${compRot(prox)}.`);
+    }
+    if (b.dataset.a === 'semretif') {
+      if (!confirm(`"${r.nome}" não vai ser retificada?\n\nO robô para de procurar a declaração nova e a linha volta a mostrar a declaração ${r.receita && r.receita.decl ? r.receita.decl : 'atual'}.`)) return;
+      const x = await window.fiscocont.fechamento.cancelarRetif(FS.comp, r.id);
+      if (x && x.error) toast(x.error, true);
     }
     if (b.dataset.a === 'reativar') {
       const x = await window.fiscocont.fechamento.reativar(FS.comp, r.id);

@@ -538,6 +538,7 @@ ipcMain.handle('fech:alterar', (_evt, { comp, id, mud }) => _fech(() => fechamen
 ipcMain.handle('fech:inativar', (_evt, { comp, id }) => _fech(() => fechamento.inativar(comp, id)));
 ipcMain.handle('fech:analistaNova', (_evt, nome) => _fech(() => fechamento.analistaNova(nome)));
 ipcMain.handle('fech:analistaRemover', (_evt, nome) => _fech(() => fechamento.analistaRemover(nome)));
+ipcMain.handle('fech:cancelarRetif', (_evt, { comp, id }) => _fech(() => fechamento.cancelarRetif(comp, id)));
 ipcMain.handle('fech:reativar', (_evt, { comp, id }) => _fech(() => fechamento.reativar(comp, id)));
 // ---- Robô do Fechamento · Integra Contador (Serpro) — chave só neste computador, cifrada (electron/integra.js)
 const integra = require('./integra');

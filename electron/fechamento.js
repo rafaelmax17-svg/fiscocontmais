@@ -36,6 +36,15 @@ function _dataBr(ts) {
 }
 function _novoId() { return 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function _prox(c) { let [a, m] = c.split('-').map(Number); m++; if (m > 12) { m = 1; a++; } return `${a}-${String(m).padStart(2, '0')}`; }
+// Filiais (Rafael, 19/11/2026): no Simples Nacional a apuração é única, feita pela matriz (LC 123/2006, art. 18;
+// Resolução CGSN 140/2018, art. 38). A filial segue a PGDAS da matriz: não é consultada nem guarda documentos.
+const _dig = (c) => String(c || '').replace(/\D/g, '');
+function matrizDe(cad, mes, id) {
+  const c = _dig((cad[id] || {}).cnpj);
+  if (c.length !== 14 || c.slice(8, 12) === '0001') return '';
+  return Object.keys(mes).find((k) => { const x = _dig((cad[k] || {}).cnpj); return k !== id && x.length === 14 && x.slice(0, 8) === c.slice(0, 8) && x.slice(8, 12) === '0001'; }) || '';
+}
+function filiaisDe(cad, mes, idMatriz) { return Object.keys(mes).filter((k) => matrizDe(cad, mes, k) === idMatriz); }
 function _semMovimento(obs) { return /zerad|sem\s+movimento/i.test(String(obs || '')); }
 
 // Analistas cadastradas sem empresa ainda (entram na lista na primeira abertura do Admin).
@@ -105,9 +114,20 @@ async function abrir(comp) {
     }
     // regra nova (só Escrituração + PGDAS): quem já cumpre e está sem data de finalização ganha a data da última marcação
     const semData = Object.entries(atual).filter(([id, r]) => !sobram.includes(id) && _concluida(r) && !r.fin);
+    const segue = [];                                  // filial com a PGDAS diferente da matriz
+    for (const id of Object.keys(atual)) {
+      if (sobram.includes(id)) continue;
+      const m = matrizDe(cad, atual, id);
+      if (m && (atual[id].pgdas || '') !== (atual[m].pgdas || '')) segue.push([id, atual[m].pgdas || '']);
+    }
     if (!s.exists()) tx.set(ref, { empresas: faltam, criadoPor: _quem(), criadoEm: f.serverTimestamp() });
-    else if (Object.keys(faltam).length || sobram.length || semData.length) {
+    else if (Object.keys(faltam).length || sobram.length || semData.length || segue.length) {
       const upd = {};
+      for (const [id, pg] of segue) {
+        const nv = { ...atual[id], pgdas: pg };
+        upd[`empresas.${id}.pgdas`] = pg;
+        upd[`empresas.${id}.fin`] = _concluida(nv) ? (atual[id].fin || _hojeBr()) : '';
+      }
       for (const [id, r] of Object.entries(faltam)) upd[`empresas.${id}`] = r;
       for (const id of sobram) upd[`empresas.${id}`] = f.deleteField();
       for (const [id, r] of semData) upd[`empresas.${id}.fin`] = _dataBr(r.alteradoEm);
@@ -130,7 +150,9 @@ function ouvir(comp, cb) {
     const analistas = _uneNomes(lista, Object.values(cad).filter((c) => c.ativa !== false).map((c) => c.analista), Object.values(mes).map((r) => r.analista));
     const linhas = Object.entries(mes).map(([id, r]) => {
       const c = cad[id] || {};
+      const m = matrizDe(cad, mes, id);
       return {
+        matriz: m ? ((cad[m] || {}).nome || mes[m].nome || 'matriz') : '', retifDe: _ehAdmin() ? (r.retifDe || '') : '',
         id, nome: c.nome || r.nome || '', cnpj: c.cnpj || '', analista: r.analista || c.analista || '', ordem: c.ordem ?? 9999,
         esc: r.esc || '', pgdas: r.pgdas || '', das: r.das || '', obs: r.obs || '', fin: r.fin || '',
         alteradoPor: r.alteradoPor || '', semMovimento: _semMovimento(r.obs), receita: _ehAdmin() ? (r.receita || null) : null, pgdasRobo: _ehAdmin() && !!r.pgdasRobo,
@@ -165,21 +187,51 @@ async function salvar(comp, id, campo, valor) {
   else if (!VALORES.includes(valor)) throw new Error('Valor inválido.');
   const { db, f } = _fs();
   const ref = f.doc(db, COL, comp);
+  const refC = f.doc(db, COL, 'cadastro');
   await f.runTransaction(db, async (tx) => {
     const s = await tx.get(ref);
-    const r = s.exists() ? (s.data().empresas || {})[id] : null;
+    const sc = await tx.get(refC);
+    const mes = s.exists() ? (s.data().empresas || {}) : {};
+    const cad = sc.exists() ? (sc.data().empresas || {}) : {};
+    const r = mes[id] || null;
     if (!r) throw new Error('Empresa não está nessa competência.');
+    if (campo === 'pgdas') {
+      const m = matrizDe(cad, mes, id);
+      if (m) throw new Error(`A PGDAS desta filial é a da matriz (${(cad[m] || {}).nome || mes[m].nome}): marque na matriz.`);
+    }
     const novo = { ...r, [campo]: valor };
     const fin = _concluida(novo) ? (r.fin || _hojeBr()) : '';
-    tx.update(ref, {
+    const upd = {
       [`empresas.${id}.${campo}`]: valor, [`empresas.${id}.fin`]: fin,
       [`empresas.${id}.alteradoPor`]: _quem(), [`empresas.${id}.alteradoEm`]: f.serverTimestamp(),
-    });
+    };
+    if (campo === 'pgdas') {
+      // tirou o "Sim" de uma PGDAS que a Receita já confirmou = vai retificar: guarda qual declaração está sendo
+      // substituída. Assim, mesmo que a analista marque "Sim" de novo à mão, o robô continua até achar a retificadora.
+      const rc = r.receita || {};
+      if (r.pgdas === 'Sim' && valor !== 'Sim' && rc.st === 'ok' && rc.decl && !r.retifDe) upd[`empresas.${id}.retifDe`] = rc.decl;
+      for (const fid of filiaisDe(cad, mes, id)) {
+        const nv = { ...mes[fid], pgdas: valor };
+        upd[`empresas.${fid}.pgdas`] = valor;
+        upd[`empresas.${fid}.fin`] = _concluida(nv) ? (mes[fid].fin || _hojeBr()) : '';
+        upd[`empresas.${fid}.alteradoPor`] = `${_quem()} (pela matriz)`;
+        upd[`empresas.${fid}.alteradoEm`] = f.serverTimestamp();
+      }
+    }
+    tx.update(ref, upd);
   });
   return { ok: true };
 }
 
 function _exigeAdmin() { if (!_ehAdmin()) throw new Error('Só o Admin pode cadastrar, alterar ou inativar empresas.'); }
+
+// Admin: "não vai retificar" — tira a marca de retificação (o robô deixa de procurar a declaração nova)
+async function cancelarRetif(comp, id) {
+  _exigeAdmin();
+  const { db, f } = _fs();
+  await f.updateDoc(f.doc(db, COL, comp), { [`empresas.${id}.retifDe`]: f.deleteField(), [`empresas.${id}.alteradoPor`]: `${_quem()} (sem retificação)`, [`empresas.${id}.alteradoEm`]: f.serverTimestamp() });
+  return { ok: true };
+}
 
 async function cadastrar(comp, { nome, cnpj, analista, desde }) {
   _exigeAdmin();
@@ -361,4 +413,4 @@ async function analistaRemover(nome) {
   return { ok: true };
 }
 
-module.exports = { previaCnpjs, aplicarCnpjs, analistaNova, analistaRemover, abrir, ouvir, parar, salvar, cadastrar, alterar, inativar, reativar };
+module.exports = { previaCnpjs, aplicarCnpjs, analistaNova, analistaRemover, abrir, ouvir, parar, salvar, cadastrar, alterar, inativar, reativar, cancelarRetif, matrizDe, filiaisDe };

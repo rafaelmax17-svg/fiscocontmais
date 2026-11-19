@@ -23,6 +23,7 @@ const path = require('path');
 const { safeStorage } = require('electron');
 const auth = require('./auth');
 const dctfweb = require('./dctfweb');
+const fechamento = require('./fechamento');
 
 const COL = 'fechamento_sn';
 const DOC = 'integra';
@@ -262,7 +263,10 @@ function pararRobo() {
 // Retificação (Rafael, 19/11/2026): tirar o "Sim" de um PGDAS já confirmado = vai retificar. A empresa volta a ser
 // conferida; enquanto a Receita mostrar a MESMA declaração o robô não remarca "Sim"; quando aparecer outro número, é a
 // retificadora: marca "Sim", guarda a anterior e baixa de novo os documentos (salvos como "(retificadora)").
-const _emRetificacao = (r) => !!(r && r.receita && r.receita.st === 'ok' && r.receita.decl && !['Sim', 'N/A'].includes(r.pgdas));
+// retifDe: gravado quando a analista tira o "Sim" (fechamento.salvar); vale mesmo se ela marcar "Sim" de novo à mão
+// antes de o robô achar a retificadora (era o motivo de os arquivos da retificadora não serem salvos).
+const _emRetificacao = (r) => !!(r && r.receita && r.receita.st === 'ok' && r.receita.decl
+  && (!['Sim', 'N/A'].includes(r.pgdas) || (r.retifDe && r.retifDe === r.receita.decl)));
 // DAS que falhou por instabilidade do Serpro (ex.: Erro-PGDASD-058, tempo esgotado): tenta de novo na próxima conferência
 const _dasTemporario = (rc) => !!(rc && rc.dasAviso && /058|tempo esperado|tente novamente|indispon|timeout|tempo limite/i.test(rc.dasAviso));
 function _alvos(mes, cad, ids, automatica, cfg, cont, comp) {
@@ -271,8 +275,9 @@ function _alvos(mes, cad, ids, automatica, cfg, cont, comp) {
     if (ids && !ids.includes(id)) continue;
     const c = cad[id] || {};
     const rc = r.receita || {};
+    if (fechamento.matrizDe(cad, mes, id)) { cont.filiais = (cont.filiais || 0) + 1; continue; }   // filial: segue a matriz
     if (r.esc !== 'Sim') { cont.semEsc++; continue; }               // só empresas com a Escrituração concluída = Sim
-    if (rc.st === 'ok' && _emRetificacao(r)) { out.push({ id, r, c, retifDe: rc.decl }); continue; }
+    if (rc.st === 'ok' && _emRetificacao(r)) { out.push({ id, r, c, retifDe: r.retifDe || rc.decl }); continue; }
     if (rc.st === 'ok' && r.das !== 'N/A' && _dasTemporario(rc) && Date.now() <= _vencimento(comp).getTime()) { out.push({ id, r, c }); continue; }
     if (rc.st === 'ok') {
       // confirmada; só volta (para salvar os documentos) se o Admin apontou a pasta ou mudou a pasta das empresas
@@ -301,7 +306,7 @@ async function _executar(comp, ids, por, n, automatica) {
     const cont = { semEsc: 0, confirmadas: 0 };
     const alvos = _alvos(mes, cad, ids, automatica, cfg, cont, comp);
     resumo.pulou = Object.keys(mes).length - alvos.length;
-    resumo.semEsc = cont.semEsc; resumo.confirmadas = cont.confirmadas;
+    resumo.semEsc = cont.semEsc; resumo.confirmadas = cont.confirmadas; resumo.filiais = cont.filiais || 0;
     await f.updateDoc(ref, { rodando: { comp, feito: 0, total: alvos.length, por }, ...(n ? { atendido: n } : {}) });
     const emitirDas = Date.now() <= _vencimento(comp).getTime();
     let feito = 0;
@@ -326,6 +331,7 @@ async function _executar(comp, ids, por, n, automatica) {
       feito += lote.length;
       await f.updateDoc(ref, { rodando: { comp, feito, total: alvos.length, por } });
     }
+    await _sincronizaFiliais(comp).catch(() => {});
     const mesC = _mesAtual();
     await f.updateDoc(ref, {
       rodando: null,
@@ -354,6 +360,7 @@ async function _gravaResultados(comp, res, resumo, cfg) {
       if (x.st === 'ok' && x.mesma) {
         upd[`empresas.${x.id}.receita.em`] = new Date().toLocaleString('pt-BR').slice(0, 17);
         upd[`empresas.${x.id}.receita.emMs`] = Date.now();
+        if (!r.retifDe && ant.decl) upd[`empresas.${x.id}.retifDe`] = ant.decl;
         resumo.retif = (resumo.retif || 0) + 1;
         continue;
       }
@@ -372,6 +379,7 @@ async function _gravaResultados(comp, res, resumo, cfg) {
         rc.anteriores = [...new Set([...(ant.anteriores || []), rc.anterior].filter(Boolean))];
         rc.msg = `Retificadora${rc.decl ? ` · Decl. ${rc.decl}` : ''}`;
         resumo.retificadas = (resumo.retificadas || 0) + 1;
+        upd[`empresas.${x.id}.retifDe`] = f.deleteField();
       } else if (x.st === 'ok' && ant.retificadora && rc.decl === ant.decl) {
         Object.assign(rc, { retificadora: true, anterior: ant.anterior || '', anteriores: ant.anteriores || [], msg: ant.msg || rc.msg });
       }
@@ -400,6 +408,39 @@ async function _gravaResultados(comp, res, resumo, cfg) {
     for (const p of pend) m.set(p.id, { ...p, comp });   // uma pendência por empresa (a mais recente)
     await _gravaCfg({ pendPastas: [...m.values()] });
   }
+}
+
+// Filiais: copiam a situação da PGDAS da matriz (sem documentos: ficam só na pasta da matriz) e a marcação.
+async function _sincronizaFiliais(comp) {
+  const { db, f } = _fs();
+  const ref = f.doc(db, COL, comp);
+  const sc = await f.getDoc(f.doc(db, COL, 'cadastro'));
+  const cad = sc.exists() ? (sc.data().empresas || {}) : {};
+  await f.runTransaction(db, async (tx) => {
+    const s = await tx.get(ref);
+    const mes = s.exists() ? (s.data().empresas || {}) : {};
+    const upd = {};
+    for (const id of Object.keys(mes)) {
+      const m = fechamento.matrizDe(cad, mes, id);
+      if (!m) continue;
+      const mr = mes[m].receita, fr = mes[id];
+      if (mr && mr.st) {
+        upd[`empresas.${id}.receita`] = {
+          st: mr.st, decl: mr.decl || '', dataTrans: mr.dataTrans || '', em: mr.em || '', emMs: mr.emMs || 0, arquivos: {},
+          msg: mr.st === 'ok' ? `Consolidada na matriz${mr.decl ? ` · Decl. ${mr.decl}` : ''}` : (mr.msg || ''),
+          consolidada: true, matriz: (cad[m] || {}).nome || mes[m].nome || '', retificadora: !!mr.retificadora, anterior: mr.anterior || '',
+        };
+      }
+      const pg = mes[m].pgdas || '';
+      if ((fr.pgdas || '') !== pg) {
+        upd[`empresas.${id}.pgdas`] = pg;
+        upd[`empresas.${id}.pgdasRobo`] = !!mes[m].pgdasRobo;
+        upd[`empresas.${id}.alteradoPor`] = 'Segue a matriz';
+        upd[`empresas.${id}.fin`] = (_ok(fr.esc) && _ok(pg)) ? (fr.fin || _hojeBr()) : '';
+      }
+    }
+    if (Object.keys(upd).length) tx.update(ref, upd);
+  });
 }
 
 // Painel do Admin: o que está na nuvem sobre o robô.

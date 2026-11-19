@@ -77,6 +77,7 @@ contextBridge.exposeInMainWorld('fiscocont', {
     alterar: (comp, id, mud) => ipcRenderer.invoke('fech:alterar', { comp, id, mud }),
     inativar: (comp, id) => ipcRenderer.invoke('fech:inativar', { comp, id }),
     reativar: (comp, id) => ipcRenderer.invoke('fech:reativar', { comp, id }),
+    cancelarRetif: (comp, id) => ipcRenderer.invoke('fech:cancelarRetif', { comp, id }),
     analistaNova: (nome) => ipcRenderer.invoke('fech:analistaNova', nome),
     analistaRemover: (nome) => ipcRenderer.invoke('fech:analistaRemover', nome),
     cnpj: (cnpj) => ipcRenderer.invoke('fech:cnpj', cnpj),
