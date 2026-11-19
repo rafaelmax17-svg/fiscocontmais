@@ -398,6 +398,17 @@ def conferir_empresa(tok, cert, contratante, emp, comp, opc, consumo):
         return r
     r['st'] = 'ok'
     r['msg'] = 'Transmitido' + (f" · Decl. {r['decl']}" if r['decl'] else '')
+    # retificação: a Receita ainda mostra a mesma declaração → nada muda (não baixa nem emite nada)
+    retif_de = re.sub(r'\D', '', str(emp.get('retifDe') or ''))
+    if retif_de and r['decl'] and re.sub(r'\D', '', r['decl']) == retif_de:
+        r['mesma'] = True
+        return r
+    suf = ''
+    if retif_de and r['decl']:
+        r['retificadora'], r['retifDe'] = True, retif_de
+        r['msg'] = f"Retificadora · Decl. {r['decl']}"
+        seq = re.sub(r'\D', '', r['decl'])[-3:]
+        suf = f' (retificadora {seq})' if seq.isdigit() else ' (retificadora)'
     if not opc.get('baixar'):
         return r
     pasta, aviso, cand, nivel = (list(destino_empresa(opc.get('pastas') or {}, emp, comp)) + ['empresa'])[:4]
@@ -410,7 +421,7 @@ def conferir_empresa(tok, cert, contratante, emp, comp, opc, consumo):
     try:
         for rot, _arq, b in pdfs:
             tipo = 'Recibo' if 'recibo' in rot else 'Declaracao'
-            r['arquivos'][tipo] = _grava(pasta, f"{'Recibo PGDAS-D' if tipo == 'Recibo' else 'Declaração PGDAS-D'} {m}-{a} - {nome}.pdf", b)
+            r['arquivos'][tipo] = _grava(pasta, f"{'Recibo PGDAS-D' if tipo == 'Recibo' else 'Declaração PGDAS-D'} {m}-{a} - {nome}{suf}.pdf", b)
     except OSError as e:
         r['pastaAviso'] = f'Não consegui gravar na pasta da empresa: {e}'
         return r
@@ -429,7 +440,7 @@ def conferir_empresa(tok, cert, contratante, emp, comp, opc, consumo):
     r['dasVenc'] = str(_acha(res['dados'], {'datavencimento', 'vencimento'}) or '')
     try:
         if das_pdf:
-            r['arquivos']['DAS'] = _grava(pasta, f'DAS {m}-{a} - {nome}.pdf', das_pdf[0][2])
+            r['arquivos']['DAS'] = _grava(pasta, f'DAS {m}-{a} - {nome}{suf}.pdf', das_pdf[0][2])
     except OSError as e:
         r['pastaAviso'] = f'Não consegui gravar o DAS: {e}'
         return r
@@ -439,7 +450,7 @@ def conferir_empresa(tok, cert, contratante, emp, comp, opc, consumo):
         ex = _pdfs(res['dados']) if res['http'] == 200 else []
         if ex:
             try:
-                r['arquivos']['Extrato'] = _grava(pasta, f'Extrato do DAS {m}-{a} - {nome}.pdf', ex[0][2])
+                r['arquivos']['Extrato'] = _grava(pasta, f'Extrato do DAS {m}-{a} - {nome}{suf}.pdf', ex[0][2])
             except OSError:
                 pass
         elif res['http'] != 200:

@@ -216,6 +216,8 @@
     const rc = r.receita;
     if (!rc || !rc.st) return { k: '', rot: '' };
     if (rc.st === 'ok' && r.pgdas === 'N/A') return { k: 'verificar', rot: 'marcado “N/A”, mas a Receita tem declaração do período' };
+    // tirou o "Sim" de um PGDAS já confirmado = vai retificar; o robô espera a declaração nova
+    if (rc.st === 'ok' && rc.decl && r.pgdas !== 'Sim') return { k: 'retif', rot: 'Em retificação' };
     if (rc.st === 'ok') return { k: 'ok', rot: rc.msg || 'Transmitido' };
     if (rc.st === 'nao' && r.pgdas === 'Sim') return { k: 'verificar', rot: 'marcado “Sim”, mas a Receita não tem declaração do período' };
     if (rc.st === 'nao') return { k: 'nao', rot: 'Ainda não transmitido' };
@@ -232,7 +234,8 @@
     const docs = Object.keys(rc.arquivos || {});
     const docsHtml = docs.length ? `<button class="fs-rf-docs" data-a="pasta" data-id="${r.id}" title="${e(rc.pasta || '')}">📄 ${docs.map((d) => ROT_DOC[d] || d).join(' · ')}${rc.dasValor ? ` · R$ ${Number(rc.dasValor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''}</button>` : '';
     const av = [rc.pastaAviso, rc.dasAviso].filter(Boolean).map((x) => `<small class="fs-rf-av">⚠ ${e(x)}</small>`).join('');
-    if (s.k === 'ok') return `<div class="fs-rf ok"${tt}>✓ ${e(s.rot)}${docsHtml}${av}</div>`;
+    if (s.k === 'retif') return `<div class="fs-rf"${tt}><span class="fs-rf-b rt">↻ Em retificação</span><small class="fs-rf-t">aguardando a retificadora na Receita · a declaração atual é a <b>${e(rc.decl)}</b>${rc.retificadora ? '' : ' (original)'}</small><small class="fs-rf-t">o robô confere de novo e só marca “Sim” quando aparecer a declaração nova</small></div>`;
+    if (s.k === 'ok') return `<div class="fs-rf ok"${tt}>✓ ${e(s.rot)}${rc.retificadora && rc.anterior ? `<small class="fs-rf-ant">substitui a <s>${e(rc.anterior)}</s></small>` : ''}${docsHtml}${av}</div>`;
     if (s.k === 'verificar') return `<div class="fs-rf"${tt}><span class="fs-rf-b vf">⚠ Verificar</span><small class="fs-rf-t vf">${e(s.rot)}</small></div>`;
     if (s.k === 'semproc') return `<div class="fs-rf"><span class="fs-rf-b sp">Sem procuração</span><small class="fs-rf-t sp">${e(s.rot)}</small></div>`;
     if (s.k === 'semcnpj') return `<div class="fs-rf"><span class="fs-rf-b sc">Sem CNPJ</span><small class="fs-rf-t">${e(s.rot)}</small></div>`;
@@ -252,19 +255,19 @@
     const rd = ig.rodando && ig.rodando.comp === FS.comp ? ig.rodando : null;
     $('#fsReceita').disabled = !!rd || ig.pendente;
     $('#fsReceita').textContent = rd ? 'Robô rodando…' : ig.pendente ? 'Aguardando o robô…' : '▶ Iniciar robô';
-    const c = { ok: 0, nao: 0, verificar: 0, semproc: 0, semcnpj: 0, erro: 0 };
+    const c = { ok: 0, nao: 0, verificar: 0, retif: 0, semproc: 0, semcnpj: 0, erro: 0 };
     FS.linhas.forEach((r) => { const k = recSit(r).k; if (k) c[k]++; });
     const algum = Object.values(c).some(Boolean);
     let prog = '';
     if (rd) prog = `<div class="fs-rprog"><span>Conferindo na Receita · ${rd.feito} de ${rd.total} empresas</span><div class="fs-rbar"><i style="width:${rd.total ? Math.round(rd.feito / rd.total * 100) : 0}%"></i></div></div>`;
     else if (ig.pendente) prog = `<div class="fs-rprog"><span>${ig.online ? 'Pedido enviado ao robô…' : 'Pedido guardado: roda quando o computador do robô ligar.'}</span></div>`;
-    else if (u && u.comp === FS.comp) prog = `<div class="fs-rprog ${u.erro ? 'er' : ''}"><span>${u.erro ? '⚠ ' + e(u.erro) : `✓ Conferência concluída · ${u.total} empresa(s) consultada(s)${u.resumo && u.resumo.arquivos ? ` · ${u.resumo.arquivos} documento(s) salvo(s)` : ''}${u.resumo && u.resumo.confirmadas ? ` · ${u.resumo.confirmadas} já confirmada(s) antes` : ''}${u.resumo && u.resumo.semEsc ? ` · ${u.resumo.semEsc} sem Escrituração concluída (não entram)` : ''}`}</span><small>${e(u.emBr || '')}${u.por ? ' · ' + e(u.por) : ''}</small></div>`;
+    else if (u && u.comp === FS.comp) prog = `<div class="fs-rprog ${u.erro ? 'er' : ''}"><span>${u.erro ? '⚠ ' + e(u.erro) : `✓ Conferência concluída · ${u.total} empresa(s) consultada(s)${u.resumo && u.resumo.arquivos ? ` · ${u.resumo.arquivos} documento(s) salvo(s)` : ''}${u.resumo && u.resumo.confirmadas ? ` · ${u.resumo.confirmadas} já confirmada(s) antes` : ''}${u.resumo && u.resumo.semEsc ? ` · ${u.resumo.semEsc} sem Escrituração concluída (não entram)` : ''}${u.resumo && u.resumo.retificadas ? ` · ${u.resumo.retificadas} retificadora(s) encontrada(s)` : ''}${u.resumo && u.resumo.retif ? ` · ${u.resumo.retif} ainda aguardando a retificadora` : ''}`}</span><small>${e(u.emBr || '')}${u.por ? ' · ' + e(u.por) : ''}</small></div>`;
     if (!algum && !prog) { box.hidden = true; return; }
     const t = [['ok', 'PGDAS confirmados na Receita', '#059669'], ['nao', 'Ainda não transmitidos', '#6366f1'], ['verificar', 'Verificar (divergência)', '#d97706'],
-      ['semproc', 'Sem procuração no e-CAC', '#dc2626'], ['semcnpj', 'Sem CNPJ no cadastro', '#64748b'], ['erro', 'Falha na consulta', '#9f1239']].filter(([k], i) => i < 4 || c[k]);
+      ['retif', 'Em retificação', '#7c3aed'], ['semproc', 'Sem procuração no e-CAC', '#dc2626'], ['semcnpj', 'Sem CNPJ no cadastro', '#64748b'], ['erro', 'Falha na consulta', '#9f1239']].filter(([k], i) => i < 3 || c[k]);
     box.hidden = false;
     box.innerHTML = prog + (algum ? `<div class="fs-rtiles">${t.map(([k, rot, cor]) => `<button class="fs-rt" style="--c:${cor}" data-rk="${k}"><b>${c[k]}</b>${rot}</button>`).join('')}</div>` : '');
-    box.querySelectorAll('[data-rk="verificar"]').forEach((b) => b.addEventListener('click', () => { FS.chip = 'verificar'; desenhaTudo(); }));
+    box.querySelectorAll('[data-rk="verificar"], [data-rk="retif"]').forEach((b) => b.addEventListener('click', () => { FS.chip = b.dataset.rk; desenhaTudo(); }));
   }
   async function conferirReceita() {
     const filtro = FS.analista || FS.busca.trim() || FS.chip !== 'todas';
@@ -274,7 +277,7 @@
     const bt = $('#fsReceita'); bt.disabled = true;
     const x = await window.fiscocont.fechamento.conferirReceita(FS.comp, ids);
     if (x && x.error) { bt.disabled = false; toast(x.error, true); return; }
-    toast(`Robô iniciado${ids ? ` (${ids.length} empresa${ids.length > 1 ? 's' : ''} do filtro)` : ''}. Só entram as empresas com Escrituração concluída = Sim e ainda não confirmadas.`);
+    toast(`Robô iniciado${ids ? ` (${ids.length} empresa${ids.length > 1 ? 's' : ''} do filtro)` : ''}. Entram as empresas com Escrituração concluída = Sim ainda não confirmadas ou em retificação.`);
   }
 
   function filtradas() {
@@ -288,6 +291,7 @@
       if (FS.chip === 'semmov') return r.semMovimento;
       if (FS.chip === 'concluida') return st === 'concluida';
       if (FS.chip === 'verificar') return recSit(r).k === 'verificar';
+      if (FS.chip === 'retif') return recSit(r).k === 'retif';
       return true;
     });
   }

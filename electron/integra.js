@@ -259,13 +259,21 @@ function pararRobo() {
 // Quem entra quando o Admin clica em "Iniciar robô": empresas com Escrituração concluída = Sim que ainda não foram
 // confirmadas na Receita — inclusive as já consultadas antes como "ainda não transmitido" (são consultadas de novo a
 // cada clique; antes havia um intervalo de 6 h que fazia o robô pular essas empresas).
-function _alvos(mes, cad, ids, automatica, cfg, cont) {
+// Retificação (Rafael, 19/11/2026): tirar o "Sim" de um PGDAS já confirmado = vai retificar. A empresa volta a ser
+// conferida; enquanto a Receita mostrar a MESMA declaração o robô não remarca "Sim"; quando aparecer outro número, é a
+// retificadora: marca "Sim", guarda a anterior e baixa de novo os documentos (salvos como "(retificadora)").
+const _emRetificacao = (r) => !!(r && r.receita && r.receita.st === 'ok' && r.receita.decl && !['Sim', 'N/A'].includes(r.pgdas));
+// DAS que falhou por instabilidade do Serpro (ex.: Erro-PGDASD-058, tempo esgotado): tenta de novo na próxima conferência
+const _dasTemporario = (rc) => !!(rc && rc.dasAviso && /058|tempo esperado|tente novamente|indispon|timeout|tempo limite/i.test(rc.dasAviso));
+function _alvos(mes, cad, ids, automatica, cfg, cont, comp) {
   const out = [];
   for (const [id, r] of Object.entries(mes)) {
     if (ids && !ids.includes(id)) continue;
     const c = cad[id] || {};
     const rc = r.receita || {};
     if (r.esc !== 'Sim') { cont.semEsc++; continue; }               // só empresas com a Escrituração concluída = Sim
+    if (rc.st === 'ok' && _emRetificacao(r)) { out.push({ id, r, c, retifDe: rc.decl }); continue; }
+    if (rc.st === 'ok' && r.das !== 'N/A' && _dasTemporario(rc) && Date.now() <= _vencimento(comp).getTime()) { out.push({ id, r, c }); continue; }
     if (rc.st === 'ok') {
       // confirmada; só volta (para salvar os documentos) se o Admin apontou a pasta ou mudou a pasta das empresas
       if (rc.pastaAviso && (Object.keys(cfg.mapa || {}).some((k) => k === id || k.startsWith(id + '|')) || (cfg.pastaEmpresas || '') !== (rc.pastaBase || ''))) out.push({ id, r, c });
@@ -291,7 +299,7 @@ async function _executar(comp, ids, por, n, automatica) {
     const cfg = (await _cfg()) || {};
     if (!cfg.key) throw new Error('Chave do Serpro não cadastrada.');
     const cont = { semEsc: 0, confirmadas: 0 };
-    const alvos = _alvos(mes, cad, ids, automatica, cfg, cont);
+    const alvos = _alvos(mes, cad, ids, automatica, cfg, cont, comp);
     resumo.pulou = Object.keys(mes).length - alvos.length;
     resumo.semEsc = cont.semEsc; resumo.confirmadas = cont.confirmadas;
     await f.updateDoc(ref, { rodando: { comp, feito: 0, total: alvos.length, por }, ...(n ? { atendido: n } : {}) });
@@ -306,7 +314,7 @@ async function _executar(comp, ids, por, n, automatica) {
       if (com.length) {
         const r = await _python({
           acao: 'conferir', comp, baixar: true, emitirDas,
-          empresas: com.map((a) => ({ id: a.id, cnpj: a.c.cnpj, nome: a.c.nome || a.r.nome, das: a.r.das })),
+          empresas: com.map((a) => ({ id: a.id, cnpj: a.c.cnpj, nome: a.c.nome || a.r.nome, das: a.r.das, retifDe: a.retifDe || '' })),
           pastas: { base: cfg.pastaEmpresas || '', subpasta: cfg.subpasta || '', mapa: cfg.mapa || {}, fallback: D.pastaFallback() || '' },
         }, cfg);
         if (!r.ok) throw new Error(r.erro || 'Falha na conferência.');
@@ -341,6 +349,14 @@ async function _gravaResultados(comp, res, resumo, cfg) {
     const upd = {};
     for (const x of res) {
       const r = emp[x.id]; if (!r) continue;
+      const ant = r.receita || {};
+      // em retificação e a Receita ainda mostra a mesma declaração: não remarca "Sim" nem troca os documentos
+      if (x.st === 'ok' && x.mesma) {
+        upd[`empresas.${x.id}.receita.em`] = new Date().toLocaleString('pt-BR').slice(0, 17);
+        upd[`empresas.${x.id}.receita.emMs`] = Date.now();
+        resumo.retif = (resumo.retif || 0) + 1;
+        continue;
+      }
       const rc = {
         st: x.st, msg: x.msg || '', em: new Date().toLocaleString('pt-BR').slice(0, 17), emMs: Date.now(),
         decl: x.decl || '', dataTrans: x.dataTrans || '', pasta: x.pasta || '',
@@ -349,16 +365,26 @@ async function _gravaResultados(comp, res, resumo, cfg) {
       };
       // confirmação já gravada antes e agora só faltavam os arquivos: mantém a data da confirmação
       if (x.st === 'ok' && r.receita && r.receita.st === 'ok') { rc.decl = rc.decl || r.receita.decl || ''; }
+      // retificadora (número novo): guarda a(s) anterior(es); sem isso, mantém o que já sabia da última retificação
+      if (x.st === 'ok' && x.retificadora) {
+        rc.retificadora = true;
+        rc.anterior = x.retifDe || ant.decl || '';
+        rc.anteriores = [...new Set([...(ant.anteriores || []), rc.anterior].filter(Boolean))];
+        rc.msg = `Retificadora${rc.decl ? ` · Decl. ${rc.decl}` : ''}`;
+        resumo.retificadas = (resumo.retificadas || 0) + 1;
+      } else if (x.st === 'ok' && ant.retificadora && rc.decl === ant.decl) {
+        Object.assign(rc, { retificadora: true, anterior: ant.anterior || '', anteriores: ant.anteriores || [], msg: ant.msg || rc.msg });
+      }
       upd[`empresas.${x.id}.receita`] = rc;
       if (x.st === 'ok') {
         resumo.ok++;
-        if (r.pgdas === '' || r.pgdas === 'Não' || r.pgdas == null) {            // a Receita confirma: marca Sim
+        if (r.pgdas === '' || r.pgdas === 'Não' || r.pgdas == null) {            // a Receita confirma (ou chegou a retificadora): marca Sim
           upd[`empresas.${x.id}.pgdas`] = 'Sim';
           upd[`empresas.${x.id}.pgdasRobo`] = true;
           upd[`empresas.${x.id}.alteradoPor`] = 'Robô (Receita Federal)';
           upd[`empresas.${x.id}.alteradoEm`] = f.serverTimestamp();
           const novo = { ...r, pgdas: 'Sim' };
-          upd[`empresas.${x.id}.fin`] = (_ok(novo.esc) && _ok(novo.pgdas)) ? (r.fin || _hojeBr()) : '';
+          upd[`empresas.${x.id}.fin`] = (_ok(novo.esc) && _ok(novo.pgdas)) ? (x.retificadora ? _hojeBr() : (r.fin || _hojeBr())) : '';
         }
         if (r.pgdas === 'N/A') resumo.verificar++;
         resumo.arquivos += Object.keys(rc.arquivos).length;
