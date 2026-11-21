@@ -423,6 +423,11 @@ async function _login() {
 }
 
 async function _portalAntigo() {
+  // achado real (vídeo de 21/11): depois do login aparece "Atenção · Prepare-se para a evolução dos serviços digitais da
+  // RFB" com "Continuar no e-CAC por enquanto" / "Acessar o portal Serviços da Receita Federal". Fica no e-CAC.
+  let ev = await _js(JS_CLICA('/CONTINUAR NO E-?CAC/')).catch(() => false);
+  if (!ev) for (const q of _win.webContents.mainFrame.framesInSubtree) { ev = await q.executeJavaScript(JS_CLICA('/CONTINUAR NO E-?CAC/'), true).catch(() => false); if (ev) break; }
+  if (ev) { _log(`aviso da Receita: clicou em "${ev}"`); await _sleep(900); }
   const t = (await _js(JS_TEXTO).catch(() => '')).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
   if (/NOVO/.test(t) && /ANTIG/.test(t) && /(PORTAL|VERSAO|ECAC)/.test(t)) {
     const c = await _js(JS_CLICA('/ANTIG|VERSAO (ANTERIOR|CLASSICA)|CONTINUAR (NO|NA) (ATUAL|VERSAO ATUAL)/')).catch(() => false);
