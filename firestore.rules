@@ -178,7 +178,7 @@ service cloud.firestore {
     match /dctfweb_pedidos/{id} {
       allow read: if reinfOk();
       allow create: if reinfOk() && request.resource.data.uid == request.auth.uid && request.resource.data.status == 'novo'
-        && request.resource.data.tipo in ['conferir', 'transmitir'];
+        && request.resource.data.tipo in ['conferir', 'transmitir', 'guia'];
       allow update, delete: if admin();
     }
     // Consulta automática da SEFIN: a vez de cada horário (quem pegou, quando, resultado) — mesmo acesso dos dois módulos

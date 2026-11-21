@@ -244,7 +244,7 @@ async function iniciarRobo() {
     python: (p) => _python(p),
     consumo: async (c) => {
       const mesC = _mesAtual();
-      await f.updateDoc(_ref(), { [`consumo.${mesC}.consulta`]: f.increment(c.consulta || 0), [`consumo.${mesC}.declaracao`]: f.increment(c.declaracao || 0) });
+      await f.updateDoc(_ref(), { [`consumo.${mesC}.consulta`]: f.increment(c.consulta || 0), [`consumo.${mesC}.declaracao`]: f.increment(c.declaracao || 0), [`consumo.${mesC}.emissao`]: f.increment(c.emissao || 0) });
     },
   });
 }

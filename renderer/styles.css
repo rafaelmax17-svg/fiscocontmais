@@ -2107,6 +2107,14 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .dc-nota div{display:flex;gap:9px;margin-top:8px}.dc-nota p{margin:0}.dc-emp{min-width:200px}.dc-rs{font-style:normal;font-weight:700;background:none!important}.dc-rs.ok{color:#15803d}.dc-rs.ab{color:#b45309}.dc-rs.er{color:#b91c1c}.dc-emp small{white-space:nowrap}.dc-g .rf-tab td{padding:9px 7px}.dc-nota div span{flex:none;width:21px;height:21px;border-radius:50%;background:#dbeafe;color:#1e40af;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center}
 .dc-conf{width:520px}.dc-conf p{margin:0;font-size:13px;line-height:1.5}.dc-irr{color:#b91c1c;font-weight:700}
 @media (max-width:1250px){.dc-g{grid-template-columns:1fr}.dc-lado{position:static}}
+.dc-og{display:inline-block;font-size:11px;border-radius:6px;padding:1px 6px;margin:1px 3px 1px 0;background:var(--bg);border:1px solid var(--line);color:var(--ink);white-space:nowrap}
+.dc-cods td{padding:5px 6px}.dc-cods tr.dc-gr td{background:var(--bg);border-top:1px solid var(--line)}.dc-cods small{color:var(--ink2);font-size:11px}.dc-cods input{width:15px;height:15px;cursor:pointer}
+.dc-qs{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:10px;font-size:12px;color:var(--ink2)}.dc-qs select{margin-left:6px;padding:4px 6px;border-radius:8px;border:1px solid var(--line);background:var(--panel,#fff);color:var(--ink)}
+.dc-qs .btn-dc{margin:0;width:auto}
+.dc-nota2{margin-top:8px;font-size:11.5px;color:var(--ink2)}
+.dc-g .rf-tab{overflow-x:auto}.dc-sit small{display:block;margin-top:3px;color:var(--ink2);font-size:11px}
+.dc-chk{margin-top:12px;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:10px 12px;font-size:12.5px;color:#78350f}.dc-chk label{display:flex;gap:8px;align-items:flex-start;margin-top:6px;cursor:pointer}.dc-chk input{margin-top:2px}
+[data-theme="dark"] .dc-chk{background:#3a2e0b;border-color:#6b5414;color:#fde68a}
 /* Fisconforme · PDF para o cliente (2.4.11) */
 .fc-bpdf{background:linear-gradient(135deg,#dc2626,#b91c1c)!important;color:#fff!important;border-color:transparent!important}.fc-bpdf:hover{filter:brightness(1.08)}
 .fc-bpdf:disabled{opacity:.42;cursor:not-allowed;filter:none}

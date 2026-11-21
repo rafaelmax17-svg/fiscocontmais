@@ -135,12 +135,18 @@
     if (x.mes && x.mes.qtd) det.push(`${x.mes.qtd} ${tipo === 'cte' ? 'CT-e' : 'nota(s)'} de ${compRot(X.comp)} · R$ ${brl(x.mes.valor)}`);
     // a SEFAZ entrega por sequência (todos os meses): cada nota vai para a pasta do mês de emissão
     const outros = Object.entries(x.meses || {}).filter(([m]) => m !== X.comp).sort((a, b) => b[0].localeCompare(a[0]));
-    if (outros.length) det.push(`${x.mes && x.mes.qtd ? 'Também vieram' : `Nenhuma de ${compRot(X.comp)} nesta busca. Vieram`} ${outros.map(([m, n]) => `${n} de ${m === 'sem-data' ? 'sem data' : compRot(m)}`).join(', ')}, salvas na pasta do mês de emissão`);
+    // a SEFAZ (Ambiente Nacional) entrega em ordem de chegada (NSU), sem filtrar por mês: enquanto a fila estiver em
+    // meses anteriores, a competência escolhida ainda não chegou — dizer isso claramente (pedido do Rafael, 21/11)
+    const mesesOut = outros.map(([m]) => m).filter((m) => m !== 'sem-data').sort();
+    const fila = !(x.mes && x.mes.qtd) && mesesOut.length ? mesesOut[mesesOut.length - 1] : '';
+    const listaOut = outros.map(([m, n]) => `${n} de ${m === 'sem-data' ? 'sem data' : compRot(m)}`).join(', ');
+    if (fila) det.push(`As notas de ${compRot(X.comp)} ainda não chegaram: a SEFAZ entrega em ordem de chegada, sem escolher o mês, e a fila desta empresa ainda está em ${compRot(fila)}. Vieram ${listaOut}, guardadas na pasta do mês delas. As de ${compRot(X.comp)} vêm nas próximas buscas.`);
+    else if (outros.length) det.push(`Vieram também ${listaOut} (atrasadas na fila da SEFAZ), guardadas na pasta do mês delas.`);
     const extra = [x.resumos && `${x.resumos} só resumo`, x.ciencias && `${x.ciencias} ciência(s) feita(s)`, x.canceladas && `${x.canceladas} cancelada(s)`].filter(Boolean);
-    if (extra.length) det.push(extra.join(' · '));
+    if (extra.length) det.push(`${outros.length ? 'Destas notas: ' : ''}${extra.join(' · ')}`);
     if (x.resumos && x.ciencias) det.push('o XML que falta chega na próxima busca (depois de 1 hora)');
     else if (x.resumos && tipo === 'nfe') det.push('o XML completo sai depois da Ciência da Operação');
-    if (/libera nova consulta|aguardar/.test(x.aviso || '')) det.push(x.aviso.replace(/ \(regra da SEFAZ[^)]*\)/, ''));
+    if (/libera nova consulta|aguardar/.test(x.aviso || '')) det.push(/aguardar/.test(x.aviso) ? 'A SEFAZ pediu 1 hora de intervalo: a próxima busca continua a fila de onde parou.' : x.aviso.replace(/ \(regra da SEFAZ[^)]*\)/, ''));
     // segunda opção: NF-e recebidas pelo DFe-Download da SEFIN enquanto o Ambiente Nacional pede 1 hora
     const sf = tipo === 'nfe' && x.sefin;
     if (sf) {
@@ -148,7 +154,8 @@
       else det.push(`Pela SEFIN (DFe-Download): ${(SAI[sf.status] || [0, sf.status])[1]}`);
       if (sf.msg) det.push(sf.msg);
     }
-    const c = (x.baixadas || (sf && ['baixado', 'parcial'].includes(sf.status) && sf.qtd)) ? chip('dfe-ok', '✓ baixado') : sf ? chip(...(SAI[sf.status] || ['dfe-nr', sf.status]))
+    const sfOk = sf && ['baixado', 'parcial'].includes(sf.status) && sf.qtd;
+    const c = fila && !sfOk ? chip('dfe-ag', `◷ fila da SEFAZ em ${compRot(fila)}`) : ((x.mes && x.mes.qtd) || sfOk) ? chip('dfe-ok', '✓ baixado') : x.baixadas ? chip('dfe-ok', '✓ baixado') : sf ? chip(...(SAI[sf.status] || ['dfe-nr', sf.status]))
       : x.resumos ? chip('dfe-ag', 'só resumo') : /libera nova consulta|aguardar/.test(x.aviso || '') ? chip('dfe-nr', 'aguardando 1 h') : chip('dfe-nr', 'nada novo');
     return c + (det.length ? `<small>${det.map(e).join('<br>')}</small>` : '') + pastaBt(x.pasta);
   }

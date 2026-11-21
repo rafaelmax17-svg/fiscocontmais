@@ -25,6 +25,7 @@ const path = require('path');
 const { app, BrowserWindow, session } = require('electron');
 const auth = require('./auth');
 const nfePortal = require('./nfe_portal');
+const ecac = require('./reinf_ecac');
 
 const MODULO = 'fiscal-reinf';
 const COL = 'reinf';
@@ -67,6 +68,8 @@ function _prog(txt, extra) { try { D.notificar('reinf:progresso', { txt, ...(ext
 
 function init(deps) {
   D = deps;
+  ecac.init({ userData: () => D.userData(), janelaPai: () => (D.janelaPai ? D.janelaPai() : null), runFiscal: (a, o) => D.runFiscal(a, o),
+    log: (m) => _log(m), prog: (t, x) => _prog(t, x), cnpjCertificado: () => cnpjCertificado(), parando: () => _parar });
   app.on('select-client-certificate', (event, webContents, url, lista, callback) => {
     if (!_vivo() || webContents.id !== _win.webContents.id) return;
     const alvo = lista.find((c) => _cnpjCert(c) === cnpjCertificado());
@@ -216,6 +219,19 @@ async function _empresa(emp, comp) {
   return { status, fonte: 'api', fech4099: f4, fech2099: f2, eventos: [], totais: {}, avisos, msg: avisos.join(' ') };
 }
 
+// ------------------------------------------------------------------ valores da REINF (eCAC, com a pessoa)
+const _sigRecibos = (d) => `${(d.fech4099 || {}).recibo || ''}|${(d.fech2099 || {}).recibo || ''}`;
+// junta ao resultado da consulta oficial o que foi lido no eCAC (eventos, totalizador por código, PDF/XML): recibo,
+// data e situação continuam os da consulta oficial
+function _aplicaEcac(doc, src) {
+  const tt = !!(src.temTotalizador ?? (src.ecac && src.ecac.temTotalizador));
+  const f = (a, b) => ({ ...(b || {}), ...(a || {}), porCodigo: (b || {}).porCodigo || [], porNatureza: (b || {}).porNatureza || [], pdf: (b || {}).pdf || '', xml: (b || {}).xml || '', semMovimento: !!(b || {}).semMovimento });
+  return { ...doc, fonte: tt ? 'ecac' : 'api', eventos: src.eventos || [], totais: tt ? src.totais : (doc.totais || {}), somaEventos: src.somaEventos || {},
+    pasta: src.pasta || doc.pasta || '', fech4099: f(doc.fech4099, src.fech4099), fech2099: f(doc.fech2099, src.fech2099),
+    ecac: { ok: true, recibos: _sigRecibos(doc), em: (src.ecac && src.ecac.em) || new Date().toISOString(), temTotalizador: tt },
+    avisos: [...(doc.avisos || []), ...((src.ecac ? [] : src.avisos) || [])] };
+}
+
 // ------------------------------------------------------------------ empresas e nuvem
 async function _grava(comp, emp, dados) {
   const { db, f } = _fs();
@@ -289,7 +305,9 @@ async function dados(comp) {
   const [atual, anterior, emps, meta, dctf] = await Promise.all([ler(COL, comp), ler(COL, ant).catch(() => []), empresas(),
     f.getDoc(f.doc(db, COL, `_meta_${comp}`)).catch(() => null), ler('dctfweb', comp).catch(() => [])]);
   const porCnpj = new Map(dctf.map((x) => [x.cnpj, x]));
-  return { comp, anterior: ant, empresas: emps, docs: atual.map((d) => _comDctf(d, porCnpj.get(d.cnpj))),
+  // os valores mostrados são SEMPRE os da REINF (eCAC); a DCTFWeb fica na aba REINF × DCTFWeb, para comparar
+  void porCnpj;
+  return { comp, anterior: ant, empresas: emps, docs: atual,
     docsAnterior: anterior.map((x) => ({ cnpj: x.cnpj, status: x.status, nEventos: (x.eventos || []).length, fechado: x.status === 'fechado' })),
     meta: meta && meta.exists() ? meta.data() : null, rodando: _rodando, certificado: cnpjCertificado() };
 }
@@ -310,6 +328,9 @@ async function conferir({ comp, cnpjs, auto } = {}) {
   try {
     const { db, f } = _fs();
     await f.setDoc(f.doc(db, COL, `_meta_${comp}`), { rodando: true, inicio: new Date().toISOString(), por: s.nome || s.email || '', maquina: os.hostname(), auto: !!auto, fonte: 'api' }, { merge: true }).catch(() => {});
+    const anteriores = new Map();
+    (await f.getDocs(f.query(f.collection(db, COL), f.where('comp', '==', comp))).catch(() => ({ forEach() {} }))).forEach((x) => { const d = x.data(); if (d && d.cnpj) anteriores.set(d.cnpj, d); });
+    const precisaEcac = [];
     let errosSeguidos = 0;
     for (const [n, emp] of lista.entries()) {
       if (_parar) break;
@@ -319,6 +340,12 @@ async function conferir({ comp, cnpjs, auto } = {}) {
       try { r = await _empresa(emp, comp); } catch (e) { r = { status: 'erro', fonte: 'api', msg: String(e.message || e).slice(0, 300) }; }
       if (_certFaltou) throw new Error('o certificado do escritório não está instalado no Windows deste computador.');
       if (_parar && r.status !== 'erro' && !r.fech4099) break;
+      // valores já lidos no eCAC para os MESMOS recibos: continuam valendo; recibo novo → precisa ler no eCAC
+      const ant = anteriores.get(emp.cnpj);
+      if (r.status === 'fechado') {
+        if (ant && ant.ecac && ant.ecac.ok && ant.ecac.recibos === _sigRecibos(r)) r = _aplicaEcac(r, ant);
+        else precisaEcac.push(emp);
+      }
       if (r.status === 'erro') res.erros++; else res.ok++;
       await _grava(comp, emp, r).catch((e) => _log(`gravar na nuvem: ${e.message || e}`));
       try { D.notificar('reinf:empresa', { comp, cnpj: emp.cnpj }); } catch (_) {}
@@ -326,7 +353,31 @@ async function conferir({ comp, cnpjs, auto } = {}) {
       errosSeguidos = r.status === 'erro' ? errosSeguidos + 1 : 0;
       if (errosSeguidos >= 5) { _log('5 erros seguidos: conferência interrompida.'); throw new Error(`a conferência parou depois de 5 erros seguidos: ${r.msg || 'erro'}`); }
     }
-    await f.setDoc(f.doc(db, COL, `_meta_${comp}`), { rodando: false, fim: new Date().toISOString(), por: s.nome || s.email || '', maquina: os.hostname(), auto: !!auto, ok: res.ok, erros: res.erros, total: lista.length, fonte: 'api' }, { merge: true }).catch(() => {});
+    // valores da REINF: só as empresas com fechamento novo, no eCAC, com a pessoa clicando em "Alterar" (nunca na
+    // conferência automática das 12h, que roda sem ninguém olhando)
+    res.ecacPendentes = precisaEcac.length;
+    if (precisaEcac.length && !_parar && !auto && process.platform === 'win32') {
+      _log(`valores pelo eCAC: ${precisaEcac.length} empresa(s) com fechamento novo`);
+      const atuais = new Map();
+      (await f.getDocs(f.query(f.collection(db, COL), f.where('comp', '==', comp)))).forEach((x) => { const d = x.data(); if (d && d.cnpj) atuais.set(d.cnpj, d); });
+      const e2 = await ecac.ler(precisaEcac, comp, anteriores, async (emp, r) => {
+        const doc = atuais.get(emp.cnpj); if (!doc) return;
+        let novo;
+        if (r.ok) novo = _aplicaEcac(doc, r);
+        else {
+          const av = r.caixaPostal ? 'Mensagem importante na Caixa Postal do eCAC: os valores não foram lidos. Abra a mensagem pelo eCAC quando decidir dar ciência.'
+            : r.semProcuracao ? `eCAC: sem procuração para trocar o perfil${r.msg ? ` (${String(r.msg).toLowerCase()})` : ''}.`
+              : r.pulada ? 'Valores da REINF: empresa pulada no eCAC.' : `Valores da REINF: ${r.erro || 'não lidos no eCAC'}.`;
+          novo = { ...doc, caixaPostal: !!r.caixaPostal, avisos: [...(doc.avisos || []), av], msg: av };
+        }
+        if (r.ok) novo.caixaPostal = false;
+        await _grava(comp, emp, novo).catch((e) => _log(`gravar na nuvem: ${e.message || e}`));
+        try { D.notificar('reinf:empresa', { comp, cnpj: emp.cnpj }); } catch (_) {}
+      });
+      res.ecacLidas = e2.lidas; res.ecacPuladas = e2.puladas;
+      if (e2.parouPor) _log(`leitura pelo eCAC parou: ${e2.parouPor}`);
+    }
+    await f.setDoc(f.doc(db, COL, `_meta_${comp}`), { rodando: false, fim: new Date().toISOString(), por: s.nome || s.email || '', maquina: os.hostname(), auto: !!auto, ok: res.ok, erros: res.erros, total: lista.length, fonte: 'api', ecacPendentes: res.ecacPendentes || 0, ecacLidas: res.ecacLidas || 0 }, { merge: true }).catch(() => {});
     // REINF × DCTFWeb: o computador do Integra Contador lê a DCTFWeb das empresas conferidas (valores por imposto)
     if (!_parar) { try { await require('./dctfweb').pedirAuto(comp, cnpjs && cnpjs.length ? lista.map((x) => x.cnpj) : []); } catch (_) {} }
   } catch (e) {
@@ -344,4 +395,4 @@ async function conferir({ comp, cnpjs, auto } = {}) {
 function parar() { _parar = true; return { ok: true }; }
 const ocupado = () => _rodando;
 
-module.exports = { init, podeUsar, conferir, parar, dados, empresas, salvarEmpresas, certificadoInstalado, ocupado, cnpjCertificado, MODULO, _fechamento, _comDctf };
+module.exports = { init, podeUsar, conferir, parar, dados, empresas, salvarEmpresas, certificadoInstalado, ocupado, cnpjCertificado, MODULO, _fechamento, _comDctf, _aplicaEcac };

@@ -545,7 +545,7 @@ def dctf_debitos(xml):
     publicado, por isso a leitura é tolerante e devolve também a estrutura encontrada (para o passo a passo)."""
     from lxml import etree
     raiz = etree.fromstring(xml.encode('utf-8') if isinstance(xml, str) else xml, etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True))
-    out = {'origens': {}, 'reinf': {}, 'reinfOrigem': {}, 'outros': {}, 'saldo': 0.0, 'estrutura': [], 'periodo': '', 'cnpj': ''}
+    out = {'origens': {}, 'reinf': {}, 'reinfOrigem': {}, 'outros': {}, 'codigos': [], 'saldo': 0.0, 'estrutura': [], 'periodo': '', 'cnpj': ''}
     for el in raiz.iter():
         n = _local(el.tag).lower()
         if n in ('perapuracao', 'periodoapuracao') and not out['periodo']:
@@ -559,13 +559,16 @@ def dctf_debitos(xml):
             continue
         vistos.add(id(b))
         origem = ORIGEM_DCTF.get((b.findtext('{*}sistemaUsuarioDctf') or b.findtext('sistemaUsuarioDctf') or '').strip(), 'outra')
-        cod, val, saldo = '', None, None
+        cod, ext, val, saldo, venc = '', '', None, None, ''
         for el in b.iter():
             nm, tx = _local(el.tag), (el.text or '').strip()
             if not tx or len(el):
                 continue
             if not cod and _RX_COD.search(nm) and re.fullmatch(r'\d{4}(-?\d{2})?', tx):
                 cod = tx[:4]
+                ext = re.sub(r'\D', '', tx)[4:6]
+            elif not venc and re.search(r'venc', nm, re.I) and re.search(r'\d{4}-?\d{2}-?\d{2}|\d{2}/\d{2}/\d{4}', tx):
+                venc = tx[:10]
             elif val is None and _RX_VAL_DEB.search(nm):
                 val = _numxml(tx)
             elif saldo is None and _RX_SALDO.search(nm):
@@ -576,6 +579,7 @@ def dctf_debitos(xml):
         out['origens'][origem] = round(out['origens'].get(origem, 0.0) + v, 2)
         out['saldo'] = round(out['saldo'] + (saldo or 0.0), 2)
         if cod:
+            out['codigos'].append({'cod': cod, 'ext': ext, 'origem': origem, 'valor': round(v, 2), 'venc': venc})
             alvo = out['reinf'] if origem.startswith('REINF') else out['outros']
             alvo[cod] = round(alvo.get(cod, 0.0) + v, 2)
             if origem.startswith('REINF'):
@@ -606,7 +610,7 @@ def dctf_conferir_empresa(tok, cert, contratante, emp, comp, consumo):
     if d['cnpj'] and d['cnpj'][:8] != cnpj[:8]:
         r.update(situacao='erro', msg='O XML devolvido é de outro contribuinte.')
         return r
-    r.update(origens=d['origens'], reinf=d['reinf'], reinfOrigem=d['reinfOrigem'], outros=d['outros'], saldo=d['saldo'], estrutura=d['estrutura'])
+    r.update(origens=d['origens'], reinf=d['reinf'], reinfOrigem=d['reinfOrigem'], outros=d['outros'], codigos=d['codigos'][:80], saldo=d['saldo'], estrutura=d['estrutura'])
     return r
 
 
@@ -688,14 +692,25 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
             r['msg'] = 'Sem o XML da declaração na Receita; nada foi transmitido.'
             return r
         d = dctf_debitos(xml)
-        esperado = {k[:4]: round(float(v), 2) for k, v in (emp.get('esperado') or {}).items()}
-        if not esperado or any(abs(d['reinf'].get(k, 0.0) - v) > 0.01 for k, v in esperado.items()) or any(k not in esperado and v > 0.01 for k, v in d['reinf'].items()):
-            r.update(msg='Os débitos da REINF na DCTFWeb mudaram desde a conferência; nada foi transmitido. Atualize a conferência.', reinf=d['reinf'])
-            return r
         outras = {k: v for k, v in d['origens'].items() if not k.startswith('REINF') and v > 0.009}
-        if outras:                                       # eSocial / MIT na declaração: não transmite pelo sistema
-            r.update(msg='A DCTFWeb tem débitos de ' + ', '.join(sorted(outras)) + ': a transmissão não é feita pelo sistema.', origens=d['origens'])
-            return r
+        if emp.get('esperadoTudo') is not None:
+            # 2.4.17: declaração com folha (eSocial) e/ou MIT — a pessoa confirmou que estão fechados. Todos os débitos
+            # (de todas as origens) precisam ser exatamente os que ela viu na tela.
+            visto = {k[:4]: round(float(v), 2) for k, v in (emp.get('esperadoTudo') or {}).items()}
+            agora = {}
+            for x in d['codigos']:
+                agora[x['cod']] = round(agora.get(x['cod'], 0.0) + x['valor'], 2)
+            if not agora or any(abs(agora.get(k, 0.0) - v) > 0.01 for k, v in visto.items()) or any(k not in visto and v > 0.01 for k, v in agora.items()):
+                r.update(msg='Os débitos da DCTFWeb mudaram desde que você conferiu; nada foi transmitido. Atualize a DCTFWeb e confira de novo.', origens=d['origens'])
+                return r
+        else:
+            esperado = {k[:4]: round(float(v), 2) for k, v in (emp.get('esperado') or {}).items()}
+            if not esperado or any(abs(d['reinf'].get(k, 0.0) - v) > 0.01 for k, v in esperado.items()) or any(k not in esperado and v > 0.01 for k, v in d['reinf'].items()):
+                r.update(msg='Os débitos da REINF na DCTFWeb mudaram desde a conferência; nada foi transmitido. Atualize a conferência.', reinf=d['reinf'])
+                return r
+            if outras:                                   # eSocial / MIT sem a confirmação da pessoa: não transmite
+                r.update(msg='A DCTFWeb tem débitos de ' + ', '.join(sorted(outras)) + ': confirme a folha e o MIT antes de transmitir.', origens=d['origens'])
+                return r
         assinado = assinar_dctf(xml, chave_priv, cert_b64)
         dados = {**_periodo_dctf(comp), 'xmlAssinadoBase64': base64.b64encode(assinado.encode('utf-8')).decode('ascii')}
         rt = _dctf(tok, cert, contratante, cnpj, 'Declarar', 'TRANSDECLARACAO310', dados, consumo, 'declaracao')
@@ -727,6 +742,67 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
                 r['aviso'] = f'Recibo não gravado na pasta: {e}'[:200]
     else:
         r['aviso'] = ('Recibo ainda não disponível: ' + (rr.get('msg') or ''))[:200]
+    return r
+
+
+ORIGEM_ID = {'eSocial': 1, 'REINF CP': 6, 'REINF RET': 7, 'MIT': 8}
+
+
+def _pdf_resposta(dados):
+    if isinstance(dados, str):
+        try:
+            dados = json.loads(dados)
+        except Exception:
+            return None
+    if isinstance(dados, dict):
+        for k in ('PDFByteArrayBase64', 'pdfByteArrayBase64', 'pdf', 'darf'):
+            v = dados.get(k)
+            if isinstance(v, str) and len(v) > 200:
+                try:
+                    b = base64.b64decode(v)
+                    if b[:4] == b'%PDF':
+                        return b
+                except Exception:
+                    pass
+        pdfs = _pdfs(dados)
+        if pdfs:
+            return pdfs[0][2]
+    return None
+
+
+def dctf_guia_empresa(tok, cert, contratante, emp, comp, consumo):
+    """Guia (DARF) da DCTFWeb: GERARGUIA31 (declaração transmitida) ou GERARGUIAANDAMENTO313 (em andamento).
+    idsSistemaOrigem escolhe as origens dos débitos (1 eSocial, 6 REINF CP, 7 REINF RET, 8 MIT): a guia só tem as receitas
+    dessas origens. A Receita calcula valor, vencimento, multa/juros e o código de barras; o PDF vai para a pasta do cliente."""
+    cnpj = re.sub(r'\D', '', emp.get('cnpj') or '')
+    r = {'cnpj': cnpj, 'ok': False, 'msg': ''}
+    sit = emp.get('situacao') or dctf_situacao(_dctf(tok, cert, contratante, cnpj, 'Consultar', 'CONSDECCOMPLETA33', _periodo_dctf(comp), consumo))
+    dados = dict(_periodo_dctf(comp))
+    ids = sorted({ORIGEM_ID[o] for o in (emp.get('origens') or []) if o in ORIGEM_ID})
+    if ids:
+        dados['idsSistemaOrigem'] = ids
+    if sit == 'transmitida':
+        if emp.get('data'):
+            dados['DataAcolhimentoProposta'] = int(re.sub(r'\D', '', str(emp['data']))[:8])
+        res = _dctf(tok, cert, contratante, cnpj, 'Emitir', 'GERARGUIA31', dados, consumo, 'emissao')
+    elif sit == 'em_andamento':
+        res = _dctf(tok, cert, contratante, cnpj, 'Emitir', 'GERARGUIAANDAMENTO313', dados, consumo, 'emissao')
+    else:
+        r['msg'] = {'sem_declaracao': 'A Receita não tem DCTFWeb nesta competência.', 'semproc': 'Sem procuração eletrônica no e-CAC para a Liddera (DCTFWeb).'}.get(sit, 'A situação da DCTFWeb não pôde ser confirmada.')
+        return r
+    pdf = _pdf_resposta(res.get('dados')) if 200 <= (res.get('http') or 0) < 300 else None
+    if not pdf:
+        r['msg'] = ('A Receita não gerou a guia: ' + (res.get('msg') or f"HTTP {res.get('http')}"))[:400]
+        return r
+    r.update(ok=True, emAndamento=(sit == 'em_andamento'), msg='Guia gerada.')
+    pasta = emp.get('pasta') or ''
+    if pasta:
+        a, m = comp.split('-')
+        rot = emp.get('rotulo') or 'DCTFWeb'
+        try:
+            r['arquivo'] = _grava(pasta, f'DARF {rot} {m}-{a} - {_nome_arq(emp.get("nome") or cnpj)}.pdf', pdf)
+        except OSError as e:
+            r['aviso'] = f'Guia não gravada na pasta: {e}'[:200]
     return r
 
 
@@ -762,6 +838,13 @@ def processar(p):
                 except Exception as e:                          # uma empresa com problema não para as outras
                     out.append({'cnpj': emp.get('cnpj'), 'situacao': 'erro', 'msg': f'Falha na consulta: {e}'[:300]})
             return {'ok': True, 'token': tok, 'resultados': out, 'consumo': consumo}
+        if acao == 'dctf_guia':
+            consumo = {'consulta': 0, 'emissao': 0, 'declaracao': 0}
+            try:
+                r = dctf_guia_empresa(tok, cert, contratante, p['empresa'], p['comp'], consumo)
+            except Exception as e:
+                r = {'cnpj': (p.get('empresa') or {}).get('cnpj'), 'ok': False, 'msg': f'Falha ao gerar a guia: {e}'[:300]}
+            return {'ok': True, 'token': tok, 'resultado': r, 'consumo': consumo}
         if acao == 'dctf_transmitir':
             from cryptography.hazmat.primitives.serialization import load_pem_private_key
             from cryptography import x509
