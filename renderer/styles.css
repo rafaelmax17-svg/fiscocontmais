@@ -2151,3 +2151,24 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .fc-la{display:block;font-size:11px;color:var(--ink2);margin-top:2px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fc-la.er{color:#b91c1c;white-space:normal}
 .fc-warn{color:#b91c1c}
 [data-theme="dark"] .fc-lt.ok{background:rgba(16,185,129,.15);color:#6ee7b7}[data-theme="dark"] .fc-lt.run{background:rgba(249,115,22,.15);color:#fdba74}[data-theme="dark"] .fc-lt.er{background:rgba(239,68,68,.15);color:#fca5a5}
+
+/* ── Menu: cartões neutros com relevo (2.4.13) · Fisconforme, DARE, GIAM/SPED, EFD-Reinf ──────────────────────────────
+   Cartão na cor do menu com borda e relevo leve; ícone sobre placa branca; cor só no contador de pendências. */
+.nav-item.nav-card.nc-fisc,.nav-item.nav-card.nc-dare,.nav-item.nav-card.nc-giam,.nav-item.nav-card.nc-reinf,
+.nav-item.nav-card.nc-fisc:hover,.nav-item.nav-card.nc-dare:hover,.nav-item.nav-card.nc-giam:hover,.nav-item.nav-card.nc-reinf:hover,
+.nav-item.nav-card.nc-fisc.active,.nav-item.nav-card.nc-dare.active,.nav-item.nav-card.nc-giam.active,.nav-item.nav-card.nc-reinf.active{
+  background:linear-gradient(#2c3546,#262e3d);border:1px solid #3a4558;color:#fff;filter:none;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 2px 6px rgba(0,0,0,.25)}
+.nav-item.nav-card:is(.nc-fisc,.nc-dare,.nc-giam,.nc-reinf)::after{display:none}
+.nav-item.nav-card:is(.nc-fisc,.nc-dare,.nc-giam,.nc-reinf):hover:not(.disabled){border-color:#556178;transform:translateY(-1px)}
+.nav-item.nav-card:is(.nc-fisc,.nc-dare,.nc-giam,.nc-reinf).active{border-color:#8fa1bf;box-shadow:inset 3px 0 0 #e2e8f0,0 2px 6px rgba(0,0,0,.25)}
+.nav-item.nav-card:is(.nc-fisc,.nc-dare,.nc-giam,.nc-reinf) .nc-tx small{color:#aab4c5;opacity:1}
+.nc-ic.nc-ic-pl{width:38px;height:38px;border-radius:11px;background:#fff;box-shadow:inset 0 -1px 0 rgba(0,0,0,.08),0 1px 3px rgba(0,0,0,.3)}
+.nc-ic.nc-ic-pl img{width:30px;height:30px;object-fit:contain;filter:none}
+.nav-item.nc-reinf:hover .nc-ic-pl img{animation:rfGira 1s ease-in-out}
+.nc-fis{font-style:italic;font-weight:400!important;font-size:14.5px!important;letter-spacing:-.01em}.nc-fis em{font-style:italic;font-weight:900}
+.nav-card:is(.nc-fisc,.nc-dare,.nc-giam) .nc-cnt{background:#475569;color:#fff}
+.nav-card.nc-fisc .nc-cnt{background:#dc2626;color:#fff}
+.nc-cnt.nova{animation:ncPulsoV 1.6s ease-in-out infinite}
+@keyframes ncPulsoV{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.6)}50%{box-shadow:0 0 0 6px rgba(220,38,38,0)}}
+.nc-giam .nav-new,.nc-reinf .nav-new{position:absolute;top:9px;right:10px;transform:none;font-size:9px;padding:1px 6px;background:transparent;color:#fdba74;border:1px solid rgba(253,186,116,.6);font-style:normal}
