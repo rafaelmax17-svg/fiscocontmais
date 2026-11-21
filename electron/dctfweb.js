@@ -56,13 +56,19 @@ function esperadoDaReinf(doc) {
 }
 const _soma = (m) => _r2(Object.values(m || {}).reduce((a, v) => a + (Number(v) || 0), 0));
 const _assinatura = (m) => Object.keys(m || {}).sort().map((k) => `${k}:${_r2(m[k]).toFixed(2)}`).join('|');
+// 2.4.14: a conferência da REINF pelo serviço oficial traz só o recibo do fechamento (sem o totalizador). A "marca" da
+// REINF passa a ser o recibo do R-4099/R-2099: se ele mudar depois da conferência, a transmissão é recusada.
+const _api = (r) => !!(r && r.fonte === 'api');
+const _marcaReinf = (r, esperado) => (_api(r) ? `recibos:${(r.fech4099 || {}).recibo || ''}|${(r.fech2099 || {}).recibo || ''}` : _assinatura(esperado));
 
 // Confere · Diverge · Não apareceu (compara só os débitos de origem REINF na DCTFWeb)
 function comparar(esperado, naDctf, situacao) {
   const e = esperado || {}, d = naDctf || {};
   const te = _soma(e), td = _soma(d);
   if (['semproc', 'erro'].includes(situacao)) return { comparacao: 'erro', diferenca: 0 };
+  if (esperado === null && situacao === 'sem_declaracao') return { comparacao: 'sem_dctf', diferenca: 0 };      // REINF fechada (fonte 'api') e nenhuma DCTFWeb no período
   if (situacao === 'sem_declaracao' || (!Object.keys(d).length && te > 0)) return { comparacao: te > 0 ? 'nao_apareceu' : 'sem_debito', diferenca: _r2(-te) };
+  if (esperado === null) return { comparacao: td > 0 ? 'recebida' : 'sem_debito', diferenca: 0, codigosDivergentes: [] };   // fonte 'api': sem totalizador
   const cods = new Set([...Object.keys(e), ...Object.keys(d)]);
   const difs = [...cods].map((c) => ({ cod: c, reinf: _r2(e[c] || 0), dctf: _r2(d[c] || 0) })).filter((x) => Math.abs(x.reinf - x.dctf) > 0.01);
   return { comparacao: difs.length ? 'diverge' : te > 0 ? 'confere' : 'sem_debito', diferenca: _r2(td - te), codigosDivergentes: difs };
@@ -70,7 +76,7 @@ function comparar(esperado, naDctf, situacao) {
 // débitos que não vieram da REINF (eSocial / MIT): a transmissão pela equipe fica bloqueada (decisão de 18/11)
 const outrasOrigens = (doc) => Object.entries((doc && doc.origens) || {}).filter(([k, v]) => !/^REINF/.test(k) && Number(v) > 0.009);
 function podeTransmitir(doc) {
-  return !!(doc && doc.situacao === 'em_andamento' && doc.comparacao === 'confere' && doc.reinfStatus === 'fechado' && _soma(doc.esperado) > 0 && !outrasOrigens(doc).length);
+  return !!(doc && doc.situacao === 'em_andamento' && ['confere', 'recebida'].includes(doc.comparacao) && doc.reinfStatus === 'fechado' && _soma(doc.esperado) > 0 && !outrasOrigens(doc).length);
 }
 
 // ------------------------------------------------------------------ equipe: ver e pedir
@@ -210,8 +216,8 @@ async function _conferir(p) {
   const consultar = [];
   const cont = { confere: 0, diverge: 0, nao_apareceu: 0, aguarda: 0, erro: 0, mantidas: 0 };
   for (const r of reinfs) {
-    const esperado = esperadoDaReinf(r);
-    const base = { comp, cnpj: r.cnpj, nome: r.nome || '', reinfStatus: r.status, esperado, totalReinf: _soma(esperado), reinfAssinatura: _assinatura(esperado) };
+    const esperado = _api(r) ? null : esperadoDaReinf(r);
+    const base = { comp, cnpj: r.cnpj, nome: r.nome || '', reinfStatus: r.status, fonte: _api(r) ? 'api' : 'ecac', esperado, totalReinf: _soma(esperado), reinfAssinatura: _marcaReinf(r, esperado) };
     if (r.status === 'aberto') {
       await f.setDoc(f.doc(db, COL, `${comp}_${r.cnpj}`), _limpo({ ...base, comparacao: 'aguarda', em: new Date().toISOString() }), { merge: true });
       cont.aguarda++; continue;
@@ -219,7 +225,7 @@ async function _conferir(p) {
     if (r.status !== 'fechado') continue;                     // sem movimento, nada enviado, sem procuração, erro: nada a comparar
     const ja = atuais.get(r.cnpj);
     // transmitida e a REINF não mudou: não gasta consulta
-    if (ja && ja.situacao === 'transmitida' && ja.reinfAssinatura === base.reinfAssinatura && ja.comparacao === 'confere') { cont.mantidas++; continue; }
+    if (ja && ja.situacao === 'transmitida' && ja.reinfAssinatura === base.reinfAssinatura && ['confere', 'recebida'].includes(ja.comparacao)) { cont.mantidas++; continue; }
     consultar.push(base);
   }
   const consumo = { consulta: 0, declaracao: 0 };
@@ -231,6 +237,8 @@ async function _conferir(p) {
     for (const x of r.resultados || []) {
       const b = lote.find((y) => y.cnpj === _so(x.cnpj)); if (!b) continue;
       const cmp = comparar(b.esperado, x.reinf, x.situacao);
+      // fonte 'api': o que veio da REINF é o que está na DCTFWeb agora (fica guardado para conferir de novo na transmissão)
+      if (b.esperado === null) { b.esperado = ['em_andamento', 'transmitida'].includes(x.situacao) ? (x.reinf || {}) : {}; b.totalReinf = _soma(b.esperado); }
       cont[cmp.comparacao] = (cont[cmp.comparacao] || 0) + 1;
       if (x.estrutura && x.estrutura.length) _log(`${b.nome}: blocos do XML → ${JSON.stringify(x.estrutura.slice(0, 2))}`);
       _log(`${b.nome}: DCTFWeb ${x.situacao} · REINF ${JSON.stringify(b.esperado)} × DCTFWeb ${JSON.stringify(x.reinf || {})} → ${cmp.comparacao}${x.msg ? ` (${x.msg})` : ''}`);
@@ -241,7 +249,7 @@ async function _conferir(p) {
     }
   }
   if (_robo.consumo) await _robo.consumo(consumo).catch(() => {});
-  const partes = [`${cont.confere} confere(m)`, cont.diverge ? `${cont.diverge} diverge(m)` : '', cont.nao_apareceu ? `${cont.nao_apareceu} não apareceu(ram)` : '', cont.aguarda ? `${cont.aguarda} aguardando o fechamento da REINF` : '', cont.erro ? `${cont.erro} com erro` : ''].filter(Boolean);
+  const partes = [`${cont.confere} confere(m)`, cont.recebida ? `${cont.recebida} recebida(s) na DCTFWeb` : '', cont.diverge ? `${cont.diverge} diverge(m)` : '', cont.nao_apareceu ? `${cont.nao_apareceu} não apareceu(ram)` : '', cont.aguarda ? `${cont.aguarda} aguardando o fechamento da REINF` : '', cont.erro ? `${cont.erro} com erro` : ''].filter(Boolean);
   return { status: 'feito', msg: partes.join(' · ') || 'nenhuma empresa com a REINF fechada', consultas: consumo.consulta };
 }
 
@@ -253,8 +261,8 @@ async function _transmitir(p) {
   const doc = s.exists() ? s.data() : null;
   if (!podeTransmitir(doc)) return { status: 'erro', msg: outrasOrigens(doc).length ? 'A DCTFWeb tem débitos de eSocial/MIT: a transmissão não é feita pelo sistema.' : 'A empresa não está liberada para transmitir (atualize a conferência).' };
   const [rf] = await _reinfDocs(comp, [cnpj]);
-  const esperado = esperadoDaReinf(rf);
-  if (!rf || rf.status !== 'fechado' || _assinatura(esperado) !== doc.reinfAssinatura) return { status: 'erro', msg: 'A EFD-Reinf mudou depois da conferência: atualize a conferência antes de transmitir.' };
+  const esperado = _api(rf) ? (doc.esperado || {}) : esperadoDaReinf(rf);
+  if (!rf || rf.status !== 'fechado' || _marcaReinf(rf, esperado) !== doc.reinfAssinatura) return { status: 'erro', msg: 'A EFD-Reinf mudou depois da conferência: atualize a conferência antes de transmitir.' };
   const [a, m] = comp.split('-');
   const pasta = pastaCliente.pastaDoMes({ nome: doc.nome, cnpj }, a, m, true) || '';
   const r = await _robo.python({ acao: 'dctf_transmitir', comp, empresa: { cnpj, nome: doc.nome, esperado, pasta } });

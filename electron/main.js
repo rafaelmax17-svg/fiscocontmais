@@ -630,7 +630,7 @@ ipcMain.handle('giam:abrir', (_evt, { caminho, pasta }) => _giam(async () => {
   return {};
 }));
 
-// ---- Conferência da EFD-Reinf (eCAC · certificado do escritório) — 2.4.6 (electron/reinf.js e agenda_reinf.js)
+// ---- Conferência da EFD-Reinf (serviço oficial de consulta · certificado do escritório) — 2.4.6/2.4.14 (electron/reinf.js e agenda_reinf.js)
 const reinf = require('./reinf');
 const _notifica = (c, d) => { try { mainWindow && mainWindow.webContents.send(c, d); } catch (_) {} };
 reinf.init({

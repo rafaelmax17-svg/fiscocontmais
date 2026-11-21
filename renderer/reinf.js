@@ -1,5 +1,5 @@
 'use strict';
-// Conferência da EFD-Reinf (2.4.6) — o que chegou na Receita (eCAC) depois do envio pelo Domínio: retenções separadas por
+// Conferência da EFD-Reinf (2.4.6; serviço oficial de consulta desde a 2.4.14) — o que chegou na Receita depois do envio pelo Domínio: retenções separadas por
 // imposto, recibo de envio de cada empresa, fechamentos R-4099/R-2099 com o totalizador (PDF + XML na pasta do cliente),
 // pizza animada e a visão de uma empresa só. O sistema confere sozinho às 12h (um computador) ou no botão.
 (function () {
@@ -15,7 +15,7 @@
   const CURTO = { irrf: 'IRRF', csll: 'CSLL', cofins: 'Cofins', pis: 'PIS/Pasep', agreg: 'Agregada (CSRF)', inss: 'INSS retido' };
   const SIG = { irrf: 'IR', csll: 'CS', cofins: 'CO', pis: 'PI', agreg: 'AG', inss: 'IN' };
   const ST = { fechado: ['ok', 'Fechado'], tarde: ['er', 'Fechado após o dia 15'], aberto: ['ab', 'Aberto (sem fechamento)'], sem_movimento: ['nm', 'Sem movimento'],
-    nada_enviado: ['nm', 'Nada enviado'], sem_procuracao: ['er', 'Sem procuração'], erro: ['er', 'Erro na conferência'], nao: ['nm', 'Não conferida'] };
+    nada_enviado: ['nm', 'Nada enviado'], sem_fechamento: ['nm', 'Sem fechamento'], sem_procuracao: ['er', 'Sem procuração'], erro: ['er', 'Erro na conferência'], nao: ['nm', 'Não conferida'] };
   const R = { comp: '', d: null, emp: '', busca: '', prog: null, anim: true, aba: 'ret', dc: null, dcSel: '' };
   const NOVO_DCTF = new Date(2026, 10, 25, 23, 59, 59) > new Date();         // aba nova: selo NOVO por 7 dias
   let desliga = null, recarga = null;
@@ -40,6 +40,8 @@
     const out = [];
     if (f4.fechado) out.push(`<span class="rf-rec">${e(f4.recibo)}</span><small>fechamento R-4099${f4.dhProcess || f4.recepcao ? ` · ${e(curta(f4.dhProcess || f4.recepcao))}` : ''}</small>`);
     if (f2.fechado) out.push(`<span class="rf-rec">${e(f2.recibo)}</span><small>fechamento R-2099${f2.dhProcess || f2.recepcao ? ` · ${e(curta(f2.dhProcess || f2.recepcao))}` : ''}</small>`);
+    [[f4, '4099'], [f2, '2099']].forEach(([f, n]) => { if (!f.fechado && (f.reaberto || f.recusado || f.processando)) out.push(`<span class="rf-rec">${e(f.recibo || f.protocolo || '—')}</span><small>R-${n} ${f.reaberto ? 'reaberto' : f.recusado ? 'recusado pela Receita' : 'em processamento'}${f.recepcao ? ` · ${e(curta(f.recepcao))}` : ''}</small>`); });
+    if (!out.length && doc.fonte === 'api') return '<span class="rf-rec vz">sem fechamento na Receita</span>';
     if (!out.length) {
       const ev = (doc.eventos || []).filter((x) => x.recibo).sort((a, b) => (dtBr(b.recepcao) || 0) - (dtBr(a.recepcao) || 0))[0];
       if (ev) out.push(`<span class="rf-rec">${e(ev.recibo)}</span><small>último evento enviado${ev.recepcao ? ` · ${e(curta(ev.recepcao))}` : ''} · sem fechamento</small>`);
@@ -103,10 +105,11 @@
     raiz().innerHTML = `
       <div class="rf-hero"><div>
         <h1><img src="img/efd-reinf.png" alt="">Conferência da EFD-Reinf</h1>
-        <div class="rf-s">Competência ${compBr(R.comp)} · ${tp.quando}${R.d.proxima ? ` · próxima conferência automática ${curta(R.d.proxima)}` : ''}</div>
+        <div class="rf-s">Competência ${compBr(R.comp)} · ${tp.quando}${R.d.meta && R.d.meta.fonte === 'api' ? ' · serviço oficial da EFD-Reinf' : ''}${R.d.proxima ? ` · próxima conferência automática ${curta(R.d.proxima)}` : ''}</div>
         ${abas()}
         <div class="rf-big"><div><small>Total retido no mês</small><b data-cont="${T}">${brl(T)}</b></div>
-          <div class="rf-mini"><div><b>${conf.length} / ${ls.length}</b><small>empresas conferidas</small></div><div><b>${fech}</b><small>fechadas</small></div><div><b>${nEv}</b><small>eventos</small></div><div><b>${nRet}</b><small>retificadores</small></div></div></div>
+          <div class="rf-mini"><div><b>${conf.length} / ${ls.length}</b><small>empresas conferidas</small></div><div><b>${fech}</b><small>fechadas</small></div>${nEv ? `<div><b>${nEv}</b><small>eventos</small></div><div><b>${nRet}</b><small>retificadores</small></div>`
+            : `<div><b>${ls.filter((l) => ['sem_fechamento', 'nada_enviado', 'aberto'].includes(l.sit)).length}</b><small>sem fechamento</small></div><div><b>${ls.filter((l) => l.sit === 'sem_procuracao').length}</b><small>sem procuração</small></div>`}</div></div>
         <div class="rf-prog" id="rfProg" ${R.prog ? '' : 'hidden'}><i></i><span>${e((R.prog || {}).txt || '')}</span></div>
       </div><div class="rf-ctl"><div>${tp.sel}${tp.emp}</div><div><button class="rf-pill" id="rfEmps" title="Escolher as empresas conferidas">Empresas</button><span class="rf-menu-w"><button class="rf-pill" id="rfLista">Gerar lista ▾</button><span class="rf-menu" id="rfListaMenu" hidden><button data-l="pdf">PDF</button><button data-l="xlsx">Excel</button></span></span>${botaoConferir()}</div></div></div>
       ${R.d.certificadoAqui === false ? `<div class="rf-aviso">O certificado do escritório (e-CNPJ ${e(fmtCnpj(R.d.certificado))}) não está instalado neste computador: aqui você vê a conferência feita pela equipe; para conferir agora, use um computador com o certificado.</div>` : ''}
@@ -127,7 +130,8 @@
     const d = l.doc;
     const sub = [fmtCnpj(l.cnpj), d && (d.eventos || []).length ? `${d.eventos.length} evento(s)` : '', d && (d.eventos || []).filter((x) => x.tipo === 'Retificador').length ? `${d.eventos.filter((x) => x.tipo === 'Retificador').length} retificador(es)` : ''].filter(Boolean).join(' · ');
     const meio = !d ? `<td colspan="7" class="rf-cin">ainda não conferida nesta competência</td>`
-      : l.sit === 'sem_procuracao' ? `<td colspan="7" class="rf-erl">A Liddera não tem procuração eletrônica desta empresa para a EFD-Reinf</td>`
+      : l.sit === 'sem_procuracao' ? `<td colspan="7" class="rf-erl">A Liddera não tem procuração eletrônica desta empresa com poderes da EFD-Reinf. Peça ao cliente a procuração no eCAC.</td>`
+        : d.fonte === 'api' && l.sit !== 'erro' && !d.totaisDe ? `<td colspan="7" class="rf-cin">${['fechado', 'tarde'].includes(l.sit) ? 'valores por imposto chegam com a leitura da DCTFWeb (Integra Contador)' : l.sit === 'aberto' ? e(d.msg || 'fechamento pendente na Receita') : 'sem fechamento R-4099/R-2099 nesta competência'}</td>`
         : l.sit === 'erro' ? `<td colspan="7" class="rf-erl">${e(d.msg || 'erro na conferência')}</td>`
           : KS.map((k) => `<td class="n">${d.totais && d.totais[k] ? num(d.totais[k]) : '<span class="rf-cin">—</span>'}</td>`).join('') + `<td class="n"><b>${brl(totDoc(d))}</b></td>`;
     return `<tr data-emp="${e(l.cnpj)}"><td><b>${e(l.nome)}</b><small>${e(sub)}</small></td>${meio}<td>${chip(l.sit)}</td><td class="rf-rc">${['sem_procuracao', 'erro'].includes(l.sit) ? '<span class="rf-rec vz">—</span>' : recibo(d)}</td></tr>`;
@@ -149,9 +153,9 @@
       const tt = l.doc.fech4099.porCodigo.reduce((a, x) => a + (x.enviado || 0), 0); return Math.abs(ev - tt) > 0.05; });
     if (cmp.length) it.push(dif.length ? ['er', '≠', 'Soma dos eventos diferente do totalizador', nomes(dif)] : ['ok', '✓', 'Soma dos eventos = totalizador', `${cmp.length} de ${cmp.length} empresa(s) conferem com o totalizador do R-4099`]);
     // enviou no mês passado e não neste
-    const antes = new Set((R.d.docsAnterior || []).filter((x) => x.nEventos > 0).map((x) => x.cnpj));
-    const sumiu = ls.filter((l) => antes.has(l.cnpj) && l.doc && ['nada_enviado'].includes(l.sit));
-    it.push(sumiu.length ? ['ab', '↓', 'Enviou no mês passado e não enviou neste', nomes(sumiu)] : ['ok', '✓', 'Quem enviou no mês passado enviou neste', `comparado com ${compBr(R.d.anterior)}`]);
+    const antes = new Set((R.d.docsAnterior || []).filter((x) => x.nEventos > 0 || x.fechado).map((x) => x.cnpj));
+    const sumiu = ls.filter((l) => antes.has(l.cnpj) && l.doc && ['nada_enviado', 'sem_fechamento'].includes(l.sit));
+    it.push(sumiu.length ? ['ab', '↓', 'Fechou no mês passado e não fechou neste', nomes(sumiu)] : ['ok', '✓', 'Quem fechou no mês passado fechou neste', `comparado com ${compBr(R.d.anterior)}`]);
     // CSRF fora de 4,65% (só aviso para conferir)
     const csrf = [];
     ls.forEach((l) => (l.doc && l.doc.eventos || []).forEach((x) => { const c = (x.agreg || 0) + (x.csll || 0) + (x.cofins || 0) + (x.pis || 0); if (c > 0 && x.bruto > 0 && Math.abs(c / x.bruto * 100 - 4.65) > 0.05) csrf.push(l.nome); }));
@@ -167,15 +171,16 @@
     const tp = topo(ls);
     const mx = Math.max(...KS.map((k) => t[k] || 0), 1);
     const imp = (cod, serie) => (serie === '2000' ? 'inss' : ({ 6228: 'csll', 5987: 'csll', 6230: 'pis', 5979: 'pis', 6243: 'cofins', 5960: 'cofins', 5952: 'agreg' }[String(cod).slice(0, 4)] || 'irrf'));
-    const dctf = [...(f4.porCodigo || []).map((x) => ({ ...x, serie: '4000' })), ...(f2.porCodigo || []).map((x) => ({ ...x, serie: '2000' }))];
-    const bt = (f, ev2) => (f.fechado ? `<button class="rf-pill" data-tot="${ev2}">${f.pdf ? '📄' : '⬇'} Totalizador R-${ev2}</button>` : '');
+    const dctf = d.fonte === 'api' ? (d.dctfCodigos || []).map((x) => ({ ...x, serie: x.imposto === 'inss' ? '2000' : '4000' }))
+      : [...(f4.porCodigo || []).map((x) => ({ ...x, serie: '4000' })), ...(f2.porCodigo || []).map((x) => ({ ...x, serie: '2000' }))];
+    const bt = (f, ev2) => (f.fechado && f.pdf ? `<button class="rf-pill" data-tot="${ev2}">${f.pdf ? '📄' : '⬇'} Totalizador R-${ev2}</button>` : '');
     raiz().innerHTML = `
       <div class="rf-hero"><div>
         <div class="rf-s"><a href="#" id="rfVolta">Conferência da EFD-Reinf</a> ›</div>
         <h1><img src="img/efd-reinf.png" alt="">${e(l.nome)}</h1>
         <div class="rf-s">${e(fmtCnpj(l.cnpj))} · competência ${compBr(R.comp)} · ${l.doc ? `conferida em ${curta(d.em)}${d.por ? ` por ${e(d.por)}` : ''}` : 'ainda não conferida'}</div>
         <div class="rf-big"><div><small>Total retido no mês</small><b data-cont="${T}">${brl(T)}</b></div>
-          <div class="rf-mini"><div><b>${ev.length}</b><small>eventos</small></div><div><b>${ev.filter((x) => x.tipo === 'Retificador').length}</b><small>retificadores</small></div><div><b style="font-size:13px;margin-top:4px">${chip(l.sit)}</b><small>${f4.fechado ? `R-4099 ${e(curta(f4.dhProcess || f4.recepcao))}` : 'sem fechamento R-4099'}</small></div></div></div>
+          <div class="rf-mini"><div><b>${ev.length}</b><small>eventos</small></div><div><b>${ev.filter((x) => x.tipo === 'Retificador').length}</b><small>retificadores</small></div><div><b style="font-size:13px;margin-top:4px">${chip(l.sit)}</b><small>${f4.fechado ? `R-4099 ${e(curta(f4.dhProcess || f4.recepcao))}` : f4.reaberto ? 'R-4099 reaberto' : 'sem fechamento R-4099'}</small></div></div></div>
         ${f4.fechado || f2.fechado ? `<div class="rf-s" style="margin-top:12px">Recibo de envio do fechamento ${f4.fechado ? `<span class="rf-rec h">${e(f4.recibo)}</span>` : ''}${f2.fechado ? ` R-2099 <span class="rf-rec h">${e(f2.recibo)}</span>` : ''}</div>` : ''}
         ${d.msg ? `<div class="rf-s" style="margin-top:10px;color:#fecaca">${e(d.msg)}</div>` : ''}
         <div class="rf-prog" id="rfProg" ${R.prog ? '' : 'hidden'}><i></i><span>${e((R.prog || {}).txt || '')}</span></div>
@@ -183,10 +188,10 @@
       <div class="rf-kp">${KS.map((k) => `<div class="rf-k" style="--c:${COR[k]}"><div class="ic">${SIG[k]}</div><small>${NOME[k]}</small><b data-cont="${t[k] || 0}">${brl(t[k] || 0)}</b><div class="bar"><i style="--w:${(t[k] || 0) / mx * 100}%"></i></div><span>${f4.fechado && k !== 'inss' ? 'enviado à DCTFWeb' : f2.fechado && k === 'inss' ? 'enviado à DCTFWeb' : 'soma dos eventos'}</span></div>`).join('')}</div>
       <div class="rf-g2">
         <div class="rf-card"><h3>Retenções da empresa</h3><div class="rf-pz">${T ? `<svg viewBox="0 0 300 300" class="rf-pizza" data-vals='${JSON.stringify(t)}'></svg>` : '<div class="rf-vz">Nenhuma retenção na competência.</div>'}${legenda(t)}</div></div>
-        <div class="rf-card"><h3>Totais que vão para a DCTFWeb <small>totalizador do fechamento</small></h3>
+        <div class="rf-card"><h3>Totais que vão para a DCTFWeb <small>${d.fonte === 'api' ? 'débitos da REINF na DCTFWeb (Integra Contador)' : 'totalizador do fechamento'}</small></h3>
           ${dctf.length ? `<div class="rf-dctf">${dctf.map((x) => `<div><span><b>${e(x.cod)}</b> · ${CURTO[imp(x.cod, x.serie)]} <small>R-${x.serie === '2000' ? '2099' : '4099'}</small></span><b>${brl(x.enviado)}</b></div>`).join('')}
             <div class="rf-dt"><span>Total</span><b>${brl(dctf.reduce((a, x) => a + (x.enviado || 0), 0))}</b></div></div>`
-            : `<div class="rf-vz">${f4.fechado || f2.fechado ? 'O totalizador não trouxe códigos de receita.' : 'Sem fechamento na competência: os valores ainda não seguem para a DCTFWeb.'}</div>`}
+            : `<div class="rf-vz">${d.fonte === 'api' && (f4.fechado || f2.fechado) ? (d.totaisDe ? 'A DCTFWeb não tem débitos vindos da REINF (fechamento sem movimento?).' : 'Os valores aparecem quando o computador do Integra Contador ler a DCTFWeb do período.') : f4.fechado || f2.fechado ? 'O totalizador não trouxe códigos de receita.' : 'Sem fechamento na competência: os valores ainda não seguem para a DCTFWeb.'}</div>`}
           ${f4.fechado ? `<div class="rf-fx"><span>R-4099 · recibo <span class="rf-rec">${e(f4.recibo)}</span></span><small>processado ${e(curta(f4.dhProcess || f4.recepcao))}${f4.semMovimento ? ' · sem movimento' : ''}</small></div>` : ''}
           ${f2.fechado ? `<div class="rf-fx"><span>R-2099 · recibo <span class="rf-rec">${e(f2.recibo)}</span></span><small>processado ${e(curta(f2.dhProcess || f2.recepcao))}</small></div>` : ''}</div>
       </div>
@@ -195,7 +200,7 @@
           ${ev.map((x) => `<tr><td><b>${e(x.evento)}</b></td><td>${e(fmtDoc(x.benef))}</td><td>${e((x.natRend || []).join(', '))}</td><td class="n">${x.semXml ? '—' : num(x.bruto)}</td><td class="n">${x.irrf ? num(x.irrf) : '—'}</td>
             <td class="n">${(x.agreg || x.csll || x.cofins || x.pis) ? num((x.agreg || 0) + (x.csll || 0) + (x.cofins || 0) + (x.pis || 0)) : '—'}</td><td class="n">${x.inss ? num(x.inss) : '—'}</td>
             <td>${x.tipo === 'Retificador' ? '<span class="rf-chip in">Retificador</span>' : '<span class="rf-chip nm">Original</span>'}</td><td class="rf-rc"><span class="rf-rec">${e(x.recibo)}</span><small>recebido ${e(curta(x.recepcao))}</small></td></tr>`).join('')}</tbody></table>`
-            : `<div class="rf-vz">${l.doc ? 'Nenhum evento enviado nesta competência.' : 'Clique em "Conferir esta empresa".'}</div>`}</div>`;
+            : `<div class="rf-vz">${d.fonte === 'api' ? 'A consulta oficial da Receita informa o recibo do fechamento; os eventos de cada beneficiário (R-4010/R-4020/R-2010) ficam no Domínio.' : l.doc ? 'Nenhum evento enviado nesta competência.' : 'Clique em "Conferir esta empresa".'}</div>`}</div>`;
     ligar();
     animar();
   }
@@ -203,9 +208,9 @@
 
   // ------------------------------------------------------------------ REINF × DCTFWeb (Integra Contador)
   const abas = () => `<div class="rf-abas"><button class="${R.aba === 'ret' ? 'on' : ''}" data-aba="ret">Retenções</button><button class="${R.aba === 'dctf' ? 'on' : ''}" data-aba="dctf">REINF × DCTFWeb${NOVO_DCTF ? '<em class="nav-new">NOVO</em>' : ''}</button></div>`;
-  const CMP = { confere: ['ok', '✓ Confere'], diverge: ['er', '✕ Diverge'], nao_apareceu: ['ab', '! Não apareceu'], aguarda: ['nm', 'aguarda fechar a REINF'], sem_debito: ['nm', 'sem débito da REINF'], erro: ['er', 'Erro na consulta'] };
+  const CMP = { recebida: ['ok', '✓ Recebida na DCTFWeb'], sem_dctf: ['ab', '! Sem DCTFWeb no período'], confere: ['ok', '✓ Confere'], diverge: ['er', '✕ Diverge'], nao_apareceu: ['ab', '! Não apareceu'], aguarda: ['nm', 'aguarda fechar a REINF'], sem_debito: ['nm', 'sem débito da REINF'], erro: ['er', 'Erro na consulta'] };
   const SDC = { em_andamento: ['ab', 'Em andamento'], transmitida: ['in', 'Transmitida'], sem_declaracao: ['nm', 'Sem declaração'], semproc: ['er', 'Sem procuração'], erro: ['er', 'Erro'] };
-  const RST = { fechado: ['ok', 'Fechada'], aberto: ['ab', 'Aberta'], sem_movimento: ['nm', 'Sem movimento'], nada_enviado: ['nm', 'Nada enviado'], sem_procuracao: ['er', 'Sem procuração'], erro: ['er', 'Erro'] };
+  const RST = { fechado: ['ok', 'Fechada'], aberto: ['ab', 'Aberta'], sem_fechamento: ['nm', 'Sem fechamento'], sem_movimento: ['nm', 'Sem movimento'], nada_enviado: ['nm', 'Nada enviado'], sem_procuracao: ['er', 'Sem procuração'], erro: ['er', 'Erro'] };
   const NOMECR = { 1708: 'IRRF · serviços PJ', 5952: 'CSRF (PIS/Cofins/CSLL)', 1162: 'INSS retido (cessão de mão de obra)', '0561': 'IRRF · trabalho assalariado', '0588': 'IRRF · trabalho sem vínculo', 3208: 'IRRF · aluguéis e royalties PF', 8045: 'IRRF · comissões e corretagens', 3280: 'IRRF · cooperativas', 5960: 'Cofins retida', 5979: 'PIS retido', 5987: 'CSLL retida', 6228: 'CSLL · órgão público', 6230: 'PIS · órgão público', 6243: 'Cofins · órgão público', 1099: 'CPRB', 1141: 'INSS · produção rural', 1176: 'INSS · aquisição de produção rural' };
   const ch2 = (m, k) => (m[k] ? `<span class="rf-chip ${m[k][0]}">${e(m[k][1])}</span>` : '<span class="rf-chip nm">—</span>');
   const hm = (ms) => { const d = new Date(ms); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
@@ -273,7 +278,11 @@
     return `<h3><span>${e(l.nome)}</span>${x.comparacao === 'diverge' ? `<span class="rf-chip er">✕ Diverge ${e(brl(Math.abs(x.diferenca || 0)))}</span>` : ch2(CMP, x.comparacao)}</h3>
       <div class="dc-sub">DCTFWeb ${compBr(R.comp)} · categoria Geral · <b>${e((SDC[x.situacao] || ['', x.situacao || '—'])[1].toLowerCase())}</b> · vence ${venc.toLocaleDateString('pt-BR')} (último dia útil)</div>
       ${x.msg && ['erro', 'semproc', 'sem_declaracao'].includes(x.situacao) ? `<div class="dc-msg">${e(x.msg)}</div>` : ''}
-      ${cods.length ? `<table class="dc-cmp"><thead><tr><th>Código de receita</th><th class="n">REINF</th><th class="n">DCTFWeb</th></tr></thead><tbody>
+      ${cods.length && x.fonte === 'api' ? `<table class="dc-cmp"><thead><tr><th>Código de receita</th><th class="n">Débito na DCTFWeb</th></tr></thead><tbody>
+        ${cods.map((c) => `<tr><td>${e(c)} · ${e(NOMECR[c] || NOMECR[+c] || 'código de receita')}</td><td class="n">${(x.naDctf || {})[c] == null ? '—' : brl(x.naDctf[c])}</td></tr>`).join('')}
+        <tr class="tot"><td>Total</td><td class="n">${x.naDctf ? brl(somaM(x.naDctf)) : '—'}</td></tr></tbody></table>
+        <div class="dc-sub">REINF fechada na Receita${l.doc.fech4099 && l.doc.fech4099.recibo ? ` · R-4099 recibo ${e(l.doc.fech4099.recibo)}` : ''}${l.doc.fech2099 && l.doc.fech2099.recibo ? ` · R-2099 recibo ${e(l.doc.fech2099.recibo)}` : ''}</div>`
+      : cods.length ? `<table class="dc-cmp"><thead><tr><th>Código de receita</th><th class="n">REINF</th><th class="n">DCTFWeb</th></tr></thead><tbody>
         ${cods.map((c) => { const r = (x.esperado || {})[c] || 0, d = (x.naDctf || {})[c]; const ok = d != null && Math.abs(r - d) <= 0.01;
           return `<tr><td>${e(c)} · ${e(NOMECR[c] || NOMECR[+c] || 'código de receita')}</td><td class="n">${brl(r)}</td><td class="n ${ok ? '' : 'dif'}">${d == null ? '—' : brl(d)} ${ok ? '✓' : '✕'}</td></tr>`; }).join('')}
         <tr class="tot"><td>Total</td><td class="n">${brl(somaM(x.esperado))}</td><td class="n">${x.naDctf ? brl(somaM(x.naDctf)) : '—'}</td></tr></tbody></table>` : ''}
@@ -281,10 +290,10 @@
       ${x.situacao === 'transmitida'
         ? `<div class="dc-ok">✓ Transmitida${x.transmitidaEm ? ` em ${e(curta(x.transmitidaEm))}` : ''}${x.transmitidaPor ? ` por ${e(x.transmitidaPor)}` : ''}${x.recibo ? `<br>Recibo ${e(x.recibo)}` : ''}</div>${x.arquivo ? '<button class="btn-dc sec" id="dcRecibo">📄 Abrir o recibo</button>' : ''}${x.reciboAviso ? `<div class="dc-msg">${e(x.reciboAviso)}</div>` : ''}`
         : x.podeTransmitir ? `<button class="btn-dc go" id="dcTransmitir" ${naFila ? 'disabled' : ''}>${naFila ? 'Transmissão na fila…' : `Transmitir DCTFWeb ${compBr(R.comp)}`}</button>`
-          : `<button class="btn-dc off" disabled>${x.comparacao === 'diverge' || x.comparacao === 'nao_apareceu' ? 'Diverge / não apareceu: transmissão bloqueada' : x.reinfStatus !== 'fechado' ? 'Transmissão bloqueada até fechar a REINF' : outras.length && x.situacao === 'em_andamento' ? 'Tem eSocial/MIT: transmitir pelo e-CAC' : 'Nada a transmitir'}</button>`}
+          : `<button class="btn-dc off" disabled>${x.comparacao === 'sem_dctf' ? 'Sem DCTFWeb no período' : x.comparacao === 'diverge' || x.comparacao === 'nao_apareceu' ? 'Diverge / não apareceu: transmissão bloqueada' : x.reinfStatus !== 'fechado' ? 'Transmissão bloqueada até fechar a REINF' : outras.length && x.situacao === 'em_andamento' ? 'Tem eSocial/MIT: transmitir pelo e-CAC' : 'Nada a transmitir'}</button>`}
       ${x.ultimoErro ? `<div class="dc-msg">Última tentativa: ${e(x.ultimoErro)}</div>` : ''}
       <div class="dc-nota"><b>Como funciona</b>
-        <div><span>1</span><p>O botão só fica ativo quando a REINF está <b>fechada</b>, a DCTFWeb está <b>em andamento</b>, todos os códigos <b>conferem</b> e a declaração só tem débitos da REINF (sem eSocial nem MIT).</p></div>
+        <div><span>1</span><p>O botão só fica ativo quando a REINF está <b>fechada</b> na Receita, a DCTFWeb está <b>em andamento</b> ${x.fonte === 'api' ? 'com os débitos que vieram da REINF' : 'e todos os códigos <b>conferem</b>'} e a declaração só tem débitos da REINF (sem eSocial nem MIT).</p></div>
         <div><span>2</span><p>Você confirma; o pedido vai para o computador do escritório que tem o Integra Contador, que confere de novo e transmite.</p></div>
         <div><span>3</span><p>Transmitida: o recibo fica na linha e o PDF vai para a pasta do cliente (Relatórios › ${R.comp.slice(0, 4)} › ${R.comp.slice(5, 7)}).</p></div></div>`;
   }
@@ -294,7 +303,7 @@
       const outras = Object.entries(orig).filter(([k, v]) => !/^REINF/.test(k) && v > 0);
       const m = document.createElement('div'); m.className = 'rf-modal';
       m.innerHTML = `<div class="rf-mc dc-conf"><h3>Transmitir a DCTFWeb ${compBr(R.comp)}?</h3>
-        <p><b>${e(l.nome)}</b> · ${e(fmtCnpj(l.cnpj))}<br>Débitos da REINF: <b>${e(brl(somaM(x.esperado)))}</b> (conferem com o fechamento).</p>
+        <p><b>${e(l.nome)}</b> · ${e(fmtCnpj(l.cnpj))}<br>Débitos da REINF: <b>${e(brl(somaM(x.esperado)))}</b> (${x.fonte === 'api' ? 'os que estão na DCTFWeb, vindos do fechamento da REINF' : 'conferem com o fechamento'}).</p>
         <p>A declaração só tem os débitos da REINF. Se ainda entrar folha (eSocial) ou MIT nesta competência, a DCTFWeb terá de ser retificada.</p>
         <p class="dc-irr">A transmissão é feita na Receita Federal e não pode ser desfeita por aqui.</p>
         <div class="rf-mb"><button class="rf-pill" id="dcNao">Cancelar</button><button class="rf-pill g" id="dcSim">Transmitir</button></div></div>`;
@@ -382,10 +391,7 @@
     r.querySelectorAll('[data-tot]').forEach((b) => b.addEventListener('click', async () => {
       const f = doc && (b.dataset.tot === '4099' ? doc.fech4099 : doc.fech2099);
       const x = f && f.pdf ? await window.fiscocont.reinf.abrir({ caminho: f.pdf }) : { error: 'x' };
-      if (x && x.error) {        // não está neste computador: baixa de novo do eCAC
-        if (!confirm('O PDF do totalizador não está neste computador. Baixar de novo do eCAC agora?')) return;
-        document.getElementById('rfConferir').click();
-      }
+      if (x && x.error) toast('O PDF do totalizador não está neste computador.', true);
     }));
     const ps = document.getElementById('rfPasta');
     if (ps) ps.onclick = async () => { const f = doc && (doc.fech4099 || {}).pdf ? doc.fech4099.pdf : doc && doc.pasta; const x = await window.fiscocont.reinf.abrir({ caminho: f, pasta: true }); if (x && x.error) toast(x.error, true); };
@@ -397,7 +403,7 @@
 
   function dadosLista() {
     const ls = linhas();
-    return { comp: R.comp, sub: `Conferido no eCAC${R.d.meta && R.d.meta.fim ? ` em ${curta(R.d.meta.fim)}` : ''} · ${ls.length} empresas`,
+    return { comp: R.comp, sub: `Conferido na Receita Federal${R.d.meta && R.d.meta.fim ? ` em ${curta(R.d.meta.fim)}` : ''} · ${ls.length} empresas`,
       empresas: ls.map((l) => ({ nome: l.nome, cnpj: l.cnpj, cnpjFmt: fmtCnpj(l.cnpj), totais: l.doc && !['sem_procuracao', 'erro'].includes(l.sit) ? l.doc.totais : null, nEventos: l.doc ? (l.doc.eventos || []).length : 0,
         situacao: ST[l.sit][1], recibo: l.doc ? ((l.doc.fech4099 || {}).fechado ? l.doc.fech4099.recibo : (l.doc.fech2099 || {}).fechado ? l.doc.fech2099.recibo : '') : '',
         enviado: l.doc ? curta((l.doc.fech4099 || {}).dhProcess || (l.doc.fech4099 || {}).recepcao || '') : '', eventos: l.doc ? (l.doc.eventos || []) : [] })) };
@@ -421,7 +427,7 @@
       ${dd.empresas.map((x) => `<tr><td><b>${e(x.nome)}</b><small>${e(x.cnpjFmt)}</small></td>${x.totais ? ks.map((k) => `<td class="n">${x.totais[k] ? num(x.totais[k]) : '—'}</td>`).join('') + `<td class="n"><b>${num(ks.reduce((a, k) => a + (x.totais[k] || 0), 0))}</b></td>`
         : `<td colspan="7" class="${/procura/i.test(x.situacao) ? 'er' : ''}">${/procura/i.test(x.situacao) ? 'Sem procuração eletrônica para a EFD-Reinf' : e(x.situacao)}</td>`}<td>${e(x.situacao)}</td><td>${x.recibo ? `<span class="rec">${e(x.recibo)}</span><small>${e(x.enviado)}</small>` : '—'}</td></tr>`).join('')}
       <tr class="tot"><td>Total</td>${ks.map((k) => `<td class="n">${num(T[k])}</td>`).join('')}<td class="n">${num(TT)}</td><td></td><td></td></tr></tbody></table>
-      <p>Valores lidos dos eventos transmitidos à Receita Federal (EFD-Reinf, séries R-2000 e R-4000); com o período fechado, o valor enviado à DCTFWeb (totalizador do fechamento). Liddera | Inteligência em Negócios.</p></body></html>`;
+      <p>Situação e recibo do fechamento (R-4099/R-2099) consultados no serviço oficial da EFD-Reinf; valores por imposto: débitos da REINF na DCTFWeb do período. Liddera | Inteligência em Negócios.</p></body></html>`;
     const r = await window.fiscocont.reinf.listaPdf({ html, nome });
     if (r && r.error) toast(r.error, true);
   }

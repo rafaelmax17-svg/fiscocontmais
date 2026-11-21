@@ -1,47 +1,49 @@
 'use strict';
-// Conferência da EFD-Reinf (2.4.6) — pedido do Rafael, 18/11/2026.
+// Conferência da EFD-Reinf — 2.4.14: serviço oficial de consulta da EFD-Reinf (pedido do Rafael, 21/11/2026).
 //
-// Depois que a equipe envia a REINF pelo Domínio, o sistema confere no eCAC o que chegou na Receita, empresa por empresa:
-//   1. entra no eCAC com o certificado do escritório (e-CNPJ da Liddera instalado no Windows, escolhido pelo CNPJ):
-//      login → "Entrar com gov.br" → "Seu certificado digital". Captcha ou "Autorizar" do gov.br: a PESSOA faz (a janela
-//      aparece só nessa hora). O sistema nunca resolve captcha;
-//   2. para cada empresa: "Alterar perfil de acesso" → "Procurador de pessoa jurídica - CNPJ" → Alterar. Sem procuração,
-//      a empresa fica marcada "sem procuração". Se o eCAC perguntar portal novo ou antigo, fica no antigo;
-//   3. EFD-Reinf (reinfweb): série R-4000 (R-4010/R-4020) e série R-2000 (R-2010): lista do período, e para cada evento
-//      ainda não lido: Detalhar → "Baixar XML do evento" (valores exatos lidos do XML, python reinf.py);
-//   4. fechamentos R-4099 e R-2099: tela "Totalizadores" (recibo, data/hora do processamento e os valores por natureza e
-//      código de receita) salva em PDF igual à do eCAC + o XML do recibo/totalizador, na pasta do cliente
-//      (Relatórios\AAAA\MM). O quadro "Totais que vão para a DCTFWeb" usa esses valores;
-//   5. resultado na nuvem (reinf/<AAAA-MM>_<CNPJ>), visto por toda a equipe na tela Conferência da EFD-Reinf.
-// Roda sozinho 1x por dia (12h, num só computador com o certificado do escritório — agenda na nuvem) ou no botão
-// "Realizar a conferência". O passo a passo fica em reinf_log.txt, a última tela em reinf_ultima.png e as respostas do
-// site em reinf_rede.txt (pasta de dados), para ajustar ao site real.
+// Até a 2.4.13 o sistema abria o eCAC, trocava o perfil de procurador empresa por empresa e lia as telas da EFD-Reinf.
+// A Receita passou a recusar a troca de perfil feita pelo sistema ("a execução possui atributos que caracteriza acesso
+// automatizado") e, quando a empresa tem mensagem importante não lida na Caixa Postal, o eCAC trava até ela ser aberta —
+// e abrir dá ciência da intimação (Decreto 70.235/1972, art. 23, § 2º, III, "b"). O sistema não contorna nenhuma das
+// duas coisas: a conferência agora usa só o serviço que a Receita publica para programas.
+//
+//   • Consulta de recibos da EFD-Reinf (Manual de Orientação ao Desenvolvedor v2.8, cap. 6.1):
+//       GET https://reinf.receita.economia.gov.br/consulta/reciboevento/R4099/1/<CNPJ raiz>/<AAAA-MM>
+//       GET https://reinf.receita.economia.gov.br/consulta/reciboevento/R2099/1/<CNPJ raiz>/<AAAA-MM>
+//     com o e-CNPJ do escritório como certificado de cliente (procurador com procuração eletrônica que inclua a
+//     EFD-Reinf, feita para o CNPJ matriz). Devolve o recibo, a data/hora de recepção e a situação do fechamento.
+//     Sem tela, sem captcha, sem trocar perfil e sem tocar na Caixa Postal.
+//   • Valores por imposto: a DCTFWeb do período (Integra Contador, electron/dctfweb.js) — o fechamento da REINF manda
+//     os débitos para lá; o computador do Integra confere logo depois desta conferência.
+//   • Resultado na nuvem (reinf/<AAAA-MM>_<CNPJ>, fonte 'api'), visto por toda a equipe.
+// Roda sozinho 1x por dia (agenda_reinf.js) ou no botão. Passo a passo em reinf_log.txt e as respostas da Receita
+// (endereço, código HTTP e o começo do XML) em reinf_rede.txt, na pasta de dados.
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { app, BrowserWindow, session } = require('electron');
 const auth = require('./auth');
-const pastaCliente = require('./pasta_cliente');
 const nfePortal = require('./nfe_portal');
 
 const MODULO = 'fiscal-reinf';
 const COL = 'reinf';
-const URL_LOGIN = 'https://cav.receita.fazenda.gov.br/autenticacao/login';
-const URL_ECAC = 'https://cav.receita.fazenda.gov.br/ecac/';
-const URL_REINF = 'https://www3.cav.receita.fazenda.gov.br/reinfweb/#/home';
-const PARTICAO = 'persist:reinf-ecac';
+const HOST = 'https://reinf.receita.economia.gov.br';
+const API = `${HOST}/consulta/reciboevento`;
+const PARTICAO = 'persist:reinf-api';
 // e-CNPJ do escritório (procurador). Pode ser trocado pelo Admin em reinf.json (pasta de dados) → { "cnpjCertificado": "..." }
 const CNPJ_ESCRITORIO = '36714399000110';
+const PAUSA = 800;            // entre uma consulta e outra: o manual avisa que consultas em sequência excessiva são uso abusivo
 
-let D = null;                 // { userData(), notificar(c, d), runFiscal(args, out), empresasLocais(), janelaPai() }
-let _win = null, _rodando = false, _parar = false, _certFaltou = false, _espera = null, _baixando = false;
+let D = null;                 // { userData(), notificar(c, d), empresasLocais(), janelaPai() }
+let _win = null, _rodando = false, _parar = false, _certFaltou = false, _pronta = false;
 let _logTxt = [], _rede = [];
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const _so = (s) => String(s || '').replace(/\D/g, '');
 const _fmtCnpj = (c) => _so(c).replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 const _limpo = (o) => JSON.parse(JSON.stringify(o === undefined ? null : o));
 const _vivo = () => _win && !_win.isDestroyed();
+const _r2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
 
 function _cfg() { try { return JSON.parse(fs.readFileSync(path.join(D.userData(), 'reinf.json'), 'utf-8')); } catch (_) { return {}; } }
 const cnpjCertificado = () => _so(_cfg().cnpjCertificado) || CNPJ_ESCRITORIO;
@@ -57,15 +59,18 @@ function _log(m) {
   _logTxt.push(`${new Date().toLocaleTimeString('pt-BR')} ${m}`);
   try { fs.writeFileSync(path.join(D.userData(), 'reinf_log.txt'), _logTxt.slice(-800).join('\n')); } catch (_) {}
 }
+function _logRede(m) {
+  _rede.push(`${new Date().toLocaleTimeString('pt-BR')} ${m}`);
+  try { fs.writeFileSync(path.join(D.userData(), 'reinf_rede.txt'), _rede.slice(-400).join('\n')); } catch (_) {}
+}
 function _prog(txt, extra) { try { D.notificar('reinf:progresso', { txt, ...(extra || {}) }); } catch (_) {} }
-async function _print() { try { if (_vivo()) fs.writeFileSync(path.join(D.userData(), 'reinf_ultima.png'), (await _win.webContents.capturePage()).toPNG()); } catch (_) {} }
 
 function init(deps) {
   D = deps;
   app.on('select-client-certificate', (event, webContents, url, lista, callback) => {
     if (!_vivo() || webContents.id !== _win.webContents.id) return;
     const alvo = lista.find((c) => _cnpjCert(c) === cnpjCertificado());
-    _log(`o site pediu certificado (${String(url).split('?')[0]}): ${lista.length} no Windows · ${alvo ? 'usando o e-CNPJ do escritório' : 'e-CNPJ do escritório NÃO instalado'}`);
+    _log(`a Receita pediu o certificado (${String(url).split('?')[0].slice(0, 60)}): ${lista.length} no Windows · ${alvo ? 'usando o e-CNPJ do escritório' : 'e-CNPJ do escritório NÃO instalado'}`);
     event.preventDefault();
     if (!alvo) _certFaltou = true;
     callback(alvo || null);
@@ -81,577 +86,137 @@ async function certificadoInstalado() {
   return (await nfePortal.cnpjsInstalados()).includes(cnpjCertificado());
 }
 
-// ------------------------------------------------------------------ janela
+// ------------------------------------------------------------------ consulta (janela oculta: só para o certificado)
+// A janela nunca aparece. Ela existe porque é por ela que o Windows entrega o e-CNPJ do escritório à conexão; a primeira
+// consulta abre o endereço da própria Receita e as seguintes são feitas a partir dele (mesmo endereço, mesma conexão).
 function _janela() {
   if (_vivo()) return _win;
-  const pai = D.janelaPai && D.janelaPai();
-  _win = new BrowserWindow({ show: false, width: 1280, height: 880, title: 'FiscoCont+ · eCAC · EFD-Reinf', autoHideMenuBar: true,
-    parent: pai && !pai.isDestroyed() ? pai : undefined,
-    webPreferences: { partition: PARTICAO, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false } });
-  const ses = session.fromPartition(PARTICAO);
-  try { ses.setUserAgent(ses.getUserAgent().replace(/\s(Electron|fiscocont[\w-]*)\/\S+/gi, '')); } catch (_) {}
-  _win.webContents.setWindowOpenHandler(({ url }) => { _log(`o site quis abrir janela nova: ${String(url).slice(0, 120)} → mesma janela`); _win.loadURL(url).catch(() => {}); return { action: 'deny' }; });
-  _win.webContents.on('did-navigate', (_e, url) => _log(`abriu ${String(url).split('?')[0]}`));
-  _win.webContents.on('did-navigate-in-page', (_e, url) => _log(`tela ${String(url).split('?')[0].slice(-80)}`));
-  _win.webContents.on('did-fail-load', (_e, cod, desc, url) => { if (cod !== -3) _log(`falha ao abrir ${String(url).split('?')[0]}: ${desc} (${cod})`); });
-  _win.webContents.on('dom-ready', () => { _win.webContents.executeJavaScript('window.alert = (m) => console.log("alerta:", m);').catch(() => {}); });
-  _win.webContents.on('console-message', (_e, _n, msg) => { if (/^alerta:/.test(msg)) _log(`aviso do site: ${msg.slice(8, 300)}`); });
-  _win.on('close', (ev) => { if (_rodando && !_parar) { ev.preventDefault(); _win.hide(); } });
-  _win.on('closed', () => { _win = null; });
-  if (!ses.__fcReinf) {
-    ses.__fcReinf = true;
-    ses.on('will-download', (_ev, item) => {
-      const dest = path.join(os.tmpdir(), `fc_reinf_${Date.now()}_${item.getFilename().replace(/[^\w.-]+/g, '_')}`);
-      item.setSavePath(dest);
-      _baixando = true;
-      item.once('done', (_e, state) => {
-        _baixando = false;
-        _log(`download ${state}: ${item.getFilename()}`);
-        if (_espera) { const w = _espera; _espera = null; w({ state, dest, nome: item.getFilename() }); }
-      });
-    });
-    // respostas do site (para ajustar ao site real): endereço e tipo; nada de conteúdo pessoal no arquivo
-    ses.webRequest.onCompleted((det) => {
-      if (!/reinfweb|cav\.receita/.test(det.url) || !/xhr|fetch/i.test(det.resourceType || '')) return;
-      _rede.push(`${new Date().toLocaleTimeString('pt-BR')} ${det.method} ${det.statusCode} ${String(det.url).split('?')[0].slice(0, 160)}`);
-      try { fs.writeFileSync(path.join(D.userData(), 'reinf_rede.txt'), _rede.slice(-600).join('\n')); } catch (_) {}
-    });
-  }
+  _pronta = false;
+  _win = new BrowserWindow({ show: false, width: 900, height: 600, title: 'FiscoCont+ · EFD-Reinf',
+    webPreferences: { partition: PARTICAO, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, javascript: true } });
+  _win.on('closed', () => { _win = null; _pronta = false; });
   return _win;
 }
-const _js = (code) => (_vivo() ? _win.webContents.executeJavaScript(code, true) : Promise.reject(new Error('a janela do eCAC foi fechada.')));
-async function _vai(url, ms = 45000) {
-  if (!_vivo()) throw new Error('a janela do eCAC foi fechada.');
-  await _win.loadURL(url).catch((e) => _log(`ao abrir ${url}: ${e.message || e}`));
-  await _pronto(ms);
-}
-async function _pronto(ms = 30000) {
-  const fim = Date.now() + ms;
-  await _sleep(500);
-  while (Date.now() < fim) {
-    if (!_vivo()) throw new Error('a janela do eCAC foi fechada.');
-    if (!_win.webContents.isLoading()) { try { if (await _js('document.readyState') === 'complete') { await _sleep(700); return; } } catch (_) {} }
-    await _sleep(300);
-  }
-}
-const _url = () => (_vivo() ? _win.webContents.getURL() : '');
-function _mostra(sim) {
-  if (!_vivo()) return;
-  if (!sim) { _win.hide(); return; }
-  const pai = D.janelaPai && D.janelaPai();
-  if (pai && !pai.isDestroyed()) { const b = pai.getBounds(), [w, h] = _win.getSize(); _win.setPosition(Math.round(b.x + (b.width - w) / 2), Math.round(b.y + (b.height - h) / 2)); }
-  _win.show(); _win.focus();
-}
-function _esperaDownload(ms = 60000) {
-  return new Promise((resolve) => {
-    const t = setTimeout(() => { if (_espera) { _espera = null; resolve({ state: 'tempo' }); } }, ms);
-    _espera = (r) => { clearTimeout(t); resolve(r); };
-  });
-}
 
-// ------------------------------------------------------------------ JS das páginas (por texto, sem depender de ids)
-const JS_BASE = `
-  const vis = (e) => { if (!e || !e.getClientRects || !e.getClientRects().length) return false; const cs = getComputedStyle(e); const b = e.getBoundingClientRect(); return cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity > 0.05 && b.width > 0 && b.height > 0; };
-  const norm = (s) => String(s || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, ' ').trim().toUpperCase();
-  const txt = (e) => norm(e && (e.value || e.innerText || e.textContent || e.alt || e.title || (e.getAttribute && e.getAttribute('aria-label'))));
-  const clicaveis = () => [...document.querySelectorAll('a, button, input[type=button], input[type=submit], input[type=image], [role=button], [role=tab], [role=menuitem], li, span, div.card, mat-card')].filter(vis);
-  const setVal = (inp, v) => { inp.focus(); const d = Object.getOwnPropertyDescriptor(inp.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value');
-    d.set.call(inp, ''); inp.dispatchEvent(new Event('input', { bubbles: true }));
-    d.set.call(inp, v); inp.dispatchEvent(new InputEvent('input', { bubbles: true, data: v, inputType: 'insertText' }));
-    inp.dispatchEvent(new Event('change', { bubbles: true })); inp.dispatchEvent(new Event('blur', { bubbles: true })); };
-`;
-// clica no elemento visível (o menor) cujo texto bate com a expressão
-const JS_CLICA = (re, nao) => `(() => { ${JS_BASE}
-  const re = ${re}; const nao = ${nao || 'null'};
-  const l = clicaveis().filter((x) => re.test(txt(x)) && !(nao && nao.test(txt(x)))).sort((a, b) => txt(a).length - txt(b).length);
-  if (!l.length) return false;
-  const alvo = l[0].closest('a, button, [role=button], [role=tab], [role=menuitem], li') || l[0];
-  alvo.scrollIntoView({ block: 'center' }); alvo.click(); return txt(alvo).slice(0, 80);
-})()`;
-const JS_TEXTO = `(() => document.body ? document.body.innerText.slice(0, 20000) : '')()`;
-// Captcha que a PESSOA vê de verdade. Achado real (18/11): a página de login do eCAC carrega o hCaptcha invisível — o
-// sistema achou que era para a pessoa e mostrou a página do eCAC. Agora só conta a caixa "Sou humano" ou o desafio de
-// imagens quando estão visíveis na tela (nada escondido, transparente ou fora da tela).
-const JS_CAPTCHA = `(() => {
-  const r = document.querySelector('[name="h-captcha-response"], [name="g-recaptcha-response"]');
-  const vista = (f) => { const b = f.getBoundingClientRect(); if (b.width < 60 || b.height < 60 || b.bottom <= 0 || b.top >= innerHeight || b.right <= 0 || b.left >= innerWidth) return false;
-    for (let el = f; el && el !== document.documentElement; el = el.parentElement) { const cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity < 0.1) return false; } return true; };
-  const fr = [...document.querySelectorAll('iframe[src*="hcaptcha"], iframe[src*="recaptcha"]')].filter(vista);
-  const desafio = fr.some((f) => /challenge|desafio/i.test(f.title || '') || f.getBoundingClientRect().height > 200);
-  const caixa = fr.some((f) => /checkbox|caixa/i.test(f.title || '') || f.getBoundingClientRect().height <= 110);
-  return { tem: desafio || caixa, desafio, caixa, ok: !!(r && r.value) };
-})()`;
-// Na janela fica só o quadro do captcha (e o desafio de imagens), com a faixa do FiscoCont+ — nada da página do eCAC.
-const JS_SO_CAPTCHA = `(() => {
-  if (!document.getElementById('fcFaixa')) {
-    const st = document.createElement('style'); st.id = 'fcEstilo';
-    st.textContent = 'html,body{overflow:hidden!important;background:#f3f5fa!important}body *{visibility:hidden!important}'
-      + 'iframe[src*="hcaptcha"],iframe[src*="recaptcha"],#fcFaixa,#fcFaixa *{visibility:visible!important}'
-      + '.fc-alvo{position:fixed!important;top:150px!important;left:50%!important;transform:translateX(-50%)!important;margin:0!important;z-index:2147483000!important}'
-      + '#fcFaixa{position:fixed;top:0;left:0;right:0;z-index:2147483001;background:linear-gradient(135deg,#2563eb,#0891b2);color:#fff;padding:16px 18px;font:14px/1.4 "Segoe UI",system-ui,sans-serif}'
-      + '#fcFaixa b{display:block;font-size:15px}#fcFaixa span{display:block;opacity:.92;font-size:12.5px;margin-top:4px}';
-    document.head.appendChild(st);
-    const f = document.createElement('div'); f.id = 'fcFaixa';
-    f.innerHTML = '<b>Conferência da EFD-Reinf</b><span>Marque “Sou humano”. Depois disso o sistema continua sozinho e fecha esta janela.</span>';
-    document.body.appendChild(f);
-  }
-  const cx = [...document.querySelectorAll('iframe[src*="hcaptcha"], iframe[src*="recaptcha"]')].find((f) => f.getBoundingClientRect().height <= 110 && f.getBoundingClientRect().height > 40);
-  if (cx) (cx.closest('.h-captcha, .g-recaptcha') || cx.parentElement).classList.add('fc-alvo');
-  return true;
-})()`;
-const JS_TIRA_FAIXA = `(() => { ['fcEstilo', 'fcFaixa'].forEach((i) => { const e = document.getElementById(i); if (e) e.remove(); }); document.querySelectorAll('.fc-alvo').forEach((e) => e.classList.remove('fc-alvo')); })()`;
-// "Entrar com gov.br": o botão é texto + imagem do gov.br (achado real 18/11: o sistema clicava no título "ACESSO GOVBR")
-const JS_GOVBR = (modo) => `(() => { ${JS_BASE}
-  // qualquer elemento (a, button, input, div, img…) do botão: link para o gov.br, texto "Entrar com" ou imagem do gov.br
-  const docs = [document, ...[...document.querySelectorAll('iframe')].map((f) => { try { return f.contentDocument; } catch (_) { return null; } }).filter(Boolean)];
-  const todos = docs.flatMap((d) => [...d.querySelectorAll('a, button, input, [onclick], [role=button], img, div, span')]).filter(vis);
-  // achado real (18/11): o botão é <input type="image" src=".../gov-br.png" alt="Acesso Gov BR" onclick="validarHcaptcha('govBr')">
-  const ehLink = (x) => /govbrsso|sso\\.acesso\\.gov\\.br|validarHcaptcha\\(\\s*'govBr'/i.test((x.getAttribute('href') || '') + ' ' + (x.getAttribute('onclick') || '') + ' ' + (x.getAttribute('formaction') || ''));
-  const ehImg = (x) => (x.tagName === 'IMG' || (x.tagName === 'INPUT' && x.type === 'image')) && /GOV[\\s._-]?BR/i.test((x.alt || '') + ' ' + (x.getAttribute('src') || '')) && !/SAIBA/.test(txt(x.parentElement));
-  const ehTexto = (x) => /^ENTRAR COM/.test(txt(x)) || ehImg(x);
-  let alvo = todos.find(ehLink) || todos.filter(ehTexto).sort((a, b) => txt(a).length - txt(b).length)[0];
-  if (!alvo) return false;
-  alvo = alvo.closest('a, button, [onclick], [role=button], input') || alvo;
-  const r = alvo.getBoundingClientRect();
-  if ('${modo || 'clica'}' === 'rect') return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), tag: alvo.tagName };
-  alvo.scrollIntoView({ block: 'center' }); alvo.click(); return (txt(alvo) || alvo.tagName).slice(0, 60);
-})()`;
-// para o passo a passo: o que a página tem de gov.br / entrar (para ajustar ao site real)
-const JS_DIAG = `(() => { const out = [];
-  document.querySelectorAll('a, button, input, form, iframe, img, [onclick]').forEach((x) => { const h = x.outerHTML; if (/gov\\.?br|entrar|sso|captcha/i.test(h) && out.length < 18) out.push(h.replace(/\\s+/g, ' ').slice(0, 220)); });
-  return out.join(' || '); })()`;
-// gov.br › "Seu certificado digital". Achado real (20/11): o sistema procurou 2 s depois de a página abrir e não achou
-// (as opções aparecem depois e podem ser <div>/<p> com onclick). Agora: identificador da opção, depois o texto em
-// qualquer elemento (o mais interno), e devolve a posição para o clique com o mouse se o clique comum não abrir.
-const JS_CERT_GOVBR = (modo) => `(() => { ${JS_BASE}
-  const ruim = (x) => /NUVEM|CLOUD/.test(txt(x)) || /cloud|nuvem/i.test((x.id || '') + ' ' + (x.className || ''));
-  let alvo = [...document.querySelectorAll('#login-certificate, [id*="certificate" i], [id*="certificado" i], a[href*="certificado.sso.acesso.gov.br"], [onclick*="certificado" i], [onclick*="certificate" i]')]
-    .filter(vis).filter((x) => !ruim(x))[0];
-  if (!alvo) {
-    const el = [...document.querySelectorAll('a, button, [role=button], [onclick], li, label, p, span, div, img')].filter(vis)
-      .filter((x) => /(^|SEU )CERTIFICADO DIGITAL$/.test(txt(x)) && !ruim(x) && txt(x).length < 40)
-      .filter((x, _i, l) => !l.some((y) => y !== x && x.contains(y)))[0];
-    if (el) alvo = el.closest('a, button, [role=button], [onclick], li') || el;
-  }
-  if (!alvo) return false;
-  alvo.scrollIntoView({ block: 'center' });
-  const b = alvo.getBoundingClientRect();
-  if (${JSON.stringify(modo)} === 'clica') alvo.click();
-  return { t: (txt(alvo) || alvo.id || alvo.tagName).slice(0, 60), x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) };
-})()`;
-const JS_DIAG_GOV = `(() => { const out = [];
-  document.querySelectorAll('a, button, [onclick], li, div, p, span, img').forEach((x) => { if (x.children.length > 4) return; const h = x.outerHTML; if (/certificad/i.test(h) && out.length < 12) out.push(h.replace(/\\s+/g, ' ').slice(0, 220)); });
-  return out.join(' || '); })()`;
-// "Alterar perfil de acesso" › Procurador de pessoa jurídica - CNPJ
-const JS_PERFIL = (cnpj, modo) => `(() => { ${JS_BASE}
-  // o rótulo mais interno (o próprio texto, não a caixa que também o contém — senão pegava o campo do CPF de cima)
-  const reP = /PROCURADOR DE PESSOA JURIDICA|PROCURADOR.{0,25}CNPJ|PESSOA JURIDICA.{0,10}CNPJ/;
-  const rot = [...document.querySelectorAll('label, span, div, td, th, p, h3, h4, h5, legend, strong, b, option')].filter(vis).filter((x) => reP.test(txt(x)) && txt(x).length < 80)
-    .filter((x) => ![...x.children].some((c) => reP.test(txt(c))))[0];
-  if (!rot) return { ok: false, motivo: 'campo "Procurador de pessoa jurídica - CNPJ" não encontrado' };
-  let box = rot, inp = null, bt = null;
-  for (let i = 0; i < 5 && box && !(inp && bt); i++) {
-    box = box.parentElement;
-    inp = inp || [...box.querySelectorAll('input[type=text], input[type=tel], input:not([type])')].filter(vis)[0];
-    bt = [...box.querySelectorAll('input[type=button], input[type=submit], button, a')].filter(vis).find((b) => /^ALTERAR$/.test(txt(b)));
-  }
-  if (!inp) { const todos = [...document.querySelectorAll('input[type=text], input[type=tel], input:not([type])')].filter(vis); inp = todos.find((x) => rot.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING); }
-  if (!inp) return { ok: false, motivo: 'campo do CNPJ não encontrado' };
-  if (!bt) { const bs = [...document.querySelectorAll('input[type=button], input[type=submit], button')].filter(vis).filter((b) => /^ALTERAR$/.test(txt(b)));
-    bt = bs.find((b) => inp.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) || bs[0]; }
-  if (!bt) return { ok: false, motivo: 'botão Alterar não encontrado' };
-  const m = '${modo || 'valor'}';
-  if (m === 'foca') { inp.scrollIntoView({ block: 'center' }); inp.focus(); inp.select && inp.select(); inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); return { ok: true, max: inp.maxLength, mascara: inp.getAttribute('onkeypress') || inp.getAttribute('data-mask') || '' }; }
-  if (m === 'valor' || m === 'poe') setVal(inp, '${cnpj}');
-  if (m === 'poe') return { ok: true, campo: inp.value };
-  if (m === 'clica' || m === 'valor') { bt.click(); return { ok: true, campo: inp.value }; }
-  return { ok: true, campo: inp.value };
-})()`;
-// diagnóstico da janela "Alterar perfil de acesso" (em cada quadro): endereço, rótulos e campos — vai para o passo a passo
-const JS_DIAG_PERFIL = `(() => { const v = (e) => e.getClientRects().length > 0;
-  const rot = [...document.querySelectorAll('label, span, td, th, p, h3, h4, h5, legend, strong, b, a, button')].filter(v)
-    .map((e) => (e.innerText || '').replace(/\\s+/g, ' ').trim()).filter((t) => t && t.length < 70 && /PROCURAD|PERFIL|CNPJ|CPF|ALTERAR|JUR[IÍ]DICA|REPRESENT|RESPONS/i.test(t));
-  const inp = [...document.querySelectorAll('input, select')].filter(v).map((e) => [e.tagName.toLowerCase(), e.type, e.id, e.name, e.placeholder].filter(Boolean).join(':'));
-  return location.href.split('?')[0] + ' | rótulos: ' + [...new Set(rot)].slice(0, 14).join(' ; ') + ' | campos: ' + inp.slice(0, 12).join(' , '); })()`;
-// mensagem que o eCAC mostrou depois do Alterar (o parágrafo inteiro, com o motivo)
-const JS_MSG_PERFIL = `(() => { ${JS_BASE}
-  const els = [...document.querySelectorAll('div, p, span, td, li')].filter(vis).filter((x) => /NAO FOI POSSIVEL|PROCURAC|NAO (EXISTE|HA|POSSUI)|INVALID|ATENCAO/.test(txt(x)) && txt(x).length < 600)
-    .sort((a, b) => txt(a).length - txt(b).length);
-  const alvo = els.find((x) => txt(x).length > 40) || els[0];
-  return alvo ? (alvo.closest('div') || alvo).innerText.replace(/\\s+/g, ' ').trim().slice(0, 400) : '';
-})()`;
-// "Alterar perfil de acesso" escondido (menu do usuário fechado no portal novo): abre o menu ou clica direto
-const JS_ABRE_PERFIL = `(() => { ${JS_BASE}
-  const todos = [...document.querySelectorAll('a, button, input[type=button], li, span')].filter((x) => /ALTERAR PERFIL/.test(txt(x)) && txt(x).length < 60);
-  if (todos.length) { const a = todos.sort((x, y) => txt(x).length - txt(y).length)[0]; (a.closest('a, button, li') || a).click(); return txt(a).slice(0, 60); }
-  const menu = [...document.querySelectorAll('a, button, [role=button]')].filter(vis).find((x) => /^PERFIL$|MEU PERFIL|PERFIL DE ACESSO|OPCOES DO USUARIO/.test(txt(x)));
-  if (menu) { menu.click(); return 'menu:' + txt(menu).slice(0, 40); }
-  return false;
-})()`;
-// período de apuração (dois campos MM/AAAA) e Listar
-const JS_PERIODO = (mmaaaa) => `(() => { ${JS_BASE}
-  const inps = [...document.querySelectorAll('input')].filter(vis).filter((i) => !['checkbox', 'radio', 'button', 'submit', 'hidden'].includes(i.type));
-  const per = inps.filter((i) => /MM\\/?AAAA|PERIODO|APURACAO|COMPETENCIA/.test(norm(i.placeholder + ' ' + i.name + ' ' + i.id + ' ' + (i.getAttribute('formcontrolname') || '') + ' ' + (i.closest('div, td') ? i.closest('div, td').innerText : ''))));
-  const alvo = (per.length ? per : inps).slice(0, 2);
-  alvo.forEach((i) => setVal(i, '${mmaaaa}'));
-  return alvo.length;
-})()`;
-// tabela da lista: cabeçalho → colunas (Período, Estabelecimento, Beneficiário, Número do recibo, Tipo de evento, Recepção)
-const JS_LISTA = `(() => { ${JS_BASE}
-  const t = [...document.querySelectorAll('table')].filter(vis).find((x) => /RECIBO/.test(txt(x.querySelector('thead') || x.rows[0])));
-  if (!t) return { tem: false, vazio: /NENHUM (REGISTRO|EVENTO)|NAO (FORAM )?ENCONTRAD|SEM REGISTRO/.test(norm(document.body.innerText)) };
-  const cab = [...(t.querySelector('thead') ? t.querySelector('thead').rows[0].cells : t.rows[0].cells)].map((c) => txt(c));
-  const idx = (re) => cab.findIndex((c) => re.test(c));
-  const ix = { per: idx(/PERIODO/), est: idx(/ESTABELEC/), ben: idx(/BENEFICIARIO|PRESTADOR|CNPJ DO PRESTADOR/), rec: idx(/RECIBO/), tipo: idx(/TIPO/), dt: idx(/RECEPCAO|DATA/), sit: idx(/SITUACAO|STATUS/) };
-  const corpo = t.tBodies[0] ? [...t.tBodies[0].rows] : [...t.rows].slice(1);
-  const rows = corpo.map((r, i) => { const c = [...r.cells].map((x) => (x.innerText || '').trim());
-    return { i, per: c[ix.per] || '', est: c[ix.est] || '', benef: c[ix.ben] || '', recibo: c[ix.rec] || '', tipo: c[ix.tipo] || '', recepcao: c[ix.dt] || '', sit: c[ix.sit] || '',
-      det: !![...r.querySelectorAll('button, a, input')].find((b) => /DETALHAR|VISUALIZAR/.test(txt(b))), tot: !![...r.querySelectorAll('button, a, input')].find((b) => /TOTALIZADOR/.test(txt(b))) }; })
-    .filter((r) => r.recibo || r.per);
-  const prox = [...document.querySelectorAll('a, button, li')].filter(vis).find((x) => /^PROXIMA|^›|^»/.test(txt(x)) && !x.classList.contains('disabled') && !(x.parentElement && x.parentElement.classList.contains('disabled')));
-  return { tem: true, cab, rows, prox: !!prox };
-})()`;
-// botão da linha: pelo número do recibo (ou pela posição, quando não há recibo)
-const JS_LINHA_BT = (i, re, recibo) => `(() => { ${JS_BASE}
-  const t = [...document.querySelectorAll('table')].filter(vis).find((x) => /RECIBO/.test(txt(x.querySelector('thead') || x.rows[0])));
-  if (!t) return false;
-  const corpo = t.tBodies[0] ? [...t.tBodies[0].rows] : [...t.rows].slice(1);
-  const rec = ${JSON.stringify(recibo || '')};
-  const r = rec ? corpo.find((x) => (x.innerText || '').includes(rec)) : corpo[${i}]; if (!r) return false;
-  const b = [...r.querySelectorAll('button, a, input')].find((x) => ${re}.test(txt(x)));
-  if (!b) return false; b.scrollIntoView({ block: 'center' }); b.click(); return true;
-})()`;
-// tela "Totalizadores": campos (rótulo → valor) e as tabelas
-const JS_TOTALIZADOR = `(() => { ${JS_BASE}
-  const kv = {};
-  [...document.querySelectorAll('label, dt, span, div, td, th, p')].filter(vis).forEach((el) => {
-    const t = txt(el); if (!t || t.length > 60 || el.children.length > 2) return;
-    if (/^(NUMERO DO RECIBO DO EVENTO|DATA\\/HORA DO PROCESSAMENTO|PERIODO DE APURACAO|IDENTIFICACAO DA ESCRITURACAO)$/.test(t)) {
-      let v = el.nextElementSibling ? el.nextElementSibling.innerText : ''; if (!v && el.parentElement) v = el.parentElement.innerText.replace(el.innerText, '');
-      kv[t] = String(v || '').trim().split('\\n')[0];
-    }
-  });
-  const tabelas = [...document.querySelectorAll('table')].filter(vis).map((t) => {
-    const cab = [...(t.querySelector('thead') ? t.querySelector('thead').rows[0].cells : t.rows[0].cells)].map((c) => txt(c));
-    const corpo = t.tBodies[0] ? [...t.tBodies[0].rows] : [...t.rows].slice(1);
-    return { cab, rows: corpo.map((r) => [...r.cells].map((c) => (c.innerText || '').trim())) };
-  }).filter((t) => t.cab.some((c) => /CODIGO DE RECEITA/.test(c)));
-  return { ok: tabelas.length > 0 || !!kv['NUMERO DO RECIBO DO EVENTO'], kv, tabelas, sem: /SEM MOVIMENTO/.test(norm(document.body.innerText)) };
-})()`;
-
-// ------------------------------------------------------------------ passos
-async function _humano(rotulo) {
-  // captcha ou autorização do gov.br: quem faz é a pessoa. A janela só aparece se continuar parado nisso por alguns
-  // segundos, e mostra só o quadro do captcha (nada da página do eCAC) — para não confundir a equipe.
-  const precisa = async () => {
-    const c = await _js(JS_CAPTCHA).catch(() => ({}));
-    const consent = /sso\.acesso\.gov\.br/.test(_url()) && /\bAUTORIZAR\b/.test((await _js(JS_TEXTO).catch(() => '')).normalize('NFD').toUpperCase());
-    return { cap: !!(c.tem && !c.ok), consent };
-  };
-  let p = await precisa();
-  if (!p.cap && !p.consent) return false;
-  const u0 = _url();
-  await _sleep(5000);
-  if (_url() !== u0) return true;                       // seguiu sozinho
-  p = await precisa();
-  if (!p.cap && !p.consent) return true;
-  _log(`${rotulo}: esperando a pessoa (${p.consent ? 'autorização do gov.br' : 'captcha'})`);
-  _prog(p.consent ? 'O gov.br pediu autorização: confira e autorize na janela que abriu.' : 'Marque o "Sou humano" na janela que abriu.', { humano: true });
-  if (p.cap && !p.consent) { await _js(JS_SO_CAPTCHA).catch(() => {}); _win.setSize(500, 660); }
-  _mostra(true);
-  const fim = Date.now() + 5 * 60000;
-  while (Date.now() < fim && _vivo() && !_parar) {
-    await _sleep(1000);
-    if (_url() !== u0) break;
-    const c2 = await _js(JS_CAPTCHA).catch(() => ({}));
-    if (!p.consent && (c2.ok || !c2.tem)) { await _sleep(1200); break; }
-  }
-  _mostra(false);
-  await _js(JS_TIRA_FAIXA).catch(() => {});
-  try { _win.setSize(1280, 880); } catch (_) {}
-  return true;
-}
-
-async function _login() {
-  _prog('Entrando no eCAC com o certificado do escritório…');
-  await _vai(URL_ECAC);
-  if (/cav\.receita\.fazenda\.gov\.br\/ecac/i.test(_url()) && !/autenticacao/.test(_url())) { _log('sessão do eCAC ainda aberta'); return; }
-  if (!/autenticacao\/login/.test(_url())) await _vai(URL_LOGIN);
-  for (let tent = 0; tent < 4 && !/sso\.acesso\.gov\.br/.test(_url()); tent++) {
-    await _sleep(1500);                                         // a página monta o botão depois de carregar
-    let t = false;
-    if (tent < 2) t = await _js(JS_GOVBR('clica')).catch(() => false);
-    else if (tent === 2) {                                      // clique "de verdade" (mouse) no botão
-      const r = await _js(JS_GOVBR('rect')).catch(() => false);
-      if (r && r.x) { for (const type of ['mouseMove', 'mouseDown', 'mouseUp']) _win.webContents.sendInputEvent({ type, x: r.x, y: r.y, button: 'left', clickCount: 1 }); t = `mouse em ${r.tag}`; }
-    } else {                                                    // a função que o próprio botão chama (hCaptcha invisível + envio)
-      t = await _js(`(() => { if (typeof validarHcaptcha === 'function') { validarHcaptcha('govBr'); return 'validarHcaptcha'; } const f = document.getElementById('frmLoginCert'); if (f) { f.submit(); return 'formulário'; } return false; })()`).catch(() => false);
-    }
-    _log(`login: ${t ? `clicou em "${t}"` : 'botão gov.br não encontrado'}`);
-    if (!t && tent === 0) _log(`login · página: ${await _js(JS_DIAG).catch(() => '')}`);
-    for (let i = 0; i < 16 && !/sso\.acesso\.gov\.br/.test(_url()); i++) await _sleep(500);
-    await _pronto();
-    if (!/sso\.acesso\.gov\.br/.test(_url())) await _humano('login do eCAC');   // captcha do botão, se aparecer de verdade
-  }
-  if (!/sso\.acesso\.gov\.br|cav\.receita\.fazenda\.gov\.br\/ecac/i.test(_url())) _log(`login: continuou em ${_url().split('?')[0]}`);
-  if (/sso\.acesso\.gov\.br/.test(_url())) {
-    await _humano('gov.br (antes do certificado)');
-    let c = false;
-    for (let k = 0; k < 20 && !c && /sso\.acesso\.gov\.br/.test(_url()); k++) {     // espera as opções aparecerem (até 15 s)
-      c = await _js(JS_CERT_GOVBR('clica')).catch(() => false);
-      if (!c) await _sleep(750);
-    }
-    _log(`gov.br: ${c ? `clicou em "${c.t}"` : 'opção do certificado não encontrada'}`);
-    if (!c) _log(`gov.br · página: ${await _js(JS_DIAG_GOV).catch(() => '')}`);
-    // o clique comum não saiu do lugar: clique "de verdade" com o mouse na opção
-    for (let i = 0; i < 10 && c && /sso\.acesso\.gov\.br\/(login)?(\?|$|#)/.test(_url()); i++) await _sleep(500);
-    if (c && /sso\.acesso\.gov\.br\/(login)?(\?|$|#)/.test(_url())) {
-      const r = await _js(JS_CERT_GOVBR('pos')).catch(() => false);
-      if (r && r.x) { for (const type of ['mouseMove', 'mouseDown', 'mouseUp']) _win.webContents.sendInputEvent({ type, x: r.x, y: r.y, button: 'left', clickCount: 1 }); _log('gov.br: clique com o mouse em "Seu certificado digital"'); }
-    }
-    await _pronto(45000);
-  }
-  for (let i = 0; i < 40; i++) {
-    if (_certFaltou) throw new Error(`o certificado do escritório (e-CNPJ ${_fmtCnpj(cnpjCertificado())}) não está instalado no Windows deste computador.`);
-    const u = _url();
-    if (/cav\.receita\.fazenda\.gov\.br\/ecac/i.test(u)) { _log('eCAC aberto'); return; }
-    if (await _humano('gov.br')) continue;
-    await _sleep(1500);
-  }
-  await _print();
-  throw new Error('não consegui entrar no eCAC (veja o "Passo a passo").');
-}
-
-async function _portalAntigo() {
-  // achado real (vídeo de 21/11): depois do login aparece "Atenção · Prepare-se para a evolução dos serviços digitais da
-  // RFB" com "Continuar no e-CAC por enquanto" / "Acessar o portal Serviços da Receita Federal". Fica no e-CAC.
-  let ev = await _js(JS_CLICA('/CONTINUAR NO E-?CAC/')).catch(() => false);
-  if (!ev) for (const q of _win.webContents.mainFrame.framesInSubtree) { ev = await q.executeJavaScript(JS_CLICA('/CONTINUAR NO E-?CAC/'), true).catch(() => false); if (ev) break; }
-  if (ev) { _log(`aviso da Receita: clicou em "${ev}"`); await _sleep(900); }
-  const t = (await _js(JS_TEXTO).catch(() => '')).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
-  if (/NOVO/.test(t) && /ANTIG/.test(t) && /(PORTAL|VERSAO|ECAC)/.test(t)) {
-    const c = await _js(JS_CLICA('/ANTIG|VERSAO (ANTERIOR|CLASSICA)|CONTINUAR (NO|NA) (ATUAL|VERSAO ATUAL)/')).catch(() => false);
-    if (c) { _log(`portal antigo: "${c}"`); await _pronto(); }
-  }
-}
-
-// roda o script em cada quadro da página (a janela "Alterar perfil" pode vir dentro de um iframe) e devolve o primeiro
-// quadro em que ele respondeu ok. Achado (21/11): procurava só na página principal → "campo não encontrado".
-async function _nosQuadros(codigo) {
-  let primeiro = null;
-  for (const fr of _win.webContents.mainFrame.framesInSubtree) {
-    try { const r = await fr.executeJavaScript(codigo, true); if (r && r.ok) return { r, fr }; if (!primeiro) primeiro = r; } catch (_) {}
-  }
-  return { r: primeiro, fr: null };
-}
-
-// troca o perfil para a empresa. Devolve { ok } ou { semProcuracao } ou { erro }
-async function _perfil(emp) {
-  const norm = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
-  for (let tent = 0; tent < 3; tent++) {
-    await _vai(URL_ECAC);
-    // achado real (18/11): depois de um "não foi possível alterar o perfil", as empresas seguintes não achavam o botão —
-    // a sessão do eCAC cai ou fica um aviso aberto. Agora entra de novo se precisar e fecha o aviso antes.
-    if (/autenticacao|sso\.acesso/.test(_url())) { _log('a sessão do eCAC caiu: entrando de novo'); await _login(); await _vai(URL_ECAC); }
-    await _portalAntigo();
-    await _js(JS_CLICA('/^(OK|FECHAR|X)$/')).catch(() => false);
-    let ab = await _js(JS_CLICA('/ALTERAR PERFIL/')).catch(() => false);
-    if (!ab) { ab = await _js(JS_ABRE_PERFIL).catch(() => false); if (ab && /^menu:/.test(ab)) { await _sleep(1000); ab = await _js(JS_ABRE_PERFIL).catch(() => false); } }
-    if (!ab) {
-      _log(`${emp.nome}: "Alterar perfil de acesso" não encontrado (tela: ${(await _js(JS_TEXTO).catch(() => '')).replace(/\s+/g, ' ').slice(0, 300)})`);
-      if (tent < 2) { await _sleep(2000); continue; }
-      await _print(); return { erro: '"Alterar perfil de acesso" não encontrado no eCAC.' };
-    }
-    // espera a janela carregar (até ~12 s), em qualquer quadro
-    let achou = { r: null, fr: null };
-    for (let k = 0; k < 16 && !achou.fr; k++) { await _sleep(750); achou = await _nosQuadros(JS_PERFIL(_so(emp.cnpj), 'acha')); }
-    if (!achou.fr) {
-      const diag = [];
-      for (const fr of _win.webContents.mainFrame.framesInSubtree) { try { diag.push(await fr.executeJavaScript(JS_DIAG_PERFIL, true)); } catch (_) {} }
-      _log(`${emp.nome}: janela "Alterar perfil" · ${diag.join(' || ').slice(0, 1500)}`);
-      if (tent < 2) { await _sleep(1500); continue; }
-      await _print(); return { erro: (achou.r && achou.r.motivo) || 'campo do procurador não encontrado' };
-    }
-    const fr = achou.fr;
-    if (fr !== _win.webContents.mainFrame) _log(`${emp.nome}: a janela "Alterar perfil" está num quadro (${String(fr.url || '').split('?')[0]})`);
-    // digita o CNPJ de verdade (a máscara do campo formata), em vez de só preencher o valor
-    const f = await fr.executeJavaScript(JS_PERFIL(_so(emp.cnpj), 'foca'), true).catch((e) => ({ ok: false, motivo: e.message }));
-    if (!f.ok) { await _print(); return { erro: f.motivo }; }
-    _win.webContents.focus();
-    _win.webContents.insertText(tent === 1 ? _fmtCnpj(emp.cnpj) : _so(emp.cnpj));
-    await _sleep(500);
-    // se o texto não entrou no campo (foco no quadro), preenche direto
-    const v = await fr.executeJavaScript(JS_PERFIL(_so(emp.cnpj), 'acha'), true).catch(() => null);
-    if (!v || _so(v.campo) !== _so(emp.cnpj)) { await fr.executeJavaScript(JS_PERFIL(_so(emp.cnpj), 'poe'), true).catch(() => null); await _sleep(300); }
-    const c = await fr.executeJavaScript(JS_PERFIL(_so(emp.cnpj), 'clica'), true).catch((e) => ({ ok: false, motivo: e.message }));
-    _log(`${emp.nome}: perfil · campo ficou "${c.campo || ''}" (tentativa ${tent + 1})`);
-    await _sleep(2500); await _pronto();
-    const t = norm(await _js(JS_TEXTO).catch(() => ''));
-    let msg = norm(await _js(JS_MSG_PERFIL).catch(() => ''));
-    if (!msg) { for (const q of _win.webContents.mainFrame.framesInSubtree) { const m2 = norm(await q.executeJavaScript(JS_MSG_PERFIL, true).catch(() => '')); if (m2) { msg = m2; break; } } }
-    if (t.includes(_fmtCnpj(emp.cnpj)) || (t.includes(_so(emp.cnpj)) && !/NAO FOI POSSIVEL/.test(msg))) { await _portalAntigo(); _log(`${emp.nome}: perfil de procurador ok`); return { ok: true }; }
-    _log(`${emp.nome}: o eCAC respondeu "${msg || '(sem mensagem)'}"`);
-    if (/PROCURAC/.test(msg) && /(NAO|INEXIST|SEM|EXPIRAD|VENCID|CANCELAD)/.test(msg)) return { semProcuracao: true, msg };
-    if (tent < 2 && /NAO FOI POSSIVEL/.test(msg)) {
-      // achado real (18/11): depois de uma empresa, a troca para a próxima dava "não foi possível alterar o perfil" (a
-      // seguinte funcionava). Começa uma sessão nova (perfil do titular) e tenta de novo.
-      await _print();
-      _log(`${emp.nome}: saindo do eCAC e entrando de novo para trocar o perfil`);
-      await _novaSessao();
-      continue;
-    }
-    await _print();
-    return { erro: msg ? `o eCAC respondeu: ${msg.toLowerCase()}` : 'não consegui confirmar a troca de perfil no eCAC.' };
-  }
-  return { erro: 'não consegui trocar o perfil no eCAC.' };
-}
-
-async function _novaSessao() {
+// lê a resposta (XML; se vier JSON, também serve): registros com recibo e ocorrências (código/descrição)
+const JS_GET = (url) => `(async () => {
   try {
-    const ses = session.fromPartition(PARTICAO);
-    await ses.clearStorageData({ origins: ['https://cav.receita.fazenda.gov.br', 'https://www3.cav.receita.fazenda.gov.br'] });
-    await ses.clearStorageData({ storages: ['cookies'] }).catch(() => {});
-  } catch (e) { _log(`limpar a sessão: ${e.message || e}`); }
-  await _login();
-}
-
-async function _abreReinf() {
-  await _vai(URL_REINF, 60000);
-  for (let i = 0; i < 20 && !/reinfweb/.test(_url()); i++) await _sleep(500);
-  await _sleep(2500);
-  await _js(JS_CLICA('/^(FECHAR|OK|CIENTE|ENTENDI|CONTINUAR)$/')).catch(() => false);
-}
-
-// lista de uma série no período: abre a aba e o item de lista, preenche o período e lista (todas as páginas)
-async function _lista(serie, comp) {
-  const mmaaaa = `${comp.slice(5, 7)}/${comp.slice(0, 4)}`;
-  const aba = serie === '4000' ? '/RENDIMENTOS PAGOS/' : '/RETENCOES PREVIDENCIARIAS/';
-  const item = serie === '4000' ? ['/PAGAMENTO.?CREDITO.*(LISTA|CONSULT)|LISTAR EVENTOS ENVIADOS/', '/PAGAMENTO.?CREDITO/', '/BENEFICIARIO PESSOA JURIDICA/']
-    : ['/SERVICOS TOMADOS/', '/R-?2010/'];
-  await _js(JS_CLICA(aba)).catch(() => false); await _sleep(1500);
-  let foi = false;
-  for (const re of item) { const c = await _js(JS_CLICA(re, '/FECHAMENTO|REABERTURA|TOTALIZADOR/')).catch(() => false); if (c) { _log(`R-${serie}: "${c}"`); foi = true; break; } }
-  if (!foi) { await _print(); return { erro: `não achei a lista de eventos da série R-${serie}.` }; }
-  await _sleep(2000);
-  const n = await _js(JS_PERIODO(mmaaaa)).catch(() => 0);
-  if (!n) { await _print(); return { erro: 'não achei o campo do período de apuração.' }; }
-  await _js(JS_CLICA('/^(LISTAR|CONSULTAR|PESQUISAR)$/')).catch(() => false);
-  const todas = [];
-  for (let pag = 0; pag < 20; pag++) {
-    let l = null;
-    for (let i = 0; i < 20; i++) { await _sleep(700); l = await _js(JS_LISTA).catch(() => null); if (l && (l.tem || l.vazio)) break; }
-    if (!l || !l.tem) { if (l && l.vazio) return { rows: todas }; await _print(); return pag ? { rows: todas } : { rows: [], aviso: 'a lista não apareceu.' }; }
-    if (pag === 0) _log(`R-${serie} colunas: ${l.cab.join(' | ')}`);
-    todas.push(...l.rows.map((r) => ({ ...r, pag })));
-    if (!l.prox || l.rows.length < 10) break;
-    await _js(JS_CLICA('/^PROXIMA|^›$|^»$/')).catch(() => false);
-  }
-  return { rows: todas, mmaaaa };
-}
-
-// Detalhar → Baixar XML do evento → Voltar
-async function _xmlEvento(row, serie, comp) {
-  // a lista precisa estar na tela (o Voltar às vezes volta sem ela): lista de novo e procura a linha pelo recibo
-  if (!(await _js(JS_LISTA).catch(() => ({}))).tem) { const l2 = await _lista(serie, comp); if (l2.erro) return null; }
-  let ok = false;
-  for (let pag = 0; pag < 20 && !ok; pag++) {
-    ok = await _js(JS_LINHA_BT(row.i, '/DETALHAR|VISUALIZAR/', row.recibo)).catch(() => false);
-    if (!ok) { const l = await _js(JS_LISTA).catch(() => ({})); if (!l.prox) break; await _js(JS_CLICA('/^PROXIMA|^›$|^»$/')).catch(() => false); await _sleep(1500); }
-  }
-  if (!ok) return null;
-  await _sleep(2000);
-  const baixa = _esperaDownload(45000);
-  const c = await _js(JS_CLICA('/BAIXAR XML DO EVENTO/')).catch(() => false);
-  let r = { state: 'sem_botao' };
-  if (c) r = await baixa; else if (_espera) _espera = null;
-  await _js(JS_CLICA('/^VOLTAR$/')).catch(() => false);
-  await _sleep(1800);
-  return r.state === 'completed' ? r.dest : null;
-}
-
-async function _lerXmls(arqs) {
-  if (!arqs.length) return [];
-  const out = path.join(os.tmpdir(), `fc_reinf_x_${Date.now()}.json`);
-  const args = ['reinf-xml', '--json', out];
-  arqs.forEach((a) => args.push('--xml', a));
-  await D.runFiscal(args, out);
-  const r = JSON.parse(fs.readFileSync(out, 'utf-8')); fs.unlink(out, () => {});
-  return (r.eventos || []);
-}
-
-// fechamento (R-4099 / R-2099) → Totalizadores: PDF igual à tela do eCAC + XML do recibo/totalizador
-async function _fechamento(serie, comp, emp, pasta) {
-  const mmaaaa = `${comp.slice(5, 7)}/${comp.slice(0, 4)}`;
-  const aba = serie === '4000' ? '/RENDIMENTOS PAGOS/' : '/RETENCOES PREVIDENCIARIAS/';
-  const ev = serie === '4000' ? '4099' : '2099';
-  await _js(JS_CLICA(aba)).catch(() => false); await _sleep(1500);
-  const c = await _js(JS_CLICA(`/FECHAMENTO.*(R-?${ev})|R-?${ev}/`)).catch(() => false) || await _js(JS_CLICA('/FECHAMENTO E REABERTURA|FECHAMENTO\\/REABERTURA/')).catch(() => false);
-  if (!c) return { fechado: false, aviso: `não achei o fechamento R-${ev}.` };
-  _log(`R-${ev}: "${c}"`);
-  await _sleep(2000);
-  await _js(JS_PERIODO(mmaaaa)).catch(() => 0);
-  await _js(JS_CLICA('/^(LISTAR|CONSULTAR|PESQUISAR)$/')).catch(() => false);
-  let l = null;
-  for (let i = 0; i < 20; i++) { await _sleep(700); l = await _js(JS_LISTA).catch(() => null); if (l && (l.tem || l.vazio)) break; }
-  const rows = (l && l.rows) || [];
-  _log(`R-${ev}: ${rows.length} linha(s) ${rows.map((r) => `${r.tipo || r.sit} ${r.recibo}`).join(' · ')}`);
-  // o último evento do período: fechamento (com totalizador) ou reabertura
-  const ult = rows.filter((r) => r.recibo).slice(-1)[0];
-  if (!ult) return { fechado: false };
-  if (/REABERT/i.test(`${ult.tipo} ${ult.sit}`)) return { fechado: false, reaberto: true, recibo: ult.recibo, recepcao: ult.recepcao };
-  const linha = rows.findIndex((r) => r === ult);
-  const okTot = await _js(JS_LINHA_BT(linha, '/TOTALIZADOR/', ult.recibo)).catch(() => false) || await _js(JS_LINHA_BT(linha, '/DETALHAR|VISUALIZAR/', ult.recibo)).catch(() => false);
-  const res = { fechado: true, recibo: ult.recibo, recepcao: ult.recepcao, porCodigo: [], porNatureza: [] };
-  if (!okTot) return res;
-  await _sleep(2500);
-  if (!(await _js(JS_TOTALIZADOR).catch(() => ({}))).ok) { await _js(JS_CLICA('/TOTALIZADOR/')).catch(() => false); await _sleep(2500); }
-  const t = await _js(JS_TOTALIZADOR).catch(() => ({ ok: false }));
-  if (!t.ok) { await _print(); return { ...res, aviso: 'a tela de totalizadores não abriu.' }; }
-  res.recibo = t.kv['NUMERO DO RECIBO DO EVENTO'] || res.recibo;
-  res.dhProcess = t.kv['DATA/HORA DO PROCESSAMENTO'] || '';
-  res.semMovimento = !!t.sem;
-  const num = (v) => { const n = parseFloat(String(v || '').replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) ? n : 0; };
-  for (const tb of t.tabelas) {
-    const ix = (re) => tb.cab.findIndex((x) => re.test(x));
-    const iNat = ix(/NATUREZA/), iCod = ix(/CODIGO DE RECEITA/), iEnv = ix(/ENVIADO|DCTF/), iRet = ix(/^VALOR RETIDO$/), iSus = ix(/SUSPENS/), iDx = ix(/DEIXOU/);
-    const linhas = tb.rows.map((r) => ({ nat: iNat >= 0 ? r[iNat] : '', cod: _so(r[iCod]), retido: num(r[iRet >= 0 ? iRet : iEnv]), enviado: num(r[iEnv >= 0 ? iEnv : iRet]), suspenso: iSus >= 0 ? num(r[iSus]) : 0, deixou: iDx >= 0 ? num(r[iDx]) : 0 })).filter((x) => x.cod);
-    if (iNat >= 0) res.porNatureza.push(...linhas); else res.porCodigo.push(...linhas);
-  }
-  if (!res.porCodigo.length && res.porNatureza.length) {          // sem a segunda tabela: soma por código
-    const m = {}; res.porNatureza.forEach((x) => { m[x.cod] = m[x.cod] || { cod: x.cod, enviado: 0, deixou: 0 }; m[x.cod].enviado += x.enviado; m[x.cod].deixou += x.deixou; });
-    res.porCodigo = Object.values(m);
-  }
-  // PDF da própria tela + XML do totalizador, na pasta do cliente
-  const nome = `REINF Totalizador R-${ev} ${comp.slice(5, 7)}${comp.slice(0, 4)}`;
-  try {
-    const pdf = await _win.webContents.printToPDF({ landscape: true, printBackground: true, pageSize: 'A4', margins: { marginType: 'custom', top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 } });
-    fs.mkdirSync(pasta, { recursive: true });
-    fs.writeFileSync(path.join(pasta, `${nome}.pdf`), pdf);
-    res.pdf = path.join(pasta, `${nome}.pdf`);
-  } catch (e) { _log(`PDF do totalizador: ${e.message || e}`); }
-  const baixa = _esperaDownload(40000);
-  const cx = await _js(JS_CLICA('/BAIXAR XML DO (RECIBO|TOTALIZADOR)|XML DO RECIBO/')).catch(() => false);
-  if (cx) {
-    const d = await baixa;
-    if (d.state === 'completed') {
-      try { fs.copyFileSync(d.dest, path.join(pasta, `${nome}.xml`)); res.xml = path.join(pasta, `${nome}.xml`); fs.unlink(d.dest, () => {}); } catch (e) { _log(`XML do totalizador: ${e.message || e}`); }
+    const r = await fetch(${JSON.stringify(url)}, { credentials: 'include', cache: 'no-store', headers: { Accept: 'application/xml, text/xml, application/json, */*' } });
+    const t = await r.text();
+    const regs = [], ocorr = [];
+    const add = (o) => { const ks = Object.keys(o); if (ks.some((k) => /recibo/i.test(k) && !/arqbase/i.test(k))) regs.push(o);
+      const kd = ks.find((k) => /^(dsc|desc|mensagem|msg)/i.test(k)); if (kd) ocorr.push({ cod: o[ks.find((k) => /^(cod|cd)/i.test(k))] || '', txt: String(o[kd] || '').slice(0, 400) }); };
+    if (/^\\s*[\\[{]/.test(t)) {
+      const walk = (v) => { if (Array.isArray(v)) { v.forEach(walk); return; } if (v && typeof v === 'object') { const o = {}; let folha = false;
+        Object.entries(v).forEach(([k, x]) => { if (x == null || typeof x !== 'object') { o[k] = String(x ?? ''); folha = true; } else walk(x); }); if (folha) add(o); } };
+      try { walk(JSON.parse(t)); } catch (_) {}
+    } else {
+      const doc = new DOMParser().parseFromString(t, 'application/xml');
+      if (!doc.getElementsByTagName('parsererror').length) {
+        const pais = new Set();
+        [...doc.getElementsByTagName('*')].forEach((el) => { if (!el.children.length && el.parentElement) pais.add(el.parentElement); });
+        pais.forEach((p) => { const o = {}; [...p.children].forEach((c) => { if (!c.children.length) o[c.localName] = (c.textContent || '').trim(); }); add(o); });
+      }
     }
-  } else if (_espera) _espera = null;
-  _log(`R-${ev}: recibo ${res.recibo} · ${res.porCodigo.length} código(s) de receita${res.pdf ? ' · PDF salvo' : ''}${res.xml ? ' · XML salvo' : ''}`);
-  await _js(JS_CLICA('/^VOLTAR$/')).catch(() => false);
-  await _sleep(1500);
-  return res;
+    return { http: r.status, ct: r.headers.get('content-type') || '', texto: t.slice(0, 1500), regs, ocorr };
+  } catch (e) { return { http: 0, erro: String((e && e.message) || e) }; }
+})()`;
+
+async function _get(url) {
+  const w = _janela();
+  if (!_pronta) {
+    // primeira consulta: abre o endereço na própria janela (o Windows entrega o certificado nessa hora)
+    let http = 0, falha = '';
+    const nav = (_e, _u, code) => { http = code || http; };
+    const erro = (_e, cod, desc) => { if (cod !== -3) falha = `${desc} (${cod})`; };
+    w.webContents.on('did-navigate', nav);
+    w.webContents.on('did-fail-load', erro);
+    await w.loadURL(url).catch((e) => { if (!falha) falha = String(e.message || e); });
+    w.webContents.removeListener('did-navigate', nav);
+    w.webContents.removeListener('did-fail-load', erro);
+    if (_certFaltou) throw new Error('o certificado do escritório não está instalado no Windows deste computador.');
+    if (!http) {
+      _logRede(`GET ${url.replace(HOST, '')} → falhou: ${falha}`);
+      if (/CLIENT_AUTH|CERT|SSL|-1(0[0-9]|1[0-9])\b/i.test(falha)) throw new Error(`a Receita não aceitou o certificado do escritório (${falha}).`);
+      throw new Error(`não consegui falar com o serviço da EFD-Reinf (${falha || 'sem resposta'}).`);
+    }
+    _pronta = true;
+  }
+  let r = await w.webContents.executeJavaScript(JS_GET(url), true).catch((e) => ({ http: 0, erro: String(e.message || e) }));
+  if (r.http === 429) {            // "aguarde alguns minutos": espera 1 minuto e tenta uma vez só
+    _log('a Receita pediu para aguardar (HTTP 429): esperando 1 minuto…');
+    _prog('A Receita pediu uma pausa: aguardando 1 minuto…');
+    for (let i = 0; i < 60 && !_parar; i++) await _sleep(1000);
+    r = await w.webContents.executeJavaScript(JS_GET(url), true).catch((e) => ({ http: 0, erro: String(e.message || e) }));
+  }
+  _logRede(`GET ${url.replace(HOST, '')} → HTTP ${r.http || 0}${r.erro ? ` · ${r.erro}` : ''} · ${(r.regs || []).length} registro(s) · ${String(r.texto || '').replace(/\s+/g, ' ').slice(0, 600)}`);
+  return r;
+}
+
+// ------------------------------------------------------------------ leitura do fechamento
+const _campo = (o, re) => { const k = Object.keys(o || {}).find((x) => re.test(x)); return k ? String(o[k] || '').trim() : ''; };
+// AAAAMMDDHHMMSS (ou ISO) → DD/MM/AAAA HH:MM
+function _dh(s) {
+  const t = String(s || '');
+  let m = t.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/);
+  if (!m) m = t.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}` : t;
+}
+const _ord = (s) => _so(s).padEnd(14, '0');
+
+// situação do evento (manual v2.8): 1 Ativo · 2 Retificado · 3 Excluído · 4 Em processamento (R-2099) · 5 Recusado
+function _fechamento(r, ev) {
+  const textos = (r.ocorr || []).map((x) => `${x.cod ? `${x.cod} ` : ''}${x.txt}`).filter(Boolean);
+  const msg = textos.join(' · ').slice(0, 300) || (r.erro || '');
+  if (/PROCURA/i.test(`${msg} ${r.texto || ''}`) || r.http === 403) return { semProcuracao: true, msg };
+  if (r.http === 495 || r.http === 496) return { erro: `a Receita não aceitou o certificado do escritório (HTTP ${r.http}).` };
+  if (r.http === 404) return { fechado: false, nada: true };
+  if (r.http !== 200) return { erro: `o serviço da EFD-Reinf respondeu HTTP ${r.http || 0}${msg ? `: ${msg}` : ''}` };
+  const regs = (r.regs || []).map((o) => ({ recibo: _campo(o, /recibo/i), sit: _campo(o, /situa/i), dh: _campo(o, /^dh|datahora|recep/i), protocolo: _campo(o, /protocolo/i), id: _campo(o, /^id/i) }))
+    .filter((x) => x.recibo || x.protocolo).sort((a, b) => _ord(a.dh).localeCompare(_ord(b.dh)));
+  if (!regs.length) return { fechado: false, nada: true };
+  const ult = regs[regs.length - 1];
+  const base = { recepcao: _dh(ult.dh), protocolo: ult.protocolo || '', nRegistros: regs.length };
+  if (ult.sit === '4') return { fechado: false, processando: true, ...base, recibo: ult.recibo || '' };
+  if (ult.sit === '5') return { fechado: false, recusado: true, ...base, recibo: ult.recibo || '' };
+  const ativos = regs.filter((x) => !x.sit || x.sit === '1');
+  if (!ativos.length) return { fechado: false, nada: true };
+  const a = ativos[ativos.length - 1];
+  // o recibo não diz se o R-${ev} é fechamento ou reabertura: fechamentos e reaberturas se alternam, então um número par de
+  // eventos ativos quer dizer que o último foi uma reabertura (período aberto de novo)
+  if (ativos.length > 1 && ativos.length % 2 === 0) return { fechado: false, reaberto: true, recibo: a.recibo, recepcao: _dh(a.dh), nRegistros: regs.length };
+  return { fechado: true, recibo: a.recibo, recepcao: _dh(a.dh), dhProcess: _dh(a.dh), id: a.id || '', nRegistros: regs.length };
+}
+
+async function _empresa(emp, comp) {
+  const raiz = _so(emp.cnpj).slice(0, 8);
+  const fech = {};
+  for (const ev of ['4099', '2099']) {
+    if (_parar) break;
+    _prog(`${emp.nome}: fechamento R-${ev}…`);
+    const r = await _get(`${API}/R${ev}/1/${raiz}/${comp}`);
+    fech[ev] = _fechamento(r, ev);
+    const f = fech[ev];
+    _log(`${emp.nome} R-${ev}: HTTP ${r.http || 0} · ${f.semProcuracao ? 'sem procuração' : f.erro ? f.erro : f.fechado ? `fechado · recibo ${f.recibo} · ${f.recepcao}` : f.reaberto ? 'reaberto' : f.recusado ? 'recusado' : f.processando ? 'em processamento' : 'sem fechamento'}${f.nRegistros > 1 ? ` (${f.nRegistros} registros)` : ''}`);
+    if (f.semProcuracao) {
+      return { status: 'sem_procuracao', fonte: 'api', msg: f.msg ? `a Receita respondeu: ${f.msg}` : 'A Liddera não tem procuração eletrônica desta empresa com poderes da EFD-Reinf (ou ela venceu).' };
+    }
+    if (f.erro) return { status: 'erro', fonte: 'api', msg: f.erro };
+    await _sleep(PAUSA);
+  }
+  const f4 = fech['4099'] || {}, f2 = fech['2099'] || {};
+  const avisos = [];
+  [[f4, '4099'], [f2, '2099']].forEach(([f, ev]) => {
+    if (f.reaberto) avisos.push(`R-${ev}: o período foi reaberto e ainda não foi fechado de novo.`);
+    if (f.recusado) avisos.push(`R-${ev}: o fechamento enviado foi recusado pela Receita.`);
+    if (f.processando) avisos.push(`R-${ev}: o fechamento ainda está em processamento na Receita.`);
+  });
+  const pendente = [f4, f2].some((f) => f.reaberto || f.recusado || f.processando);
+  const status = pendente ? 'aberto' : (f4.fechado || f2.fechado) ? 'fechado' : 'sem_fechamento';
+  return { status, fonte: 'api', fech4099: f4, fech2099: f2, eventos: [], totais: {}, avisos, msg: avisos.join(' ') };
 }
 
 // ------------------------------------------------------------------ empresas e nuvem
-function _pastaEmp(emp, comp) {
-  const [a, m] = comp.split('-');
-  const p = pastaCliente.pastaDoMes({ nome: emp.nome, cnpj: emp.cnpj }, a, m, true);
-  return p || path.join(D.userData(), 'EFD-Reinf', comp, String(emp.nome || emp.cnpj).replace(/[\\/:*?"<>|]+/g, ' ').trim());
-}
-async function _docAnterior(comp, cnpj) {
-  try { const { db, f } = _fs(); const d = await f.getDoc(f.doc(db, COL, `${comp}_${cnpj}`)); return d.exists() ? d.data() : null; } catch (_) { return null; }
-}
 async function _grava(comp, emp, dados) {
   const { db, f } = _fs();
   const s = auth.sessao() || {};
@@ -690,94 +255,36 @@ async function salvarEmpresas(lista) {
   return { lista: limpa };
 }
 
-// dados de uma competência (todas as empresas) + a anterior, para a conferência "enviou no mês passado e não neste"
+// dados de uma competência: os documentos da REINF + os valores por imposto da DCTFWeb (Integra Contador)
+const _IMP = { 6228: 'csll', 5987: 'csll', 6230: 'pis', 5979: 'pis', 6243: 'cofins', 5960: 'cofins', 5952: 'agreg' };
+const _CP = new Set(['1162', '1141', '1176', '1099', '2985', '2991', '1138', '1646']);
+const _imposto = (cod) => (_CP.has(String(cod).slice(0, 4)) ? 'inss' : _IMP[String(cod).slice(0, 4)] || 'irrf');
+function _comDctf(doc, dc) {
+  if (!doc || doc.fonte !== 'api' || !dc || !dc.naDctf || !['em_andamento', 'transmitida'].includes(dc.situacao)) return doc;
+  const totais = { irrf: 0, csll: 0, cofins: 0, pis: 0, agreg: 0, inss: 0 };
+  const codigos = Object.entries(dc.naDctf).map(([cod, v]) => ({ cod, enviado: _r2(v), imposto: _imposto(cod) }));
+  codigos.forEach((x) => { totais[x.imposto] = _r2(totais[x.imposto] + x.enviado); });
+  return { ...doc, totais, dctfCodigos: codigos, totaisDe: 'dctfweb', dctfEm: dc.consultadoEm || '' };
+}
 async function dados(comp) {
   const { db, f } = _fs();
   const [ca, cm] = comp.split('-').map(Number);
   const ant = cm === 1 ? `${ca - 1}-12` : `${ca}-${String(cm - 1).padStart(2, '0')}`;
-  const ler = async (c) => {
+  const ler = async (col, c) => {
     const out = [];
-    const q = f.query(f.collection(db, COL), f.where('comp', '==', c));
+    const q = f.query(f.collection(db, col), f.where('comp', '==', c));
     (await f.getDocs(q)).forEach((x) => out.push(x.data()));
     return out;
   };
-  const [atual, anterior, emps, meta] = await Promise.all([ler(comp), ler(ant).catch(() => []), empresas(), f.getDoc(f.doc(db, COL, `_meta_${comp}`)).catch(() => null)]);
-  return { comp, anterior: ant, empresas: emps, docs: atual, docsAnterior: anterior.map((x) => ({ cnpj: x.cnpj, status: x.status, nEventos: (x.eventos || []).length })),
+  const [atual, anterior, emps, meta, dctf] = await Promise.all([ler(COL, comp), ler(COL, ant).catch(() => []), empresas(),
+    f.getDoc(f.doc(db, COL, `_meta_${comp}`)).catch(() => null), ler('dctfweb', comp).catch(() => [])]);
+  const porCnpj = new Map(dctf.map((x) => [x.cnpj, x]));
+  return { comp, anterior: ant, empresas: emps, docs: atual.map((d) => _comDctf(d, porCnpj.get(d.cnpj))),
+    docsAnterior: anterior.map((x) => ({ cnpj: x.cnpj, status: x.status, nEventos: (x.eventos || []).length, fechado: x.status === 'fechado' })),
     meta: meta && meta.exists() ? meta.data() : null, rodando: _rodando, certificado: cnpjCertificado() };
 }
 
 // ------------------------------------------------------------------ conferência
-async function _empresa(emp, comp) {
-  const ant = await _docAnterior(comp, emp.cnpj);
-  const lidos = new Map(((ant && ant.eventos) || []).filter((x) => x.recibo && x.evento).map((x) => [x.recibo, x]));
-  const p = await _perfil(emp);
-  if (p.semProcuracao) return { status: 'sem_procuracao', msg: p.msg ? `o eCAC respondeu: ${p.msg.toLowerCase()}` : 'A Liddera não tem procuração eletrônica desta empresa para a EFD-Reinf (ou ela venceu).' };
-  if (p.erro) return { status: 'erro', msg: p.erro };
-  await _abreReinf();
-  const pasta = _pastaEmp(emp, comp);
-  const pastaXml = path.join(pasta, `EFD-Reinf ${comp.slice(5, 7)}${comp.slice(0, 4)}`);
-  const eventos = [], avisos = [], falhaLista = {};
-  const fech = {};
-  for (const serie of ['4000', '2000']) {
-    if (_parar) break;
-    _prog(`${emp.nome}: lendo a série R-${serie}…`);
-    const l = await _lista(serie, comp);
-    if (l.erro || l.aviso) { avisos.push(l.erro || l.aviso); falhaLista[serie] = l.erro || l.aviso; _log(`${emp.nome} R-${serie}: ${l.erro || l.aviso}`); }
-    const rows = (l.rows || []).filter((r) => r.recibo);
-    const novos = [];
-    for (const r of rows) {
-      const ja = lidos.get(r.recibo);
-      if (ja) { eventos.push({ ...ja, recepcao: r.recepcao || ja.recepcao, tipo: /RETIF/i.test(r.tipo) ? 'Retificador' : ja.tipo }); continue; }
-      if (_parar) break;
-      _prog(`${emp.nome}: R-${serie} · evento ${eventos.length + novos.length + 1} de ${rows.length}…`);
-      const arq = r.det ? await _xmlEvento(r, serie, comp) : null;
-      if (arq) {
-        const dest = path.join(pastaXml, `${r.recibo.replace(/[^\w-]+/g, '_')}.xml`);
-        try { fs.mkdirSync(pastaXml, { recursive: true }); fs.copyFileSync(arq, dest); fs.unlink(arq, () => {}); novos.push({ r, dest }); }
-        catch (e) { novos.push({ r, dest: arq }); }
-      } else {
-        eventos.push({ evento: serie === '4000' ? 'R-40xx' : 'R-20xx', recibo: r.recibo, recepcao: r.recepcao, tipo: /RETIF/i.test(r.tipo) ? 'Retificador' : 'Original', benef: r.benef, est: r.est, semXml: true });
-      }
-    }
-    const lidosXml = await _lerXmls(novos.map((x) => x.dest));
-    novos.forEach((n, i) => {
-      const x = lidosXml[i] || {};
-      eventos.push({ evento: x.evento || (serie === '4000' ? 'R-40xx' : 'R-20xx'), recibo: n.r.recibo, recepcao: n.r.recepcao, tipo: x.tipo || (/RETIF/i.test(n.r.tipo) ? 'Retificador' : 'Original'),
-        benef: x.benef || n.r.benef, est: n.r.est, natRend: x.natRend || [], bruto: x.bruto || 0, irrf: x.irrf || 0, csll: x.csll || 0, cofins: x.cofins || 0, pis: x.pis || 0,
-        agreg: x.agreg || 0, inss: x.inss || 0, pagamentos: (x.pagamentos || []).slice(0, 40), xml: n.dest });
-    });
-    if (_parar) break;
-    _prog(`${emp.nome}: fechamento R-${serie === '4000' ? '4099' : '2099'}…`);
-    fech[serie] = await _fechamento(serie, comp, emp, pasta).catch((e) => ({ fechado: false, aviso: String(e.message || e) }));
-    if (fech[serie].aviso) avisos.push(fech[serie].aviso);
-  }
-  // totais: do totalizador (o que foi para a DCTFWeb); período aberto: soma dos eventos
-  const ks = ['irrf', 'csll', 'cofins', 'pis', 'agreg', 'inss'];
-  const totais = Object.fromEntries(ks.map((k) => [k, 0]));
-  const somaEv = Object.fromEntries(ks.map((k) => [k, Math.round(eventos.reduce((s, x) => s + (x[k] || 0), 0) * 100) / 100]));
-  const doTot = { '4000': !!(fech['4000'] && fech['4000'].fechado && fech['4000'].porCodigo.length), '2000': !!(fech['2000'] && fech['2000'].fechado && fech['2000'].porCodigo.length) };
-  for (const serie of ['4000', '2000']) {
-    const fx = fech[serie];
-    if (doTot[serie]) fx.porCodigo.forEach((x) => { x.imposto = _imposto(x.cod, serie); totais[x.imposto] += x.enviado; });
-    else (serie === '4000' ? ['irrf', 'csll', 'cofins', 'pis', 'agreg'] : ['inss']).forEach((k) => { totais[k] += somaEv[k]; });
-  }
-  ks.forEach((k) => { totais[k] = Math.round(totais[k] * 100) / 100; });
-  const f4 = fech['4000'] || {}, f2 = fech['2000'] || {};
-  const temEv = eventos.length > 0;
-  const fechado = !!(f4.fechado || f2.fechado);
-  let status = fechado ? (temEv ? 'fechado' : 'sem_movimento') : temEv ? 'aberto' : 'nada_enviado';
-  if (status === 'nada_enviado' && falhaLista['4000']) {
-    return { status: 'erro', msg: `não consegui ler a REINF desta empresa no eCAC (${falhaLista['4000']})`, eventos, avisos, pasta };
-  }
-  // série com evento e sem fechamento, mesmo com a outra fechada: continua aberto
-  const abertaSerie = (eventos.some((x) => /^R-40/.test(x.evento)) && !f4.fechado) || (eventos.some((x) => /^R-20/.test(x.evento)) && !f2.fechado);
-  return { status: status === 'fechado' && abertaSerie ? 'aberto' : status, eventos, totais, somaEventos: somaEv, fech4099: f4, fech2099: f2, avisos, pasta };
-}
-function _imposto(cod, serie) {
-  if (serie === '2000') return 'inss';
-  return { 6228: 'csll', 5987: 'csll', 6230: 'pis', 5979: 'pis', 6243: 'cofins', 5960: 'cofins', 5952: 'agreg' }[String(cod).slice(0, 4)] || 'irrf';
-}
-
 // conferir: todas as empresas ativas (ou só os CNPJs pedidos) na competência
 async function conferir({ comp, cnpjs, auto } = {}) {
   if (_rodando) throw new Error('A conferência da EFD-Reinf já está em andamento.');
@@ -789,34 +296,42 @@ async function conferir({ comp, cnpjs, auto } = {}) {
   _rodando = true; _parar = false; _certFaltou = false; _logTxt = []; _rede = [];
   const s = auth.sessao() || {};
   const res = { comp, total: lista.length, ok: 0, erros: 0 };
+  _log(`conferência ${comp} · ${lista.length} empresa(s) · serviço oficial de consulta da EFD-Reinf · certificado ${_fmtCnpj(cnpjCertificado())}`);
   try {
     const { db, f } = _fs();
-    await f.setDoc(f.doc(db, COL, `_meta_${comp}`), { rodando: true, inicio: new Date().toISOString(), por: s.nome || s.email || '', maquina: os.hostname(), auto: !!auto }, { merge: true }).catch(() => {});
-    _janela();
-    await _login();
+    await f.setDoc(f.doc(db, COL, `_meta_${comp}`), { rodando: true, inicio: new Date().toISOString(), por: s.nome || s.email || '', maquina: os.hostname(), auto: !!auto, fonte: 'api' }, { merge: true }).catch(() => {});
+    let errosSeguidos = 0;
     for (const [n, emp] of lista.entries()) {
       if (_parar) break;
       _prog(`${emp.nome} (${n + 1} de ${lista.length})…`, { feitas: n, total: lista.length });
       _log(`===== ${emp.nome} (${_fmtCnpj(emp.cnpj)}) · ${comp}`);
       let r;
-      try { r = await _empresa(emp, comp); } catch (e) { r = { status: 'erro', msg: String(e.message || e).slice(0, 300) }; await _print(); }
-      if (_certFaltou) throw new Error(`o certificado do escritório não está instalado no Windows deste computador.`);
+      try { r = await _empresa(emp, comp); } catch (e) { r = { status: 'erro', fonte: 'api', msg: String(e.message || e).slice(0, 300) }; }
+      if (_certFaltou) throw new Error('o certificado do escritório não está instalado no Windows deste computador.');
+      if (_parar && r.status !== 'erro' && !r.fech4099) break;
       if (r.status === 'erro') res.erros++; else res.ok++;
       await _grava(comp, emp, r).catch((e) => _log(`gravar na nuvem: ${e.message || e}`));
       try { D.notificar('reinf:empresa', { comp, cnpj: emp.cnpj }); } catch (_) {}
+      // o mesmo erro de conexão/certificado em sequência: para em vez de repetir dezenas de vezes
+      errosSeguidos = r.status === 'erro' ? errosSeguidos + 1 : 0;
+      if (errosSeguidos >= 5) { _log('5 erros seguidos: conferência interrompida.'); throw new Error(`a conferência parou depois de 5 erros seguidos: ${r.msg || 'erro'}`); }
     }
-    await f.setDoc(f.doc(db, COL, `_meta_${comp}`), { rodando: false, fim: new Date().toISOString(), por: s.nome || s.email || '', maquina: os.hostname(), auto: !!auto, ok: res.ok, erros: res.erros, total: lista.length }, { merge: true }).catch(() => {});
-    // REINF × DCTFWeb: o computador do Integra Contador confere a DCTFWeb das empresas que acabaram de ser conferidas
+    await f.setDoc(f.doc(db, COL, `_meta_${comp}`), { rodando: false, fim: new Date().toISOString(), por: s.nome || s.email || '', maquina: os.hostname(), auto: !!auto, ok: res.ok, erros: res.erros, total: lista.length, fonte: 'api' }, { merge: true }).catch(() => {});
+    // REINF × DCTFWeb: o computador do Integra Contador lê a DCTFWeb das empresas conferidas (valores por imposto)
     if (!_parar) { try { await require('./dctfweb').pedirAuto(comp, cnpjs && cnpjs.length ? lista.map((x) => x.cnpj) : []); } catch (_) {} }
+  } catch (e) {
+    try { const { db, f } = _fs(); await f.setDoc(f.doc(db, COL, `_meta_${comp}`), { rodando: false, fim: new Date().toISOString(), erro: String(e.message || e).slice(0, 300) }, { merge: true }); } catch (_) {}
+    throw e;
   } finally {
     _rodando = false;
     try { if (_vivo()) _win.destroy(); } catch (_) {}
-    _win = null;
+    _win = null; _pronta = false;
+    try { await session.fromPartition(PARTICAO).clearCache(); } catch (_) {}
     _prog('', { fim: true });
   }
   return res;
 }
-function parar() { _parar = true; if (_espera) { const w = _espera; _espera = null; w({ state: 'cancelado' }); } return { ok: true }; }
+function parar() { _parar = true; return { ok: true }; }
 const ocupado = () => _rodando;
 
-module.exports = { init, podeUsar, conferir, parar, dados, empresas, salvarEmpresas, certificadoInstalado, ocupado, cnpjCertificado, MODULO };
+module.exports = { init, podeUsar, conferir, parar, dados, empresas, salvarEmpresas, certificadoInstalado, ocupado, cnpjCertificado, MODULO, _fechamento, _comDctf };
