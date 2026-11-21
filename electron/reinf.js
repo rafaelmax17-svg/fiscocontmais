@@ -220,6 +220,28 @@ const JS_GOVBR = (modo) => `(() => { ${JS_BASE}
 const JS_DIAG = `(() => { const out = [];
   document.querySelectorAll('a, button, input, form, iframe, img, [onclick]').forEach((x) => { const h = x.outerHTML; if (/gov\\.?br|entrar|sso|captcha/i.test(h) && out.length < 18) out.push(h.replace(/\\s+/g, ' ').slice(0, 220)); });
   return out.join(' || '); })()`;
+// gov.br › "Seu certificado digital". Achado real (20/11): o sistema procurou 2 s depois de a página abrir e não achou
+// (as opções aparecem depois e podem ser <div>/<p> com onclick). Agora: identificador da opção, depois o texto em
+// qualquer elemento (o mais interno), e devolve a posição para o clique com o mouse se o clique comum não abrir.
+const JS_CERT_GOVBR = (modo) => `(() => { ${JS_BASE}
+  const ruim = (x) => /NUVEM|CLOUD/.test(txt(x)) || /cloud|nuvem/i.test((x.id || '') + ' ' + (x.className || ''));
+  let alvo = [...document.querySelectorAll('#login-certificate, [id*="certificate" i], [id*="certificado" i], a[href*="certificado.sso.acesso.gov.br"], [onclick*="certificado" i], [onclick*="certificate" i]')]
+    .filter(vis).filter((x) => !ruim(x))[0];
+  if (!alvo) {
+    const el = [...document.querySelectorAll('a, button, [role=button], [onclick], li, label, p, span, div, img')].filter(vis)
+      .filter((x) => /(^|SEU )CERTIFICADO DIGITAL$/.test(txt(x)) && !ruim(x) && txt(x).length < 40)
+      .filter((x, _i, l) => !l.some((y) => y !== x && x.contains(y)))[0];
+    if (el) alvo = el.closest('a, button, [role=button], [onclick], li') || el;
+  }
+  if (!alvo) return false;
+  alvo.scrollIntoView({ block: 'center' });
+  const b = alvo.getBoundingClientRect();
+  if (${JSON.stringify(modo)} === 'clica') alvo.click();
+  return { t: (txt(alvo) || alvo.id || alvo.tagName).slice(0, 60), x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) };
+})()`;
+const JS_DIAG_GOV = `(() => { const out = [];
+  document.querySelectorAll('a, button, [onclick], li, div, p, span, img').forEach((x) => { if (x.children.length > 4) return; const h = x.outerHTML; if (/certificad/i.test(h) && out.length < 12) out.push(h.replace(/\\s+/g, ' ').slice(0, 220)); });
+  return out.join(' || '); })()`;
 // "Alterar perfil de acesso" › Procurador de pessoa jurídica - CNPJ
 const JS_PERFIL = (cnpj, modo) => `(() => { ${JS_BASE}
   // o rótulo mais interno (o próprio texto, não a caixa que também o contém — senão pegava o campo do CPF de cima)
@@ -367,8 +389,19 @@ async function _login() {
   if (!/sso\.acesso\.gov\.br|cav\.receita\.fazenda\.gov\.br\/ecac/i.test(_url())) _log(`login: continuou em ${_url().split('?')[0]}`);
   if (/sso\.acesso\.gov\.br/.test(_url())) {
     await _humano('gov.br (antes do certificado)');
-    const c = await _js(JS_CLICA('/SEU CERTIFICADO DIGITAL$|CERTIFICADO DIGITAL$/', '/NUVEM/')).catch(() => false);
-    _log(`gov.br: ${c ? 'Seu certificado digital' : 'opção do certificado não encontrada'}`);
+    let c = false;
+    for (let k = 0; k < 20 && !c && /sso\.acesso\.gov\.br/.test(_url()); k++) {     // espera as opções aparecerem (até 15 s)
+      c = await _js(JS_CERT_GOVBR('clica')).catch(() => false);
+      if (!c) await _sleep(750);
+    }
+    _log(`gov.br: ${c ? `clicou em "${c.t}"` : 'opção do certificado não encontrada'}`);
+    if (!c) _log(`gov.br · página: ${await _js(JS_DIAG_GOV).catch(() => '')}`);
+    // o clique comum não saiu do lugar: clique "de verdade" com o mouse na opção
+    for (let i = 0; i < 10 && c && /sso\.acesso\.gov\.br\/(login)?(\?|$|#)/.test(_url()); i++) await _sleep(500);
+    if (c && /sso\.acesso\.gov\.br\/(login)?(\?|$|#)/.test(_url())) {
+      const r = await _js(JS_CERT_GOVBR('pos')).catch(() => false);
+      if (r && r.x) { for (const type of ['mouseMove', 'mouseDown', 'mouseUp']) _win.webContents.sendInputEvent({ type, x: r.x, y: r.y, button: 'left', clickCount: 1 }); _log('gov.br: clique com o mouse em "Seu certificado digital"'); }
+    }
     await _pronto(45000);
   }
   for (let i = 0; i < 40; i++) {
