@@ -2015,6 +2015,43 @@ ipcMain.handle('dfe:relatorio', (_evt, { ids, competencias, pdf } = {}) => _mod(
   } finally { env({ txt: '' }); }
   return { empresas: saida };
 }));
+// relatório para o CLIENTE só com os tipos escolhidos (ex.: só NFC-e): HTML + PDF na pasta do cliente (Relatórios › AAAA › MM)
+const DFE_TIPOS_REL = { 'nfe-e': 'NF-e Entradas', 'cte-e': 'CT-e Entradas', 'nfe-s': 'NF-e Saídas', 'nfce-s': 'NFC-e Saídas' };
+ipcMain.handle('dfe:relatorioCliente', (_evt, { id, competencia, tipos } = {}) => _mod('fiscal-downloads')(async () => {
+  let pasta = '';
+  try { pasta = JSON.parse(fs.readFileSync(_configDownloadPath(), 'utf-8')).pastaBase || ''; } catch (_) {}
+  if (!pasta) throw new Error('Escolha a pasta das Baixas DF-e primeiro.');
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia || '')) throw new Error('Competência inválida.');
+  const t = (tipos || []).filter((x) => DFE_TIPOS_REL[x]);
+  if (!t.length) throw new Error('Marque pelo menos um tipo de documento.');
+  const e = _dfeEmpresas().find((x) => x.id === id);
+  if (!e) throw new Error('Empresa não encontrada.');
+  const base = _dfeBaseDe(e, pasta);
+  const [ra, rm] = competencia.split('-');
+  const cli = base !== pasta ? _cliDe(e) : null;
+  const dCli = cli ? pastaCliente.pastaMes(cli.dir, ra, rm, true) : null;
+  if (dCli) await _hidratarCliente(e, base, [competencia], _dfeNomePasta(e.nome));
+  const destDir = dCli || path.join(base, `${rm}-${ra}`, _dfeNomePasta(e.nome));
+  const rot = t.length === 4 ? 'DF-e' : t.map((x) => DFE_TIPOS_REL[x]).join(' e ');
+  const nomeArq = `Relatório ${rot} ${rm}${ra} - ${_dfeNomePasta(e.nome)}`.replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 150);
+  const html = path.join(destDir, `${nomeArq}.html`);
+  const out = path.join(os.tmpdir(), `fc_dfe_relc_${Date.now()}.json`);
+  await runFiscal(['dfe-relatorio', '--pasta', base, '--empresa', e.nome, '--cnpj', e.cnpj, '--competencia', competencia, '--pdf', '0',
+    '--tipos', t.join(','), '--so-publico', '1', '--publico', html, '--json', out], out);
+  const r = JSON.parse(fs.readFileSync(out, 'utf-8')); fs.unlink(out, () => {});
+  if (r.erro) throw new Error(r.erro);
+  // PDF do mesmo relatório (para mandar por e-mail/WhatsApp): a página é aberta escondida e impressa depois dos gráficos
+  let pdf = '';
+  const w = new BrowserWindow({ show: false, width: 1400, height: 1000, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+  try {
+    await w.loadFile(html);
+    await new Promise((ok) => setTimeout(ok, 2500));
+    const buf = await w.webContents.printToPDF({ landscape: true, printBackground: true, pageSize: 'A4', margins: { marginType: 'custom', top: 0.3, bottom: 0.3, left: 0.3, right: 0.3 } });
+    pdf = path.join(destDir, `${nomeArq}.pdf`);
+    fs.writeFileSync(pdf, buf);
+  } catch (err) { pdf = ''; } finally { try { w.destroy(); } catch (_) {} }
+  return { html, pdf, pasta: destDir, resumo: r.resumo || {} };
+}));
 ipcMain.handle('dfe:relatorioAbrir', (_evt, { id, competencia } = {}) => _mod('fiscal-downloads')(async () => {
   const e = _dfeEmpresas().find((x) => x.id === id);
   const r = e && (_dfeLer('dfe-rel.json')[e.cnpj] || {})[competencia];

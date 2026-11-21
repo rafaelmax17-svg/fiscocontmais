@@ -194,7 +194,9 @@ function conta(el,fim,fmt){if(reduz){el.textContent=fmt(fim);return;}const t0=pe
   const f=(t)=>{const p=Math.min(1,(t-t0)/dur),e=1-Math.pow(1-p,4);el.textContent=fmt(fim*e);if(p<1)requestAnimationFrame(f);};requestAnimationFrame(f);}
 
 // KPIs
-$('#kpis').innerHTML=G.map((g,i)=>{
+const SO=(D.so&&D.so.length)?D.so:null,sel=(x)=>!SO||SO.includes(x.id);
+if(SO){const t=document.querySelector('.h-tag');if(t)t.innerHTML='<i></i>Relatório '+esc(G.filter(sel).map((x)=>x.nome).join(' e '))+' · FiscoCont+';document.title=document.title.replace('DF-e',G.filter(sel).map((x)=>x.nome).join(' e '));}
+$('#kpis').innerHTML=G.filter(sel).map((g,i)=>{
   if(!g.docs.length)return `<div class="card kpi vazio rv" style="--c:${g.cor}"><div class="kpi-n"><i class="dot"></i>${esc(g.nome)}</div><div class="kpi-v">Sem notas no mês</div><div class="kpi-q">Nenhum XML nesta pasta</div></div>`;
   const mx=Math.max(...g.dia,1),w=200,h=34;
   const pts=g.dia.map((v,k)=>[(k/(nDias-1))*w,h-2-(v/mx)*(h-6)]);
@@ -240,7 +242,7 @@ $('#legDia').addEventListener('click',(ev)=>{const s=ev.target.closest('span');i
 function desenhaAnel(){
   const svg=$('#cRing'),tot=G.reduce((s,g)=>s+g.valor,0),C=110,R=84,SW=26,circ=2*Math.PI*R;
   $('#ringTot').textContent='R$ '+curto(tot);
-  $('#ringLeg').innerHTML=G.map((g)=>`<div title="${esc(g.nome)}: R$ ${brl(g.valor)}"><i style="--c:${g.cor}"></i><span>${esc(g.nome)}</span><b>R$ ${brl(g.valor)}</b><em>${tot?(g.valor/tot*100).toLocaleString('pt-BR',{maximumFractionDigits:1}):0}%</em></div>`).join('');
+  $('#ringLeg').innerHTML=G.filter(sel).map((g)=>`<div title="${esc(g.nome)}: R$ ${brl(g.valor)}"><i style="--c:${g.cor}"></i><span>${esc(g.nome)}</span><b>R$ ${brl(g.valor)}</b><em>${tot?(g.valor/tot*100).toLocaleString('pt-BR',{maximumFractionDigits:1}):0}%</em></div>`).join('');
   let s=`<circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="var(--surface2)" stroke-width="${SW}"/>`;
   const fat=G.filter((g)=>g.valor>0),gap=fat.length>1?3:0;
   let ini=0;fat.forEach((g,k)=>{const frac=g.valor/tot,len=Math.max(0,frac*circ-gap);
@@ -266,9 +268,11 @@ const cfop=(docs)=>{const m=new Map();docs.forEach((d)=>Object.entries(d[17]||{}
 barras($('#cCfE'),top(cfop([...g('nfe-e').ativos,...g('cte-e').ativos]),7),G[0].cor,'Sem entradas no mês');
 barras($('#cCfS'),top(cfop(g('nfe-s').ativos),7),G[2].cor,'Sem NF-e de saída no mês');
 barras($('#cUf'),top(somaPor(g('nfe-e').ativos,(d)=>d[6],(d)=>d[6]),7),G[0].cor,'Sem NF-e de entrada no mês');
+if(SO){[['#cForn',['nfe-e']],['#cCli',['nfe-s']],['#cCfE',['nfe-e','cte-e']],['#cCfS',['nfe-s']],['#cUf',['nfe-e']]].forEach(([q,ids])=>{if(!ids.some((i)=>SO.includes(i))){const c=$(q).closest('.card');if(c)c.style.display='none';}});
+  document.querySelectorAll('section.grid').forEach((sc)=>{if(sc.querySelector('.card')&&![...sc.querySelectorAll('.card')].some((c)=>c.style.display!=='none'))sc.style.display='none';});}
 
 // impostos
-$('#tImp').innerHTML='<thead><tr><th>Documento</th><th>Valor total</th><th>ICMS</th><th>ICMS ST</th><th>IPI</th></tr></thead><tbody>'+G.map((x)=>{
+$('#tImp').innerHTML='<thead><tr><th>Documento</th><th>Valor total</th><th>ICMS</th><th>ICMS ST</th><th>IPI</th></tr></thead><tbody>'+G.filter(sel).map((x)=>{
   const s=(k)=>x.ativos.reduce((a,d)=>a+d[k],0);
   return `<tr><td><i style="--c:${x.cor}"></i>${esc(x.nome)}</td><td>R$ ${brl(x.valor)}</td><td>R$ ${brl(s(11))}</td><td>${x.tipo==='cte'?'—':'R$ '+brl(s(12))}</td><td>${x.tipo==='cte'||x.tipo==='nfce'?'—':'R$ '+brl(s(13))}</td></tr>`;}).join('')+'</tbody>';
 
@@ -282,7 +286,7 @@ function linhas(){const x=G[L.g],ent=!!ENTRADA[x.id],q=L.q.trim().toLowerCase().
   if(q)ds=ds.filter((r)=>(r.d[1]+' '+r.d[0]+' '+r.part+' '+r.doc).toLowerCase().replace(/[.\-\/]/g,'').includes(q));
   const k=L.ord;ds.sort((a,b)=>{const va=a[k]??'',vb=b[k]??'';return (va>vb?1:va<vb?-1:0)*(L.asc?1:-1);});return ds;}
 function lista(){
-  $('#tabs').innerHTML=G.map((x,i)=>`<button class="tab ${i===L.g?'on':''}" data-i="${i}" style="--c:${x.cor}"><i></i>${esc(x.nome)} <em>${x.docs.length.toLocaleString('pt-BR')}</em></button>`).join('');
+  $('#tabs').innerHTML=G.map((x,i)=>sel(x)?`<button class="tab ${i===L.g?'on':''}" data-i="${i}" style="--c:${x.cor}"><i></i>${esc(x.nome)} <em>${x.docs.length.toLocaleString('pt-BR')}</em></button>`:'').join('');
   const ds=linhas(),x=G[L.g],paginas=Math.max(1,Math.ceil(ds.length/L.por));L.pg=Math.min(L.pg,paginas-1);
   const pag=ds.slice(L.pg*L.por,(L.pg+1)*L.por);
   const th=COLS.map((c)=>`<th class="${c.n?'n':''}" data-k="${c.k}">${c.t}${L.ord===c.k?`<span class="so">${L.asc?'▲':'▼'}</span>`:''}</th>`).join('');

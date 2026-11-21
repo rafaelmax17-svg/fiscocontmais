@@ -166,7 +166,9 @@ def _compacto(grupos):
     return out
 
 
-def gerar(base, empresa, cnpj, competencia, pdf=True, progresso=None, publico=None):
+def gerar(base, empresa, cnpj, competencia, pdf=True, progresso=None, publico=None, tipos=None, so_publico=False):
+    """tipos: ids de GRUPOS que entram (relatório para o cliente só com NFC-e, por exemplo). so_publico: grava só a cópia
+    para o cliente (o relatório completo da empresa fica como está)."""
     if not re.match(r'^\d{4}-\d{2}$', competencia or ''):
         return {'erro': 'Competência inválida.'}
     a, m = competencia.split('-')
@@ -174,15 +176,22 @@ def gerar(base, empresa, cnpj, competencia, pdf=True, progresso=None, publico=No
     if not os.path.isdir(pasta_emp):
         return {'erro': f'Ainda não há notas baixadas de {m}/{a} para esta empresa.'}
     grupos, pdfs, pdf_erros, total = coletar(pasta_emp, pdf, progresso)
+    if tipos:                          # os outros tipos ficam vazios (a página conta com os 4 grupos, cores fixas)
+        grupos = [g if g['id'] in tipos else dict(g, docs=[]) for g in grupos]
+        total = sum(len(g['docs']) for g in grupos)
+        if not total:
+            nomes = ', '.join(g[1] for g in GRUPOS if g[0] in tipos)
+            return {'erro': f'Nenhum XML de {nomes} em {m}/{a} para esta empresa.'}
     if not total:
         return {'erro': f'Nenhum XML de NF-e, CT-e ou NFC-e em {m}/{a} para esta empresa.'}
     dados = {'empresa': empresa, 'cnpj': re.sub(r'\D', '', cnpj or ''), 'comp': f'{m}/{a}', 'compIso': competencia,
-             'gerado': datetime.now().strftime('%d/%m/%Y %H:%M'), 'grupos': _compacto(grupos)}
+             'gerado': datetime.now().strftime('%d/%m/%Y %H:%M'), 'grupos': _compacto(grupos), 'so': list(tipos or [])}
     js = json.dumps(dados, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
     html = HTML.replace('/*__DADOS__*/null', js).replace('__TITULO__', _esc(f'Relatório DF-e · {empresa} · {m}/{a}'))
     destino = os.path.join(pasta_emp, f'Relatório DF-e - {m}-{a}.html')
-    with open(destino, 'w', encoding='utf-8') as fh:
-        fh.write(html)
+    if not so_publico:
+        with open(destino, 'w', encoding='utf-8') as fh:
+            fh.write(html)
     if publico:                       # cópia para a pasta do cliente: sem os links (os arquivos estão nos zips)
         dados_pub = dict(dados, grupos=[dict(g, docs=[d[:15] + ['', ''] + d[17:] for d in g['docs']]) for g in dados['grupos']])
         js_pub = json.dumps(dados_pub, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
@@ -205,7 +214,8 @@ def main_cli(argv):
         return argv[argv.index(n) + 1] if n in argv and argv.index(n) + 1 < len(argv) else d
     try:
         r = gerar(opt('--pasta'), opt('--empresa', ''), opt('--cnpj', ''), opt('--competencia', ''),
-                  pdf=opt('--pdf', '1') != '0', progresso=opt('--progresso'), publico=opt('--publico'))
+                  pdf=opt('--pdf', '1') != '0', progresso=opt('--progresso'), publico=opt('--publico'),
+                  tipos=[t for t in (opt('--tipos', '') or '').split(',') if t], so_publico=opt('--so-publico', '0') == '1')
     except Exception as e:
         r = {'erro': str(e)[:400]}
     saida = opt('--json')

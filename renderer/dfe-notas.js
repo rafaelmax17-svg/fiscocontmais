@@ -121,8 +121,32 @@
     });
     q('#dfeLog').addEventListener('click', () => window.fiscocont.dfe.log());
     q('#dfeBody').addEventListener('click', (ev) => { const r = ev.target.closest('[data-rel]'); if (r) window.fiscocont.dfe.relatorioAbrir({ id: r.dataset.rel, competencia: X.comp }).then((x) => x && x.error && aviso(x.error, true)); });
+    q('#dfeBody').addEventListener('click', (ev) => { const b = ev.target.closest('[data-relcli]'); if (b) relatorioCliente(b.dataset.relcli); });
     q('#dfeBody').addEventListener('click', (ev) => { const b = ev.target.closest('[data-pasta]'); if (b) window.fiscocont.dfe.abrir(b.dataset.pasta).then((r) => r && r.error && aviso(r.error, true)); });
     window.fiscocont.dfe.onProgresso((d) => { const p = q('#dfeProg'); if (p) { p.textContent = d.txt || ''; p.classList.toggle('esp', !!d.espera); } });
+  }
+
+  // relatório para o cliente: escolhe os tipos (ex.: só NFC-e) → HTML + PDF na pasta do cliente
+  function relatorioCliente(id) {
+    const m = X.emps.find((x) => x.id === id); if (!m) return;
+    const TIPOS = [['nfe-e', 'NF-e Entradas'], ['cte-e', 'CT-e Entradas'], ['nfe-s', 'NF-e Saídas'], ['nfce-s', 'NFC-e Saídas']];
+    const md = document.createElement('div'); md.className = 'dfe-modal';
+    md.innerHTML = `<div class="dfe-mc"><h3>Relatório para o cliente</h3><p>${e(m.nome)} · ${e(compRot(X.comp))}</p>
+      <div class="dfe-mt">${TIPOS.map(([k, n]) => `<label><input type="checkbox" value="${k}" ${k === 'nfce-s' ? 'checked' : ''}> ${n}</label>`).join('')}</div>
+      <p class="dfe-mn">Sai em HTML (com o painel) e em PDF, na pasta do cliente (Relatórios do mês). O relatório completo da empresa continua como está.</p>
+      <div class="dfe-mb"><button class="dfe-lk" data-x="n">Cancelar</button><button class="dfe-rel" data-x="s">Gerar</button></div></div>`;
+    document.body.appendChild(md);
+    md.querySelector('[data-x=n]').onclick = () => md.remove();
+    md.querySelector('[data-x=s]').onclick = async (ev) => {
+      const tipos = [...md.querySelectorAll('input:checked')].map((c) => c.value);
+      if (!tipos.length) { aviso('Marque pelo menos um tipo de documento.', true); return; }
+      ev.target.disabled = true; ev.target.textContent = 'Gerando…';
+      const r = await window.fiscocont.dfe.relatorioCliente({ id, competencia: X.comp, tipos });
+      md.remove();
+      if (r && r.error) { aviso(r.error, true); return; }
+      aviso(`Relatório para o cliente gerado${r.pdf ? ' (HTML e PDF)' : ' (HTML)'} na pasta do cliente.`);
+      window.fiscocont.dfe.abrir(r.pdf || r.html);
+    };
   }
 
   const ICO_REL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>';
@@ -183,6 +207,7 @@
     q('#dfeBody').innerHTML = lst.map((m) => {
       const en = m.entradas || {}, sa = m.saidas || {};
       const rel = m.relatorio ? `<button class="dfe-rel" data-rel="${e(m.id)}" title="Abre o relatório com o painel do mês (arquivo HTML salvo na pasta da empresa)">${ICO_REL}Abrir relatório</button>`
+        + `<button class="dfe-rel" data-relcli="${e(m.id)}" title="Relatório só com os documentos que você escolher (ex.: só NFC-e), em HTML e PDF, na pasta do cliente">📄 Relatório para o cliente</button>`
         + `<span class="dfe-rel-q">gerado em ${new Date(m.relatorio.quando).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}${m.relatorio.pdfTotal ? ' · PDFs na pasta' : ''}</span>` : '';
       const cli = m.cliente ? `<span class="dfe-cli" title="Os arquivos vão para esta pasta, em Relatórios › AAAA › mês">📁 ${e(m.cliente.regime)} › ${e(m.cliente.pasta)}</span>`
         : `<span class="dfe-cli sem" title="Não achei a pasta desta empresa em Fiscal - Lucro Presumido, Lucro Real ou Simples Nacional">pasta da empresa não encontrada · salvo em Notas Automáticas</span>`;
