@@ -23,12 +23,29 @@
     const est = await window.fiscocont.fisconforme.estado();
     if (est && est.error) { raiz.innerHTML = `<div class="lic-empty">${e(est.error)}</div>`; return; }
     R.est = est; R.semCert = !est.escolhido;
+    if (!desliga && window.fiscocont.dare.onEmpresa) {
+      // cada empresa consultada já aparece na tela (sem esperar a lista inteira)
+      let t = null;
+      window.fiscocont.dare.onEmpresa((x) => { clearTimeout(t); t = setTimeout(() => atualizaAoVivo(x), 1000); });
+    }
     if (!desliga) desliga = window.fiscocont.dare.onProgresso((p) => {
+      R.progTxt = p.fim ? '' : (p.txt || R.progTxt || '');
       const el = $('#drProg'); if (!el) return;
       el.hidden = !!p.fim; el.querySelector('span').textContent = p.txt || '';
       const mb = $('#drMProg'); if (mb && p.txt) mb.textContent = p.txt;
     });
     await carregar();
+  }
+
+  async function atualizaAoVivo(x) {
+    if (!R.consultando) return;
+    if (x.tipo === 'debitos' && R.aba !== 'pagos' && String(x.ano) === String(R.ano)) {
+      const d = await window.fiscocont.dare.dados(R.ano);
+      if (d && !d.error && R.aba !== 'pagos') { R.d = d; R.anim = false; desenhar(); }
+    } else if (x.tipo === 'pagos' && R.aba === 'pagos' && R.pg && x.mes === R.pg.mes) {
+      const d = await window.fiscocont.dare.dadosPagos(R.pg.mes);
+      if (d && !d.error && R.aba === 'pagos') { R.pg.d = d; desenharPagos(); }
+    }
   }
 
   async function carregar() {
@@ -145,14 +162,14 @@
         </div>` : ''}</div>
       <div class="dr-hr"><div class="dr-hb"><select id="drAno">${anos.map((a) => `<option ${a === R.ano ? 'selected' : ''}>${a}</option>`).join('')}</select>
         ${meta ? '<button id="drPdf">Exportar PDF</button>' : ''}
-        <button class="g" id="drLer"${podeSefin ? '' : ' disabled title="Precisa do e-CPF do contador instalado neste computador"'}>▶ Consultar débitos</button></div>
+        <button class="g" id="drLer"${podeSefin ? (R.consultando ? ' disabled' : '') : ' disabled title="Precisa do e-CPF do contador instalado neste computador"'}>${R.consultando ? 'Consultando…' : '▶ Consultar débitos'}</button></div>
         ${meta ? `<div class="dr-ag"><h4>Vencidos por tempo de atraso</h4>
           <div class="dr-stk">${faixas.map((f, i) => `<i style="width:${(f.v / totV * 100).toFixed(2)}%;background:${f.c};animation-delay:${0.25 + i * 0.12}s" title="${f.t}: ${brl(f.v)} · ${f.n} débito(s)"></i>`).join('')}</div>
           <div class="dr-lg">${faixas.map((f) => `<div><span><i style="background:${f.c}"></i>${f.t}</span><b>${brl(f.v)}</b></div>`).join('')}</div>
           <small>Última consulta ${e(quando)}${meta.por ? ' · ' + e(meta.por) : ''}<br>Consulta automática em dias úteis: 07:45 · 09:45 · 11:45 · 13:45 · 15:45 · 17:45</small></div>` : ''}</div></div>`;
 
     $('#drRaiz').innerHTML = `${abas(L.length)}${heroTopo}
-      <div class="fc-prog" id="drProg" hidden><i></i><span></span></div>
+      <div class="fc-prog" id="drProg"${R.consultando ? '' : ' hidden'}><i></i><span>${e(R.consultando ? (R.progTxt || '') : '')}</span></div>
       ${R.semCert ? '<div class="fc-alerta" style="margin-bottom:12px"><b>O certificado do contador não está instalado neste computador.</b> Você está vendo a última consulta salva. Para consultar de novo ou gerar DARE e extrato, use um computador com o e-CPF do contador instalado.</div>' : ''}
       ${!meta ? `<div class="fc-vazio"><b>Nenhuma consulta em ${e(R.ano)} ainda.</b> Clique em “Consultar débitos”: o sistema entra no Portal do Contribuinte com o e-CPF do contador e consulta o exercício de todas as empresas da lista (leva alguns minutos).</div>` : `
       ${falhas.length ? `<div class="fc-aviso" style="margin:0 0 12px">Não consegui consultar ${falhas.length} empresa(s) na última consulta: ${falhas.slice(0, 6).map((m) => e(m.nome)).join(', ')}${falhas.length > 6 ? '…' : ''}. Elas entram de novo na próxima consulta.</div>` : ''}
@@ -238,9 +255,12 @@
   async function consultar() {
     if (R.semCert) return;
     const btn = $('#drLer'); btn.disabled = true;
-    const prog = $('#drProg'); if (prog) { prog.hidden = false; prog.querySelector('span').textContent = 'Entrando no portal da SEFIN…'; }
+    R.consultando = true; R.progTxt = 'Entrando no portal da SEFIN…';
+    const prog = $('#drProg'); if (prog) { prog.hidden = false; prog.querySelector('span').textContent = R.progTxt; }
     const r = await window.fiscocont.dare.ler(R.ano);
-    btn.disabled = false; if (prog) prog.hidden = true;
+    R.consultando = false; R.progTxt = '';
+    const b2 = $('#drLer'); if (b2) { b2.disabled = false; b2.textContent = '▶ Consultar débitos'; }
+    const p2 = $('#drProg'); if (p2) p2.hidden = true;
     if (r && r.error) { toast(r.error, true); return; }
     toast(`Consulta concluída: ${r.comDebito} empresa(s) com débito · ${brl(r.total)}${r.falhas ? ` · ${r.falhas} sem resposta` : ''}.`);
     await carregar();
@@ -470,9 +490,9 @@
         <input class="dp-f dp-bu" id="dpBusca" placeholder="Buscar empresa, IE ou nº" value="${e(P.busca)}">
         <span class="dp-sp"></span>
         <button class="dp-b o" id="dpCopTodos"${vis.length ? '' : ' disabled'}>⧉ Copiar todos os números</button>
-        <button class="dp-b" id="dpLer"${podeSefin ? '' : ' disabled title="Precisa do e-CPF do contador instalado neste computador"'}>↻ ${empSel ? 'Atualizar pagos desta empresa' : 'Atualizar pagos'}</button>
+        <button class="dp-b" id="dpLer"${podeSefin ? (R.consultando ? ' disabled' : '') : ' disabled title="Precisa do e-CPF do contador instalado neste computador"'}>↻ ${R.consultando ? 'Atualizando…' : empSel ? 'Atualizar pagos desta empresa' : 'Atualizar pagos'}</button>
       </div>
-      <div class="fc-prog" id="drProg" hidden><i></i><span></span></div>
+      <div class="fc-prog" id="drProg"${R.consultando ? '' : ' hidden'}><i></i><span>${e(R.consultando ? (R.progTxt || '') : '')}</span></div>
       ${R.semCert ? '<div class="fc-alerta" style="margin:12px 0 0"><b>O certificado do contador não está instalado neste computador.</b> Você está vendo a última consulta salva. Para atualizar os pagos ou baixar extratos, use um computador com o e-CPF do contador instalado.</div>' : ''}
       ${!meta ? `<div class="fc-vazio" style="margin-top:14px"><b>Nenhuma consulta de pagos em ${e(mesTxt(P.mes))} ainda.</b> Clique em “Atualizar pagos”: o sistema entra no Conta Corrente do Portal do Contribuinte com o e-CPF do contador, consulta o mês de cada empresa com Tipo de Lançamento “Todos” e separa só os lançamentos “00 - PAGO” (leva alguns minutos). Escolha uma empresa no filtro para consultar só ela. A consulta automática dos pagos roda em dias úteis às 08:15, 10:15, 12:30, 14:30, 16:15 e 18:00.</div>` : `
       <div class="dp-ks">
@@ -525,10 +545,12 @@
   async function atualizarPagos() {
     if (R.semCert) return;
     const P = R.pg, btn = $('#dpLer'); btn.disabled = true;
-    const prog = $('#drProg'); if (prog) { prog.hidden = false; prog.querySelector('span').textContent = 'Entrando no portal da SEFIN…'; }
+    R.consultando = true; R.progTxt = 'Entrando no portal da SEFIN…';
+    const prog = $('#drProg'); if (prog) { prog.hidden = false; prog.querySelector('span').textContent = R.progTxt; }
     const r = await window.fiscocont.dare.lerPagos(P.mes, P.emp ? { ie: P.emp } : {});
-    if (prog) prog.hidden = true;
-    if (r && r.error) { btn.disabled = false; toast(r.error, true); return; }
+    R.consultando = false; R.progTxt = '';
+    const p2 = $('#drProg'); if (p2) p2.hidden = true;
+    if (r && r.error) { if (R.aba === 'pagos' && R.pg.d) desenharPagos(); toast(r.error, true); return; }
     toast(P.emp ? `Pagos atualizados: ${r.qtd} lançamento(s) pago(s) em ${mesTxt(P.mes)}.`
       : `Consulta concluída: ${r.qtd} DARE(s) pago(s) em ${r.comPago} empresa(s) · ${brl(r.total)}${r.falhas ? ` · ${r.falhas} sem resposta` : ''}.`);
     if (R.aba === 'pagos') carregarPagos();

@@ -334,6 +334,7 @@ async function ler(ano, opc = {}) {
         doc = { ie, nome, ano, lidoEm: lid, erro: String(e.message || e).slice(0, 200) };
       }
       await f.setDoc(f.doc(db, COL, `${ano}_${ie}`), doc, { merge: true });
+      try { D.notificar('dare:empresa', { tipo: 'debitos', ano, i: i + 1, n: ies.length }); } catch (_) {}   // a tela atualiza a cada empresa
       await P.vai(URL_CONSULTA, 45000);
     }
     const resumo = { ultimaLeitura: lid, por: opc.auto ? 'Consulta automática' : (ses.nome || ses.email || ''), auto: !!opc.auto,
@@ -710,6 +711,7 @@ async function lerPagos(mes, opc = {}) {
         doc = { ie, nome, mes, lidoEm: lid, erro: String(e.message || e).slice(0, 200) };
       }
       await fs_.setDoc(fs_.doc(db, COL, `pg_${mes}_${_so(ie)}`), doc, { merge: true });
+      try { D.notificar('dare:empresa', { tipo: 'pagos', mes, i: i + 1, n: ies.length }); } catch (_) {}
       await P.vai(URL_CC, 45000);
     }
     const meta = { ultimaLeitura: lid, por: opc.auto ? 'Consulta automática' : (ses.nome || ses.email || ''), auto: !!opc.auto, mes, duracaoSeg: Math.round((Date.now() - inicio) / 1000) };

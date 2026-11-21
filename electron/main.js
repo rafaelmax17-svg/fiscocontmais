@@ -577,6 +577,21 @@ ipcMain.handle('fisc:dados', () => _fisc(() => fisconforme.dados()));
 ipcMain.handle('fisc:resumo', () => _fisc(() => fisconforme.resumo()));
 ipcMain.handle('fisc:explicarMalha', (_evt, { cod, nome }) => _fisc(() => fisconforme.explicarMalha(cod, nome)));
 ipcMain.handle('fisc:visualizar', (_evt, codigo) => _fisc(() => fisconforme.visualizar(codigo)));
+// baixa em lote (21/11/2026): a pasta é deste computador
+ipcMain.handle('fisc:baixarLote', (_evt, o) => _fisc(() => fisconforme.baixarLote(o || {})));
+ipcMain.handle('fisc:pararLote', () => _fisc(() => fisconforme.pararLote()));
+ipcMain.handle('fisc:pastaLote', () => _fisc(() => fisconforme.pastaLote()));
+ipcMain.handle('fisc:escolherPastaLote', async () => _fisc(async () => {
+  const atual = fisconforme.pastaLote().pasta;
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'Pasta onde salvar as notificações do Fisconforme', defaultPath: atual || app.getPath('documents'), properties: ['openDirectory', 'createDirectory'] });
+  if (r.canceled || !r.filePaths || !r.filePaths[0]) return { canceled: true, pasta: atual };
+  return fisconforme.definirPastaLote(r.filePaths[0]);
+}));
+ipcMain.handle('fisc:abrirPastaLote', () => _fisc(async () => {
+  const p = fisconforme.pastaLote().pasta;
+  if (!p || !fs.existsSync(p)) throw new Error('A pasta das notificações não está acessível neste computador.');
+  await shell.openPath(p); return {};
+}));
 ipcMain.handle('fisc:mostrarJanela', (_evt, sim) => _adm(() => fisconforme.mostrarJanela(sim)));
 ipcMain.handle('fisc:pastaDados', () => _adm(() => fisconforme.abrirPastaDados()));
 // ---- Débitos e DARE (SEFIN-RO · Portal do Contribuinte): mesma entrada por certificado do Fisconforme (electron/dare.js)

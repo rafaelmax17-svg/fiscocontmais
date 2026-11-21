@@ -2115,3 +2115,39 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .fc-mc h3{margin:0 0 4px;font-size:16px}.fc-mc label{display:block;margin-top:14px;font-weight:700;font-size:12.5px}.fc-mc label small{font-weight:400;color:var(--ink2,#64748b)}
 .fc-mc textarea{width:100%;margin-top:6px;border:1.5px solid var(--line,#e2e8f0);border-radius:10px;padding:10px 12px;font:12.5px/1.5 inherit;font-family:inherit;background:var(--bg,#f8fafc);color:inherit;resize:vertical}
 .fc-mb{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.fc-mb .fc-b{padding:7px 14px;font-size:12.5px}
+
+/* ── Botões neutros com relevo (2.4.13) · Fisconforme, DAREs, EFD-Reinf/DCTFWeb e GIAM ─────────────────────────────
+   A cor fica só nas etiquetas de situação (Confere, Diverge, Pendente…). Botão é sempre neutro: borda, leve degradê e
+   sombra pequena; ao passar o mouse sobe 1px. A ação principal da tela se distingue só pelo negrito. */
+:root{--bt1:#ffffff;--bt2:#eef1f6;--btb:#cdd5df;--btbh:#94a3b8;--bti:#1e293b;--btl:rgba(255,255,255,.8)}
+[data-theme="dark"]{--bt1:#2c3549;--bt2:#232b3c;--btb:#3d4964;--btbh:#64748b;--bti:#e6eaf3;--btl:rgba(255,255,255,.07)}
+:is(.fc-b,.fc-bpdf,.fc-bp,.fh-bt button,.dr-bt,.dp-b,.rf-pill:not(.rf-sel),.btn-dc.go,.btn-dc.sec,.gm-ab){
+  background:linear-gradient(var(--bt1),var(--bt2))!important;color:var(--bti)!important;border:1px solid var(--btb)!important;
+  box-shadow:inset 0 1px 0 var(--btl),0 1px 2px rgba(15,23,42,.10)!important;filter:none!important;text-shadow:none!important;
+  transition:transform .12s,box-shadow .12s,border-color .12s}
+:is(.fc-b,.fc-bpdf,.fc-bp,.fh-bt button,.dr-bt,.dp-b,.rf-pill:not(.rf-sel),.btn-dc.go,.btn-dc.sec,.gm-ab):hover:not(:disabled){
+  border-color:var(--btbh)!important;box-shadow:inset 0 1px 0 var(--btl),0 3px 8px rgba(15,23,42,.14)!important;transform:translateY(-1px);filter:none!important}
+:is(.fc-b,.fc-bpdf,.fc-bp,.fh-bt button,.dr-bt,.dp-b,.rf-pill:not(.rf-sel),.btn-dc.go,.btn-dc.sec,.gm-ab):active:not(:disabled){
+  transform:none;box-shadow:inset 0 1px 3px rgba(15,23,42,.16)!important}
+:is(.fc-b,.fc-bpdf,.fc-bp,.fh-bt button,.dr-bt,.dp-b,.rf-pill:not(.rf-sel),.btn-dc.go,.btn-dc.sec,.gm-ab):disabled{opacity:.5;cursor:not-allowed;transform:none}
+/* ação principal: só o peso da letra */
+:is(.fc-bp,.fh-bt button.g,.rf-pill.g,.btn-dc.go,.dp-b:not(.o),.dr-bt:not(.ex)){font-weight:800!important;border-color:var(--btbh)!important}
+.fc-bv{color:var(--bti)!important}
+.btn-dc.go{box-shadow:inset 0 1px 0 var(--btl),0 1px 2px rgba(15,23,42,.10)!important}
+
+/* ── Fisconforme · baixa em lote (2.4.13) ─────────────────────────────────────────────────────────────────────────── */
+.fc-ck{width:30px;text-align:center}.fc-ck input{width:16px;height:16px;accent-color:#475569;cursor:pointer}
+.fc-tab tr.fc-sel td{background:color-mix(in srgb,var(--panel) 92%,#64748b)}
+.fc-lote{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
+.fc-lote>b{font-size:13px;margin-right:4px}.fc-lote .fc-b{margin-left:0;padding:6px 12px;font-size:12px}
+.fc-pasta{margin-left:auto;font-size:12px;color:var(--ink2);display:flex;align-items:center;gap:6px;max-width:52%;min-width:0}
+.fc-pasta b{color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.fc-lk{border:none;background:none;color:var(--ink2);text-decoration:underline;cursor:pointer;font:inherit;font-size:12px;padding:0 2px}.fc-lk:hover{color:var(--ink)}
+.fc-lote.on{display:flex;gap:12px}.fc-lp{flex:1;min-width:0;font-size:12.5px}.fc-lp span{float:right;color:var(--ink2);font-size:11.5px}
+.fc-tr{height:7px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:7px}.fc-tr i{display:block;height:100%;background:#64748b;border-radius:99px;transition:width .4s}
+.fc-lc{margin-top:4px;text-align:right}.fc-lc .fc-la{margin-left:auto}.fc-lc:empty{display:none}
+.fc-lt{display:inline-block;border-radius:999px;padding:2px 9px;font-weight:700;font-size:11px;white-space:nowrap}
+.fc-lt.ok{background:#dcfce7;color:#166534}.fc-lt.run{background:#ffedd5;color:#9a3412}.fc-lt.er{background:#fee2e2;color:#991b1b}.fc-lt.fila{background:var(--line);color:var(--ink2)}
+.fc-la{display:block;font-size:11px;color:var(--ink2);margin-top:2px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fc-la.er{color:#b91c1c;white-space:normal}
+.fc-warn{color:#b91c1c}
+[data-theme="dark"] .fc-lt.ok{background:rgba(16,185,129,.15);color:#6ee7b7}[data-theme="dark"] .fc-lt.run{background:rgba(249,115,22,.15);color:#fdba74}[data-theme="dark"] .fc-lt.er{background:rgba(239,68,68,.15);color:#fca5a5}

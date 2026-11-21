@@ -4,7 +4,8 @@
 (function () {
   const e = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ST = { pendente: ['Pendente', 'pe'], contestado: ['Contestada', 'co'], indeferido: ['Indeferida', 'in'], resolvido: ['Resolvida', 'ok'], fora: ['Saiu das listas', 'fo'] };
-  const F = { est: null, d: null, filtro: 'pendente', emp: '', malha: '', busca: '', aberto: '', mostrar: 120 };
+  const F = { est: null, d: null, filtro: 'pendente', emp: '', malha: '', busca: '', aberto: '', mostrar: 120,
+    sel: new Set(), lote: null, pasta: '', lendo: false };      // lote: { st: Map(codigo → {st, arquivo, msg}), i, n, nome }
   const fmtCnpj = (c) => String(c || '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
   const fmtCpf = (c) => String(c || '').replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
   const per = (p) => /^\d{6}$/.test(p || '') ? `${p.slice(4)}/${p.slice(0, 4)}` : (p || '');
@@ -27,10 +28,17 @@
       semCertificado(); return;
     }
     if (!est.escolhido) { semCertificado(); return; }
-    if (!desliga) desliga = window.fiscocont.fisconforme.onProgresso((p) => {
-      const el = $('#fcProg'); if (!el) return;
-      el.hidden = !!p.fim; el.querySelector('span').textContent = p.txt || '';
-    });
+    if (!desliga) {
+      desliga = window.fiscocont.fisconforme.onProgresso((p) => {
+        F.progTxt = p.fim ? '' : (p.txt || '');
+        const el = $('#fcProg'); if (!el || F.lote) return;
+        el.hidden = !!p.fim; el.querySelector('span').textContent = p.txt || '';
+      });
+      window.fiscocont.fisconforme.onLote(eventoLote);
+      let tp = null;     // leitura: a tela se atualiza a cada página gravada
+      window.fiscocont.fisconforme.onParcial(() => { clearTimeout(tp); tp = setTimeout(() => carregar(true), 1200); });
+    }
+    try { const pl = await window.fiscocont.fisconforme.pastaLote(); F.pasta = (pl && pl.pasta) || ''; } catch (_) {}
     await carregar();
   }
 
@@ -53,10 +61,92 @@
     });
   }
 
-  async function carregar() {
+  async function carregar(quieto) {
     const d = await window.fiscocont.fisconforme.dados();
-    if (d && d.error) { toast(d.error, true); return; }
-    F.d = d; F.anim = true; desenhar(); badge();
+    if (d && d.error) { if (!quieto) toast(d.error, true); return; }
+    F.d = d; F.anim = !quieto; desenhar(); badge();
+  }
+
+  // ------------------------------------------------------------------ baixa em lote (21/11/2026)
+  const ST_L = { rodando: ['run', '⏳ Baixando…'], ok: ['ok', '✓ Baixada'], erro: ['er', '✕ Não baixou'], fila: ['fila', 'na fila'], pulada: ['fila', 'ficou de fora'], cancelada: ['fila', 'cancelada'] };
+  const celLote = (cod) => {
+    const x = F.lote && F.lote.st.get(cod);
+    if (!x) return '';
+    const [c, rot] = ST_L[x.st] || ST_L.fila;
+    return `<span class="fc-lt ${c}">${rot}</span>${x.arquivo ? `<small class="fc-la">${e(x.arquivo)}</small>` : ''}${x.msg && x.st !== 'ok' ? `<small class="fc-la er">${e(x.msg)}</small>` : ''}`;
+  };
+  function barraLote() {
+    const L = F.lote, n = F.sel.size;
+    if (!L && !n) return '';
+    if (L && L.rodando) {
+      const pct = L.n ? Math.round(((L.i || 1) - 1) / L.n * 100) : 0;
+      return `<div class="fc-lote on"><div class="fc-lp"><b>Baixando ${L.i || 1} de ${L.n}</b>${L.nome ? ` · ${e(L.nome)}` : ''}<span>uma única entrada no portal · a tela atualiza a cada notificação</span>
+        <div class="fc-tr"><i style="width:${pct}%"></i></div></div><button class="fc-b" id="fcLoteParar">Parar</button></div>`;
+    }
+    return `<div class="fc-lote"><b>${n} selecionada${n === 1 ? '' : 's'}</b>
+      <button class="fc-b" id="fcSelPend">Selecionar todas as pendentes</button>${n ? '<button class="fc-b" id="fcSelLimpa">Limpar</button>' : ''}
+      <button class="fc-b fc-bp" id="fcLoteIr"${!n || F.semCert ? ' disabled' : ''}${F.semCert ? ' title="Precisa do e-CPF do contador instalado neste computador"' : ''}>⬇ Baixar ${n || ''} notificaç${n === 1 ? 'ão' : 'ões'}</button>
+      <span class="fc-pasta">📁 ${F.pasta ? `Salvar em: <b title="${e(F.pasta)}">${e(F.pasta)}</b>` : 'Pasta ainda não escolhida neste computador'}
+        <button class="fc-lk" id="fcPastaTroca">${F.pasta ? 'trocar' : 'escolher'}</button>${F.pasta ? '<button class="fc-lk" id="fcPastaAbre">abrir</button>' : ''}</span></div>`;
+  }
+  function eventoLote(x) {
+    if (!F.lote) return;
+    if (x.fim) { F.lote.rodando = false; fimLote(); return; }
+    F.lote.st.set(x.codigo, { st: x.st, arquivo: x.arquivo || '', msg: x.msg || '' });
+    if (x.st === 'rodando') { F.lote.i = x.i; F.lote.n = x.n; F.lote.nome = x.nome; }
+    if (x.st === 'ok') F.lote.ok++; if (x.st === 'erro') F.lote.erro++;
+    const c = document.getElementById(`fcL${x.codigo}`); if (c) c.innerHTML = celLote(x.codigo);
+    const b = document.getElementById('fcLoteBox'); if (b) { b.innerHTML = barraLote(); ligarLote(); }
+  }
+  async function fimLote() {
+    const L = F.lote;
+    toast(`${L.ok} notificaç${L.ok === 1 ? 'ão baixada' : 'ões baixadas'}${L.erro ? ` · ${L.erro} com problema (veja na lista)` : ''}.`, !!L.erro && !L.ok);
+    F.sel.clear();
+    await carregar(true);
+  }
+  async function escolherPasta() {
+    const r = await window.fiscocont.fisconforme.escolherPastaLote();
+    if (r && r.error) { toast(r.error, true); return false; }
+    F.pasta = (r && r.pasta) || F.pasta;
+    const b = document.getElementById('fcLoteBox'); if (b) { b.innerHTML = barraLote(); ligarLote(); }
+    return !!F.pasta;
+  }
+  function perguntaCiencia(nv, vistas) {
+    return new Promise((ok) => {
+      const m = document.createElement('div'); m.className = 'fc-modal';
+      m.innerHTML = `<div class="fc-mc"><h3>Baixar ${nv + vistas} notificaç${nv + vistas === 1 ? 'ão' : 'ões'}?</h3>
+        <p class="fc-sub">${vistas ? `${vistas} já ${vistas === 1 ? 'foi visualizada e baixa' : 'foram visualizadas e baixam'} direto.<br>` : ''}
+        <b class="fc-warn">${nv} ainda não ${nv === 1 ? 'foi visualizada' : 'foram visualizadas'}: ao baixar, a SEFIN registra a ciência e começa o prazo de cada uma (Decreto 23.856/2019, art. 3º, § 3º).</b></p>
+        <div class="fc-mb"><button class="fc-b" data-r="">Cancelar</button>${vistas ? `<button class="fc-b" data-r="vistas">Só as já visualizadas (${vistas})</button>` : ''}<button class="fc-b fc-bp" data-r="todas">Baixar ${nv + vistas === 1 ? 'e dar ciência' : `as ${nv + vistas}`}</button></div></div>`;
+      m.querySelectorAll('[data-r]').forEach((b) => b.onclick = () => { m.remove(); ok(b.dataset.r); });
+      document.body.appendChild(m);
+    });
+  }
+  async function baixarLote() {
+    if (!F.sel.size) return;
+    if (!F.pasta && !(await escolherPasta())) return;
+    const ns = [...F.sel].map((c) => F.d.notif.find((x) => x.codigo === c)).filter(Boolean);
+    const nv = ns.filter((n) => !n.detalhe).length;
+    let comCiencia = false, cods = ns.map((n) => n.codigo);
+    if (nv) {
+      const r = await perguntaCiencia(nv, ns.length - nv);
+      if (!r) return;
+      if (r === 'vistas') cods = ns.filter((n) => n.detalhe).map((n) => n.codigo); else comCiencia = true;
+    }
+    if (!cods.length) return;
+    F.lote = { rodando: true, st: new Map(cods.map((c) => [c, { st: 'fila' }])), i: 0, n: cods.length, nome: '', ok: 0, erro: 0 };
+    desenhar();
+    const r = await window.fiscocont.fisconforme.baixarLote(cods, comCiencia);
+    if (r && r.error) { toast(r.error, true); F.lote.rodando = false; desenhar(); }
+  }
+  function ligarLote() {
+    const g = (id) => document.getElementById(id);
+    if (g('fcSelPend')) g('fcSelPend').onclick = () => { F.d.notif.filter((n) => n.status === 'pendente').forEach((n) => F.sel.add(n.codigo)); desenhar(); };
+    if (g('fcSelLimpa')) g('fcSelLimpa').onclick = () => { F.sel.clear(); desenhar(); };
+    if (g('fcLoteIr')) g('fcLoteIr').onclick = baixarLote;
+    if (g('fcPastaTroca')) g('fcPastaTroca').onclick = escolherPasta;
+    if (g('fcPastaAbre')) g('fcPastaAbre').onclick = async () => { const x = await window.fiscocont.fisconforme.abrirPastaLote(); if (x && x.error) toast(x.error, true); };
+    if (g('fcLoteParar')) g('fcLoteParar').onclick = async (ev) => { ev.target.disabled = true; ev.target.textContent = 'Parando…'; await window.fiscocont.fisconforme.pararLote(); };
   }
 
   // contador no ícone do menu: quantidade exata de pendentes da última leitura; pulsa quando a última leitura trouxe notificação nova
@@ -201,7 +291,7 @@
           ${adm ? `<label class="fh-chk" title="Abre a janela da consulta para acompanhar a entrada no portal (ajuda no primeiro uso)"><input type="checkbox" id="fcVer"${F.est.mostrarJanela ? ' checked' : ''}> Mostrar a janela</label>
           <button id="fcPortal">Abrir o portal ↗</button>` : ''}
           ${meta ? '<button id="fcHtml">Exportar HTML</button><button id="fcPdf">Exportar PDF</button>' : ''}
-          <button class="g" id="fcLer"${F.semCert ? ' disabled title="Precisa do e-CPF do contador instalado neste computador"' : ''}>▶ Ler notificações</button></div>`;
+          <button class="g" id="fcLer"${F.semCert ? ' disabled title="Precisa do e-CPF do contador instalado neste computador"' : F.lendo || (F.lote && F.lote.rodando) ? ' disabled' : ''}>${F.lendo ? 'Lendo…' : '▶ Ler notificações'}</button></div>`;
     const titulo = `<div class="fh-tt">${LOGO}<div><span>SEFIN-RO · FISCONFORME</span>
           <p>Todas as empresas vinculadas ao contador · ${e(est.nome || 'contador')}${est.cpf ? ` (e-CPF ${fmtCpf(est.cpf)})` : ''}</p></div></div>`;
     $('#fcRaiz').innerHTML = `
@@ -215,7 +305,7 @@
           <small class="fh-rod">Última leitura ${e(quando)}${meta.por ? ' · ' + e(meta.por) : ''} · automática em dias úteis às 07:45, 10:45, 13:45 e 16:45 · o sistema consulta só as listas, sem abrir a notificação</small></div>
       </div>` : `<div class="fh-hero${anima ? ' fh-in' : ''}"><div>${titulo}<h2 class="fh-h2">Notificações do Fisconforme</h2></div><div>${btns}</div></div>`}
       ${F.semCert ? `<div class="fc-alerta"><b>O certificado do contador não está instalado neste computador.</b> Você está vendo a última leitura salva. Para ler de novo ou visualizar uma notificação no portal, use um computador com o e-CPF do contador instalado. Nada foi consultado.</div>` : ''}
-      <div class="fc-prog" id="fcProg" hidden><i></i><span></span></div>
+      <div class="fc-prog" id="fcProg"${F.lendo ? '' : ' hidden'}><i></i><span>${e(F.lendo ? (F.progTxt || 'Lendo…') : '')}</span></div>
       ${!meta ? `<div class="fc-vazio"><b>Nenhuma leitura ainda.</b> Clique em “Ler notificações”: o sistema consulta o portal com o e-CPF do contador e traz as listas de pendentes, contestadas, indeferidas e resolvidas de todas as empresas (leva alguns minutos).</div>` : `
       <div class="fh-g2${anima ? ' fh-in' : ''}">
         <div class="fc-card"><h3>Pendentes por malha <small>· a cor mostra a idade · clique para filtrar</small></h3>
@@ -234,8 +324,9 @@
           <select id="fcEmp" class="fc-sel"><option value="">Todas as empresas</option>${empresas.map(([k, n]) => `<option value="${e(k)}"${F.emp === k ? ' selected' : ''}>${e(n)}</option>`).join('')}</select>
           <select id="fcMalha" class="fc-sel"><option value="">Todas as malhas</option>${malhas.map((m) => `<option${F.malha === m ? ' selected' : ''}>${e(m)}</option>`).join('')}</select>
           <input id="fcBusca" class="fc-sel" placeholder="Buscar empresa, CNPJ, IE ou código" value="${e(F.busca)}"></div>
-        <table class="fc-tab"><thead><tr><th>Empresa</th><th>Malha / descrição</th><th>Período</th><th>Código</th><th>Situação</th><th>Encontrada em</th><th></th></tr></thead><tbody>
-        ${vis.slice(0, F.mostrar).map((n) => linha(n)).join('') || '<tr><td colspan="7" class="fc-sub" style="text-align:center;padding:18px">Nada neste filtro.</td></tr>'}
+        <div id="fcLoteBox">${barraLote()}</div>
+        <table class="fc-tab"><thead><tr><th class="fc-ck"><input type="checkbox" id="fcSelVis" title="Marcar todas desta lista"${vis.length && vis.slice(0, F.mostrar).every((n) => n.status === 'fora' || F.sel.has(n.codigo)) ? ' checked' : ''}></th><th>Empresa</th><th>Malha / descrição</th><th>Período</th><th>Código</th><th>Situação</th><th>Encontrada em</th><th></th></tr></thead><tbody>
+        ${vis.slice(0, F.mostrar).map((n) => linha(n)).join('') || '<tr><td colspan="8" class="fc-sub" style="text-align:center;padding:18px">Nada neste filtro.</td></tr>'}
         </tbody></table>
         ${vis.length > F.mostrar ? `<button class="act inv-export" id="fcMais" style="margin:10px auto;display:block">Mostrar mais (${vis.length - F.mostrar})</button>` : ''}
         <div class="fc-aviso">⚠ O sistema consulta só as listas do portal e <b>nunca abre a notificação sozinho</b>: abrir o conteúdo conta como ciência e começa o prazo (Decreto 23.856/2019, art. 3º, § 3º). “Entenda esta malha” explica sem abrir nada. “Visualizar” abre a notificação no portal — <b>dá ciência</b> — e só roda depois da sua confirmação.</div>
@@ -254,14 +345,16 @@
     const d = dias(n.primeiraVez);
     const ab = F.aberto === n.codigo;
     const expl = (F.d.explicMalha[(n.malha || '')] || {}).texto;
-    return `<tr class="${ab ? 'fc-on' : ''}"><td><b>${e(n.nome)}</b><small>${n.cnpj ? 'CNPJ ' + fmtCnpj(n.cnpj) + ' · ' : ''}IE ${e(n.ie)}</small></td>
+    const podeSel = n.status !== 'fora';
+    return `<tr class="${ab ? 'fc-on' : ''}${F.sel.has(n.codigo) ? ' fc-sel' : ''}"><td class="fc-ck"><input type="checkbox" data-s="${e(n.codigo)}"${F.sel.has(n.codigo) ? ' checked' : ''}${podeSel && !(F.lote && F.lote.rodando) ? '' : ' disabled'}${podeSel ? '' : ' title="Saiu das listas do portal"'}></td><td><b>${e(n.nome)}</b><small>${n.cnpj ? 'CNPJ ' + fmtCnpj(n.cnpj) + ' · ' : ''}IE ${e(n.ie)}</small></td>
       <td>${e(n.desc)}${n.cienciaEm ? `<small class="fc-ci">Ciência em ${dBr(n.cienciaEm)}${n.prazo ? ` · prazo ${e(n.prazo)}` : ''}</small>` : ''}</td>
       <td>${per(n.periodo)}</td><td>${e(n.codigo)}</td><td>${nova}<span class="fc-c ${cls}">${rot}</span></td>
       <td>${dBr(n.primeiraVez)}<small>${d === 0 ? 'hoje' : `há ${d} dia${d > 1 ? 's' : ''}`}</small></td>
       <td class="fc-ac"><button class="fc-b" data-x="${e(n.codigo)}">${ab ? 'Fechar' : 'Entenda esta malha'}</button>
         ${n.detalhe ? `<button class="fc-b" data-v="${e(n.codigo)}" data-ja="1">Ver notificação</button>` : `<button class="fc-b fc-bv" data-v="${e(n.codigo)}"${F.semCert ? ' disabled title="Precisa do e-CPF do contador instalado neste computador"' : ''}>Visualizar</button>`}
-        <button class="fc-b fc-bpdf" data-pdf="${e(n.codigo)}" ${n.detalhe ? 'title="Gera o PDF da notificação para encaminhar ao cliente"' : 'disabled title="Primeiro visualize a notificação (dá ciência): o PDF usa o conteúdo lido do portal"'}>📄 PDF para o cliente</button></td></tr>
-      ${ab ? `<tr class="fc-det"><td colspan="7">
+        <button class="fc-b fc-bpdf" data-pdf="${e(n.codigo)}" ${n.detalhe ? 'title="Gera o PDF da notificação para encaminhar ao cliente"' : 'disabled title="Primeiro visualize a notificação (dá ciência): o PDF usa o conteúdo lido do portal"'}>📄 PDF para o cliente</button>
+        <div class="fc-lc" id="fcL${e(n.codigo)}">${celLote(n.codigo)}</div></td></tr>
+      ${ab ? `<tr class="fc-det"><td colspan="8">
         ${n.detalhe ? `<div class="fc-box"><h4>Notificação (aberta em ${e(n.cienciaEm || '')}${n.cienciaPor ? ' por ' + e(n.cienciaPor) : ''})</h4><pre>${e(n.detalhe)}</pre></div>` : ''}
         <div class="fc-box"><h4>${n.explicacao ? 'Explicação desta notificação' : 'Entenda esta malha'}</h4><div class="fc-ex" id="fcEx">${n.explicacao ? fmt(n.explicacao) : (expl ? fmt(expl) : '<span class="fc-sub">Preparando a explicação…</span>')}</div></div>
       </td></tr>` : ''}`;
@@ -291,6 +384,9 @@
     q('[data-x]').forEach((b) => b.onclick = () => abrir(b.dataset.x));
     q('[data-v]').forEach((b) => b.onclick = () => (b.dataset.ja ? abrir(b.dataset.v) : visualizar(b.dataset.v)));
     q('[data-pdf]').forEach((b) => b.onclick = () => pdfCliente(b.dataset.pdf));
+    q('[data-s]').forEach((b) => b.onchange = () => { if (b.checked) F.sel.add(b.dataset.s); else F.sel.delete(b.dataset.s); const x = $('#fcLoteBox'); if (x) { x.innerHTML = barraLote(); ligarLote(); } b.closest('tr').classList.toggle('fc-sel', b.checked); });
+    const sv = $('#fcSelVis'); if (sv) sv.onchange = () => { vis.slice(0, F.mostrar).filter((n) => n.status !== 'fora').forEach((n) => (sv.checked ? F.sel.add(n.codigo) : F.sel.delete(n.codigo))); desenhar(); };
+    ligarLote();
   }
 
   // PDF para o cliente: a orientação vem preenchida com a explicação do sistema; a equipe revisa antes de gerar
@@ -413,11 +509,10 @@
   }
 
   async function ler() {
-    const b = $('#fcLer'); b.disabled = true; b.textContent = 'Lendo…';
-    const prog = $('#fcProg'); if (prog) { prog.hidden = false; prog.querySelector('span').textContent = 'Iniciando…'; }
+    F.lendo = true; F.progTxt = 'Iniciando…'; desenhar();
     const r = await window.fiscocont.fisconforme.ler();
-    b.disabled = false; b.textContent = '▶ Ler notificações';
-    if (prog) prog.hidden = true;
+    F.lendo = false; F.progTxt = '';
+    desenhar();
     if (r && r.error) {
       toast(r.error, true);
       if (/fisconforme_log/.test(r.error) && ehAdm() && confirm('Abrir a pasta com o print e o passo a passo da consulta?')) window.fiscocont.fisconforme.pastaDados();

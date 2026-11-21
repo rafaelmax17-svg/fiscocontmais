@@ -101,6 +101,13 @@ contextBridge.exposeInMainWorld('fiscocont', {
     mostrarJanela: (sim) => ipcRenderer.invoke('fisc:mostrarJanela', sim),
     pastaDados: () => ipcRenderer.invoke('fisc:pastaDados'),
     onProgresso: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('fisc:progresso', h); return () => ipcRenderer.removeListener('fisc:progresso', h); },
+    baixarLote: (codigos, comCiencia) => ipcRenderer.invoke('fisc:baixarLote', { codigos, comCiencia }),
+    pararLote: () => ipcRenderer.invoke('fisc:pararLote'),
+    pastaLote: () => ipcRenderer.invoke('fisc:pastaLote'),
+    escolherPastaLote: () => ipcRenderer.invoke('fisc:escolherPastaLote'),
+    abrirPastaLote: () => ipcRenderer.invoke('fisc:abrirPastaLote'),
+    onLote: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('fisc:lote', h); return () => ipcRenderer.removeListener('fisc:lote', h); },
+    onParcial: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('fisc:parcial', h); return () => ipcRenderer.removeListener('fisc:parcial', h); },
   },
   // ✦ Análise ampla pelo POP (Corretor do SPED Fiscal · só Admin)
   pop: {
@@ -127,6 +134,7 @@ contextBridge.exposeInMainWorld('fiscocont', {
     abrir: (arq) => ipcRenderer.invoke('dare:abrir', arq),
     exportar: (html, nome) => ipcRenderer.invoke('dare:exportar', { html, nome }),
     onProgresso: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('dare:progresso', h); return () => ipcRenderer.removeListener('dare:progresso', h); },
+    onEmpresa: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on('dare:empresa', h); return () => ipcRenderer.removeListener('dare:empresa', h); },
   },
   giam: {
     dados: (comp) => ipcRenderer.invoke('giam:dados', comp),

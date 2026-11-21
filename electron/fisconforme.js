@@ -203,7 +203,7 @@ const JS_LISTA = `(() => {
   return { rows, max: Math.max(1, ...pags), emps, malhas, logado, url: location.href };
 })()`;
 
-async function _lerLista(nome) {
+async function _lerLista(nome, aoPagina) {
   const out = [];
   let max = 1, emps = [], malhas = [];
   for (let p = 1; p <= Math.min(max, MAX_PAG[nome]); p++) {
@@ -217,7 +217,9 @@ async function _lerLista(nome) {
       if (!r.logado) throw new Error('A sessão do portal caiu e não voltou.');
     }
     if (p === 1) { max = r.max; emps = r.emps; malhas = r.malhas; }
-    r.rows.forEach((x) => out.push({ ...x, pagina: p }));
+    const pg = r.rows.map((x) => ({ ...x, pagina: p }));
+    out.push(...pg);
+    if (aoPagina) await aoPagina(pg, { emps, malhas }).catch((e) => _log(`gravar a página: ${e.message || e}`));
     await _sleep(350);
   }
   return { linhas: out, paginas: Math.min(max, MAX_PAG[nome]), emps, malhas };
@@ -252,34 +254,51 @@ async function ler(opc = {}) {
   const lid = inicio.toISOString();
   try {
     await _login();
-    const res = {};
-    let emps = [], malhas = [];
-    for (const l of LISTAS) {
-      const r = await _lerLista(l);
-      res[l] = r;
-      if (r.emps.length > emps.length) emps = r.emps;
-      if (r.malhas.length > malhas.length) malhas = r.malhas;
-    }
-    _prog('Gravando…');
-    const cnpjDe = _mapaEmpresas(emps);
-    const codMalha = new Map(malhas.map((m) => [_n(m.nome), m.cod]));
     const { db, f } = _fs();
     const ant = new Map();
     (await f.getDocs(f.collection(db, COL))).forEach((d) => { if (!d.id.startsWith('_')) ant.set(d.id, d.data()); });
-    const visto = new Map();
-    for (const l of LISTAS) for (const x of res[l].linhas) if (!visto.has(x.codigo)) visto.set(x.codigo, { ...x, status: l });
     const hoje = lid.slice(0, 10);
-    const gravar = [];
-    for (const [cod, x] of visto) {
+    const visto = new Map(), escrito = new Map();
+    let cnpjDe = () => '', codMalha = new Map();
+    const montaDoc = (cod, x) => {
       const a = ant.get(cod) || {};
-      const doc = {
+      return {
         codigo: cod, ie: x.ie, nome: x.nome, cnpj: cnpjDe(x.ie, x.nome) || a.cnpj || '', periodo: x.periodo, desc: x.desc,
         malha: codMalha.get(_n(x.desc)) || a.malha || '', status: x.status, pagina: x.pagina,
         primeiraVez: a.primeiraVez || hoje, primeiraLeitura: a.primeiraLeitura || lid,
         statusDesde: a.status === x.status ? (a.statusDesde || hoje) : hoje, ultimaVez: hoje, ultimaLeitura: lid,
       };
-      const muda = ['status', 'cnpj', 'periodo', 'desc', 'malha', 'pagina', 'nome'].some((k) => doc[k] !== a[k]) || !a.codigo;
-      if (muda || a.ultimaVez !== hoje) gravar.push([cod, doc]);
+    };
+    const precisa = (cod, doc) => { const a = ant.get(cod) || {}; return ['status', 'cnpj', 'periodo', 'desc', 'malha', 'pagina', 'nome'].some((k) => doc[k] !== a[k]) || !a.codigo || a.ultimaVez !== hoje; };
+    // grava a cada página lida (a tela se atualiza enquanto a leitura anda); a 1ª lista em que a notificação aparece vale
+    const porPagina = (l) => async (linhas, meta) => {
+      if (meta.emps.length && !cnpjDe.pronto) { cnpjDe = _mapaEmpresas(meta.emps); cnpjDe.pronto = true; }
+      if (meta.malhas.length && !codMalha.size) codMalha = new Map(meta.malhas.map((m) => [_n(m.nome), m.cod]));
+      const b = f.writeBatch(db); let n = 0;
+      for (const x of linhas) {
+        if (visto.has(x.codigo)) continue;
+        visto.set(x.codigo, { ...x, status: l });
+        const doc = montaDoc(x.codigo, { ...x, status: l });
+        if (precisa(x.codigo, doc)) { b.set(f.doc(db, COL, x.codigo), doc, { merge: true }); escrito.set(x.codigo, JSON.stringify(doc)); n++; }
+      }
+      if (n) { await b.commit(); try { D.notificar('fisc:parcial', { lista: l }); } catch (_) {} }
+    };
+    const res = {};
+    let emps = [], malhas = [];
+    for (const l of LISTAS) {
+      const r = await _lerLista(l, porPagina(l));
+      res[l] = r;
+      if (r.emps.length > emps.length) emps = r.emps;
+      if (r.malhas.length > malhas.length) malhas = r.malhas;
+    }
+    _prog('Gravando…');
+    cnpjDe = _mapaEmpresas(emps);
+    codMalha = new Map(malhas.map((m) => [_n(m.nome), m.cod]));
+    for (const l of LISTAS) for (const x of res[l].linhas) if (!visto.has(x.codigo)) visto.set(x.codigo, { ...x, status: l });
+    const gravar = [];
+    for (const [cod, x] of visto) {                    // revisão final (CNPJ/malha com a lista completa): só o que mudou
+      const doc = montaDoc(cod, x);
+      if (precisa(cod, doc) && escrito.get(cod) !== JSON.stringify(doc)) gravar.push([cod, doc]);
     }
     for (const [cod, a] of ant) {                      // sumiu de todas as listas
       if (!visto.has(cod) && a.status !== 'fora') gravar.push([cod, { ...a, status: 'fora', statusDesde: hoje, ultimaLeitura: lid }]);
@@ -394,6 +413,141 @@ async function visualizar(codigo) {
   }
 }
 
+// ------------------------------------------------------------------ baixa em lote (21/11/2026)
+// A equipe marca as notificações e o sistema baixa uma atrás da outra numa única entrada no portal. O PDF é a própria
+// notificação da SEFIN, tirada da janelinha (que tem rolagem e altura fixa) e impressa em A4 corrido: sem cortes.
+// Pasta: cada computador escolhe a sua (fica em fisconforme.json, na pasta de dados deste computador).
+// Notificação ainda não visualizada só entra com a confirmação da pessoa: abrir conta como ciência e começa o prazo.
+let _pararLote = false;
+function pastaLote() { _exige(); return { pasta: _cfg().pastaLote || '' }; }
+function definirPastaLote(p) { _exige(); _grava({ ..._cfg(), pastaLote: String(p || '') }); return { ok: true, pasta: String(p || '') }; }
+function pararLote() { _pararLote = true; return { ok: true }; }
+const _nomeArq = (s) => String(s || '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+
+const JS_TEXTO_MODAL = `(() => { const m = [...document.querySelectorAll('.modal')].filter((e) => e.offsetWidth || e.offsetHeight || e.classList.contains('in') || getComputedStyle(e).display === 'block');
+  const t = m.map((e) => (e.querySelector('.modal-content') || e).innerText.replace(/\\n{3,}/g, '\\n\\n').trim()).filter((x) => x.length > 60);
+  return t.sort((a, b) => b.length - a.length)[0] || ''; })()`;
+// tira a notificação da janelinha e coloca no corpo da página, em fluxo normal (quebra em quantas páginas precisar)
+const JS_PREPARA_PDF = `(() => {
+  const m = [...document.querySelectorAll('.modal')].filter((e) => e.offsetWidth || e.offsetHeight || e.classList.contains('in') || getComputedStyle(e).display === 'block')
+    .map((e) => e.querySelector('.modal-content') || e).sort((a, b) => b.innerText.length - a.innerText.length)[0];
+  if (!m) return false;
+  const c = document.createElement('div'); c.id = 'fcImp'; c.appendChild(m.cloneNode(true));
+  const st = document.createElement('style'); st.id = 'fcImpCss';
+  st.textContent = '@page{size:A4;margin:12mm 11mm}html,body{height:auto!important;min-height:0!important;overflow:visible!important;background:#fff!important;padding:0!important;margin:0!important}'
+    + 'body>*:not(#fcImp){display:none!important}#fcImp{display:block!important;position:static!important}'
+    + '#fcImp *{max-height:none!important;overflow:visible!important;position:static!important}'
+    + '#fcImp .modal-content{border:0!important;box-shadow:none!important;width:auto!important;margin:0!important}'
+    + '#fcImp .modal-footer,#fcImp .close,#fcImp button{display:none!important}'
+    + '#fcImp table{width:100%!important;page-break-inside:auto}#fcImp tr,#fcImp img{page-break-inside:avoid;break-inside:avoid}#fcImp thead{display:table-header-group}'
+    + '#fcImp pre{white-space:pre-wrap!important;word-break:break-word}';
+  document.head.appendChild(st); document.body.appendChild(c); return true; })()`;
+const JS_DESFAZ_PDF = `(() => { ['fcImp', 'fcImpCss'].forEach((i) => { const x = document.getElementById(i); if (x) x.remove(); });
+  try { if (window.jQuery) window.jQuery('.modal').modal('hide'); } catch (_) {}
+  document.querySelectorAll('.modal.in, .modal.show').forEach((x) => { x.classList.remove('in', 'show'); x.style.display = 'none'; });
+  document.querySelectorAll('.modal-backdrop').forEach((x) => x.remove()); document.body.classList.remove('modal-open'); return true; })()`;
+const JS_TEM_COD = (cod) => `typeof visualizar_contribuinte === 'function' && !![...document.querySelectorAll('table.table > tbody > tr > td:first-child')].find((t) => t.innerText.trim() === ${JSON.stringify(String(cod))})`;
+
+// abre a lista onde a notificação está; se ela mudou de página desde a leitura, procura nas outras páginas da lista
+async function _vaiAteNotif(n, ondeEsta) {
+  const lista = n.status === 'fora' ? 'pendente' : n.status;
+  const tenta = async (pg) => {
+    await _vai(`${BASE}/contribuintes/${lista}${pg > 1 ? `?page=${pg}` : ''}`);
+    let r = await _js(JS_LISTA).catch(() => null);
+    if (r && !r.logado) { await _login(); await _vai(`${BASE}/contribuintes/${lista}${pg > 1 ? `?page=${pg}` : ''}`); r = await _js(JS_LISTA).catch(() => null); }
+    if (r) r.rows.forEach((x) => ondeEsta.set(x.codigo, { lista, pg, max: r.max }));
+    return r;
+  };
+  const conhecida = ondeEsta.get(String(n.codigo));
+  const r = await tenta(conhecida && conhecida.lista === lista ? conhecida.pg : (n.pagina || 1));
+  if (await _js(JS_TEM_COD(n.codigo)).catch(() => false)) return true;
+  const max = Math.min((r && r.max) || 1, MAX_PAG[lista] || 1);
+  for (let pg = 1; pg <= max; pg++) {
+    if (pg === (n.pagina || 1)) continue;
+    await tenta(pg);
+    if (await _js(JS_TEM_COD(n.codigo)).catch(() => false)) return true;
+    if (_pararLote) return false;
+  }
+  return false;
+}
+
+async function _explicar(ref, n, texto) {
+  try {
+    let anon = texto;
+    if (n.nome) anon = anon.split(n.nome).join('[EMPRESA]');
+    anon = anon.replace(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/g, '[CNPJ]').replace(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/g, '[CPF]').replace(/\b\d{9,14}\b/g, '[IE]');
+    const explic = (await auth.explicarFisconforme({ malha: n.desc, periodo: n.periodo, detalhe: anon })).texto;
+    if (explic) { const { f } = _fs(); await f.setDoc(ref, { explicacao: explic }, { merge: true }); }
+  } catch (_) {}
+}
+
+async function baixarLote({ codigos, comCiencia }) {
+  _exige();
+  if (_rodando) throw new Error('Há uma consulta da SEFIN em andamento. Aguarde terminar.');
+  const pasta = _cfg().pastaLote || '';
+  if (!pasta) throw new Error('Escolha a pasta onde salvar as notificações.');
+  if (!fs.existsSync(pasta)) throw new Error(`A pasta "${pasta}" não está acessível neste computador. Escolha outra.`);
+  const lista = [...new Set((codigos || []).map(String))];
+  if (!lista.length) throw new Error('Marque as notificações que quer baixar.');
+  _rodando = true; _canal = 'fisc:progresso'; _pararLote = false; _logTxt = [];
+  const avisa = (x) => { try { D.notificar('fisc:lote', x); } catch (_) {} };
+  const { db, f } = _fs();
+  const ses = auth.sessao() || {};
+  const res = { ok: 0, erro: 0, pulada: 0, arquivos: [] };
+  try {
+    const docs = [];
+    for (const cod of lista) { const s = await f.getDoc(f.doc(db, COL, cod)); if (s.exists()) docs.push(s.data()); }
+    // na ordem das listas e páginas: anda menos no portal
+    docs.sort((a, b) => String(a.status).localeCompare(String(b.status)) || (a.pagina || 1) - (b.pagina || 1));
+    await _login();
+    const ondeEsta = new Map();
+    for (let i = 0; i < docs.length; i++) {
+      const n = docs[i];
+      if (_pararLote) { avisa({ codigo: n.codigo, st: 'cancelada' }); continue; }
+      if (!n.detalhe && !comCiencia) { res.pulada++; avisa({ codigo: n.codigo, st: 'pulada', msg: 'não visualizada: ficou de fora' }); continue; }
+      if (n.status === 'fora') { res.erro++; avisa({ codigo: n.codigo, st: 'erro', msg: 'saiu das listas do portal' }); continue; }
+      avisa({ codigo: n.codigo, st: 'rodando', i: i + 1, n: docs.length, nome: n.nome });
+      _prog(`Baixando ${i + 1} de ${docs.length} · ${n.nome} · notificação ${n.codigo}`, { i: i + 1, n: docs.length });
+      try {
+        if (!(await _vaiAteNotif(n, ondeEsta))) throw new Error('não está mais nas listas do portal (faça uma nova leitura)');
+        await _js(`visualizar_contribuinte(${Number(n.codigo)})`);
+        let texto = '';
+        for (let k = 0; k < 30 && !texto; k++) { await _sleep(600); texto = await _js(JS_TEXTO_MODAL).catch(() => ''); }
+        if (!texto) throw new Error('o portal não mostrou o conteúdo');
+        const ref = f.doc(db, COL, String(n.codigo));
+        if (!n.detalhe) {                                   // primeira abertura = ciência
+          const ciencia = new Date().toLocaleString('pt-BR');
+          const prazo = (texto.match(/prazo[^\n.]{0,80}?(\d{2}\/\d{2}\/\d{4})/i) || [])[1] || '';
+          await f.setDoc(ref, { detalhe: texto.slice(0, 20000), cienciaEm: ciencia, cienciaPor: ses.nome || ses.email || '', prazo }, { merge: true });
+          _explicar(ref, n, texto);                         // explicação em paralelo: não segura a fila
+        }
+        if (!(await _js(JS_PREPARA_PDF))) throw new Error('não consegui preparar a impressão');
+        await _sleep(300);
+        const buf = await _win.webContents.printToPDF({ printBackground: true, pageSize: 'A4', preferCSSPageSize: true });
+        await _js(JS_DESFAZ_PDF).catch(() => {});
+        const arq = path.join(pasta, `${_nomeArq(n.nome)} - Notificação ${n.codigo}.pdf`);
+        fs.writeFileSync(arq, buf);
+        await f.setDoc(ref, { baixadaEm: new Date().toISOString() }, { merge: true });
+        res.ok++; res.arquivos.push(arq);
+        avisa({ codigo: n.codigo, st: 'ok', arquivo: path.basename(arq), ciencia: !n.detalhe });
+        _log(`lote: ${n.codigo} ${n.nome} → ${arq}`);
+      } catch (e) {
+        res.erro++;
+        avisa({ codigo: n.codigo, st: 'erro', msg: String(e.message || e).slice(0, 160) });
+        _log(`lote: ${n.codigo} falhou · ${e.message || e}`);
+        await _js(JS_DESFAZ_PDF).catch(() => {});
+      }
+      await _sleep(250);
+    }
+    return { ...res, pasta, cancelado: _pararLote };
+  } finally {
+    _rodando = false; _pararLote = false;
+    _prog('', { fim: true });
+    avisa({ fim: true });
+    if (_win && !_win.isDestroyed()) { _win.destroy(); _win = null; }
+  }
+}
+
 // ------------------------------------------------------------------ PDF para o cliente (19/11/2026)
 // Só para notificação JÁ visualizada (com o texto guardado): não abre o portal, então nunca dá ciência por conta própria.
 // A orientação vem preenchida com a explicação do sistema e a equipe revisa/edita antes de gerar.
@@ -446,4 +600,4 @@ const portal = {
   liberar(fechar = true) { _rodando = false; if (fechar && _win && !_win.isDestroyed()) { _win.destroy(); _win = null; } },
 };
 
-module.exports = { portal, init, podeUsar, resumo, estado, escolherCert, ler, dados, explicarMalha, visualizar, certificados, mostrarJanela, abrirPastaDados, notificacao, htmlCliente };
+module.exports = { portal, init, podeUsar, resumo, estado, escolherCert, ler, dados, explicarMalha, visualizar, certificados, mostrarJanela, abrirPastaDados, notificacao, htmlCliente, baixarLote, pararLote, pastaLote, definirPastaLote };
