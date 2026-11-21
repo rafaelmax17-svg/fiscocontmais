@@ -245,8 +245,8 @@ const JS_DIAG_GOV = `(() => { const out = [];
 // "Alterar perfil de acesso" › Procurador de pessoa jurídica - CNPJ
 const JS_PERFIL = (cnpj, modo) => `(() => { ${JS_BASE}
   // o rótulo mais interno (o próprio texto, não a caixa que também o contém — senão pegava o campo do CPF de cima)
-  const reP = /PROCURADOR DE PESSOA JURIDICA/;
-  const rot = [...document.querySelectorAll('label, span, div, td, p, h4, h5, legend, strong, b')].filter(vis).filter((x) => reP.test(txt(x)) && txt(x).length < 80)
+  const reP = /PROCURADOR DE PESSOA JURIDICA|PROCURADOR.{0,25}CNPJ|PESSOA JURIDICA.{0,10}CNPJ/;
+  const rot = [...document.querySelectorAll('label, span, div, td, th, p, h3, h4, h5, legend, strong, b, option')].filter(vis).filter((x) => reP.test(txt(x)) && txt(x).length < 80)
     .filter((x) => ![...x.children].some((c) => reP.test(txt(c))))[0];
   if (!rot) return { ok: false, motivo: 'campo "Procurador de pessoa jurídica - CNPJ" não encontrado' };
   let box = rot, inp = null, bt = null;
@@ -262,10 +262,17 @@ const JS_PERFIL = (cnpj, modo) => `(() => { ${JS_BASE}
   if (!bt) return { ok: false, motivo: 'botão Alterar não encontrado' };
   const m = '${modo || 'valor'}';
   if (m === 'foca') { inp.scrollIntoView({ block: 'center' }); inp.focus(); inp.select && inp.select(); inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); return { ok: true, max: inp.maxLength, mascara: inp.getAttribute('onkeypress') || inp.getAttribute('data-mask') || '' }; }
-  if (m === 'valor') setVal(inp, '${cnpj}');
+  if (m === 'valor' || m === 'poe') setVal(inp, '${cnpj}');
+  if (m === 'poe') return { ok: true, campo: inp.value };
   if (m === 'clica' || m === 'valor') { bt.click(); return { ok: true, campo: inp.value }; }
   return { ok: true, campo: inp.value };
 })()`;
+// diagnóstico da janela "Alterar perfil de acesso" (em cada quadro): endereço, rótulos e campos — vai para o passo a passo
+const JS_DIAG_PERFIL = `(() => { const v = (e) => e.getClientRects().length > 0;
+  const rot = [...document.querySelectorAll('label, span, td, th, p, h3, h4, h5, legend, strong, b, a, button')].filter(v)
+    .map((e) => (e.innerText || '').replace(/\\s+/g, ' ').trim()).filter((t) => t && t.length < 70 && /PROCURAD|PERFIL|CNPJ|CPF|ALTERAR|JUR[IÍ]DICA|REPRESENT|RESPONS/i.test(t));
+  const inp = [...document.querySelectorAll('input, select')].filter(v).map((e) => [e.tagName.toLowerCase(), e.type, e.id, e.name, e.placeholder].filter(Boolean).join(':'));
+  return location.href.split('?')[0] + ' | rótulos: ' + [...new Set(rot)].slice(0, 14).join(' ; ') + ' | campos: ' + inp.slice(0, 12).join(' , '); })()`;
 // mensagem que o eCAC mostrou depois do Alterar (o parágrafo inteiro, com o motivo)
 const JS_MSG_PERFIL = `(() => { ${JS_BASE}
   const els = [...document.querySelectorAll('div, p, span, td, li')].filter(vis).filter((x) => /NAO FOI POSSIVEL|PROCURAC|NAO (EXISTE|HA|POSSUI)|INVALID|ATENCAO/.test(txt(x)) && txt(x).length < 600)
@@ -423,6 +430,16 @@ async function _portalAntigo() {
   }
 }
 
+// roda o script em cada quadro da página (a janela "Alterar perfil" pode vir dentro de um iframe) e devolve o primeiro
+// quadro em que ele respondeu ok. Achado (21/11): procurava só na página principal → "campo não encontrado".
+async function _nosQuadros(codigo) {
+  let primeiro = null;
+  for (const fr of _win.webContents.mainFrame.framesInSubtree) {
+    try { const r = await fr.executeJavaScript(codigo, true); if (r && r.ok) return { r, fr }; if (!primeiro) primeiro = r; } catch (_) {}
+  }
+  return { r: primeiro, fr: null };
+}
+
 // troca o perfil para a empresa. Devolve { ok } ou { semProcuracao } ou { erro }
 async function _perfil(emp) {
   const norm = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
@@ -440,17 +457,33 @@ async function _perfil(emp) {
       if (tent < 2) { await _sleep(2000); continue; }
       await _print(); return { erro: '"Alterar perfil de acesso" não encontrado no eCAC.' };
     }
-    await _sleep(1800);
+    // espera a janela carregar (até ~12 s), em qualquer quadro
+    let achou = { r: null, fr: null };
+    for (let k = 0; k < 16 && !achou.fr; k++) { await _sleep(750); achou = await _nosQuadros(JS_PERFIL(_so(emp.cnpj), 'acha')); }
+    if (!achou.fr) {
+      const diag = [];
+      for (const fr of _win.webContents.mainFrame.framesInSubtree) { try { diag.push(await fr.executeJavaScript(JS_DIAG_PERFIL, true)); } catch (_) {} }
+      _log(`${emp.nome}: janela "Alterar perfil" · ${diag.join(' || ').slice(0, 1500)}`);
+      if (tent < 2) { await _sleep(1500); continue; }
+      await _print(); return { erro: (achou.r && achou.r.motivo) || 'campo do procurador não encontrado' };
+    }
+    const fr = achou.fr;
+    if (fr !== _win.webContents.mainFrame) _log(`${emp.nome}: a janela "Alterar perfil" está num quadro (${String(fr.url || '').split('?')[0]})`);
     // digita o CNPJ de verdade (a máscara do campo formata), em vez de só preencher o valor
-    const f = await _js(JS_PERFIL(_so(emp.cnpj), 'foca')).catch((e) => ({ ok: false, motivo: e.message }));
+    const f = await fr.executeJavaScript(JS_PERFIL(_so(emp.cnpj), 'foca'), true).catch((e) => ({ ok: false, motivo: e.message }));
     if (!f.ok) { await _print(); return { erro: f.motivo }; }
+    _win.webContents.focus();
     _win.webContents.insertText(tent === 1 ? _fmtCnpj(emp.cnpj) : _so(emp.cnpj));
     await _sleep(500);
-    const c = await _js(JS_PERFIL(_so(emp.cnpj), 'clica')).catch((e) => ({ ok: false, motivo: e.message }));
+    // se o texto não entrou no campo (foco no quadro), preenche direto
+    const v = await fr.executeJavaScript(JS_PERFIL(_so(emp.cnpj), 'acha'), true).catch(() => null);
+    if (!v || _so(v.campo) !== _so(emp.cnpj)) { await fr.executeJavaScript(JS_PERFIL(_so(emp.cnpj), 'poe'), true).catch(() => null); await _sleep(300); }
+    const c = await fr.executeJavaScript(JS_PERFIL(_so(emp.cnpj), 'clica'), true).catch((e) => ({ ok: false, motivo: e.message }));
     _log(`${emp.nome}: perfil · campo ficou "${c.campo || ''}" (tentativa ${tent + 1})`);
     await _sleep(2500); await _pronto();
     const t = norm(await _js(JS_TEXTO).catch(() => ''));
-    const msg = norm(await _js(JS_MSG_PERFIL).catch(() => ''));
+    let msg = norm(await _js(JS_MSG_PERFIL).catch(() => ''));
+    if (!msg) { for (const q of _win.webContents.mainFrame.framesInSubtree) { const m2 = norm(await q.executeJavaScript(JS_MSG_PERFIL, true).catch(() => '')); if (m2) { msg = m2; break; } } }
     if (t.includes(_fmtCnpj(emp.cnpj)) || (t.includes(_so(emp.cnpj)) && !/NAO FOI POSSIVEL/.test(msg))) { await _portalAntigo(); _log(`${emp.nome}: perfil de procurador ok`); return { ok: true }; }
     _log(`${emp.nome}: o eCAC respondeu "${msg || '(sem mensagem)'}"`);
     if (/PROCURAC/.test(msg) && /(NAO|INEXIST|SEM|EXPIRAD|VENCID|CANCELAD)/.test(msg)) return { semProcuracao: true, msg };
