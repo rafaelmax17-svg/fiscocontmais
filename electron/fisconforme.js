@@ -525,8 +525,14 @@ async function baixarLote({ codigos, comCiencia }) {
         await _sleep(300);
         const buf = await _win.webContents.printToPDF({ printBackground: true, pageSize: 'A4', preferCSSPageSize: true });
         await _js(JS_DESFAZ_PDF).catch(() => {});
-        const arq = path.join(pasta, `${_nomeArq(n.nome)} - Notificação ${n.codigo}.pdf`);
+        // nome: empresa + número + a descrição da malha (curta o bastante para o caminho caber no limite do Windows)
+        const desc = _nomeArq(n.desc).slice(0, 50).replace(/[\s.-]+$/, '');
+        const emp = _nomeArq(n.nome).slice(0, 60).trim();
+        const arq = path.join(pasta, `${emp} - Notificação ${n.codigo}${desc ? ` - ${desc}` : ''}.pdf`);
         fs.writeFileSync(arq, buf);
+        // a mesma notificação baixada antes (2.4.13 a 2.4.15, sem a descrição no nome): o PDF novo a substitui
+        const velho = path.join(pasta, `${_nomeArq(n.nome)} - Notificação ${n.codigo}.pdf`);
+        if (velho !== arq && fs.existsSync(velho)) { try { fs.unlinkSync(velho); } catch (_) {} }
         await f.setDoc(ref, { baixadaEm: new Date().toISOString() }, { merge: true });
         res.ok++; res.arquivos.push(arq);
         avisa({ codigo: n.codigo, st: 'ok', arquivo: path.basename(arq), ciencia: !n.detalhe });
