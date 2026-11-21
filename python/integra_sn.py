@@ -891,7 +891,7 @@ def main_cli(argv):
         try:
             res = processar(p)
         except Exception as e:                                  # noqa: BLE001
-            res = {'ok': False, 'erro': f'Falha no robô do Integra Contador: {e}'}
+            res = {'ok': False, 'erro': f'Falha na consulta à Receita: {e}'}
     with open(opt('--json'), 'w', encoding='utf-8') as f:
         json.dump(res, f, ensure_ascii=False)
     return 0 if res.get('ok') else 1

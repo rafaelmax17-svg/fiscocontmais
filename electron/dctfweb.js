@@ -120,7 +120,7 @@ async function pedir({ tipo, comp, cnpjs, cnpj, auto, origens, data, confirmado 
   if (!['conferir', 'transmitir', 'guia'].includes(tipo)) throw new Error('Pedido inválido.');
   if (!_comp(comp)) throw new Error('Competência inválida.');
   const robo = await _estadoRobo();
-  if (!robo.ativo) throw new Error('O Integra Contador ainda não foi configurado pelo Admin.');
+  if (!robo.ativo) throw new Error('A leitura da DCTFWeb ainda não foi configurada pelo Admin.');
   const { db, f } = _fs();
   const s = auth.sessao() || {};
   let lista = (cnpj ? [cnpj] : Array.isArray(cnpjs) ? cnpjs : []).map(_so).filter((c) => c.length === 14);

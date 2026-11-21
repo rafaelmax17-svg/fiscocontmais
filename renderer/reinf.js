@@ -191,10 +191,10 @@
       <div class="rf-kp">${KS.map((k) => `<div class="rf-k" style="--c:${COR[k]}"><div class="ic">${SIG[k]}</div><small>${NOME[k]}</small><b data-cont="${t[k] || 0}">${brl(t[k] || 0)}</b><div class="bar"><i style="--w:${(t[k] || 0) / mx * 100}%"></i></div><span>${d.fonte === 'api' ? (d.totaisDe ? 'débito na DCTFWeb' : 'aguarda a DCTFWeb') : f4.fechado && !['inss', 'funrural'].includes(k) ? 'enviado à DCTFWeb' : f2.fechado && ['inss', 'funrural'].includes(k) ? 'enviado à DCTFWeb' : 'soma dos eventos'}</span></div>`).join('')}</div>
       <div class="rf-g2">
         <div class="rf-card"><h3>Retenções da empresa</h3><div class="rf-pz">${T ? `<svg viewBox="0 0 300 300" class="rf-pizza" data-vals='${JSON.stringify(t)}'></svg>` : '<div class="rf-vz">Nenhuma retenção na competência.</div>'}${legenda(t)}</div></div>
-        <div class="rf-card"><h3>Totais que vão para a DCTFWeb <small>${d.fonte === 'api' ? 'débitos da REINF na DCTFWeb (Integra Contador)' : 'totalizador do fechamento'}</small></h3>
+        <div class="rf-card"><h3>Totais que vão para a DCTFWeb <small>${d.fonte === 'api' ? 'débitos da REINF na DCTFWeb' : 'totalizador do fechamento'}</small></h3>
           ${dctf.length ? `<div class="rf-dctf">${dctf.map((x) => `<div><span><b>${e(x.cod)}</b> · ${({ 1656: 'Funrural · contribuição', 1646: 'Funrural · GILRAT', 1213: 'Senar' })[String(x.cod).slice(0, 4)] || CURTO[x.imposto || imp(x.cod, x.serie)]} <small>R-${x.serie === '2000' ? '2099' : '4099'}</small></span><b>${brl(x.enviado)}</b></div>`).join('')}
             <div class="rf-dt"><span>Total</span><b>${brl(dctf.reduce((a, x) => a + (x.enviado || 0), 0))}</b></div></div>`
-            : `<div class="rf-vz">${d.fonte === 'api' && (f4.fechado || f2.fechado) ? (d.totaisDe ? 'A DCTFWeb não tem débitos vindos da REINF (fechamento sem movimento?).' : 'Os valores aparecem quando o computador do Integra Contador ler a DCTFWeb do período.') : f4.fechado || f2.fechado ? 'O totalizador não trouxe códigos de receita.' : 'Sem fechamento na competência: os valores ainda não seguem para a DCTFWeb.'}</div>`}
+            : `<div class="rf-vz">${d.fonte === 'api' && (f4.fechado || f2.fechado) ? (d.totaisDe ? 'A DCTFWeb não tem débitos vindos da REINF (fechamento sem movimento?).' : 'Os valores aparecem quando o sistema ler a DCTFWeb do período.') : f4.fechado || f2.fechado ? 'O totalizador não trouxe códigos de receita.' : 'Sem fechamento na competência: os valores ainda não seguem para a DCTFWeb.'}</div>`}
           ${f4.fechado ? `<div class="rf-fx"><span>R-4099 · recibo <span class="rf-rec">${e(f4.recibo)}</span></span><small>processado ${e(curta(f4.dhProcess || f4.recepcao))}${f4.semMovimento ? ' · sem movimento' : ''}</small></div>` : ''}
           ${f2.fechado ? `<div class="rf-fx"><span>R-2099 · recibo <span class="rf-rec">${e(f2.recibo)}</span></span><small>processado ${e(curta(f2.dhProcess || f2.recepcao))}</small></div>` : ''}</div>
       </div>
@@ -209,7 +209,7 @@
   }
 
 
-  // ------------------------------------------------------------------ REINF × DCTFWeb (Integra Contador)
+  // ------------------------------------------------------------------ REINF × DCTFWeb
   const abas = () => `<div class="rf-abas"><button class="${R.aba === 'ret' ? 'on' : ''}" data-aba="ret">Retenções</button><button class="${R.aba === 'dctf' ? 'on' : ''}" data-aba="dctf">DCTFWeb${NOVO_DCTF ? '<em class="nav-new">NOVO</em>' : ''}</button></div>`;
   const CMP = { sem_reinf: ['nm', 'sem REINF no mês'], recebida: ['ok', '✓ Recebida na DCTFWeb'], sem_dctf: ['ab', '! Sem DCTFWeb no período'], confere: ['ok', '✓ Confere'], diverge: ['er', '✕ Diverge'], nao_apareceu: ['ab', '! Não apareceu'], aguarda: ['nm', 'aguarda fechar a REINF'], sem_debito: ['nm', 'sem débito da REINF'], erro: ['er', 'Erro na consulta'] };
   const SDC = { em_andamento: ['ab', 'Em andamento'], transmitida: ['in', 'Transmitida'], sem_declaracao: ['nm', 'Sem declaração'], semproc: ['er', 'Sem procuração'], erro: ['er', 'Erro'] };
@@ -261,13 +261,13 @@
     raiz().innerHTML = `
       <div class="rf-hero"><div>
         <h1><img src="img/efd-reinf.png" alt="">Conferência da EFD-Reinf</h1>
-        <div class="rf-s">Competência ${compBr(R.comp)} · DCTFWeb pelo Integra Contador · ${rb.ativo ? `computador do escritório ${rb.online ? 'online' : '<b style="color:#fecaca">offline</b>'}` : '<b style="color:#fecaca">Integra Contador não configurado</b>'}${ult ? ` · última leitura ${e(hm(ult.fimMs || ult.emMs))}` : ''}</div>
+        <div class="rf-s">Competência ${compBr(R.comp)} · DCTFWeb · ${rb.ativo ? `computador do escritório ${rb.online ? 'online' : '<b style="color:#fecaca">offline</b>'}` : '<b style="color:#fecaca">DCTFWeb não configurada pelo Admin</b>'}${ult ? ` · última leitura ${e(hm(ult.fimMs || ult.emMs))}` : ''}</div>
         ${abas()}
         <div class="rf-big"><div class="dc-k"><small>Em andamento</small><b data-n="${ns('em_andamento')}">${ns('em_andamento')}</b></div><div class="dc-k"><small>Transmitidas</small><b data-n="${ns('transmitida')}">${ns('transmitida')}</b></div><div class="dc-k"><small>Com guia</small><b data-n="${nGuias}">${nGuias}</b></div><div class="dc-k"><small>REINF diverge</small><b data-n="${n('diverge') + n('nao_apareceu')}">${n('diverge') + n('nao_apareceu')}</b></div></div>
         ${fila.length ? `<div class="rf-prog dc-fila"><i style="width:100%"></i><span>${fila.map(txtFila).join(' · ')}</span></div>` : ''}
       </div><div class="rf-ctl"><div>${tp.sel}</div><div><button class="rf-pill g" id="dcAtualizar" ${fila.some((p) => p.tipo === 'conferir') || !rb.ativo ? 'disabled' : ''}>Atualizar DCTFWeb</button></div></div></div>
       ${R.dc.erro ? `<div class="rf-aviso">${e(R.dc.erro)}</div>` : ''}
-      ${rb.ativo && !rb.online ? '<div class="rf-aviso">O computador do escritório que fala com o Integra Contador está desligado ou com o FiscoCont+ fechado: os pedidos ficam na fila e são atendidos quando ele voltar.</div>' : ''}
+      ${rb.ativo && !rb.online ? '<div class="rf-aviso">O computador do escritório que lê a DCTFWeb está desligado ou com o FiscoCont+ fechado: os pedidos ficam na fila e são atendidos quando ele voltar.</div>' : ''}
       <div class="dc-g">
         <div class="rf-card rf-tab"><h3>Empresas <small>débitos da DCTFWeb por origem · clique na empresa</small></h3>
           ${L.length ? `<table><thead><tr><th>Empresa</th><th>Débitos por origem</th><th class="n">Total</th><th>Situação</th></tr></thead><tbody>
@@ -332,7 +332,7 @@
           : ''}
       ${x.ultimoErro ? `<div class="dc-msg">Última tentativa: ${e(x.ultimoErro)}</div>` : ''}
       <div class="dc-nota"><b>Como funciona</b>
-        <div><span>1</span><p>O pedido vai para o computador do escritório que tem o Integra Contador.</p></div>
+        <div><span>1</span><p>O pedido vai para o computador do escritório que lê a DCTFWeb na Receita.</p></div>
         <div><span>2</span><p>Na transmissão, ele lê a DCTFWeb de novo: se algum débito mudou desde o que você viu aqui, nada é enviado.</p></div>
         <div><span>3</span><p>Recibo e guia vão em PDF para a pasta do cliente.</p></div></div>`;
   }
@@ -360,7 +360,7 @@
     r.querySelectorAll('[data-dc]').forEach((t) => t.addEventListener('click', () => { R.dcSel = t.dataset.dc; desenhar(); }));
     const at = document.getElementById('dcAtualizar');
     if (at) at.onclick = async () => { at.disabled = true; const x = await window.fiscocont.reinf.dctfPedir({ tipo: 'conferir', comp: R.comp });
-      if (x && x.error) toast(x.error, true); else toast(x.roboOnline ? 'Leitura da DCTFWeb pedida: o resultado aparece aqui em instantes.' : 'Pedido na fila: o computador do Integra Contador está offline e lê quando voltar.'); carregarDctf(true); };
+      if (x && x.error) toast(x.error, true); else toast(x.roboOnline ? 'Leitura da DCTFWeb pedida: o resultado aparece aqui em instantes.' : 'Pedido na fila: o computador do escritório está offline e lê quando voltar.'); carregarDctf(true); };
     if (!sel) return;
     const conj = R2.sel[sel.cnpj];
     r.querySelectorAll('[data-og]').forEach((cb) => cb.addEventListener('change', () => { if (cb.checked) conj.add(cb.dataset.og); else conj.delete(cb.dataset.og); desenhar(); }));
