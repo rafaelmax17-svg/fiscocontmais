@@ -2036,7 +2036,7 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .rf-menu button{display:block;width:100%;border:none;background:none;padding:10px 14px;text-align:left;font-weight:700;color:var(--ink);cursor:pointer}.rf-menu button:hover{background:rgba(99,102,241,.1)}
 .rf-prog{margin-top:12px;background:rgba(255,255,255,.12);border-radius:10px;padding:8px 12px;font-size:12px;position:relative;overflow:hidden}.rf-prog i{position:absolute;left:0;top:0;bottom:0;background:rgba(34,211,238,.25);width:0;transition:width .4s}.rf-prog span{position:relative}
 .rf-aviso{margin:12px 0 0;background:#fff7ed;color:#9a3412;border-radius:14px;padding:10px 14px;font-size:12.5px;font-weight:600}
-.rf-kp{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin:14px 0}
+.rf-kp{display:grid;grid-template-columns:repeat(7,1fr);gap:12px;margin:14px 0}
 .rf-k{background:var(--panel);border-radius:18px;padding:13px 15px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 10px 30px rgba(15,23,42,.06);animation:rfEntra .5s ease both}
 .rf-k:nth-child(2){animation-delay:.05s}.rf-k:nth-child(3){animation-delay:.1s}.rf-k:nth-child(4){animation-delay:.15s}.rf-k:nth-child(5){animation-delay:.2s}.rf-k:nth-child(6){animation-delay:.25s}
 .rf-k .ic{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;color:#fff;background:var(--c);box-shadow:0 6px 14px -4px var(--c)}
@@ -2075,7 +2075,7 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 .rf-madd{display:grid;grid-template-columns:1fr 170px auto;gap:8px}.rf-mb{display:flex;justify-content:flex-end;gap:8px}
 .rf-mc .rf-pill{color:var(--ink);background:var(--bg);border-color:var(--line)}.rf-mc .rf-pill.g{color:#fff;background:linear-gradient(135deg,#22d3ee,#3b82f6)}
 @keyframes rfEntra{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-@media (max-width:1300px){.rf-kp{grid-template-columns:repeat(3,1fr)}}@media (max-width:1050px){.rf-g2{grid-template-columns:1fr}}
+@media (max-width:1300px){.rf-kp{grid-template-columns:repeat(4,1fr)}}@media (max-width:1050px){.rf-g2{grid-template-columns:1fr}}
 
 /* ---------- Recibos GIAM/SPED (2.4.8) ---------- */
 .nav-item.nav-card.nc-giam,.nav-item.nav-card.nc-giam:hover,.nav-item.nav-card.nc-giam.active{background:linear-gradient(135deg,#f59e0b,#ea580c)}

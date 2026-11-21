@@ -9,11 +9,11 @@
   const fmtCnpj = (c) => String(c || '').replace(/\D/g, '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
   const fmtDoc = (c) => { const d = String(c || '').replace(/\D/g, ''); return d.length === 14 ? fmtCnpj(d) : d.length === 11 ? d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : c; };
   const compBr = (c) => (c ? `${c.slice(5, 7)}/${c.slice(0, 4)}` : '');
-  const KS = ['irrf', 'csll', 'cofins', 'pis', 'agreg', 'inss'];
-  const COR = { irrf: '#2563eb', csll: '#0d9488', cofins: '#7c3aed', pis: '#d97706', agreg: '#db2777', inss: '#ea580c' };
-  const NOME = { irrf: 'IRRF', csll: 'CSLL', cofins: 'Cofins', pis: 'PIS/Pasep', agreg: 'Retenção agregada (CSRF)', inss: 'INSS (R-2010)' };
-  const CURTO = { irrf: 'IRRF', csll: 'CSLL', cofins: 'Cofins', pis: 'PIS/Pasep', agreg: 'Agregada (CSRF)', inss: 'INSS retido' };
-  const SIG = { irrf: 'IR', csll: 'CS', cofins: 'CO', pis: 'PI', agreg: 'AG', inss: 'IN' };
+  const KS = ['irrf', 'csll', 'cofins', 'pis', 'agreg', 'inss', 'funrural'];
+  const COR = { irrf: '#2563eb', csll: '#0d9488', cofins: '#7c3aed', pis: '#d97706', agreg: '#db2777', inss: '#ea580c', funrural: '#65a30d' };
+  const NOME = { irrf: 'IRRF', csll: 'CSLL', cofins: 'Cofins', pis: 'PIS/Pasep', agreg: 'Retenção agregada (CSRF)', inss: 'INSS (R-2010)', funrural: 'Funrural (R-2055)' };
+  const CURTO = { irrf: 'IRRF', csll: 'CSLL', cofins: 'Cofins', pis: 'PIS/Pasep', agreg: 'Agregada (CSRF)', inss: 'INSS retido', funrural: 'Funrural' };
+  const SIG = { irrf: 'IR', csll: 'CS', cofins: 'CO', pis: 'PI', agreg: 'AG', inss: 'IN', funrural: 'FR' };
   const ST = { fechado: ['ok', 'Fechado'], tarde: ['er', 'Fechado após o dia 15'], aberto: ['ab', 'Aberto (sem fechamento)'], sem_movimento: ['nm', 'Sem movimento'],
     nada_enviado: ['nm', 'Nada enviado'], sem_fechamento: ['nm', 'Sem fechamento'], sem_procuracao: ['er', 'Sem procuração'], erro: ['er', 'Erro na conferência'], nao: ['nm', 'Não conferida'] };
   const R = { comp: '', d: null, emp: '', busca: '', prog: null, anim: true, aba: 'ret', dc: null, dcSel: '' };
@@ -120,7 +120,7 @@
       </div>
       <div class="rf-card rf-mt"><h3>Retido por empresa <small>clique para abrir a empresa</small></h3>${porEmp.map((l) => `<button class="rf-be" data-emp="${e(l.cnpj)}"><span>${e(l.nome)}</span><div>${KS.map((k) => (l.doc.totais[k] ? `<i style="--w:${l.doc.totais[k] / mxE * 100}%;background:${COR[k]}"></i>` : '')).join('')}</div><b>${brl(totDoc(l.doc)).replace(/,\d\d$/, '')}</b></button>`).join('') || '<div class="rf-vz">Sem valores retidos ainda.</div>'}</div>
       <div class="rf-card rf-tab"><h3>Empresas · retenção separada por imposto <small>clique na empresa para ver eventos, recibos e valores</small></h3>
-        <table><thead><tr><th>Empresa</th>${KS.map((k) => `<th class="n"><i style="background:${COR[k]}"></i>${k === 'agreg' ? 'Agregada' : k === 'inss' ? 'INSS' : NOME[k]}</th>`).join('')}<th class="n">Total</th><th>Situação</th><th>Recibo de envio</th></tr></thead><tbody>
+        <table><thead><tr><th>Empresa</th>${KS.map((k) => `<th class="n"><i style="background:${COR[k]}"></i>${k === 'agreg' ? 'Agregada' : k === 'inss' ? 'INSS' : k === 'funrural' ? 'Funrural' : NOME[k]}</th>`).join('')}<th class="n">Total</th><th>Situação</th><th>Recibo de envio</th></tr></thead><tbody>
         ${ls.map((l) => linhaEmp(l)).join('')}
         <tr class="tot"><td><b>Total</b></td>${KS.map((k) => `<td class="n"><b>${num(t[k])}</b></td>`).join('')}<td class="n"><b>${brl(T)}</b></td><td></td><td></td></tr></tbody></table></div>`;
     ligar();
@@ -129,10 +129,10 @@
   function linhaEmp(l) {
     const d = l.doc;
     const sub = [fmtCnpj(l.cnpj), d && (d.eventos || []).length ? `${d.eventos.length} evento(s)` : '', d && (d.eventos || []).filter((x) => x.tipo === 'Retificador').length ? `${d.eventos.filter((x) => x.tipo === 'Retificador').length} retificador(es)` : ''].filter(Boolean).join(' · ');
-    const meio = !d ? `<td colspan="7" class="rf-cin">ainda não conferida nesta competência</td>`
-      : l.sit === 'sem_procuracao' ? `<td colspan="7" class="rf-erl">A Liddera não tem procuração eletrônica desta empresa com poderes da EFD-Reinf. Peça ao cliente a procuração no eCAC.</td>`
-        : d.fonte === 'api' && l.sit !== 'erro' && !d.totaisDe ? `<td colspan="7" class="rf-cin">${['fechado', 'tarde'].includes(l.sit) ? 'valores por imposto chegam com a leitura da DCTFWeb (Integra Contador)' : l.sit === 'aberto' ? e(d.msg || 'fechamento pendente na Receita') : 'sem fechamento R-4099/R-2099 nesta competência'}</td>`
-        : l.sit === 'erro' ? `<td colspan="7" class="rf-erl">${e(d.msg || 'erro na conferência')}</td>`
+    const meio = !d ? `<td colspan="8" class="rf-cin">ainda não conferida nesta competência</td>`
+      : l.sit === 'sem_procuracao' ? `<td colspan="8" class="rf-erl">A Liddera não tem procuração eletrônica desta empresa com poderes da EFD-Reinf. Peça ao cliente a procuração no eCAC.</td>`
+        : d.fonte === 'api' && l.sit !== 'erro' && !d.totaisDe ? `<td colspan="8" class="rf-cin">${['fechado', 'tarde'].includes(l.sit) ? 'valores por imposto chegam com a leitura da DCTFWeb (Integra Contador)' : l.sit === 'aberto' ? e(d.msg || 'fechamento pendente na Receita') : 'sem fechamento R-4099/R-2099 nesta competência'}</td>`
+        : l.sit === 'erro' ? `<td colspan="8" class="rf-erl">${e(d.msg || 'erro na conferência')}</td>`
           : KS.map((k) => `<td class="n">${d.totais && d.totais[k] ? num(d.totais[k]) : '<span class="rf-cin">—</span>'}</td>`).join('') + `<td class="n"><b>${brl(totDoc(d))}</b></td>`;
     return `<tr data-emp="${e(l.cnpj)}"><td><b>${e(l.nome)}</b><small>${e(sub)}</small></td>${meio}<td>${chip(l.sit)}</td><td class="rf-rc">${['sem_procuracao', 'erro'].includes(l.sit) ? '<span class="rf-rec vz">—</span>' : recibo(d)}</td></tr>`;
   }
@@ -171,7 +171,7 @@
     const tp = topo(ls);
     const mx = Math.max(...KS.map((k) => t[k] || 0), 1);
     const imp = (cod, serie) => (serie === '2000' ? 'inss' : ({ 6228: 'csll', 5987: 'csll', 6230: 'pis', 5979: 'pis', 6243: 'cofins', 5960: 'cofins', 5952: 'agreg' }[String(cod).slice(0, 4)] || 'irrf'));
-    const dctf = d.fonte === 'api' ? (d.dctfCodigos || []).map((x) => ({ ...x, serie: x.imposto === 'inss' ? '2000' : '4000' }))
+    const dctf = d.fonte === 'api' ? (d.dctfCodigos || []).map((x) => ({ ...x, serie: ['inss', 'funrural'].includes(x.imposto) ? '2000' : '4000' }))
       : [...(f4.porCodigo || []).map((x) => ({ ...x, serie: '4000' })), ...(f2.porCodigo || []).map((x) => ({ ...x, serie: '2000' }))];
     const bt = (f, ev2) => (f.fechado && f.pdf ? `<button class="rf-pill" data-tot="${ev2}">${f.pdf ? '📄' : '⬇'} Totalizador R-${ev2}</button>` : '');
     raiz().innerHTML = `
@@ -185,11 +185,11 @@
         ${d.msg ? `<div class="rf-s" style="margin-top:10px;color:#fecaca">${e(d.msg)}</div>` : ''}
         <div class="rf-prog" id="rfProg" ${R.prog ? '' : 'hidden'}><i></i><span>${e((R.prog || {}).txt || '')}</span></div>
       </div><div class="rf-ctl"><div>${tp.sel}${tp.emp}</div><div>${bt(f4, '4099')}${bt(f2, '2099')}${d.pasta ? '<button class="rf-pill" id="rfPasta">Abrir pasta</button>' : ''}${botaoConferir()}</div></div></div>
-      <div class="rf-kp">${KS.map((k) => `<div class="rf-k" style="--c:${COR[k]}"><div class="ic">${SIG[k]}</div><small>${NOME[k]}</small><b data-cont="${t[k] || 0}">${brl(t[k] || 0)}</b><div class="bar"><i style="--w:${(t[k] || 0) / mx * 100}%"></i></div><span>${f4.fechado && k !== 'inss' ? 'enviado à DCTFWeb' : f2.fechado && k === 'inss' ? 'enviado à DCTFWeb' : 'soma dos eventos'}</span></div>`).join('')}</div>
+      <div class="rf-kp">${KS.map((k) => `<div class="rf-k" style="--c:${COR[k]}"><div class="ic">${SIG[k]}</div><small>${NOME[k]}</small><b data-cont="${t[k] || 0}">${brl(t[k] || 0)}</b><div class="bar"><i style="--w:${(t[k] || 0) / mx * 100}%"></i></div><span>${d.fonte === 'api' ? (d.totaisDe ? 'débito na DCTFWeb' : 'aguarda a DCTFWeb') : f4.fechado && !['inss', 'funrural'].includes(k) ? 'enviado à DCTFWeb' : f2.fechado && ['inss', 'funrural'].includes(k) ? 'enviado à DCTFWeb' : 'soma dos eventos'}</span></div>`).join('')}</div>
       <div class="rf-g2">
         <div class="rf-card"><h3>Retenções da empresa</h3><div class="rf-pz">${T ? `<svg viewBox="0 0 300 300" class="rf-pizza" data-vals='${JSON.stringify(t)}'></svg>` : '<div class="rf-vz">Nenhuma retenção na competência.</div>'}${legenda(t)}</div></div>
         <div class="rf-card"><h3>Totais que vão para a DCTFWeb <small>${d.fonte === 'api' ? 'débitos da REINF na DCTFWeb (Integra Contador)' : 'totalizador do fechamento'}</small></h3>
-          ${dctf.length ? `<div class="rf-dctf">${dctf.map((x) => `<div><span><b>${e(x.cod)}</b> · ${CURTO[imp(x.cod, x.serie)]} <small>R-${x.serie === '2000' ? '2099' : '4099'}</small></span><b>${brl(x.enviado)}</b></div>`).join('')}
+          ${dctf.length ? `<div class="rf-dctf">${dctf.map((x) => `<div><span><b>${e(x.cod)}</b> · ${({ 1656: 'Funrural · contribuição', 1646: 'Funrural · GILRAT', 1213: 'Senar' })[String(x.cod).slice(0, 4)] || CURTO[x.imposto || imp(x.cod, x.serie)]} <small>R-${x.serie === '2000' ? '2099' : '4099'}</small></span><b>${brl(x.enviado)}</b></div>`).join('')}
             <div class="rf-dt"><span>Total</span><b>${brl(dctf.reduce((a, x) => a + (x.enviado || 0), 0))}</b></div></div>`
             : `<div class="rf-vz">${d.fonte === 'api' && (f4.fechado || f2.fechado) ? (d.totaisDe ? 'A DCTFWeb não tem débitos vindos da REINF (fechamento sem movimento?).' : 'Os valores aparecem quando o computador do Integra Contador ler a DCTFWeb do período.') : f4.fechado || f2.fechado ? 'O totalizador não trouxe códigos de receita.' : 'Sem fechamento na competência: os valores ainda não seguem para a DCTFWeb.'}</div>`}
           ${f4.fechado ? `<div class="rf-fx"><span>R-4099 · recibo <span class="rf-rec">${e(f4.recibo)}</span></span><small>processado ${e(curta(f4.dhProcess || f4.recepcao))}${f4.semMovimento ? ' · sem movimento' : ''}</small></div>` : ''}
@@ -200,7 +200,7 @@
           ${ev.map((x) => `<tr><td><b>${e(x.evento)}</b></td><td>${e(fmtDoc(x.benef))}</td><td>${e((x.natRend || []).join(', '))}</td><td class="n">${x.semXml ? '—' : num(x.bruto)}</td><td class="n">${x.irrf ? num(x.irrf) : '—'}</td>
             <td class="n">${(x.agreg || x.csll || x.cofins || x.pis) ? num((x.agreg || 0) + (x.csll || 0) + (x.cofins || 0) + (x.pis || 0)) : '—'}</td><td class="n">${x.inss ? num(x.inss) : '—'}</td>
             <td>${x.tipo === 'Retificador' ? '<span class="rf-chip in">Retificador</span>' : '<span class="rf-chip nm">Original</span>'}</td><td class="rf-rc"><span class="rf-rec">${e(x.recibo)}</span><small>recebido ${e(curta(x.recepcao))}</small></td></tr>`).join('')}</tbody></table>`
-            : `<div class="rf-vz">${d.fonte === 'api' ? 'A consulta oficial da Receita informa o recibo do fechamento; os eventos de cada beneficiário (R-4010/R-4020/R-2010) ficam no Domínio.' : l.doc ? 'Nenhum evento enviado nesta competência.' : 'Clique em "Conferir esta empresa".'}</div>`}</div>`;
+            : `<div class="rf-vz">${d.fonte === 'api' ? 'A consulta oficial da Receita informa o recibo do fechamento; os eventos de cada beneficiário ou produtor (R-4010/R-4020/R-2010/R-2055) ficam no Domínio.' : l.doc ? 'Nenhum evento enviado nesta competência.' : 'Clique em "Conferir esta empresa".'}</div>`}</div>`;
     ligar();
     animar();
   }
@@ -211,7 +211,7 @@
   const CMP = { recebida: ['ok', '✓ Recebida na DCTFWeb'], sem_dctf: ['ab', '! Sem DCTFWeb no período'], confere: ['ok', '✓ Confere'], diverge: ['er', '✕ Diverge'], nao_apareceu: ['ab', '! Não apareceu'], aguarda: ['nm', 'aguarda fechar a REINF'], sem_debito: ['nm', 'sem débito da REINF'], erro: ['er', 'Erro na consulta'] };
   const SDC = { em_andamento: ['ab', 'Em andamento'], transmitida: ['in', 'Transmitida'], sem_declaracao: ['nm', 'Sem declaração'], semproc: ['er', 'Sem procuração'], erro: ['er', 'Erro'] };
   const RST = { fechado: ['ok', 'Fechada'], aberto: ['ab', 'Aberta'], sem_fechamento: ['nm', 'Sem fechamento'], sem_movimento: ['nm', 'Sem movimento'], nada_enviado: ['nm', 'Nada enviado'], sem_procuracao: ['er', 'Sem procuração'], erro: ['er', 'Erro'] };
-  const NOMECR = { 1708: 'IRRF · serviços PJ', 5952: 'CSRF (PIS/Cofins/CSLL)', 1162: 'INSS retido (cessão de mão de obra)', '0561': 'IRRF · trabalho assalariado', '0588': 'IRRF · trabalho sem vínculo', 3208: 'IRRF · aluguéis e royalties PF', 8045: 'IRRF · comissões e corretagens', 3280: 'IRRF · cooperativas', 5960: 'Cofins retida', 5979: 'PIS retido', 5987: 'CSLL retida', 6228: 'CSLL · órgão público', 6230: 'PIS · órgão público', 6243: 'Cofins · órgão público', 1099: 'CPRB', 1141: 'INSS · produção rural', 1176: 'INSS · aquisição de produção rural' };
+  const NOMECR = { 1708: 'IRRF · serviços PJ', 5952: 'CSRF (PIS/Cofins/CSLL)', 1162: 'INSS retido (cessão de mão de obra)', '0561': 'IRRF · trabalho assalariado', '0588': 'IRRF · trabalho sem vínculo', 3208: 'IRRF · aluguéis e royalties PF', 8045: 'IRRF · comissões e corretagens', 3280: 'IRRF · cooperativas', 1656: 'Funrural · contribuição previdenciária (aquisição de produção rural)', 1646: 'Funrural · GILRAT (aquisição de produção rural)', 1213: 'Senar (aquisição de produção rural)', 5960: 'Cofins retida', 5979: 'PIS retido', 5987: 'CSLL retida', 6228: 'CSLL · órgão público', 6230: 'PIS · órgão público', 6243: 'Cofins · órgão público', 1141: 'INSS retido · serviços com aposentadoria especial' };
   const ch2 = (m, k) => (m[k] ? `<span class="rf-chip ${m[k][0]}">${e(m[k][1])}</span>` : '<span class="rf-chip nm">—</span>');
   const hm = (ms) => { const d = new Date(ms); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   const somaM = (m) => Object.values(m || {}).reduce((a, v) => a + (Number(v) || 0), 0);
@@ -423,9 +423,9 @@
       .n{text-align:right;font-variant-numeric:tabular-nums}td small{display:block;color:#94a3b8}.tot td{background:#f1f5f9;font-weight:700}.er{color:#b91c1c;font-weight:600}.rec{font-family:Consolas,monospace;font-size:9.5px}
       p{color:#64748b;font-size:9.5px;margin-top:10px}tr{page-break-inside:avoid}</style></head><body>
       <div class="hd">${logo ? `<img src="${logo}">` : ''}<div><h2>EFD-Reinf · retenções por empresa</h2><small>Competência ${compBr(R.comp)} · ${e(dd.sub)}</small></div><div class="sp"></div><div class="tt"><small>Total retido</small><b>${brl(TT)}</b></div></div>
-      <table><thead><tr><th>Empresa</th>${ks.map((k) => `<th class="n">${k === 'agreg' ? 'Agregada' : k === 'inss' ? 'INSS' : NOME[k]}</th>`).join('')}<th class="n">Total</th><th>Situação</th><th>Recibo de envio</th></tr></thead><tbody>
+      <table><thead><tr><th>Empresa</th>${ks.map((k) => `<th class="n">${k === 'agreg' ? 'Agregada' : k === 'inss' ? 'INSS' : k === 'funrural' ? 'Funrural' : NOME[k]}</th>`).join('')}<th class="n">Total</th><th>Situação</th><th>Recibo de envio</th></tr></thead><tbody>
       ${dd.empresas.map((x) => `<tr><td><b>${e(x.nome)}</b><small>${e(x.cnpjFmt)}</small></td>${x.totais ? ks.map((k) => `<td class="n">${x.totais[k] ? num(x.totais[k]) : '—'}</td>`).join('') + `<td class="n"><b>${num(ks.reduce((a, k) => a + (x.totais[k] || 0), 0))}</b></td>`
-        : `<td colspan="7" class="${/procura/i.test(x.situacao) ? 'er' : ''}">${/procura/i.test(x.situacao) ? 'Sem procuração eletrônica para a EFD-Reinf' : e(x.situacao)}</td>`}<td>${e(x.situacao)}</td><td>${x.recibo ? `<span class="rec">${e(x.recibo)}</span><small>${e(x.enviado)}</small>` : '—'}</td></tr>`).join('')}
+        : `<td colspan="8" class="${/procura/i.test(x.situacao) ? 'er' : ''}">${/procura/i.test(x.situacao) ? 'Sem procuração eletrônica para a EFD-Reinf' : e(x.situacao)}</td>`}<td>${e(x.situacao)}</td><td>${x.recibo ? `<span class="rec">${e(x.recibo)}</span><small>${e(x.enviado)}</small>` : '—'}</td></tr>`).join('')}
       <tr class="tot"><td>Total</td>${ks.map((k) => `<td class="n">${num(T[k])}</td>`).join('')}<td class="n">${num(TT)}</td><td></td><td></td></tr></tbody></table>
       <p>Situação e recibo do fechamento (R-4099/R-2099) consultados no serviço oficial da EFD-Reinf; valores por imposto: débitos da REINF na DCTFWeb do período. Liddera | Inteligência em Negócios.</p></body></html>`;
     const r = await window.fiscocont.reinf.listaPdf({ html, nome });

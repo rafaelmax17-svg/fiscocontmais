@@ -124,7 +124,7 @@ def lista_xlsx(dados, saida):
     ws['A1'].font = Font(bold=True, size=14, color='1E2A78')
     ws['A2'] = dados.get('sub', '')
     ws['A2'].font = Font(color='64748B', size=10)
-    cab = ['Empresa', 'CNPJ', 'IRRF', 'CSLL', 'Cofins', 'PIS/Pasep', 'Agregada (CSRF)', 'INSS (R-2010)', 'Total', 'Eventos',
+    cab = ['Empresa', 'CNPJ', 'IRRF', 'CSLL', 'Cofins', 'PIS/Pasep', 'Agregada (CSRF)', 'INSS (R-2010)', 'Funrural (R-2055)', 'Total', 'Eventos',
            'Situação', 'Recibo de envio', 'Enviado em']
     ws.append([])
     ws.append(cab)
@@ -134,7 +134,7 @@ def lista_xlsx(dados, saida):
         c.font = Font(bold=True, color='FFFFFF')
         c.fill = PatternFill('solid', fgColor='1E2A78')
         c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    ks = ['irrf', 'csll', 'cofins', 'pis', 'agreg', 'inss']
+    ks = ['irrf', 'csll', 'cofins', 'pis', 'agreg', 'inss', 'funrural']
     tot = {k: 0.0 for k in ks}
     for e in dados.get('empresas', []):
         t = e.get('totais') or {}
@@ -149,13 +149,13 @@ def lista_xlsx(dados, saida):
         for cidx in range(1, len(cab) + 1):
             c = ws.cell(row=r, column=cidx)
             c.border = Border(bottom=fino)
-            if 3 <= cidx <= 9:
+            if 3 <= cidx <= 10:
                 c.number_format = '#,##0.00'
         if r == ult:
             for cidx in range(1, len(cab) + 1):
                 ws.cell(row=r, column=cidx).font = Font(bold=True)
                 ws.cell(row=r, column=cidx).fill = PatternFill('solid', fgColor='F1F5F9')
-    larg = [44, 20, 13, 12, 12, 12, 15, 14, 14, 9, 24, 34, 17]
+    larg = [44, 20, 13, 12, 12, 12, 15, 14, 15, 14, 9, 24, 34, 17]
     for i, w in enumerate(larg, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = 'C5'

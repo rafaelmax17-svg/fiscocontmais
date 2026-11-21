@@ -256,13 +256,23 @@ async function salvarEmpresas(lista) {
 }
 
 // dados de uma competência: os documentos da REINF + os valores por imposto da DCTFWeb (Integra Contador)
+// Série R-4000 (origem "REINF RET" na DCTFWeb): CSRF por código; o resto é IRRF.
+// Série R-2000 (origem "REINF CP"): Funrural do R-2055 (aquisição de produção rural): 1656 contribuição previdenciária,
+// 1646 GILRAT e 1213 Senar; os demais (1162/1141 retenção do R-2010, CPRB, clube etc.) ficam em INSS.
 const _IMP = { 6228: 'csll', 5987: 'csll', 6230: 'pis', 5979: 'pis', 6243: 'cofins', 5960: 'cofins', 5952: 'agreg' };
-const _CP = new Set(['1162', '1141', '1176', '1099', '2985', '2991', '1138', '1646']);
-const _imposto = (cod) => (_CP.has(String(cod).slice(0, 4)) ? 'inss' : _IMP[String(cod).slice(0, 4)] || 'irrf');
+const _FUNRURAL = new Set(['1656', '1646', '1213']);
+const _CP = new Set(['1162', '1141', '1151', '2985', '2991']);
+function _imposto(cod, origem) {
+  const c = String(cod).slice(0, 4);
+  if (_FUNRURAL.has(c)) return 'funrural';
+  if (origem === 'REINF CP' || _CP.has(c)) return 'inss';
+  return _IMP[c] || 'irrf';
+}
 function _comDctf(doc, dc) {
   if (!doc || doc.fonte !== 'api' || !dc || !dc.naDctf || !['em_andamento', 'transmitida'].includes(dc.situacao)) return doc;
-  const totais = { irrf: 0, csll: 0, cofins: 0, pis: 0, agreg: 0, inss: 0 };
-  const codigos = Object.entries(dc.naDctf).map(([cod, v]) => ({ cod, enviado: _r2(v), imposto: _imposto(cod) }));
+  const totais = { irrf: 0, csll: 0, cofins: 0, pis: 0, agreg: 0, inss: 0, funrural: 0 };
+  const org = dc.reinfOrigem || {};
+  const codigos = Object.entries(dc.naDctf).map(([cod, v]) => ({ cod, enviado: _r2(v), imposto: _imposto(cod, org[cod]) }));
   codigos.forEach((x) => { totais[x.imposto] = _r2(totais[x.imposto] + x.enviado); });
   return { ...doc, totais, dctfCodigos: codigos, totaisDe: 'dctfweb', dctfEm: dc.consultadoEm || '' };
 }

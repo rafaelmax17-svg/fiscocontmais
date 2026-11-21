@@ -545,7 +545,7 @@ def dctf_debitos(xml):
     publicado, por isso a leitura é tolerante e devolve também a estrutura encontrada (para o passo a passo)."""
     from lxml import etree
     raiz = etree.fromstring(xml.encode('utf-8') if isinstance(xml, str) else xml, etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True))
-    out = {'origens': {}, 'reinf': {}, 'outros': {}, 'saldo': 0.0, 'estrutura': [], 'periodo': '', 'cnpj': ''}
+    out = {'origens': {}, 'reinf': {}, 'reinfOrigem': {}, 'outros': {}, 'saldo': 0.0, 'estrutura': [], 'periodo': '', 'cnpj': ''}
     for el in raiz.iter():
         n = _local(el.tag).lower()
         if n in ('perapuracao', 'periodoapuracao') and not out['periodo']:
@@ -578,6 +578,8 @@ def dctf_debitos(xml):
         if cod:
             alvo = out['reinf'] if origem.startswith('REINF') else out['outros']
             alvo[cod] = round(alvo.get(cod, 0.0) + v, 2)
+            if origem.startswith('REINF'):
+                out['reinfOrigem'][cod] = origem
     return out
 
 
@@ -604,7 +606,7 @@ def dctf_conferir_empresa(tok, cert, contratante, emp, comp, consumo):
     if d['cnpj'] and d['cnpj'][:8] != cnpj[:8]:
         r.update(situacao='erro', msg='O XML devolvido é de outro contribuinte.')
         return r
-    r.update(origens=d['origens'], reinf=d['reinf'], outros=d['outros'], saldo=d['saldo'], estrutura=d['estrutura'])
+    r.update(origens=d['origens'], reinf=d['reinf'], reinfOrigem=d['reinfOrigem'], outros=d['outros'], saldo=d['saldo'], estrutura=d['estrutura'])
     return r
 
 

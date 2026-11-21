@@ -243,7 +243,7 @@ async function _conferir(p) {
       if (x.estrutura && x.estrutura.length) _log(`${b.nome}: blocos do XML → ${JSON.stringify(x.estrutura.slice(0, 2))}`);
       _log(`${b.nome}: DCTFWeb ${x.situacao} · REINF ${JSON.stringify(b.esperado)} × DCTFWeb ${JSON.stringify(x.reinf || {})} → ${cmp.comparacao}${x.msg ? ` (${x.msg})` : ''}`);
       await f.setDoc(f.doc(db, COL, `${comp}_${b.cnpj}`), _limpo({
-        ...b, situacao: x.situacao, msg: x.msg || '', naDctf: x.reinf || {}, totalDctf: _soma(x.reinf), origens: x.origens || {}, outros: x.outros || {},
+        ...b, situacao: x.situacao, msg: x.msg || '', naDctf: x.reinf || {}, reinfOrigem: x.reinfOrigem || {}, totalDctf: _soma(x.reinf), origens: x.origens || {}, outros: x.outros || {},
         saldo: x.saldo ?? null, ...cmp, consultadoEm: new Date().toISOString(), consultadoPor: p.por || '',
       }), { merge: true });
     }
