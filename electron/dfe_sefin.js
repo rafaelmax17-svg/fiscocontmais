@@ -543,7 +543,7 @@ async function _voltaDetalhes(achado, a) {
   await _vai(`${BASE}/solicitacoes`);
   await _sleep(1500);
   const rows = await _lista().catch(() => []);
-  const row = rows.find((r) => r.data === achado.row.data && r.doc === achado.row.doc) || rows[achado.row.i];
+  const row = rows.find((r) => r.data === achado.row.data && r.doc === achado.row.doc && (!r.cnpj || r.cnpj === _cnpjAtivo)) || rows[achado.row.i];
   if (row) {
     const d = await _detalhes(row.i);
     if (d && d.arquivos.some((x) => x.texto === a.texto)) return true;
@@ -603,7 +603,7 @@ async function _novaSolicitacao(emp, tipo, comp) {
   const per = _periodoDe(comp);
   await _vai(`${BASE}/solicitacoes`);
   const hoje0 = new Date().toISOString().slice(0, 10);
-  const antesN = ((await _js(JS_LISTA).catch(() => ({ rows: [] }))).rows || []).filter((r) => r.doc === DOCS[tipo] && _isoDe(r.data) === hoje0).length;
+  const antesN = ((await _js(JS_LISTA).catch(() => ({ rows: [] }))).rows || []).filter((r) => (!r.cnpj || r.cnpj === _cnpjAtivo) && r.doc === DOCS[tipo] && _isoDe(r.data) === hoje0).length;
   const clicou = await _js(JS_CLICA('/NOVA SOLICITACAO/')).catch(() => false);
   if (!clicou) return { status: 'erro', msg: 'não achei "Nova Solicitação".' };
   await _sleep(2000);
@@ -621,7 +621,7 @@ async function _novaSolicitacao(emp, tipo, comp) {
     if (st && st.temTabela) {
       const rows = await _js(JS_LISTA).catch(() => ({ rows: [] }));
       const hoje = new Date().toISOString().slice(0, 10);
-      if ((rows.rows || []).filter((r) => r.doc === DOCS[tipo] && _isoDe(r.data) === hoje).length > antesN) {
+      if ((rows.rows || []).filter((r) => (!r.cnpj || r.cnpj === _cnpjAtivo) && r.doc === DOCS[tipo] && _isoDe(r.data) === hoje).length > antesN) {
         _log(`pedido ${NOME[tipo]} feito`);
         _mostra(false);
         return { status: 'solicitado', msg: 'pedido feito; a SEFIN prepara o arquivo. Clique em Baixar notas de novo mais tarde.', pedidoEm: new Date().toISOString() };
@@ -645,10 +645,14 @@ async function _empresa(emp, comp, tipos, pasta, estado) {
       const anterior = est[tipo] || {};
       _prog(`${emp.nome} · ${NOME[tipo]}: procurando o pedido de ${comp.split('-').reverse().join('/')} em Ver Solicitações…`);
       const rows = await _lista();
-      const outro = rows.find((r) => r.cnpj && r.cnpj !== emp.cnpj);
-      if (outro) throw new Error(`a lista mostra pedidos de outro CNPJ (${_fmtCnpj(outro.cnpj)}). Nada foi baixado.`);
+      // a lista do portal traz os pedidos da matriz e das filiais (mesmo CNPJ raiz): só os deste CNPJ contam.
+      // CNPJ de outra raiz quer dizer que o portal abriu em outra empresa: aí nada é baixado.
+      const outro = rows.find((r) => r.cnpj && r.cnpj.slice(0, 8) !== emp.cnpj.slice(0, 8));
+      if (outro) throw new Error(`a lista mostra pedidos de outra empresa (${_fmtCnpj(outro.cnpj)}). Nada foi baixado.`);
+      const filiais = new Set(rows.filter((r) => r.cnpj && r.cnpj !== emp.cnpj).map((r) => r.cnpj));
+      if (filiais.size) _log(`a lista também tem pedidos de ${[...filiais].map(_fmtCnpj).join(', ')} (mesma raiz): ignorados`);
       // pedidos do tipo feitos a partir do mês; primeiro o já usado antes e os liberados para download (menos telas de Detalhes)
-      const cands = rows.filter((r) => r.doc === DOCS[tipo] && r.temDet && (!_isoDe(r.data) || _isoDe(r.data) >= `${comp}-01`))
+      const cands = rows.filter((r) => (!r.cnpj || r.cnpj === emp.cnpj) && r.doc === DOCS[tipo] && r.temDet && (!_isoDe(r.data) || _isoDe(r.data) >= `${comp}-01`))
         .sort((a, b) => ((anterior.data && b.data === anterior.data) - (anterior.data && a.data === anterior.data)) || (/DOWNLOAD/.test(b.estado) - /DOWNLOAD/.test(a.estado)))
         .slice(0, 8);
       let achado = null;
