@@ -539,51 +539,125 @@ _RX_VAL_DEB = re.compile(r'(valor|vlr|vl)\w*(apurad|debito|principal|devido)|deb
 _RX_SALDO = re.compile(r'saldo\w*pagar', re.I)
 
 
+_RX_VAL_ALT = re.compile(r'^(valor|vlr|vl)', re.I)
+_RX_NAO_DEB = re.compile(r'credit|dedu|compens|suspens|pagament|parcel|exclus', re.I)
+
+
+def _arvore(raiz, limite=90):
+    """Caminhos das tags do XML, sem nenhum valor (para o passo a passo quando o leiaute surpreende)."""
+    out, vistos = [], set()
+
+    def anda(el, cam):
+        nm = _local(el.tag)
+        c = f'{cam}/{nm}' if cam else nm
+        if not len(el):
+            tx = (el.text or '').strip()
+            tipo = 'n' if re.fullmatch(r'[\d.,-]+', tx or 'x') else 't'
+            k = f'{c}[{tipo}]'
+            if k not in vistos and len(out) < limite:
+                vistos.add(k)
+                out.append(k)
+            return
+        for f in el:
+            anda(f, c)
+    anda(raiz, '')
+    return out
+
+
 def dctf_debitos(xml):
-    """Débitos da declaração. Para cada bloco com <sistemaUsuarioDctf> (a origem: 1 eSocial, 6 REINF CP, 7 REINF RET,
-    8 MIT): código de receita (4 dígitos) e valor (débito apurado; sem ele, o saldo a pagar). O leiaute do XML não é
-    publicado, por isso a leitura é tolerante e devolve também a estrutura encontrada (para o passo a passo)."""
+    """Débitos da declaração por origem (1 eSocial, 6 REINF CP, 7 REINF RET, 8 MIT).
+    2.4.18: no XML real o <sistemaUsuarioDctf> fica num bloco só de identificação (<identEfd> + <sistemaUsuarioDctf>);
+    os débitos ficam ao lado. Para cada origem, o "escopo" é o maior bloco acima dela que não tem outra origem dentro;
+    nele, cada elemento com um código de receita é um débito (créditos, deduções, compensações e pagamentos ficam fora).
+    O leiaute não é publicado: a leitura é tolerante e devolve os caminhos das tags (sem valores) para o passo a passo."""
     from lxml import etree
     raiz = etree.fromstring(xml.encode('utf-8') if isinstance(xml, str) else xml, etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True))
-    out = {'origens': {}, 'reinf': {}, 'reinfOrigem': {}, 'outros': {}, 'codigos': [], 'saldo': 0.0, 'estrutura': [], 'periodo': '', 'cnpj': ''}
+    out = {'origens': {}, 'reinf': {}, 'reinfOrigem': {}, 'outros': {}, 'codigos': [], 'saldo': 0.0, 'estrutura': [], 'arvore': _arvore(raiz), 'periodo': '', 'cnpj': ''}
     for el in raiz.iter():
         n = _local(el.tag).lower()
         if n in ('perapuracao', 'periodoapuracao') and not out['periodo']:
             out['periodo'] = (el.text or '').strip()
         if n in ('nrinsc', 'insccontrib', 'nrinscricao', 'cnpj') and not out['cnpj']:
             out['cnpj'] = re.sub(r'\D', '', el.text or '')
-    blocos = [el.getparent() for el in raiz.iter() if _local(el.tag) == 'sistemaUsuarioDctf' and el.getparent() is not None]
-    vistos = set()
-    for b in blocos:
-        if id(b) in vistos:
+    sis = [el for el in raiz.iter() if _local(el.tag) == 'sistemaUsuarioDctf']
+    arv = raiz.getroottree()
+    cp = arv.getpath                   # a chave é o caminho do nó (o id() dos objetos do lxml muda a cada acesso)
+    conta = {}
+    for el in sis:
+        for anc in el.iterancestors():
+            conta[cp(anc)] = conta.get(cp(anc), 0) + 1
+
+    def eh_cod(el):
+        return not len(el) and _RX_COD.search(_local(el.tag)) and re.fullmatch(r'\d{4}(-?\d{2})?', (el.text or '').strip())
+
+    usados = set()
+    for s0 in sis:
+        origem = ORIGEM_DCTF.get((s0.text or '').strip(), 'outra')
+        escopo = s0.getparent()
+        if escopo is None:
             continue
-        vistos.add(id(b))
-        origem = ORIGEM_DCTF.get((b.findtext('{*}sistemaUsuarioDctf') or b.findtext('sistemaUsuarioDctf') or '').strip(), 'outra')
-        cod, ext, val, saldo, venc = '', '', None, None, ''
-        for el in b.iter():
-            nm, tx = _local(el.tag), (el.text or '').strip()
-            if not tx or len(el):
-                continue
-            if not cod and _RX_COD.search(nm) and re.fullmatch(r'\d{4}(-?\d{2})?', tx):
-                cod = tx[:4]
-                ext = re.sub(r'\D', '', tx)[4:6]
-            elif not venc and re.search(r'venc', nm, re.I) and re.search(r'\d{4}-?\d{2}-?\d{2}|\d{2}/\d{2}/\d{4}', tx):
-                venc = tx[:10]
-            elif val is None and _RX_VAL_DEB.search(nm):
-                val = _numxml(tx)
-            elif saldo is None and _RX_SALDO.search(nm):
-                saldo = _numxml(tx)
+        for anc in s0.iterancestors():
+            if conta.get(cp(anc), 0) == 1:
+                escopo = anc
+            else:
+                break
+        debitos = []
+        for el in escopo.iter():
+            if eh_cod(el):
+                pai = el.getparent()
+                if pai is None or cp(pai) in usados:
+                    continue
+                cam = [_local(x.tag) for x in pai.iterancestors()][:6] + [_local(pai.tag)]
+                if any(_RX_NAO_DEB.search(c) for c in cam):
+                    continue
+                usados.add(cp(pai))
+                debitos.append((el, pai))
         if len(out['estrutura']) < 4:
-            out['estrutura'].append(sorted({_local(x.tag) for x in b.iter() if not len(x)})[:40])
-        v = val if val is not None else (saldo or 0.0)
-        out['origens'][origem] = round(out['origens'].get(origem, 0.0) + v, 2)
-        out['saldo'] = round(out['saldo'] + (saldo or 0.0), 2)
-        if cod:
+            out['estrutura'].append(sorted({_local(x.tag) for x in escopo.iter() if not len(x)})[:40])
+        for cod_el, pai in debitos:
+            tx = cod_el.text.strip()
+            cod, ext = tx[:4], re.sub(r'\D', '', tx)[4:6]
+            val, saldo, alt, venc = None, None, None, ''
+            for el in pai.iter():
+                if len(el) or el is cod_el:
+                    continue
+                nm, t = _local(el.tag), (el.text or '').strip()
+                if not t:
+                    continue
+                if not venc and re.search(r'venc', nm, re.I) and re.search(r'\d{4}-?\d{2}-?\d{2}|\d{2}/\d{2}/\d{4}', t):
+                    venc = t[:10]
+                elif val is None and _RX_VAL_DEB.search(nm):
+                    val = _numxml(t)
+                elif saldo is None and _RX_SALDO.search(nm):
+                    saldo = _numxml(t)
+                elif alt is None and _RX_VAL_ALT.search(nm):
+                    alt = _numxml(t)
+            v = val if val is not None else saldo if saldo is not None else (alt or 0.0)
+            out['origens'][origem] = round(out['origens'].get(origem, 0.0) + v, 2)
+            out['saldo'] = round(out['saldo'] + (saldo or 0.0), 2)
             out['codigos'].append({'cod': cod, 'ext': ext, 'origem': origem, 'valor': round(v, 2), 'venc': venc})
             alvo = out['reinf'] if origem.startswith('REINF') else out['outros']
             alvo[cod] = round(alvo.get(cod, 0.0) + v, 2)
             if origem.startswith('REINF'):
                 out['reinfOrigem'][cod] = origem
+    # nenhum débito ligado a uma origem: se a declaração só tem UMA origem, os débitos soltos são dela
+    origs = {ORIGEM_DCTF.get((x.text or '').strip(), 'outra') for x in sis}
+    if not out['codigos'] and len(origs) == 1:
+        origem = origs.pop()
+        for el in raiz.iter():
+            if eh_cod(el) and el.getparent() is not None:
+                pai = el.getparent()
+                cam = [_local(x.tag) for x in pai.iterancestors()][:6] + [_local(pai.tag)]
+                if any(_RX_NAO_DEB.search(c) for c in cam):
+                    continue
+                v = next((_numxml(f.text) for f in pai if not len(f) and f is not el and (_RX_VAL_DEB.search(_local(f.tag)) or _RX_VAL_ALT.search(_local(f.tag)))), None) or 0.0
+                cod = el.text.strip()[:4]
+                out['codigos'].append({'cod': cod, 'ext': re.sub(r'\D', '', el.text)[4:6], 'origem': origem, 'valor': round(v, 2), 'venc': ''})
+                out['origens'][origem] = round(out['origens'].get(origem, 0.0) + v, 2)
+                alvo = out['reinf'] if origem.startswith('REINF') else out['outros']
+                alvo[cod] = round(alvo.get(cod, 0.0) + v, 2)
+                if origem.startswith('REINF'):
+                    out['reinfOrigem'][cod] = origem
     return out
 
 
@@ -610,7 +684,7 @@ def dctf_conferir_empresa(tok, cert, contratante, emp, comp, consumo):
     if d['cnpj'] and d['cnpj'][:8] != cnpj[:8]:
         r.update(situacao='erro', msg='O XML devolvido é de outro contribuinte.')
         return r
-    r.update(origens=d['origens'], reinf=d['reinf'], reinfOrigem=d['reinfOrigem'], outros=d['outros'], codigos=d['codigos'][:80], saldo=d['saldo'], estrutura=d['estrutura'])
+    r.update(origens=d['origens'], reinf=d['reinf'], reinfOrigem=d['reinfOrigem'], outros=d['outros'], codigos=d['codigos'][:80], saldo=d['saldo'], estrutura=d['estrutura'], arvore=d['arvore'])
     return r
 
 

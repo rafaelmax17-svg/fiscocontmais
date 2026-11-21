@@ -228,7 +228,9 @@ async function _reinfDocs(comp, cnpjs) {
   return out;
 }
 
+let _arvLog = false;
 async function _conferir(p) {
+  _arvLog = false;
   const { db, f } = _fs();
   const comp = p.comp;
   const reinfs = await _reinfDocs(comp, p.cnpjs);
@@ -260,7 +262,9 @@ async function _conferir(p) {
       // fonte 'api': o que veio da REINF é o que está na DCTFWeb agora (fica guardado para conferir de novo na transmissão)
       if (b.esperado === null) { b.esperado = ['em_andamento', 'transmitida'].includes(x.situacao) ? (x.reinf || {}) : {}; b.totalReinf = _soma(b.esperado); }
       cont[cmp.comparacao] = (cont[cmp.comparacao] || 0) + 1;
-      if (x.estrutura && x.estrutura.length) _log(`${b.nome}: blocos do XML → ${JSON.stringify(x.estrutura.slice(0, 2))}`);
+      if (x.estrutura && x.estrutura.length && !(x.codigos || []).length) _log(`${b.nome}: blocos do XML → ${JSON.stringify(x.estrutura.slice(0, 2))}`);
+      // tags do XML (só os nomes, sem valores) de uma declaração com débitos não lidos: para ajustar a leitura
+      if (x.arvore && x.arvore.length && !(x.codigos || []).length && ['em_andamento', 'transmitida'].includes(x.situacao) && !_arvLog) { _arvLog = true; _log(`tags do XML (${b.nome}): ${x.arvore.join(' | ')}`); }
       _log(`${b.nome}: DCTFWeb ${x.situacao} · REINF ${JSON.stringify(b.esperado)} × DCTFWeb ${JSON.stringify(x.reinf || {})} → ${cmp.comparacao}${x.msg ? ` (${x.msg})` : ''}`);
       await f.setDoc(f.doc(db, COL, `${comp}_${b.cnpj}`), _limpo({
         ...b, situacao: x.situacao, msg: x.msg || '', naDctf: x.reinf || {}, reinfOrigem: x.reinfOrigem || {}, codigos: x.codigos || [],
