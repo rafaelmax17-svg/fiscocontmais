@@ -2226,10 +2226,11 @@ body.menu-grupos .mg-lista{display:flex;flex-direction:column;gap:2px}
 .mg-card.dest{border-color:#fecaca}
 .mg-card.trav{opacity:.7}
 .mg-top{display:flex;align-items:flex-start;justify-content:space-between;width:100%;margin-bottom:8px}
-.mg-ico{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--bg);color:var(--accent);
-  box-shadow:inset 0 0 0 1px rgba(15,23,42,.06)}
+.mg-ico{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(180deg,#fff,#f1f5f9);color:var(--accent);
+  box-shadow:inset 0 0 0 1px rgba(15,23,42,.08),0 3px 8px -4px rgba(15,23,42,.35)}
 .mg-ico svg{width:22px;height:22px;opacity:1}
-.mg-ico img{width:30px;height:30px;object-fit:contain}
+.mg-ico img{width:32px;height:32px;object-fit:contain}
+[data-theme="dark"] .mg-ico{background:linear-gradient(180deg,#334155,#1e293b);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),0 3px 8px -4px #000}
 .mg-card b{font-size:15px;font-weight:750;line-height:1.25}
 .mg-card b .nav-new,.mg-card b .pill,.mg-card b .soon{display:none}
 .mg-card small{font-size:12.5px;color:var(--ink2);line-height:1.45}

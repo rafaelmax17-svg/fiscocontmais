@@ -43,9 +43,8 @@
     'admin-corrigir-efd': 'erros do PVA', 'admin-lmc': 'combustíveis', 'admin-radar': 'monofásico, Tema 69, CIAP', 'admin-audam': 'ICMS do Amazonas', 'admin-evo': 'faturamento e tributos no período',
     'admin-legal': 'dados cadastrais e certidões', 'admin-frete-pis': 'crédito do frete FOB', 'admin-planilhas': 'planilhas do cliente', 'admin-bi': 'indicadores da empresa',
   };
-  const COR = { 'fiscal-confs': '#fee2e2', 'fiscal-fisconforme': '#fff1f2', 'fiscal-dare': '#ecfeff', 'fiscal-giam': '#f0fdf4', 'fiscal-reinf': '#e0e7ff', 'fiscal-downloads': '#dbeafe',
-    'fiscal-deson': '#fef9c3', 'fiscal-frete': '#ffedd5', 'fiscal-inut': '#ede9fe', 'fiscal-rtc': '#ffedd5', 'fiscal-audit': '#fce7f3', 'fiscal-atrib': '#ccfbf1', 'fiscal-efd-contrib': '#dcfce7',
-    'fiscal-pgdas': '#eff6ff', invertidas: '#fee2e2', 'admin-corrigir-sped': '#fee2e2', 'admin-corrigir-efd': '#fee2e2' };
+  // ícone colorido de cada módulo (img/menu/m-<view>.png); sem ícone próprio, usa o do botão antigo
+  const IMG = new Set(['admin-audam', 'admin-bi', 'admin-corrigir-efd', 'admin-corrigir-sped', 'admin-evo', 'admin-frete-pis', 'admin-integra', 'admin-legal', 'admin-lic', 'admin-lmc', 'admin-planilhas', 'admin-radar', 'admin-usuarios', 'balancete', 'conciliacao', 'dre', 'fiscal-atrib', 'fiscal-audit', 'fiscal-conf', 'fiscal-confs', 'fiscal-dash', 'fiscal-deson', 'fiscal-docs', 'fiscal-downloads', 'fiscal-efd-contrib', 'fiscal-frete', 'fiscal-inut', 'fiscal-nfechave', 'fiscal-pgdas', 'fiscal-rtc', 'historico', 'indicadores', 'invertidas', 'lote-balancetes', 'manual-fiscal', 'nova', 'overview']);
   const ADM_TESTE = new Set(['admin-radar', 'admin-audam', 'admin-evo', 'admin-legal', 'admin-frete-pis', 'admin-planilhas', 'admin-bi']);
 
   const $ = (s, r = document) => r.querySelector(s);
@@ -142,10 +141,10 @@
         : ADM_TESTE.has(v) ? '<span class="mg-chip z">teste</span>' : v === 'fiscal-rtc' ? '<span class="mg-chip o">REFORMA</span>' : '';
       const travado = b.classList.contains('locked-em-breve');
       return `<button class="mg-card${vermelho ? ' dest' : ''}${travado ? ' trav' : ''}" data-abre="${esc(v)}" title="${esc(textoDe(b))}">
-        <span class="mg-top"><span class="mg-ico" style="${COR[v] ? `background:${COR[v]}` : ''}">${icone(b)}</span>${travado ? '<span class="mg-chip z">EM BREVE</span>' : chip}</span>
+        <span class="mg-top"><span class="mg-ico">${IMG.has(v) ? `<img src="img/menu/m-${v}.png" alt="">` : icone(b)}</span>${travado ? '<span class="mg-chip z">EM BREVE</span>' : chip}</span>
         <b>${nomeDe(b)}</b><small>${esc(DESC[v] || '')}</small>${rs ? `<span class="mg-rs">${esc(rs)}</span>` : ''}
         <span class="mg-ft">Abrir ›</span></button>`;
-    }).join('') + (reset ? `<button class="mg-card" data-abre="__reset"><span class="mg-top"><span class="mg-ico"><svg viewBox="0 0 24 24" class="ic"><path d="M4 12a8 8 0 0114-5.3M20 12a8 8 0 01-14 5.3M4 4v5h5M20 20v-5h-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span></span>
+    }).join('') + (reset ? `<button class="mg-card" data-abre="__reset"><span class="mg-top"><span class="mg-ico"><img src="img/menu/m-nova.png" alt=""></span></span>
         <b>Nova análise</b><small>trocar o SPED importado</small><span class="mg-ft">Abrir ›</span></button>` : '');
     const html = `<div class="mg-bc">${g.sec === g.nome ? '' : `${esc(g.sec)} › `}${esc(g.nome)}</div><h1 class="mg-h1">${esc(g.nome)}</h1><p class="mg-sub">${esc(g.sub)}</p>
       <div class="mg-grid">${cards || '<div class="mg-vz">Nenhum módulo deste grupo está liberado para você.</div>'}</div>`;
