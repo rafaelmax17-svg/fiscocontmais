@@ -7,6 +7,7 @@
 //   • clicando no grupo, abre a página do grupo com um cartão por módulo liberado; o cartão clica o botão antigo;
 //   • o grupo só aparece se tiver pelo menos um módulo liberado; contador vermelho = soma dos contadores dos módulos.
 // Os cartões SEFIN-RO (Fisconforme, DARE, GIAM) e EFD-Reinf continuam na lateral exatamente como estão (pedido do Rafael).
+// Ícones dos grupos: Microsoft Fluent Emoji 3D (licença MIT, img/menu/LICENSE-fluent-emoji.txt), guardados no programa.
 // Volta ao menu antigo a qualquer momento pelo link "Menu clássico" no rodapé do menu (guardado neste computador).
 
 (() => {
@@ -72,7 +73,7 @@
     return lista.map((g) => {
       const t = g.sec !== sec && g.sec !== 'Fiscal' ? `<div class="mg-sec" data-mgsec="${esc(g.sec)}">${esc(g.sec)}</div>` : '';
       sec = g.sec;
-      return `${t}<button class="mg-item" data-mg="${g.id}"><b class="mg-ic"><svg viewBox="0 0 24 24">${g.ic}</svg></b><span>${esc(g.nome)}</span><i class="mg-cnt" hidden></i><em class="mg-novo" hidden>NOVO</em></button>`;
+      return `${t}<button class="mg-item" data-mg="${g.id}"><b class="mg-ic"><img src="img/menu/g-${g.id}.png" alt=""></b><span>${esc(g.nome)}</span><i class="mg-cnt" hidden></i><em class="mg-novo" hidden>NOVO</em></button>`;
     }).join('');
   };
   function montaLateral() {
