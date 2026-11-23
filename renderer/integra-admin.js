@@ -17,17 +17,16 @@
     if (EST.local.configurado) mitCard();
   }
 
-  // ------------------------------------------------------------------ MIT · procurador pessoa física (2.4.26)
+  // ------------------------------------------------------------------ MIT · responsável pela apuração (2.4.26 · 2.4.27)
+  // O MIT vai com a Liddera (e-CNPJ) como procuradora, como os outros serviços; o responsável vai só dentro do MIT.
   async function mitCard() {
     const m = await window.fiscocont.integra.mitEstado();
     if (!m || m.error) return;
-    const vig = m.vigencia ? m.vigencia.split('-').reverse().join('/') : '';
-    const vencido = m.vigencia && new Date(m.vigencia + 'T23:59:59') < new Date();
     const fmtCpf = (c) => String(c || '').replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
     $('#igRaiz').insertAdjacentHTML('beforeend', `
       <div class="ig-card" id="igMit">
-        <h3>MIT · responsável e procurador (e-CPF)</h3>
-        <p class="ig-hint">Os MIT vão em nome deste procurador pessoa física: cada cliente precisa ter dado procuração no e-CAC ao CPF dele. O CPF, o telefone, o e-mail e o termo assinado ficam <b>só neste computador</b> (o robô); a equipe vê só o nome e o CPF mascarado.</p>
+        <h3>MIT · responsável pela apuração</h3>
+        <p class="ig-hint">O MIT é enviado com a <b>Liddera (e-CNPJ) como procuradora</b> dos clientes — o mesmo caminho da DCTFWeb e do PGDAS (cada cliente precisa ter procuração no e-CAC para a Liddera). Os dados abaixo vão <b>dentro</b> do MIT, no campo "Responsável pela apuração", e ficam só neste computador; a equipe vê o nome e o CPF mascarado.</p>
         <div class="ig-g" style="grid-template-columns:1fr 1fr">
           <div><label>Nome</label><input class="fs-in" id="mitNome" value="${e(m.nome)}" placeholder="Nome do responsável"></div>
           <div><label>CPF</label><input class="fs-in" id="mitCpf" value="${e(fmtCpf(m.cpf))}" placeholder="000.000.000-00"></div>
@@ -37,12 +36,6 @@
           <div><label>CRC · UF <small style="font-weight:400">(opcional; sem a UF o CRC não vai no MIT — o leiaute exige a UF junto)</small></label><input class="fs-in" id="mitCrcUf" value="${e(m.crcUf)}" maxlength="2" placeholder="RO"></div>
         </div>
         <div class="ig-act"><button class="act inv-export fs-prim" id="mitSalvar">Salvar responsável</button></div>
-        <div class="ig-inf" style="margin-top:12px">
-          <div><b>Termo de autorização:</b> ${m.termoOk ? (vencido ? `<span style="color:var(--neg)">vencido em ${e(vig)} — assine de novo</span>` : `assinado por ${e(m.termoNome || m.nome)} · vale até ${e(vig)}`) : 'ainda não assinado'}</div>
-          <span class="ig-hint" style="display:inline">O e-CPF assina um termo autorizando o contrato da Liddera a enviar os MIT em nome dele (exigência da Receita para procurador diferente do contratante). A senha é usada só na hora e não fica gravada. Precisa ser o certificado A1 (arquivo .pfx).</span>
-        </div>
-        <label>Senha do e-CPF <small style="font-weight:400">(usada só na assinatura)</small></label><input class="fs-in" type="password" id="mitSenha" autocomplete="off" style="max-width:280px">
-        <div class="ig-act"><button class="act inv-export" id="mitTermo" ${m.cpf ? '' : 'disabled'}>${m.termoOk && !vencido ? 'Assinar de novo com o e-CPF' : 'Assinar o termo com o e-CPF'}</button></div>
         <div id="mitMsg"></div>
       </div>`);
     const mm = (t, erro) => { $('#mitMsg').innerHTML = t ? `<div class="${erro ? 'ig-er' : 'ig-ok2'}">${e(t)}</div>` : ''; };
@@ -50,18 +43,6 @@
       const r = await window.fiscocont.integra.mitSalvarResp({ nome: $('#mitNome').value, cpf: $('#mitCpf').value, tel: $('#mitTel').value, email: $('#mitEmail').value, crcNum: $('#mitCrc').value, crcUf: $('#mitCrcUf').value });
       if (r && r.error) { mm(r.error, true); return; }
       toast('Responsável do MIT salvo.'); $('#igMit').remove(); mitCard();
-    };
-    $('#mitTermo').onclick = async () => {
-      const senha = $('#mitSenha').value;
-      if (!senha) { mm('Digite a senha do e-CPF.', true); return; }
-      const c = await window.fiscocont.integra.mitEscolherCert();
-      if (!c || !c.path) return;
-      const bt = $('#mitTermo'); bt.disabled = true; bt.textContent = 'Assinando e testando na Receita…'; mm('');
-      const r = await window.fiscocont.integra.mitAssinarTermo({ pfx: c.path, senha });
-      $('#mitSenha').value = '';
-      bt.disabled = false;
-      if (r && r.error) { bt.textContent = 'Assinar o termo com o e-CPF'; mm(r.error, true); return; }
-      toast('Termo assinado e aceito pela Receita.'); $('#igMit').remove(); mitCard();
     };
   }
 

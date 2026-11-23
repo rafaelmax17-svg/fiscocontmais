@@ -4168,6 +4168,7 @@ function modulosPadrao(perfil) {
 let MODULOS = null;      // null = padrão do perfil
 // Módulo liberado para esta pessoa: Admin sempre; demais, se o Admin marcou o módulo em Usuários › Módulos.
 window._podeModulo = (id) => ROLE === 'admin' || (Array.isArray(MODULOS) && MODULOS.includes(id));
+window._ehAdminSessao = () => ROLE === 'admin';
 function applyRole(role, modulos) {
   ROLE = role;
   if (modulos !== undefined) MODULOS = Array.isArray(modulos) ? modulos : null;

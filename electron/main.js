@@ -663,6 +663,7 @@ ipcMain.handle('mit:escolherEfd', async () => {
 ipcMain.handle('mit:importar', (_evt, arquivos) => _mit(() => mitMod.importar(arquivos)));
 ipcMain.handle('mit:salvarEmpresa', (_evt, o) => _mit(() => mitMod.salvarEmpresa(o || {})));
 ipcMain.handle('mit:pedir', (_evt, o) => _mit(() => mitMod.pedir(o || {})));
+ipcMain.handle('mit:limparHistorico', (_evt, comp) => _mit(() => mitMod.limparHistorico(comp)));
 ipcMain.handle('mit:abrir', (_evt, { caminho }) => _mit(async () => {
   if (!caminho || !fs.existsSync(caminho)) throw new Error('O arquivo não está acessível neste computador (pasta do cliente no Drive).');
   await shell.openPath(caminho);
@@ -822,11 +823,7 @@ ipcMain.handle('integra:escolherPasta', async (_evt, titulo) => {
 ipcMain.handle('integra:pedir', (_evt, { comp, ids }) => _adm(() => integra.pedir(comp, ids)));
 ipcMain.handle('integra:mitEstado', () => _adm(async () => integra.mitEstado()));
 ipcMain.handle('integra:mitSalvarResp', (_evt, d) => _adm(() => integra.mitSalvarResp(d || {})));
-ipcMain.handle('integra:mitEscolherCert', async () => {
-  const r = await dialog.showOpenDialog(mainWindow, { title: 'e-CPF do responsável (arquivo .pfx)', properties: ['openFile'], filters: [{ name: 'Certificado A1', extensions: ['pfx', 'p12'] }] });
-  return r.canceled ? { canceled: true } : { path: r.filePaths[0] };
-});
-ipcMain.handle('integra:mitAssinarTermo', (_evt, d) => _adm(() => integra.mitAssinarTermo(d || {})));
+
 ipcMain.handle('integra:abrirPasta', (_evt, pasta) => {
   if (!pasta || !fs.existsSync(pasta)) return { error: 'Essa pasta não está acessível neste computador.' };
   shell.openPath(pasta); return { ok: true };

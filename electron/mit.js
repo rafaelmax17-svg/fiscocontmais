@@ -1,19 +1,19 @@
 'use strict';
-// MIT · PIS e COFINS (2.4.26) — envio pela Receita com procuração no e-CPF do responsável.
+// MIT · PIS e COFINS (2.4.26 · 2.4.27) — envio pela Receita com a Liddera (e-CNPJ) como procuradora dos clientes.
 //
 // • Equipe (módulo "MIT"): importa a EFD-Contribuições (M205/M605 = código e valor a recolher; M200/M600; saldo credor
 //   em 1100/1500), confere a tributação do lucro de cada empresa (fica guardada) e, se quiser, digita IRPJ/CSLL. Depois
 //   pede o envio: os pedidos vão pela nuvem (mit_pedidos) e o computador do Admin que fala com a Receita (o mesmo robô
 //   da DCTFWeb) atende.
-// • Robô: monta o MIT (leiaute JSON 1.0 da Receita) e envia em nome do procurador pessoa física (autorPedidoDados = CPF,
-//   com o token do Termo de Autorização assinado pelo e-CPF — Admin › Integra Contador). Acompanha o encerramento e lê
-//   a DCTFWeb do mês. Também gera a guia só do MIT e transmite a DCTFWeb (assinatura do XML feita pelo programa com o
+// • Robô: monta o MIT (leiaute JSON 1.0 da Receita) e envia com a Liddera como procuradora (autor do pedido = e-CNPJ do
+//   escritório, como a DCTFWeb e o PGDAS); o CPF do responsável pela apuração vai dentro do MIT. Acompanha o
+//   encerramento e lê a DCTFWeb do mês. Também gera a guia só do MIT e transmite a DCTFWeb (assinatura do XML feita pelo programa com o
 //   certificado do escritório — não usa o assinador do portal).
 // • Com saldo credor o MIT não é necessário. "Sem movimento" só quando a equipe marca; o robô confere antes se a
 //   DCTFWeb do mês tem débito de outra origem (eSocial / EFD-Reinf) e, se tiver, não envia (IN RFB 2.237/2024, art. 6º, § 2º).
 //
 // Firestore: mit/<AAAA-MM>_<CNPJ> (equipe e robô), mit_empresas/<CNPJ> (tributação guardada), mit_config/responsavel
-// (só o resumo para a tela — o CPF completo e o termo ficam no computador do robô), mit_pedidos/<id>.
+// (só o resumo para a tela — o CPF completo fica no computador do robô), mit_pedidos/<id>.
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -348,4 +348,32 @@ async function _transmitir(p) {
   return { status: 'feito', msg: x.jaTransmitida ? 'A DCTFWeb já estava transmitida.' : `DCTFWeb transmitida${x.recibo ? ` · recibo ${x.recibo}` : ''}` };
 }
 
-module.exports = { init, podeUsar, dados, importar, salvarEmpresa, pedir, ligarRobo, desligarRobo, situacaoDe };
+// Admin: apaga o histórico de pedidos da competência (e os avisos de erro das empresas)
+async function limparHistorico(comp) {
+  const s = auth.sessao();
+  if (!s || s.perfil !== 'admin') throw new Error('Só o Admin limpa o histórico.');
+  if (!_comp(comp)) throw new Error('Competência inválida.');
+  const { db, f } = _fs();
+  let n = 0;
+  for (const x of (await f.getDocs(f.query(f.collection(db, COL_P), f.where('comp', '==', comp)))).docs) {
+    if (['novo', 'rodando'].includes(x.data().status)) continue;              // o que está na fila continua
+    await f.deleteDoc(x.ref); n++;
+  }
+  for (const x of (await f.getDocs(f.query(f.collection(db, COL), f.where('comp', '==', comp)))).docs) {
+    if (x.data().ultimoErro) await f.setDoc(x.ref, { ultimoErro: '', ultimoErroEm: '' }, { merge: true });
+  }
+  return { apagados: n };
+}
+// 2.4.27 (uma vez, no computador do robô): apaga os pedidos que deram erro na 2.4.26 (procuração no CPF) e os avisos
+async function limparErrosAntigos() {
+  const marca = path.join(D.userData(), 'mit_limpeza_2427.txt');
+  if (fs.existsSync(marca)) return;
+  const { db, f } = _fs();
+  for (const x of (await f.getDocs(f.query(f.collection(db, COL_P), f.where('status', '==', 'erro')))).docs) await f.deleteDoc(x.ref).catch(() => {});
+  for (const x of (await f.getDocs(f.collection(db, COL))).docs) {
+    if (x.data().ultimoErro) await f.setDoc(x.ref, { ultimoErro: '', ultimoErroEm: '' }, { merge: true }).catch(() => {});
+  }
+  fs.writeFileSync(marca, new Date().toISOString());
+}
+
+module.exports = { init, podeUsar, dados, importar, salvarEmpresa, pedir, limparHistorico, limparErrosAntigos, ligarRobo, desligarRobo, situacaoDe };

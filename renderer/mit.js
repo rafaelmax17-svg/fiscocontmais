@@ -1,6 +1,6 @@
 'use strict';
-// MIT · PIS e COFINS (2.4.26) — importa a EFD-Contribuições, confere e pede o envio do MIT pela Receita (em nome do
-// procurador e-CPF); depois gera a guia só do MIT e transmite a DCTFWeb. Quem fala com a Receita é o computador do Admin.
+// MIT · PIS e COFINS (2.4.26) — importa a EFD-Contribuições, confere e pede o envio do MIT pela Receita (Liddera como
+// procuradora); depois gera a guia só do MIT e transmite a DCTFWeb. Quem fala com a Receita é o computador do Admin.
 (function () {
   const e = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const num = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -108,7 +108,7 @@
       </div>
       <div class="mt-w">
         <h1 class="mt-h1">MIT · PIS e COFINS</h1>
-        <div class="mt-s">Débitos lidos dos registros M205 (PIS) e M605 (COFINS) da EFD-Contribuições · envio pela Receita com procuração${robo.ativo ? (robo.online ? '' : ' · <b style="color:var(--neg)">computador de envio offline</b> — os pedidos ficam na fila') : ' · <b style="color:var(--neg)">envio ainda não configurado pelo Admin</b>'}</div>
+        <div class="mt-s">Débitos lidos dos registros M205 (PIS) e M605 (COFINS) da EFD-Contribuições · envio pela Receita com a Liddera como procuradora${robo.ativo ? (robo.online ? '' : ' · <b style="color:var(--neg)">computador de envio offline</b> — os pedidos ficam na fila') : ' · <b style="color:var(--neg)">envio ainda não configurado pelo Admin</b>'}</div>
         <div class="mt-k">
           <div class="mt-c"><small>Empresas</small><b>${docs.length}</b></div>
           <div class="mt-c"><small>Com débito</small><b>${comDeb.length}</b></div>
@@ -126,8 +126,8 @@
               <td>${colSituacao(d)}</td></tr>`;
           }).join('')}</tbody></table>`
           : `<div class="mt-vz">Nenhuma EFD-Contribuições importada em ${compBr(M.comp)}. Clique em <b>EFD-Contribuições (.txt)</b> e escolha os arquivos — pode ser de várias empresas de uma vez; a competência vem do próprio arquivo.</div>`}
-        <div class="mt-resp"><b>Responsável pela apuração</b> (vai em todos os MIT): ${rs && rs.cpf ? `${e(rs.nome || '')} · CPF ${e(rs.cpf)}${rs.crc ? ` · CRC ${e(rs.crc)}` : ''}${rs.email ? ` · ${e(rs.email)}` : ''}${rs.tel ? ` · ${e(rs.tel)}` : ''} · termo ${rs.termoOk ? `válido até ${e((rs.termoVigencia || '').split('-').reverse().join('/'))}` : '<b style="color:var(--neg)">não assinado</b>'}` : '<b style="color:var(--neg)">não configurado</b> (Admin › Integra Contador)'}</div>
-        ${(R.pedidos || []).length ? `<div class="mt-ped"><b>Últimos pedidos</b>${R.pedidos.slice(0, 6).map((p) => `<div><span class="mt-tg ${p.status === 'feito' ? 'ok' : p.status === 'erro' ? 'er' : 'pe'}">${e({ novo: 'Na fila', rodando: 'Em andamento', feito: 'Feito', erro: 'Erro' }[p.status] || p.status)}</span> ${e(PED[p.tipo] || p.tipo)} · ${e(p.por)} · ${e(dataBr(p.emMs))}${p.msg ? ` — ${e(p.msg)}` : ''}</div>`).join('')}</div>` : ''}
+        <div class="mt-resp"><b>Responsável pela apuração</b> (vai em todos os MIT): ${rs && rs.cpf ? `${e(rs.nome || '')} · CPF ${e(rs.cpf)}${rs.crc ? ` · CRC ${e(rs.crc)}` : ''}${rs.email ? ` · ${e(rs.email)}` : ''}${rs.tel ? ` · ${e(rs.tel)}` : ''} · enviado com a Liddera como procuradora` : '<b style="color:var(--neg)">não configurado</b> (Admin › Integra Contador)'}</div>
+        ${(R.pedidos || []).length ? `<div class="mt-ped"><b>Últimos pedidos${window._ehAdminSessao && window._ehAdminSessao() ? ' <button class="mt-lk" id="mtLimpar" style="float:right">Limpar histórico</button>' : ''}</b>${R.pedidos.slice(0, 6).map((p) => `<div><span class="mt-tg ${p.status === 'feito' ? 'ok' : p.status === 'erro' ? 'er' : 'pe'}">${e({ novo: 'Na fila', rodando: 'Em andamento', feito: 'Feito', erro: 'Erro' }[p.status] || p.status)}</span> ${e(PED[p.tipo] || p.tipo)} · ${e(p.por)} · ${e(dataBr(p.emMs))}${p.msg ? ` — ${e(p.msg)}` : ''}</div>`).join('')}</div>` : ''}
         <div class="mt-lei"><b>Como funciona:</b> o valor de cada código é o "a recolher" da EFD (M205/M605), já depois dos créditos, das retenções e das deduções. Com saldo credor não há débito a declarar e o MIT não é necessário. O MIT vence no último dia útil do mês seguinte (o mesmo prazo da DCTFWeb); a EFD-Contribuições precisa estar gerada e validada antes, mesmo que ainda não transmitida. Depois do MIT, a guia só do MIT e a transmissão da DCTFWeb saem daqui — a assinatura da DCTFWeb é feita pelo próprio sistema com o certificado do escritório, sem o assinador do portal.</div>
       </div>`;
     ligar();
@@ -211,6 +211,12 @@
       if (!$('#mtCf1').checked || !$('#mtCf2').checked || !$('#mtCf3').checked) { toast('Marque as três confirmações.', true); return; }
       const cnpj = M.trans; M.trans = '';
       pedir({ tipo: 'transmitir', cnpjs: [cnpj], confirmado: { folha: true, reinf: true, mit: true } }, 'Transmissão pedida.');
+    };
+    if ($('#mtLimpar')) $('#mtLimpar').onclick = async () => {
+      if (!confirm(`Apagar o histórico de pedidos de ${compBr(M.comp)} e os avisos de erro das empresas?\n\nO que já foi enviado à Receita não muda; os pedidos que ainda estão na fila continuam.`)) return;
+      const r = await api().limparHistorico(M.comp);
+      if (!r || r.error) { toast((r && r.error) || 'Falha.', true); return; }
+      toast(`${r.apagados} registro(s) apagado(s).`); carregar();
     };
     q('.mt-ab').forEach((x) => { x.onclick = async (ev) => { ev.preventDefault(); const r = await api().abrir({ caminho: x.dataset.arq }); if (r && r.error) toast(r.error, true); }; });
   }
