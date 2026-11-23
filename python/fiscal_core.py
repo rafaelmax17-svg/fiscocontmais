@@ -3143,6 +3143,9 @@ def main(argv):
     if modo == 'credito-maca':
         import credito_maca as _cm
         return _cm.main_cli(argv[1:])
+    if modo == 'mit-ler':
+        import mit as _mit
+        return _mit.main_cli(argv[1:])
     if modo == 'frete-pis':
         import frete_pis as _fp
         return _fp.main_cli(argv[1:])

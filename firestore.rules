@@ -175,6 +175,28 @@ service cloud.firestore {
       allow read: if reinfOk();
       allow write: if admin();
     }
+    // MIT · PIS e COFINS (2.4.26): equipe com o módulo importa a EFD e pede; o robô (Admin) envia e grava o resultado
+    function mitOk() {
+      return admin() || (ativo() && (
+        (cadastro().get('modulos', null) == null && cadastro().perfil == 'fiscal')
+        || (cadastro().get('modulos', null) != null && 'fiscal-mit' in cadastro().modulos)));
+    }
+    match /mit/{doc} {
+      allow read, write: if mitOk();
+    }
+    match /mit_empresas/{doc} {
+      allow read, write: if mitOk();
+    }
+    match /mit_config/{doc} {
+      allow read: if mitOk();
+      allow write: if admin();
+    }
+    match /mit_pedidos/{id} {
+      allow read: if mitOk();
+      allow create: if mitOk() && request.resource.data.uid == request.auth.uid && request.resource.data.status == 'novo'
+        && request.resource.data.tipo in ['consultar', 'enviar', 'guia', 'transmitir'];
+      allow update, delete: if admin();
+    }
     match /dctfweb_pedidos/{id} {
       allow read: if reinfOk();
       allow create: if reinfOk() && request.resource.data.uid == request.auth.uid && request.resource.data.status == 'novo'

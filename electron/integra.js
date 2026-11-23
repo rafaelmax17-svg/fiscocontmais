@@ -23,6 +23,7 @@ const path = require('path');
 const { safeStorage } = require('electron');
 const auth = require('./auth');
 const dctfweb = require('./dctfweb');
+const mit = require('./mit');
 const fechamento = require('./fechamento');
 
 const COL = 'fechamento_sn';
@@ -34,6 +35,7 @@ const OFFLINE_MS = 12 * 60 * 1000;               // sem sinal do robô há 12 mi
 
 let D = null;                                    // dependências do main.js
 let _tok = null;                                 // acesso temporário do Serpro (só em memória)
+let _proc = null;                                // token do procurador (e-CPF) do MIT — só em memória, vale até o fim do dia
 let _unsub = null, _hb = null, _rodando = false, _ultimoPedido = 0, _souRobo = false;
 
 function init(deps) { D = deps; }
@@ -81,7 +83,7 @@ async function _migrarLocal() {
       await _gravaCfg({ key, secret, finalKey: key.slice(-4), finalSecret: secret.slice(-4), testadoEm: l.testadoEm || '',
         configuradoPor: _quem(), pastaEmpresas: l.pastaEmpresas || '', subpasta: l.subpasta || '', mapa: l.mapa || {}, pendPastas: l.pendPastas || [] });
     }
-    _gravaLocal({ certId: l.certId || '' });
+    _gravaLocal({ certId: l.certId || '', ...(l.mit ? { mit: l.mit } : {}) });
   } catch (_) {}
 }
 
@@ -247,9 +249,79 @@ async function iniciarRobo() {
       await f.updateDoc(_ref(), { [`consumo.${mesC}.consulta`]: f.increment(c.consulta || 0), [`consumo.${mesC}.declaracao`]: f.increment(c.declaracao || 0), [`consumo.${mesC}.emissao`]: f.increment(c.emissao || 0) });
     },
   });
+  // MIT (2.4.26): os pedidos da equipe são atendidos aqui, em nome do procurador (e-CPF) configurado neste computador
+  mit.ligarRobo({
+    souRobo: () => _souRobo,
+    python: (p) => _pythonMit(p),
+    consumo: async (c) => {
+      const mesC = _mesAtual();
+      await f.updateDoc(_ref(), { [`consumo.${mesC}.consulta`]: f.increment(c.consulta || 0), [`consumo.${mesC}.declaracao`]: f.increment(c.declaracao || 0), [`consumo.${mesC}.emissao`]: f.increment(c.emissao || 0) });
+    },
+  });
+}
+
+// ------------------------------------------------------------------ MIT · procurador pessoa física (e-CPF)
+// Ficam SÓ neste computador (integra.json): CPF, telefone, e-mail, CRC e o Termo de Autorização assinado pelo e-CPF.
+// Na nuvem (mit_config/responsavel) vai só o resumo para a tela da equipe (CPF mascarado e a vigência do termo).
+const _cpfOk = (c) => {
+  c = String(c || '').replace(/\D/g, '');
+  if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
+  const dv = (n) => { let s = 0; for (let i = 0; i < n; i++) s += +c[i] * (n + 1 - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; };
+  return dv(9) === +c[9] && dv(10) === +c[10];
+};
+const _mascCpf = (c) => (c && c.length === 11 ? `${c.slice(0, 3)}.***.***-${c.slice(9)}` : '');
+async function _pythonMit(p) {
+  const m = _local().mit || {};
+  const r = await _python({ ...p, cpf: m.cpf || '', termo: m.termo || '', proc: _proc,
+    resp: { cpf: m.cpf || '', tel: m.tel || '', email: m.email || '', crcUf: m.crcUf || '', crcNum: m.crcNum || '' } });
+  if (r && r.proc && r.proc.token) _proc = r.proc;
+  return r;
+}
+async function _mitResumoNuvem(m) {
+  const { db, f } = _fs();
+  await f.setDoc(f.doc(db, 'mit_config', 'responsavel'), { nome: m.nome || '', cpf: _mascCpf(m.cpf), email: m.email || '', tel: m.tel || '',
+    crc: m.crcNum ? `${m.crcUf ? m.crcUf + '-' : ''}${m.crcNum}` : '', termoVigencia: m.vigencia || '', termoOk: !!m.termo,
+    atualizadoPor: _quem(), atualizadoEm: new Date().toISOString() }, { merge: true });
+}
+function mitEstado() {
+  if (!_ehAdmin()) throw new Error('Acesso restrito ao Admin.');
+  const m = _local().mit || {};
+  return { nome: m.nome || '', cpf: m.cpf || '', tel: m.tel || '', email: m.email || '', crcUf: m.crcUf || '', crcNum: m.crcNum || '',
+    termoOk: !!m.termo, vigencia: m.vigencia || '', termoNome: m.termoNome || '', assinadoEm: m.assinadoEm || '' };
+}
+async function mitSalvarResp(d) {
+  if (!_ehAdmin()) throw new Error('Acesso restrito ao Admin.');
+  const cpf = String(d.cpf || '').replace(/\D/g, '');
+  if (!_cpfOk(cpf)) throw new Error('CPF inválido.');
+  const tel = String(d.tel || '').replace(/\D/g, '');
+  if (tel && ![10, 11].includes(tel.length)) throw new Error('Telefone: informe DDD + número.');
+  const email = String(d.email || '').trim();
+  if (email && (email.length < 5 || email.length > 60 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))) throw new Error('E-mail inválido.');
+  const loc = _local();
+  const ant = loc.mit || {};
+  // trocou o CPF: o termo antigo (de outra pessoa) deixa de valer
+  const m = { ...ant, nome: String(d.nome || '').trim().slice(0, 80), cpf, tel, email, crcUf: String(d.crcUf || '').trim().toUpperCase().slice(0, 2), crcNum: String(d.crcNum || '').replace(/\s/g, '').slice(0, 11) };
+  if (ant.cpf && ant.cpf !== cpf) { delete m.termo; delete m.vigencia; delete m.termoNome; delete m.assinadoEm; _proc = null; }
+  _gravaLocal({ ...loc, mit: m });
+  await _mitResumoNuvem(m).catch(() => {});
+  return mitEstado();
+}
+async function mitAssinarTermo({ pfx, senha }) {
+  if (!_ehAdmin()) throw new Error('Acesso restrito ao Admin.');
+  const m = _local().mit || {};
+  if (!m.cpf) throw new Error('Salve primeiro o CPF do responsável.');
+  if (!pfx || !fs.existsSync(pfx)) throw new Error('Escolha o arquivo do e-CPF (.pfx).');
+  const r = await _python({ acao: 'mit_termo', pfxCpf: pfx, senhaCpf: String(senha || ''), cpf: m.cpf });
+  if (!r.ok) throw new Error(r.erro || 'Não foi possível assinar o termo.');
+  const novo = { ...m, termo: r.termo, vigencia: r.vigencia, termoNome: r.nome, assinadoEm: new Date().toISOString(), nome: m.nome || r.nome };
+  if (r.proc && r.proc.token) _proc = r.proc;
+  _gravaLocal({ ..._local(), mit: novo });
+  await _mitResumoNuvem(novo).catch(() => {});
+  return mitEstado();
 }
 function pararRobo() {
   dctfweb.desligarRobo();
+  mit.desligarRobo();
   _souRobo = false;
   if (_unsub) { try { _unsub(); } catch (_) {} _unsub = null; }
   if (_hb) { clearInterval(_hb); _hb = null; }
@@ -457,4 +529,4 @@ async function estadoNuvem() {
   };
 }
 
-module.exports = { init, estadoLocal, estadoNuvem, salvarChave, testar, remover, salvarPastas, definirPasta, pedir, iniciarRobo, pararRobo, CONTRATANTE };
+module.exports = { init, estadoLocal, estadoNuvem, salvarChave, testar, remover, salvarPastas, definirPasta, pedir, iniciarRobo, pararRobo, mitEstado, mitSalvarResp, mitAssinarTermo, CONTRATANTE };

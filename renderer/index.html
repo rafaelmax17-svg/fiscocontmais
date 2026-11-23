@@ -268,6 +268,11 @@
         <span>EFD-Contribuições</span>
         <em class="nav-new" id="efdNewBadge" hidden>NOVO</em>
       </button>
+      <button class="nav-item" data-group="fiscal" data-view="fiscal-mit" title="MIT de PIS e COFINS a partir da EFD-Contribuições">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M4 6h16v12H4zM4 7l8 6 8-6M15 15h3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>MIT · PIS e COFINS</span>
+        <em class="nav-new" id="mitNewBadge" hidden>NOVO</em>
+      </button>
 
       <button class="nav-item" data-group="fiscal" data-view="manual-fiscal">
         <svg viewBox="0 0 24 24" class="ic"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5M8 7h8M8 11h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1247,6 +1252,7 @@
       <div class="view" id="view-admin-planilhas" hidden><div id="plRaiz" class="pl"></div></div>
       <div class="view" id="view-fiscal-dare" hidden><div id="drRaiz" class="fc dr"></div></div>
       <div class="view" id="view-fiscal-reinf" hidden><div id="rfRaiz" class="rf"></div></div>
+      <div class="view" id="view-fiscal-mit" hidden><div id="mtRaiz" class="mt"></div></div>
       <div class="view" id="view-fiscal-giam" hidden><div id="gmRaiz" class="rf gm"></div></div>
       <div class="view" id="view-admin-integra" hidden><div id="igRaiz" class="ig"></div></div>
 
@@ -1651,6 +1657,7 @@
   <script src="reinf.js"></script>
   <script src="giam.js"></script>
   <script src="dfe-notas.js"></script>
+  <script src="mit.js"></script>
   <script src="menu-grupos.js"></script>
 </body>
 </html>

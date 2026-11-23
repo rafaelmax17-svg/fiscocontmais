@@ -72,20 +72,25 @@ def _msgs(d):
     return '; '.join(x for x in out if x)
 
 
-def chamar(tok, cert, acao, contratante, cnpj, id_servico, dados, id_sistema='PGDASD', versao='1.0'):
-    """Retorna {'http', 'status', 'dados'(já em dict/list quando for JSON), 'msg'}."""
+def chamar(tok, cert, acao, contratante, cnpj, id_servico, dados, id_sistema='PGDASD', versao='1.0', proc=None):
+    """Retorna {'http', 'status', 'dados'(já em dict/list quando for JSON), 'msg'}.
+    proc = {'cpf', 'token'}: o pedido sai em nome do procurador pessoa física (autorPedidoDados = CPF) com o token do
+    Termo de Autorização (cabeçalho autenticar_procurador_token — não vai no /Apoiar, que não o aceita)."""
     import requests
+    autor = {'numero': proc['cpf'], 'tipo': 1} if proc else {'numero': contratante, 'tipo': 2}
     corpo = {
         'contratante': {'numero': contratante, 'tipo': 2},
-        'autorPedidoDados': {'numero': contratante, 'tipo': 2},
+        'autorPedidoDados': autor,
         'contribuinte': {'numero': cnpj, 'tipo': 2},
         'pedidoDados': {'idSistema': id_sistema, 'idServico': id_servico, 'versaoSistema': versao,
                         'dados': json.dumps(dados, ensure_ascii=False)},
     }
+    hdr = {'Authorization': f"Bearer {tok['access_token']}", 'jwt_token': tok.get('jwt_token', ''),
+           'Content-Type': 'application/json', 'Accept': 'application/json'}
+    if proc and acao != 'Apoiar':
+        hdr['autenticar_procurador_token'] = proc['token']
     try:
-        r = requests.post(URL_API + acao, json=corpo, timeout=90, cert=cert,
-                          headers={'Authorization': f"Bearer {tok['access_token']}", 'jwt_token': tok.get('jwt_token', ''),
-                                   'Content-Type': 'application/json', 'Accept': 'application/json'})
+        r = requests.post(URL_API + acao, json=corpo, timeout=90, cert=cert, headers=hdr)
     except requests.exceptions.RequestException as e:
         return {'http': 0, 'status': 0, 'dados': None, 'msg': f'Sem conexão com o Serpro: {e}'}
     try:
@@ -880,6 +885,252 @@ def dctf_guia_empresa(tok, cert, contratante, emp, comp, consumo):
     return r
 
 
+# ------------------------------------------------------------------ MIT por procuração no e-CPF (2.4.26)
+# Termo de Autorização (AUTENTICAPROCURADOR · ENVIOXMLASSINADO81): o procurador pessoa física assina com o e-CPF um XML
+# autorizando o contratante (e-CNPJ da Liddera, dono do contrato) a fazer os pedidos em nome dele. O termo assinado vale
+# até a data de vigência; com ele a Receita devolve um token que vale até a meia-noite do dia seguinte e acompanha os
+# pedidos (cabeçalho autenticar_procurador_token, autorPedidoDados = CPF). Cada cliente precisa ter dado procuração no
+# e-CAC ao CPF do procurador. Textos fixos do termo: os da documentação do Integra Contador (Serpro).
+TERMO_TEXTO = ('Autorizo a empresa CONTRATANTE, identificada neste termo de autorização como DESTINATÁRIO, a executar as requisições '
+               'dos serviços web disponibilizados pela API INTEGRA CONTADOR, onde terei o papel de AUTOR PEDIDO DE DADOS no corpo da '
+               'mensagem enviada na requisição do serviço web. Esse termo de autorização está assinado digitalmente com o certificado '
+               'digital do PROCURADOR ou OUTORGADO DO CONTRIBUINTE responsável, identificado como AUTOR DO PEDIDO DE DADOS.')
+TERMO_AVISO = ('O acesso a estas informações foi autorizado pelo próprio PROCURADOR ou OUTORGADO DO CONTRIBUINTE, responsável pela '
+               'informação, via assinatura digital. É dever do destinatário da autorização e consumidor deste acesso observar a adoção '
+               'de base legal para o tratamento dos dados recebidos conforme artigos 7º ou 11º da LGPD (Lei n.º 13.709, de 14 de agosto '
+               'de 2018), aos direitos do titular dos dados (art. 9º, 17 e 18, da LGPD) e aos princípios que norteiam todos os '
+               'tratamentos de dados no Brasil (art. 6º, da LGPD).')
+TERMO_FINALIDADE = ('A finalidade única e exclusiva desse TERMO DE AUTORIZAÇÃO, é garantir que o CONTRATANTE apresente a API INTEGRA '
+                    'CONTADOR esse consentimento do PROCURADOR ou OUTORGADO DO CONTRIBUINTE assinado digitalmente, para que possa '
+                    'realizar as requisições dos serviços web da API INTEGRA CONTADOR em nome do AUTOR PEDIDO DE DADOS (PROCURADOR ou '
+                    'OUTORGADO DO CONTRIBUINTE).')
+MIT_SIT = {1: 'em edição com pendências', 2: 'em edição', 3: 'encerrada', 4: 'encerramento em curso'}
+
+
+def _dono_cert(cert_pem):
+    """(nome, documento) do certificado ICP-Brasil (CN = 'NOME:DOCUMENTO') e a data de validade."""
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    with open(cert_pem, 'rb') as fh:
+        crt = x509.load_pem_x509_certificate(fh.read())
+    cn = ''
+    for a in crt.subject.get_attributes_for_oid(NameOID.COMMON_NAME):
+        cn = a.value
+    nome, _, doc = cn.rpartition(':')
+    if not nome:
+        nome, doc = cn, ''
+    fim = getattr(crt, 'not_valid_after_utc', None) or crt.not_valid_after
+    return nome.strip(), re.sub(r'\D', '', doc), fim, crt
+
+
+def termo_xml(contratante, nome_contratante, cpf, nome_autor, data_ass, vigencia):
+    from lxml import etree
+    raiz = etree.Element('termoDeAutorizacao')
+    d = etree.SubElement(raiz, 'dados')
+    etree.SubElement(d, 'sistema', id='API Integra Contador')
+    etree.SubElement(d, 'termo', texto=TERMO_TEXTO)
+    etree.SubElement(d, 'avisoLegal', texto=TERMO_AVISO)
+    etree.SubElement(d, 'finalidade', texto=TERMO_FINALIDADE)
+    etree.SubElement(d, 'dataAssinatura', data=data_ass)
+    etree.SubElement(d, 'vigencia', data=vigencia)
+    etree.SubElement(d, 'destinatario', numero=contratante, nome=nome_contratante, tipo='PJ', papel='contratante')
+    etree.SubElement(d, 'assinadoPor', numero=cpf, nome=nome_autor, tipo='PF', papel='autor pedido de dados')
+    return raiz
+
+
+def assinar_termo(raiz, chave_priv, cert_der_b64):
+    """XMLDSig envelopada (Reference URI=""): C14N 1.0, SHA-256, RSA-SHA256, X509Certificate; Signature como último filho
+    de termoDeAutorizacao. Devolve o XML assinado (bytes, sem declaração)."""
+    import hashlib
+    from lxml import etree
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import padding
+    digest = base64.b64encode(hashlib.sha256(etree.tostring(raiz, method='c14n', exclusive=False, with_comments=False)).digest()).decode('ascii')
+    E = lambda n: '{%s}%s' % (NS_DS, n)                       # noqa: E731
+    sig = etree.SubElement(raiz, E('Signature'), nsmap={None: NS_DS})
+    si = etree.SubElement(sig, E('SignedInfo'))
+    etree.SubElement(si, E('CanonicalizationMethod'), Algorithm='http://www.w3.org/TR/2001/REC-xml-c14n-20010315')
+    etree.SubElement(si, E('SignatureMethod'), Algorithm='http://www.w3.org/2001/04/xmldsig-more#rsa-sha256')
+    rf = etree.SubElement(si, E('Reference'), URI='')
+    tr = etree.SubElement(rf, E('Transforms'))
+    etree.SubElement(tr, E('Transform'), Algorithm='http://www.w3.org/2000/09/xmldsig#enveloped-signature')
+    etree.SubElement(tr, E('Transform'), Algorithm='http://www.w3.org/TR/2001/REC-xml-c14n-20010315')
+    etree.SubElement(rf, E('DigestMethod'), Algorithm='http://www.w3.org/2001/04/xmlenc#sha256')
+    etree.SubElement(rf, E('DigestValue')).text = digest
+    canon_si = _c14n_trecho(si)
+    etree.SubElement(sig, E('SignatureValue')).text = base64.b64encode(chave_priv.sign(canon_si, padding.PKCS1v15(), hashes.SHA256())).decode('ascii')
+    ki = etree.SubElement(sig, E('KeyInfo'))
+    etree.SubElement(etree.SubElement(ki, E('X509Data')), E('X509Certificate')).text = cert_der_b64
+    return etree.tostring(raiz, encoding='UTF-8')
+
+
+def gerar_termo(p, cert_escritorio_pem):
+    """Assina o termo com o e-CPF do procurador (A1, .pfx + senha digitada pelo Admin, nada fica gravado)."""
+    import datetime
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key, Encoding
+    cpf_cfg = re.sub(r'\D', '', p.get('cpf') or '')
+    try:
+        cpem, kpem, tmp = _pem_temp(p.get('pfxCpf'), p.get('senhaCpf') or '')
+    except Exception as e:
+        return {'ok': False, 'erro': f'Não consegui abrir o e-CPF: {e}'}
+    try:
+        nome, cpf, validade, crt = _dono_cert(cpem)
+        if len(cpf) != 11:
+            return {'ok': False, 'erro': 'O certificado escolhido não é um e-CPF.'}
+        if cpf_cfg and cpf != cpf_cfg:
+            return {'ok': False, 'erro': f'O e-CPF escolhido é de outro CPF ({cpf[:3]}.***.***-{cpf[-2:]}), não do responsável configurado.'}
+        nome_c, _, _, _ = _dono_cert(cert_escritorio_pem)
+        hoje = datetime.date.today()
+        fim = min(hoje.replace(year=hoje.year + 1) if not (hoje.month == 2 and hoje.day == 29) else hoje + datetime.timedelta(days=365),
+                  validade.date() if hasattr(validade, 'date') else validade)
+        with open(kpem, 'rb') as fh:
+            chave = load_pem_private_key(fh.read(), None)
+        raiz = termo_xml(re.sub(r'\D', '', p.get('contratante') or ''), nome_c or 'CONTRATANTE', cpf, nome, hoje.strftime('%Y%m%d'), fim.strftime('%Y%m%d'))
+        xml = assinar_termo(raiz, chave, base64.b64encode(crt.public_bytes(Encoding.DER)).decode('ascii'))
+        return {'ok': True, 'termo': base64.b64encode(xml).decode('ascii'), 'cpf': cpf, 'nome': nome, 'vigencia': fim.isoformat()}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def token_procurador(tok, cert, contratante, cpf, termo_b64):
+    """Envia o termo assinado e devolve {'token', 'expira'} (200 com o token no corpo; 304 = termo ainda no cache, token no ETag)."""
+    import requests
+    corpo = {'contratante': {'numero': contratante, 'tipo': 2}, 'autorPedidoDados': {'numero': cpf, 'tipo': 1},
+             'contribuinte': {'numero': cpf, 'tipo': 1},
+             'pedidoDados': {'idSistema': 'AUTENTICAPROCURADOR', 'idServico': 'ENVIOXMLASSINADO81', 'versaoSistema': '1.0',
+                             'dados': json.dumps({'xml': termo_b64})}}
+    try:
+        r = requests.post(URL_API + 'Apoiar', json=corpo, timeout=90, cert=cert,
+                          headers={'Authorization': f"Bearer {tok['access_token']}", 'jwt_token': tok.get('jwt_token', ''),
+                                   'Content-Type': 'application/json', 'Accept': 'application/json'})
+    except requests.exceptions.RequestException as e:
+        return {'erro': f'Sem conexão com o Serpro: {e}'}
+    token = ''
+    if r.status_code == 304:
+        m = re.search(r'([0-9a-fA-F-]{36})', r.headers.get('ETag') or '')
+        token = m.group(1) if m else ''
+    else:
+        try:
+            d = r.json()
+        except ValueError:
+            d = {}
+        bruto = d.get('dados') if isinstance(d, dict) else None
+        if isinstance(bruto, str) and bruto.strip()[:1] == '{':
+            try:
+                bruto = json.loads(bruto)
+            except ValueError:
+                bruto = None
+        token = _acha(bruto, ['autenticar_procurador_token']) or _acha(d, ['autenticar_procurador_token']) or ''
+        if not token:
+            return {'erro': ('A Receita não aceitou o termo de autorização: ' + (_msgs(d) or f'HTTP {r.status_code} {(r.text or "")[:200]}'))[:400]}
+    if not token:
+        return {'erro': 'A Receita não devolveu o token do procurador.'}
+    # vale até a meia-noite do dia seguinte (Brasília): guarda até as 23h de hoje, com folga
+    t = time.localtime()
+    expira = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 23, 0, 0, 0, 0, -1))
+    return {'token': str(token), 'expira': expira, 'cpf': cpf}
+
+
+def _mit_lista(res):
+    d = res.get('dados')
+    lst = _acha(d, ['Apuracoes', 'apuracoes']) if isinstance(d, (dict, list)) else None
+    if lst is None and isinstance(d, list):
+        lst = d
+    return [x for x in (lst or []) if isinstance(x, dict)]
+
+
+def _k(x, *nomes):
+    for n in nomes:
+        for k, v in x.items():
+            if k.lower() == n.lower():
+                return v
+    return None
+
+
+def mit_consultar_empresa(tok, cert, contratante, proc, emp, comp, consumo):
+    """LISTAAPURACOES317: a apuração MIT mais recente do período (situação, valor, data)."""
+    cnpj = re.sub(r'\D', '', emp.get('cnpj') or '')
+    a, m = comp.split('-')
+    res = chamar(tok, cert, 'Consultar', contratante, cnpj, 'LISTAAPURACOES317', {'anoApuracao': int(a), 'mesApuracao': int(m)}, id_sistema='MIT', proc=proc)
+    consumo['consulta'] = consumo.get('consulta', 0) + 1
+    r = {'cnpj': cnpj, 'ok': False, 'msg': ''}
+    if not (200 <= (res.get('http') or 0) < 300):
+        txt = res.get('msg') or f"HTTP {res.get('http')}"
+        r['msg'] = ('Sem procuração no e-CAC para o CPF do procurador (MIT). ' if re.search(r'procura', txt, re.I) else '') + txt[:300]
+        r['semProc'] = bool(re.search(r'procura', txt, re.I))
+        return r
+    aps = []
+    for x in _mit_lista(res):
+        try:
+            sid = int(_k(x, 'situacao', 'situacaoApuracao') or 0)
+        except (TypeError, ValueError):
+            sid = 0
+        aps.append({'id': _k(x, 'idApuracao'), 'situacao': sid, 'texto': MIT_SIT.get(sid, str(sid)),
+                    'data': str(_k(x, 'dataEncerramento') or ''), 'valor': _num(_k(x, 'valorTotalApurado')) or 0.0})
+    aps.sort(key=lambda y: int(y['id'] or 0))
+    r.update(ok=True, apuracoes=aps, ultima=aps[-1] if aps else None)
+    return r
+
+
+def mit_enviar_empresa(tok, cert, contratante, proc, emp, comp, consumo, chk_dctf=False):
+    """ENCAPURACAO314 + acompanhamento (SITUACAOENC315). Não envia se já houver apuração encerrada no período.
+    chk_dctf (sem movimento): antes confere se a DCTFWeb do mês tem débito de outra origem — se tiver, não envia."""
+    cnpj = re.sub(r'\D', '', emp.get('cnpj') or '')
+    r = {'cnpj': cnpj, 'ok': False, 'msg': ''}
+    ja = mit_consultar_empresa(tok, cert, contratante, proc, emp, comp, consumo)
+    if not ja['ok']:
+        r['msg'] = ja['msg']
+        return r
+    enc = [x for x in ja['apuracoes'] if x['situacao'] in (3, 4)]
+    if enc:
+        u = enc[-1]
+        brl = f"{u['valor']:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+        r.update(msg=f"Já existe apuração MIT {u['texto']} neste período (nº {u['id']}, R$ {brl}).",
+                 jaEnviado=True, idApuracao=u['id'], situacao=u['situacao'])
+        return r
+    if chk_dctf:
+        d = dctf_conferir_empresa(tok, cert, contratante, {'cnpj': cnpj}, comp, consumo)
+        if d.get('situacao') in ('em_andamento', 'transmitida'):
+            tot = sum(float(v or 0) for v in (d.get('reinf') or {}).values()) + sum(float(v or 0) for v in (d.get('outros') or {}).values())
+            if tot > 0 or d.get('codigos'):
+                r['msg'] = 'A DCTFWeb deste mês já tem débitos de outra origem (eSocial / EFD-Reinf): o MIT sem movimento não foi enviado.'
+                return r
+        elif d.get('situacao') not in ('sem_declaracao',):
+            r['msg'] = 'Não consegui confirmar a DCTFWeb do mês (necessário para o sem movimento): ' + (d.get('msg') or d.get('situacao') or '')
+            return r
+    res = chamar(tok, cert, 'Declarar', contratante, cnpj, 'ENCAPURACAO314', emp['payload'], id_sistema='MIT', proc=proc)
+    consumo['declaracao'] = consumo.get('declaracao', 0) + 1
+    d = res.get('dados') if isinstance(res.get('dados'), dict) else {}
+    prot = _k(d, 'protocoloEncerramento') if d else None
+    if not (200 <= (res.get('http') or 0) < 300) or not prot:
+        r['msg'] = ('A Receita não aceitou o MIT: ' + (res.get('msg') or f"HTTP {res.get('http')}"))[:500]
+        return r
+    r.update(protocolo=prot, idApuracao=_k(d, 'idApuracao'))
+    sit, avisos, data = 4, [], ''
+    for _ in range(18):                                          # até ~90 s
+        time.sleep(5)
+        rs = chamar(tok, cert, 'Apoiar', contratante, cnpj, 'SITUACAOENC315', {'protocoloEncerramento': prot}, id_sistema='MIT', proc=proc)
+        ds = rs.get('dados') if isinstance(rs.get('dados'), dict) else {}
+        try:
+            sit = int(_k(ds, 'situacaoApuracao') or sit)
+        except (TypeError, ValueError):
+            pass
+        avisos = [str(a) for a in (_k(ds, 'avisosDctf') or []) if a]
+        data = str(_k(ds, 'dataEncerramento') or '')
+        if _k(ds, 'idApuracao'):
+            r['idApuracao'] = _k(ds, 'idApuracao')
+        if sit != 4:
+            break
+    r.update(situacao=sit, texto=MIT_SIT.get(sit, str(sit)), avisos=avisos[:10], dataEncerramento=data)
+    if sit == 3:
+        r.update(ok=True, msg='MIT encerrado' + (f' · {avisos[0]}' if avisos else ''))
+    elif sit == 4:
+        r.update(ok=True, emCurso=True, msg='MIT enviado; o encerramento ainda está em curso na Receita (consulte de novo em alguns minutos).')
+    else:
+        r['msg'] = f'O MIT ficou "{MIT_SIT.get(sit, sit)}" na Receita: ' + ('; '.join(avisos) or 'confira as pendências no portal da DCTFWeb.')
+    return r
+
+
 # ------------------------------------------------------------------ entrada
 def processar(p):
     acao = p.get('acao')
@@ -903,6 +1154,47 @@ def processar(p):
         if acao == 'testar':
             return {'ok': True, 'token': tok}
         cert = (cert_pem, key_pem)
+        if acao == 'mit_termo':                                    # assina o termo com o e-CPF e já testa na Receita
+            t = gerar_termo(p, cert_pem)
+            if not t.get('ok'):
+                return t
+            pr = token_procurador(tok, cert, contratante, t['cpf'], t['termo'])
+            if pr.get('erro'):
+                return {'ok': False, 'erro': pr['erro'], 'token': tok}
+            return {'ok': True, 'token': tok, 'proc': pr, **t}
+        if acao.startswith('mit_'):
+            proc = p.get('proc') if (p.get('proc') or {}).get('expira', 0) > time.time() and (p.get('proc') or {}).get('cpf') == re.sub(r'\D', '', p.get('cpf') or '') else None
+            if not proc:
+                if not p.get('termo'):
+                    return {'ok': False, 'erro': 'O termo de autorização do procurador (e-CPF) ainda não foi assinado (Admin › Integra Contador).', 'token': tok}
+                proc = token_procurador(tok, cert, contratante, re.sub(r'\D', '', p.get('cpf') or ''), p['termo'])
+                if proc.get('erro'):
+                    return {'ok': False, 'erro': proc['erro'], 'token': tok}
+            consumo = {'consulta': 0, 'emissao': 0, 'declaracao': 0}
+            if acao == 'mit_consultar':
+                out = []
+                for emp in p.get('empresas') or []:
+                    try:
+                        out.append(mit_consultar_empresa(tok, cert, contratante, proc, emp, p['comp'], consumo))
+                    except Exception as e:
+                        out.append({'cnpj': emp.get('cnpj'), 'ok': False, 'msg': f'Falha na consulta: {e}'[:300]})
+                return {'ok': True, 'token': tok, 'proc': proc, 'resultados': out, 'consumo': consumo}
+            if acao == 'mit_enviar':
+                import mit as _mit
+                emp = dict(p.get('empresa') or {})
+                sem = bool(p.get('semMovimento'))
+                try:
+                    # sem movimento: a DCTFWeb (sem movimento) é transmitida logo após o encerramento (TransmissaoImediata)
+                    emp['payload'] = _mit.montar(emp.get('dados') or {}, p.get('resp') or {}, sem_movimento=sem,
+                                                 tributacao=emp.get('tributacao'), extras=emp.get('extras'), transmissao_imediata=sem)
+                except (ValueError, KeyError) as e:
+                    return {'ok': True, 'token': tok, 'proc': proc, 'resultado': {'cnpj': emp.get('cnpj'), 'ok': False, 'msg': str(e)[:300]}, 'consumo': consumo}
+                try:
+                    r = mit_enviar_empresa(tok, cert, contratante, proc, emp, p['comp'], consumo, chk_dctf=sem)
+                except Exception as e:
+                    r = {'cnpj': (p.get('empresa') or {}).get('cnpj'), 'ok': False, 'msg': f'Falha no envio: {e}'[:300]}
+                return {'ok': True, 'token': tok, 'proc': proc, 'resultado': r, 'consumo': consumo}
+            return {'ok': False, 'erro': 'Ação do MIT desconhecida.', 'token': tok}
         if acao == 'dctf_conferir':
             consumo = {'consulta': 0, 'emissao': 0, 'declaracao': 0}
             out = []

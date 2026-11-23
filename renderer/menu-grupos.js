@@ -21,7 +21,7 @@
       ic: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M16 11h0M8 15h2M12 15h2M8 18h8"/>' },
     { id: 'notas', sec: 'Fiscal', nome: 'Notas e documentos', sub: 'baixa automática e consulta de documentos', views: ['fiscal-downloads', 'fiscal-nfechave'],
       ic: '<path d="M12 4v11M7.5 11.5L12 16l4.5-4.5M5 20h14"/>' },
-    { id: 'federais', sec: 'Fiscal', nome: 'Obrigações federais', sub: 'PIS/Cofins e Simples Nacional', views: ['fiscal-efd-contrib', 'fiscal-pgdas'],
+    { id: 'federais', sec: 'Fiscal', nome: 'Obrigações federais', sub: 'PIS/Cofins, MIT e Simples Nacional', views: ['fiscal-efd-contrib', 'fiscal-mit', 'fiscal-pgdas'],
       ic: '<path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18"/>' },
     { id: 'contabil', sec: 'Contábil', nome: 'Balancete e DRE', sub: 'análise do balancete do Domínio', views: ['overview', 'dre', 'balancete', 'invertidas', 'indicadores', 'historico', 'lote-balancetes', 'conciliacao'],
       ic: '<path d="M4 19V5m0 14h16M8 15l3-4 3 2 4-6"/>' },
@@ -35,7 +35,7 @@
     'fiscal-deson': 'desoneração dos XMLs × SPED', 'fiscal-frete': 'classificação e crédito do frete', 'fiscal-inut': 'numeração inutilizada × escrita',
     'fiscal-audit': 'CFOP × CST e itens com tributação diferente', 'fiscal-atrib': 'tributação por produto nas entradas e saídas', 'fiscal-rtc': 'simulação de IBS e CBS',
     'fiscal-downloads': 'NF-e, NFC-e, CT-e e NFS-e de cada empresa', 'fiscal-nfechave': 'XML e DANFE pela chave de acesso',
-    'fiscal-reinf': 'retenções, fechamento, guia e transmissão da DCTFWeb', 'fiscal-efd-contrib': 'conferência de PIS e Cofins', 'fiscal-pgdas': 'fechamento e painel do cliente (PGDAS)',
+    'fiscal-reinf': 'retenções, fechamento, guia e transmissão da DCTFWeb', 'fiscal-efd-contrib': 'conferência de PIS e Cofins', 'fiscal-mit': 'envio do MIT pela EFD-Contribuições, guia e DCTFWeb', 'fiscal-pgdas': 'fechamento e painel do cliente (PGDAS)',
     'fiscal-fisconforme': 'notificações de todas as empresas', 'fiscal-dare': 'débitos, guias e extratos', 'fiscal-giam': 'recibos de entrega e produtor rural',
     overview: 'resumo do balancete importado', dre: 'DRE com receitas × despesas', balancete: 'todas as contas, com exportação', invertidas: 'contas com saldo do lado errado',
     indicadores: 'liquidez, margens e endividamento', historico: 'balancetes já analisados', 'lote-balancetes': 'vários balancetes de uma vez', conciliacao: 'extrato × fornecedores → TXT do Domínio',
@@ -44,7 +44,7 @@
     'admin-legal': 'dados cadastrais e certidões', 'admin-frete-pis': 'crédito do frete FOB', 'admin-planilhas': 'planilhas do cliente', 'admin-bi': 'indicadores da empresa',
   };
   // ícone colorido de cada módulo (img/menu/m-<view>.png); sem ícone próprio, usa o do botão antigo
-  const IMG = new Set(['admin-audam', 'admin-bi', 'admin-corrigir-efd', 'admin-corrigir-sped', 'admin-evo', 'admin-frete-pis', 'admin-integra', 'admin-legal', 'admin-lic', 'admin-lmc', 'admin-planilhas', 'admin-radar', 'admin-usuarios', 'balancete', 'conciliacao', 'dre', 'fiscal-atrib', 'fiscal-audit', 'fiscal-conf', 'fiscal-confs', 'fiscal-dash', 'fiscal-deson', 'fiscal-docs', 'fiscal-downloads', 'fiscal-efd-contrib', 'fiscal-frete', 'fiscal-inut', 'fiscal-nfechave', 'fiscal-pgdas', 'fiscal-rtc', 'historico', 'indicadores', 'invertidas', 'lote-balancetes', 'manual-fiscal', 'nova', 'overview']);
+  const IMG = new Set(['fiscal-mit', 'admin-audam', 'admin-bi', 'admin-corrigir-efd', 'admin-corrigir-sped', 'admin-evo', 'admin-frete-pis', 'admin-integra', 'admin-legal', 'admin-lic', 'admin-lmc', 'admin-planilhas', 'admin-radar', 'admin-usuarios', 'balancete', 'conciliacao', 'dre', 'fiscal-atrib', 'fiscal-audit', 'fiscal-conf', 'fiscal-confs', 'fiscal-dash', 'fiscal-deson', 'fiscal-docs', 'fiscal-downloads', 'fiscal-efd-contrib', 'fiscal-frete', 'fiscal-inut', 'fiscal-nfechave', 'fiscal-pgdas', 'fiscal-rtc', 'historico', 'indicadores', 'invertidas', 'lote-balancetes', 'manual-fiscal', 'nova', 'overview']);
   const ADM_TESTE = new Set(['admin-radar', 'admin-audam', 'admin-evo', 'admin-legal', 'admin-frete-pis', 'admin-planilhas', 'admin-bi']);
 
   const $ = (s, r = document) => r.querySelector(s);

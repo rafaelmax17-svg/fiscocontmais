@@ -647,6 +647,27 @@ ipcMain.handle('dctf:abrir', (_evt, { caminho }) => _reinf(async () => {
   await shell.openPath(caminho);
   return {};
 }));
+// MIT · PIS e COFINS (2.4.26): EFD-Contribuições → MIT pela Receita, em nome do procurador (e-CPF); o robô do Admin atende
+const mitMod = require('./mit');
+mitMod.init({ userData: () => app.getPath('userData'), notificar: _notifica, runFiscal: (args, out) => runFiscal(args, out) });
+const _mit = async (fn) => {
+  if (!mitMod.podeUsar()) return { error: 'Sem acesso ao módulo MIT.' };
+  if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
+  try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String(e.message || e) }; }
+};
+ipcMain.handle('mit:dados', (_evt, comp) => _mit(() => mitMod.dados(comp)));
+ipcMain.handle('mit:escolherEfd', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'EFD-Contribuições (pode escolher várias empresas)', properties: ['openFile', 'multiSelections'], filters: [{ name: 'EFD-Contribuições', extensions: ['txt'] }] });
+  return r.canceled ? { canceled: true } : { paths: r.filePaths };
+});
+ipcMain.handle('mit:importar', (_evt, arquivos) => _mit(() => mitMod.importar(arquivos)));
+ipcMain.handle('mit:salvarEmpresa', (_evt, o) => _mit(() => mitMod.salvarEmpresa(o || {})));
+ipcMain.handle('mit:pedir', (_evt, o) => _mit(() => mitMod.pedir(o || {})));
+ipcMain.handle('mit:abrir', (_evt, { caminho }) => _mit(async () => {
+  if (!caminho || !fs.existsSync(caminho)) throw new Error('O arquivo não está acessível neste computador (pasta do cliente no Drive).');
+  await shell.openPath(caminho);
+  return {};
+}));
 const agendaReinf = require('./agenda_reinf');
 agendaReinf.init({ notificar: _notifica, ocupado: () => { try { return fisconforme.portal.ocupado(); } catch (_) { return false; } } });
 const _reinf = async (fn) => {
@@ -799,6 +820,13 @@ ipcMain.handle('integra:escolherPasta', async (_evt, titulo) => {
   return r.canceled || !r.filePaths.length ? { cancelado: true } : { ok: true, pasta: r.filePaths[0] };
 });
 ipcMain.handle('integra:pedir', (_evt, { comp, ids }) => _adm(() => integra.pedir(comp, ids)));
+ipcMain.handle('integra:mitEstado', () => _adm(async () => integra.mitEstado()));
+ipcMain.handle('integra:mitSalvarResp', (_evt, d) => _adm(() => integra.mitSalvarResp(d || {})));
+ipcMain.handle('integra:mitEscolherCert', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'e-CPF do responsável (arquivo .pfx)', properties: ['openFile'], filters: [{ name: 'Certificado A1', extensions: ['pfx', 'p12'] }] });
+  return r.canceled ? { canceled: true } : { path: r.filePaths[0] };
+});
+ipcMain.handle('integra:mitAssinarTermo', (_evt, d) => _adm(() => integra.mitAssinarTermo(d || {})));
 ipcMain.handle('integra:abrirPasta', (_evt, pasta) => {
   if (!pasta || !fs.existsSync(pasta)) return { error: 'Essa pasta não está acessível neste computador.' };
   shell.openPath(pasta); return { ok: true };
