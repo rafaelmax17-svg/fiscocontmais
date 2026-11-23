@@ -313,4 +313,214 @@ async function _mitMigrar() {
   } catch (_) {}
 }
 
+function pararRobo() {
+  dctfweb.desligarRobo();
+  mit.desligarRobo();
+  _souRobo = false;
+  if (_unsub) { try { _unsub(); } catch (_) {} _unsub = null; }
+  if (_hb) { clearInterval(_hb); _hb = null; }
+}
+
+// Quem entra na conferência (botão e automática): só empresas com "Escrituração concluída = Sim" e ainda não
+// confirmadas pela Receita — não paga consulta nem salva documento de empresa que ainda não foi escriturada.
+// Quem entra quando o Admin clica em "Iniciar robô": empresas com Escrituração concluída = Sim que ainda não foram
+// confirmadas na Receita — inclusive as já consultadas antes como "ainda não transmitido" (são consultadas de novo a
+// cada clique; antes havia um intervalo de 6 h que fazia o robô pular essas empresas).
+// Retificação (Rafael, 19/11/2026): tirar o "Sim" de um PGDAS já confirmado = vai retificar. A empresa volta a ser
+// conferida; enquanto a Receita mostrar a MESMA declaração o robô não remarca "Sim"; quando aparecer outro número, é a
+// retificadora: marca "Sim", guarda a anterior e baixa de novo os documentos (salvos como "(retificadora)").
+// retifDe: gravado quando a analista tira o "Sim" (fechamento.salvar); vale mesmo se ela marcar "Sim" de novo à mão
+// antes de o robô achar a retificadora (era o motivo de os arquivos da retificadora não serem salvos).
+const _emRetificacao = (r) => !!(r && r.receita && r.receita.st === 'ok' && r.receita.decl
+  && (!['Sim', 'N/A'].includes(r.pgdas) || (r.retifDe && r.retifDe === r.receita.decl)));
+// DAS que falhou por instabilidade do Serpro (ex.: Erro-PGDASD-058, tempo esgotado): tenta de novo na próxima conferência
+const _dasTemporario = (rc) => !!(rc && rc.dasAviso && /058|tempo esperado|tente novamente|indispon|timeout|tempo limite/i.test(rc.dasAviso));
+function _alvos(mes, cad, ids, automatica, cfg, cont, comp) {
+  const out = [];
+  for (const [id, r] of Object.entries(mes)) {
+    if (ids && !ids.includes(id)) continue;
+    const c = cad[id] || {};
+    const rc = r.receita || {};
+    if (fechamento.matrizDe(cad, mes, id)) { cont.filiais = (cont.filiais || 0) + 1; continue; }   // filial: segue a matriz
+    if (r.esc !== 'Sim') { cont.semEsc++; continue; }               // só empresas com a Escrituração concluída = Sim
+    if (rc.st === 'ok' && _emRetificacao(r)) { out.push({ id, r, c, retifDe: r.retifDe || rc.decl }); continue; }
+    if (rc.st === 'ok' && r.das !== 'N/A' && _dasTemporario(rc) && Date.now() <= _vencimento(comp).getTime()) { out.push({ id, r, c }); continue; }
+    if (rc.st === 'ok') {
+      // confirmada; só volta (para salvar os documentos) se o Admin apontou a pasta ou mudou a pasta das empresas
+      if (rc.pastaAviso && (Object.keys(cfg.mapa || {}).some((k) => k === id || k.startsWith(id + '|')) || (cfg.pastaEmpresas || '') !== (rc.pastaBase || ''))) out.push({ id, r, c });
+      else cont.confirmadas++;
+      continue;
+    }
+    out.push({ id, r, c });
+  }
+  return out;
+}
+
+async function _executar(comp, ids, por, n, automatica) {
+  if (_rodando) return;
+  _rodando = true;
+  const { db, f } = _fs();
+  const ref = _ref();
+  const resumo = { ok: 0, nao: 0, verificar: 0, semproc: 0, semcnpj: 0, erro: 0, pulou: 0, arquivos: 0 };
+  try {
+    const sm = await f.getDoc(f.doc(db, COL, comp));
+    const sc = await f.getDoc(f.doc(db, COL, 'cadastro'));
+    const mes = sm.exists() ? (sm.data().empresas || {}) : {};
+    const cad = sc.exists() ? (sc.data().empresas || {}) : {};
+    const cfg = (await _cfg()) || {};
+    if (!cfg.key) throw new Error('Chave do Serpro não cadastrada.');
+    const cont = { semEsc: 0, confirmadas: 0 };
+    const alvos = _alvos(mes, cad, ids, automatica, cfg, cont, comp);
+    resumo.pulou = Object.keys(mes).length - alvos.length;
+    resumo.semEsc = cont.semEsc; resumo.confirmadas = cont.confirmadas; resumo.filiais = cont.filiais || 0;
+    await f.updateDoc(ref, { rodando: { comp, feito: 0, total: alvos.length, por }, ...(n ? { atendido: n } : {}) });
+    const emitirDas = Date.now() <= _vencimento(comp).getTime();
+    let feito = 0;
+    const consumo = { consulta: 0, emissao: 0 };
+    for (let i = 0; i < alvos.length; i += LOTE) {
+      const lote = alvos.slice(i, i + LOTE);
+      const sem = lote.filter((a) => String(a.c.cnpj || '').replace(/\D/g, '').length !== 14);
+      const com = lote.filter((a) => !sem.includes(a));
+      let res = [];
+      if (com.length) {
+        const r = await _python({
+          acao: 'conferir', comp, baixar: true, emitirDas,
+          empresas: com.map((a) => ({ id: a.id, cnpj: a.c.cnpj, nome: a.c.nome || a.r.nome, das: a.r.das, retifDe: a.retifDe || '' })),
+          pastas: { base: cfg.pastaEmpresas || '', subpasta: cfg.subpasta || '', mapa: cfg.mapa || {}, fallback: D.pastaFallback() || '' },
+        }, cfg);
+        if (!r.ok) throw new Error(r.erro || 'Falha na conferência.');
+        res = r.resultados || [];
+        consumo.consulta += (r.consumo || {}).consulta || 0; consumo.emissao += (r.consumo || {}).emissao || 0;
+      }
+      for (const a of sem) res.push({ id: a.id, st: 'semcnpj', msg: 'Empresa sem CNPJ no cadastro do Fechamento.' });
+      await _gravaResultados(comp, res, resumo, cfg);
+      feito += lote.length;
+      await f.updateDoc(ref, { rodando: { comp, feito, total: alvos.length, por } });
+    }
+    await _sincronizaFiliais(comp).catch(() => {});
+    const mesC = _mesAtual();
+    await f.updateDoc(ref, {
+      rodando: null,
+      ultimo: { comp, em: f.serverTimestamp(), emBr: new Date().toLocaleString('pt-BR'), por, total: alvos.length, resumo },
+      [`consumo.${mesC}.consulta`]: f.increment(consumo.consulta), [`consumo.${mesC}.emissao`]: f.increment(consumo.emissao),
+    });
+  } catch (e) {
+    try { await f.updateDoc(ref, { rodando: null, ultimo: { comp, em: f.serverTimestamp(), emBr: new Date().toLocaleString('pt-BR'), por, erro: String(e.message || e).slice(0, 300), resumo } }); } catch (_) {}
+  } finally {
+    _rodando = false;
+  }
+}
+
+async function _gravaResultados(comp, res, resumo, cfg) {
+  const { db, f } = _fs();
+  const ref = f.doc(db, COL, comp);
+  const pend = [];
+  await f.runTransaction(db, async (tx) => {
+    const s = await tx.get(ref);
+    const emp = s.exists() ? (s.data().empresas || {}) : {};
+    const upd = {};
+    for (const x of res) {
+      const r = emp[x.id]; if (!r) continue;
+      const ant = r.receita || {};
+      // em retificação e a Receita ainda mostra a mesma declaração: não remarca "Sim" nem troca os documentos
+      if (x.st === 'ok' && x.mesma) {
+        upd[`empresas.${x.id}.receita.em`] = new Date().toLocaleString('pt-BR').slice(0, 17);
+        upd[`empresas.${x.id}.receita.emMs`] = Date.now();
+        if (!r.retifDe && ant.decl) upd[`empresas.${x.id}.retifDe`] = ant.decl;
+        resumo.retif = (resumo.retif || 0) + 1;
+        continue;
+      }
+      const rc = {
+        st: x.st, msg: x.msg || '', em: new Date().toLocaleString('pt-BR').slice(0, 17), emMs: Date.now(),
+        decl: x.decl || '', dataTrans: x.dataTrans || '', pasta: x.pasta || '',
+        arquivos: Object.fromEntries(Object.entries(x.arquivos || {}).map(([k, v]) => [k, path.basename(v)])),
+        pastaAviso: x.pastaAviso || '', pastaBase: cfg.pastaEmpresas || '', dasAviso: x.dasAviso || '', dasValor: x.dasValor ?? null, dasVenc: x.dasVenc || '',
+      };
+      // confirmação já gravada antes e agora só faltavam os arquivos: mantém a data da confirmação
+      if (x.st === 'ok' && r.receita && r.receita.st === 'ok') { rc.decl = rc.decl || r.receita.decl || ''; }
+      // retificadora (número novo): guarda a(s) anterior(es); sem isso, mantém o que já sabia da última retificação
+      if (x.st === 'ok' && x.retificadora) {
+        rc.retificadora = true;
+        rc.anterior = x.retifDe || ant.decl || '';
+        rc.anteriores = [...new Set([...(ant.anteriores || []), rc.anterior].filter(Boolean))];
+        rc.msg = `Retificadora${rc.decl ? ` · Decl. ${rc.decl}` : ''}`;
+        resumo.retificadas = (resumo.retificadas || 0) + 1;
+        upd[`empresas.${x.id}.retifDe`] = f.deleteField();
+      } else if (x.st === 'ok' && ant.retificadora && rc.decl === ant.decl) {
+        Object.assign(rc, { retificadora: true, anterior: ant.anterior || '', anteriores: ant.anteriores || [], msg: ant.msg || rc.msg });
+      }
+      upd[`empresas.${x.id}.receita`] = rc;
+      if (x.st === 'ok') {
+        resumo.ok++;
+        if (r.pgdas === '' || r.pgdas === 'Não' || r.pgdas == null) {            // a Receita confirma (ou chegou a retificadora): marca Sim
+          upd[`empresas.${x.id}.pgdas`] = 'Sim';
+          upd[`empresas.${x.id}.pgdasRobo`] = true;
+          upd[`empresas.${x.id}.alteradoPor`] = 'Robô (Receita Federal)';
+          upd[`empresas.${x.id}.alteradoEm`] = f.serverTimestamp();
+          const novo = { ...r, pgdas: 'Sim' };
+          upd[`empresas.${x.id}.fin`] = (_ok(novo.esc) && _ok(novo.pgdas)) ? (x.retificadora ? _hojeBr() : (r.fin || _hojeBr())) : '';
+        }
+        if (r.pgdas === 'N/A') resumo.verificar++;
+        resumo.arquivos += Object.keys(rc.arquivos).length;
+        if (x.pastaAviso) pend.push({ id: x.id, chave: x.pastaChave || x.id, nome: r.nome, aviso: x.pastaAviso, candidatos: x.candidatos || [] });
+      } else if (x.st === 'nao') { if (r.pgdas === 'Sim') resumo.verificar++; else resumo.nao++; }
+      else resumo[x.st] = (resumo[x.st] || 0) + 1;
+    }
+    if (Object.keys(upd).length) tx.update(ref, upd);
+  });
+  if (pend.length) {
+    const c = (await _cfg()) || {};
+    const m = new Map((c.pendPastas || []).map((p) => [p.id, p]));
+    for (const p of pend) m.set(p.id, { ...p, comp });   // uma pendência por empresa (a mais recente)
+    await _gravaCfg({ pendPastas: [...m.values()] });
+  }
+}
+
+// Filiais: copiam a situação da PGDAS da matriz (sem documentos: ficam só na pasta da matriz) e a marcação.
+async function _sincronizaFiliais(comp) {
+  const { db, f } = _fs();
+  const ref = f.doc(db, COL, comp);
+  const sc = await f.getDoc(f.doc(db, COL, 'cadastro'));
+  const cad = sc.exists() ? (sc.data().empresas || {}) : {};
+  await f.runTransaction(db, async (tx) => {
+    const s = await tx.get(ref);
+    const mes = s.exists() ? (s.data().empresas || {}) : {};
+    const upd = {};
+    for (const id of Object.keys(mes)) {
+      const m = fechamento.matrizDe(cad, mes, id);
+      if (!m) continue;
+      const mr = mes[m].receita, fr = mes[id];
+      if (mr && mr.st) {
+        upd[`empresas.${id}.receita`] = {
+          st: mr.st, decl: mr.decl || '', dataTrans: mr.dataTrans || '', em: mr.em || '', emMs: mr.emMs || 0, arquivos: {},
+          msg: mr.st === 'ok' ? `Consolidada na matriz${mr.decl ? ` · Decl. ${mr.decl}` : ''}` : (mr.msg || ''),
+          consolidada: true, matriz: (cad[m] || {}).nome || mes[m].nome || '', retificadora: !!mr.retificadora, anterior: mr.anterior || '',
+        };
+      }
+      const pg = mes[m].pgdas || '';
+      if ((fr.pgdas || '') !== pg) {
+        upd[`empresas.${id}.pgdas`] = pg;
+        upd[`empresas.${id}.pgdasRobo`] = !!mes[m].pgdasRobo;
+        upd[`empresas.${id}.alteradoPor`] = 'Segue a matriz';
+        upd[`empresas.${id}.fin`] = (_ok(fr.esc) && _ok(pg)) ? (fr.fin || _hojeBr()) : '';
+      }
+    }
+    if (Object.keys(upd).length) tx.update(ref, upd);
+  });
+}
+
+// Painel do Admin: o que está na nuvem sobre o robô.
+async function estadoNuvem() {
+  const { f } = _fs();
+  const s = await f.getDoc(_ref());
+  const d = s.exists() ? s.data() : {};
+  const maq = await D.maquina();
+  const hb = d.heartbeat && d.heartbeat.toMillis ? d.heartbeat.toMillis() : 0;
+  return {
+    ativo: !!d.ativo, esteComputador: d.roboMaquina === maq, roboNome: d.roboNome || '',
+    online: !!hb && Date.now() - hb < 12 * 60 * 1000, ultimo: d.ultimo ? { ...d.ultimo, em: undefined } : null,
+    consumo: (d.consumo || {})[_mesAtual()] || { consulta: 0, emissao: 0 }, rodando: d.rodando || null,
+  };
+}
+
 module.exports = { init, estadoLocal, estadoNuvem, salvarChave, testar, remover, salvarPastas, definirPasta, pedir, iniciarRobo, pararRobo, mitEstado, mitSalvarResp, CONTRATANTE };
