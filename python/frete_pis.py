@@ -27,7 +27,7 @@ ALIQ_PIS, ALIQ_COFINS = 1.65, 7.6
 CST_CAT = {'01': 'tributado', '02': 'monofasico', '03': 'monofasico', '04': 'monofasico', '05': 'st',
            '06': 'zero', '07': 'zero', '08': 'zero'}
 CAT_NOME = {'tributado': 'Tributado', 'monofasico': 'Monofásico', 'st': 'Substituição tributária',
-            'zero': 'Alíquota zero / isento', 'verificar': 'Verificar'}
+            'zero': 'Alíquota zero / isento', 'uso': 'Uso e consumo / imobilizado', 'verificar': 'Verificar'}
 
 
 def _fx(s):
@@ -131,6 +131,67 @@ def ler_efd(caminho):
     return {'cnpj': cnpj, 'nome': nome, 'ini': ini, 'fim': fim, 'por_cte': dict(por_cte)}
 
 
+# ------------------------------------------------------------------ SPED Fiscal (opcional): CFOP de entrada de cada item
+# O CFOP da NF-e é o do fornecedor (venda). O destino da mercadoria (revenda, uso e consumo, imobilizado) está no CFOP de
+# ENTRADA que a empresa escriturou no SPED Fiscal (C170 por item; C190 por nota quando não há C170).
+CFOP_USO = {'1556', '2556', '3556', '1407', '2407'}            # uso e consumo
+CFOP_IMOB = {'1551', '2551', '3551', '1406', '2406'}           # ativo imobilizado
+
+
+def ler_sped_fiscal(caminhos):
+    import difal_ro as dr
+    notas, periodos, cnpj = {}, [], ''
+    for caminho in caminhos:
+        try:
+            texto, _ = dr._ler(caminho)
+        except Exception:
+            continue
+        atual = None
+        for l in texto.replace('\r\n', '\n').split('\n'):
+            c = l.split('|')
+            if len(c) < 3:
+                continue
+            r = c[1]
+            if r == '0000' and len(c) > 7:
+                periodos.append(f'{c[4][:2]}/{c[4][2:4]}/{c[4][4:]} a {c[5][:2]}/{c[5][2:4]}/{c[5][4:]}')
+                cnpj = cnpj or re.sub(r'\D', '', c[7])
+            elif r == 'C100':
+                ch = c[9] if len(c) > 9 else ''
+                atual = None
+                if c[2] == '0' and len(ch) == 44:
+                    atual = notas.setdefault(ch, {'itens': {}, 'c190': defaultdict(float)})
+            elif r == 'C170' and atual is not None and len(c) > 11:
+                atual['itens'][str(int(c[2])) if c[2].strip().isdigit() else c[2].strip()] = c[11].strip()
+            elif r == 'C190' and atual is not None and len(c) > 5:
+                atual['c190'][c[3].strip()] += _fx(c[5].replace(',', '.'))
+            elif r == '9999':
+                break
+    return {'notas': notas, 'periodos': periodos, 'cnpj': cnpj}
+
+
+def _destino(cfop):
+    if cfop in CFOP_USO:
+        return 'uso', f'Escriturada no SPED Fiscal com CFOP {cfop[0]}.{cfop[1:]} (uso e consumo): o frete de bem de uso e consumo não gera crédito (Lei 10.833/2003 e Lei 10.637/2002, art. 3º, I e II)'
+    if cfop in CFOP_IMOB:
+        return 'uso', f'Escriturada no SPED Fiscal com CFOP {cfop[0]}.{cfop[1:]} (ativo imobilizado): o frete integra o custo do bem e o crédito é pela depreciação (art. 3º, VI), não aqui'
+    return None
+
+
+def _destino_item(ch, it, sp):
+    """('uso', motivo) quando o SPED mostra que o item é uso e consumo/imobilizado; None quando é revenda ou não há como saber."""
+    n = (sp or {}).get('notas', {}).get(ch)
+    if not n:
+        return None
+    if n['itens']:
+        k = str(int(it['n'])) if str(it.get('n') or '').isdigit() else str(it.get('n') or '')
+        cf = n['itens'].get(k)
+        return _destino(cf) if cf else None
+    cfs = [cf for cf, v in n['c190'].items() if v > 0]
+    if cfs and all(_destino(cf) for cf in cfs):     # nota inteira de uso/consumo ou imobilizado (só C190)
+        return _destino(cfs[0])
+    return None
+
+
 # ------------------------------------------------------------------ Tabela 4.3.13 (alíquota zero, CST 06) por NCM
 # Prefixos tirados do texto da Tabela 4.3.13 (versão 1.36, 16/09/2026) carregada no FiscoCont+ (efd_tabelas_natureza_dados).
 _ZERO = [
@@ -223,11 +284,13 @@ def classificar(item, nfe, regra_ncm):
     return 'tributado', ''
 
 
-def analisar(caminhos, efd='', cnpj='', excluir_icms=True):
+def analisar(caminhos, efd='', cnpj='', excluir_icms=True, sped=None):
     from oportunidades import _regra_ncm
     ctes, nfes, cancel, erros = ler_arquivos(caminhos)
     ef = ler_efd(efd) if efd else None
-    cnpj = re.sub(r'\D', '', cnpj or (ef or {}).get('cnpj', ''))
+    sp = ler_sped_fiscal(sped) if sped else None
+    sem_sped, mistas = [], []
+    cnpj = re.sub(r'\D', '', cnpj or (ef or {}).get('cnpj', '') or (sp or {}).get('cnpj', ''))
     if not cnpj:
         cont = Counter(c['toma_cnpj'] for c in ctes.values() if c.get('toma_cnpj'))
         cnpj = cont.most_common(1)[0][0] if cont else ''
@@ -253,8 +316,16 @@ def analisar(caminhos, efd='', cnpj='', excluir_icms=True):
                 continue
             sn = defaultdict(float)
             its = []
+            if sp is not None:
+                ns = sp['notas'].get(ch)
+                if not ns:
+                    sem_sped.append(n['num'])
+                elif not ns['itens'] and len([v for v in ns['c190'].values() if v > 0]) > 1 \
+                        and any(_destino(cf) for cf in ns['c190']) and not all(_destino(cf) for cf, v in ns['c190'].items() if v > 0):
+                    mistas.append(n['num'])
             for it in n['itens']:
-                cat, motivo = classificar(it, n, _regra_ncm)
+                dst = _destino_item(ch, it, sp) if sp is not None else None
+                cat, motivo = dst if dst else classificar(it, n, _regra_ncm)
                 sn[cat] += it['valor']
                 its.append({**it, 'cat': cat, 'motivo': motivo})
             for k, v in sn.items():
@@ -286,6 +357,7 @@ def analisar(caminhos, efd='', cnpj='', excluir_icms=True):
                      cofins=round(base * ALIQ_COFINS / 100, 2), adicional=adic,
                      sit='Calculado' if base > 0 else 'Sem crédito',
                      motivo=(f'{prop * 100:.1f}% das notas é tributado'.replace('.', ',')
+                             + (f' · {soma["uso"] / total * 100:.1f}% uso e consumo/imobilizado'.replace('.', ',') if soma.get('uso') else '')
                              + (f' · {prop_v * 100:.1f}% para verificar'.replace('.', ',') if prop_v else '')))
             if prop_v:
                 pend.append({'sit': 'Verificar', 'texto': f'CT-e {c["num"]}: itens para verificar (NCM que sozinho não define a tributação) — '
@@ -304,6 +376,12 @@ def analisar(caminhos, efd='', cnpj='', excluir_icms=True):
         tot['adicional'] += l['adicional']
         linhas.append(l)
     r2 = lambda v: round(v, 2)
+    if sem_sped:
+        pend.append({'sit': 'Informativo', 'texto': f'{len(sem_sped)} NF-e não encontrada(s) no SPED Fiscal anexado ({", ".join(sorted(set(sem_sped))[:8])}{"…" if len(set(sem_sped)) > 8 else ""}): '
+                                                    'classificadas só pelo NCM — se forem de outro mês, anexe o SPED desse mês também'})
+    if mistas:
+        pend.append({'sit': 'Informativo', 'texto': f'NF-e {", ".join(sorted(set(mistas))[:8])}: o SPED tem CFOP de uso e consumo e de revenda na mesma nota, '
+                                                    'sem o C170 por item — classificadas pelo NCM; confira'})
     res = {
         'cnpj': cnpj, 'empresa': (ef or {}).get('nome', ''), 'excluir_icms': excluir_icms,
         'periodo_efd': f"{(ef or {}).get('ini', '')} a {(ef or {}).get('fim', '')}" if ef else '',
@@ -312,6 +390,7 @@ def analisar(caminhos, efd='', cnpj='', excluir_icms=True):
         'cats': {k: r2(v) for k, v in cats_tot.items()},
         'adicional_credito': r2(tot['adicional'] * (ALIQ_PIS + ALIQ_COFINS) / 100),
         'linhas': linhas, 'pendencias': pend, 'cif': cif, 'tem_efd': bool(ef),
+        'tem_sped': sp is not None, 'periodo_sped': ', '.join((sp or {}).get('periodos', [])),
         'competencia': (Counter(l['data'][:7] for l in linhas if l.get('data')).most_common(1) or [('', 0)])[0][0],
     }
     res['totais']['credito'] = r2(tot['pis'] + tot['cofins'])
@@ -446,19 +525,19 @@ input.q{border:1px solid #cbd5e1;border-radius:10px;padding:8px 12px;font-size:1
 <div class="hd"><div><h1>Crédito de PIS/COFINS sobre frete FOB <span class="adm" id="admTag">ADMIN · TESTE</span></h1><div class="s">CT-e de frete na compra × itens das NF-e transportadas · rateio pelo valor dos itens tributados</div></div><div class="s" id="cab"></div></div>
 <div class="w"><div class="k" id="kpis"></div>
 <h3 id="hCte">Por CT-e (clique para ver as notas e o rateio)</h3>
-<div class="lg"><span><i style="background:#0ea472"></i>tributado</span><span><i style="background:#f59e0b"></i>monofásico</span><span><i style="background:#ef4444"></i>substituição tributária</span><span><i style="background:#94a3b8"></i>alíquota zero / isento</span><span id="lgV"><i style="background:#a78bfa"></i>verificar</span></div>
+<div class="lg"><span><i style="background:#0ea472"></i>tributado</span><span><i style="background:#f59e0b"></i>monofásico</span><span><i style="background:#ef4444"></i>substituição tributária</span><span><i style="background:#94a3b8"></i>alíquota zero / isento</span><span id="lgU" hidden><i style="background:#0ea5e9"></i>uso e consumo / imobilizado</span><span id="lgV"><i style="background:#a78bfa"></i>verificar</span></div>
 <input class="q" id="q" placeholder="Pesquisar CT-e, NF-e, transportadora ou fornecedor">
 <table><thead><tr><th>CT-e</th><th>Data</th><th>Transportadora</th><th>NF-e</th><th>Composição das notas</th><th class="n">Frete</th><th class="n">Base do crédito</th><th class="n">PIS + COFINS</th><th>Situação</th></tr></thead><tbody id="tb"></tbody></table>
 <h3 id="pendH">Pendências</h3><div id="pend"></div>
 <div id="cifbox"></div>
-<div class="lei" id="lei"><b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. A tributação de cada item é conferida pelo NCM nas tabelas oficiais da EFD-Contribuições (4.3.10, monofásicos, e 4.3.13, alíquota zero). Itens "verificar" (NCM que sozinho não define a tributação, como a posição 38.08 e as bebidas frias) ficam fora da base até a confirmação. Só se aplica ao regime não cumulativo. <b>O cálculo é para conferência; quem decide é o contador.</b></div></div>
+<div class="lei" id="lei"><b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. A tributação de cada item é conferida pelo NCM nas tabelas oficiais da EFD-Contribuições (4.3.10, monofásicos, e 4.3.13, alíquota zero). Com o SPED Fiscal anexado, o item escriturado com CFOP de entrada de uso e consumo (1.556, 2.556, 1.407, 2.407) ou de ativo imobilizado (1.551, 2.551, 1.406, 2.406) fica fora da base: o frete desses bens não é custo de mercadoria para revenda nem insumo (art. 3º, I e II). Itens "verificar" (NCM que sozinho não define a tributação, como a posição 38.08 e as bebidas frias) ficam fora da base até a confirmação. Só se aplica ao regime não cumulativo. <b>O cálculo é para conferência; quem decide é o contador.</b></div></div>
 <script>
 const D=/*DADOS*/;const $=s=>document.querySelector(s);
 const m=v=>(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const e=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const br=d=>d&&d.length>=10?d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4):(d||'');
-const COR={tributado:'#0ea472',monofasico:'#f59e0b',st:'#ef4444',zero:'#94a3b8',verificar:'#a78bfa'};
-const NOME={tributado:'Tributado',monofasico:'Monofásico',st:'Subst. tributária',zero:'Alíquota zero / isento',verificar:'Verificar'};
+const COR={tributado:'#0ea472',monofasico:'#f59e0b',st:'#ef4444',zero:'#94a3b8',uso:'#0ea5e9',verificar:'#a78bfa'};
+const NOME={tributado:'Tributado',monofasico:'Monofásico',st:'Subst. tributária',zero:'Alíquota zero / isento',uso:'Uso e consumo / imobilizado',verificar:'Verificar'};
 const CLIENTE=/*CLIENTE*/false;
 if(CLIENTE){
  // versão do cliente: sem os CT-e em "Verificar", totais refeitos só com os CT-e que ficaram
@@ -476,10 +555,11 @@ if(CLIENTE){
  $('#admTag').remove();
  $('#hCte').textContent='Por CT-e (clique no CT-e para ver as notas)';
  $('#lgV').remove();
- $('#lei').innerHTML='<b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. A tributação de cada item é conferida pelo NCM nas tabelas oficiais da EFD-Contribuições (4.3.10, monofásicos, e 4.3.13, alíquota zero). Só se aplica ao regime não cumulativo.';
+ $('#lei').innerHTML='<b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. A tributação de cada item é conferida pelo NCM nas tabelas oficiais da EFD-Contribuições (4.3.10, monofásicos, e 4.3.13, alíquota zero). Com o SPED Fiscal anexado, o item escriturado com CFOP de entrada de uso e consumo (1.556, 2.556, 1.407, 2.407) ou de ativo imobilizado (1.551, 2.551, 1.406, 2.406) fica fora da base: o frete desses bens não é custo de mercadoria para revenda nem insumo (art. 3º, I e II). Só se aplica ao regime não cumulativo.';
 }
+if(D.tem_sped)$('#lgU').hidden=false;
 const T=D.totais;
-$('#cab').innerHTML=`${D.empresa?e(D.empresa)+' · ':''}CNPJ ${e(D.cnpj)}<br>${D.qtd.fob} CT-e FOB · ${D.qtd.nfes} NF-e lidas · ICMS do CT-e ${D.excluir_icms?'excluído':'mantido'} na base`;
+$('#cab').innerHTML=`${D.empresa?e(D.empresa)+' · ':''}CNPJ ${e(D.cnpj)}<br>${D.qtd.fob} CT-e FOB · ${D.qtd.nfes} NF-e lidas · ICMS do CT-e ${D.excluir_icms?'excluído':'mantido'} na base${D.tem_sped?' · SPED Fiscal '+e(D.periodo_sped):''}`;
 const kp=[['CT-e FOB analisados',D.qtd.fob,'tomador = empresa','#1e3a8a',1],['Frete total',T.frete,'valor da prestação','#0891b2'],
  ['Frete dos itens tributados',T.base,(T.base_frete?((T.base/T.base_frete*100).toFixed(1).replace('.',',')+'% pelo rateio'):''),'#0ea472'],
  ['Crédito PIS 1,65%',T.pis,'sobre a base rateada','#7c3aed'],['Crédito COFINS 7,6%',T.cofins,'sobre a base rateada','#7c3aed'],
@@ -522,10 +602,11 @@ def main_cli(argv):
     xmls, js = lista('--xmls'), opt('--json')
     if not xmls or not js:
         print('uso: frete-pis --xmls a.zip [b.zip ...] --json saida.json [--efd efd.txt] [--cnpj N] [--manter-icms] '
-              '[--html saida.html] [--xlsx saida.xlsx]')
+              '[--sped sped1.txt ...] [--html saida.html] [--xlsx saida.xlsx]')
         return 1
     try:
-        res = analisar(xmls, efd=opt('--efd') or '', cnpj=opt('--cnpj') or '', excluir_icms='--manter-icms' not in argv)
+        res = analisar(xmls, efd=opt('--efd') or '', cnpj=opt('--cnpj') or '', excluir_icms='--manter-icms' not in argv,
+                       sped=lista('--sped') or None)
         if not res['qtd']['ctes']:
             res = {'erro': 'Nenhum CT-e foi encontrado nos arquivos selecionados.'}
         elif not res['qtd']['fob']:

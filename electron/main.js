@@ -3100,7 +3100,14 @@ ipcMain.handle('admin:fpPickEfd', async () => {
   if (r.canceled || !r.filePaths.length) return { canceled: true };
   return { path: r.filePaths[0] };
 });
-ipcMain.handle('admin:fpAnalisar', async (_evt, { xmls, efd, cnpj, excluirIcms }) => {
+ipcMain.handle('admin:fpPickSped', async () => {
+  const bloq = _soAdmin(); if (bloq) return bloq;
+  const r = await dialog.showOpenDialog(mainWindow, { title: 'SPED Fiscal do período (opcional — pode escolher mais de um mês)',
+    properties: ['openFile', 'multiSelections'], filters: [{ name: 'SPED Fiscal', extensions: ['txt'] }] });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  return { paths: r.filePaths };
+});
+ipcMain.handle('admin:fpAnalisar', async (_evt, { xmls, efd, sped, cnpj, excluirIcms }) => {
   const bloq = _soAdmin(); if (bloq) return bloq;
   if (!Array.isArray(xmls) || !xmls.length) return { error: 'Selecione os .zip com os CT-e e as NF-e.' };
   const stamp = Date.now();
@@ -3109,6 +3116,7 @@ ipcMain.handle('admin:fpAnalisar', async (_evt, { xmls, efd, cnpj, excluirIcms }
   const htmlCli = path.join(os.tmpdir(), `fc_fp_${stamp}_cliente.html`);   // versão do cliente (sem os CT-e em "Verificar")
   const args = ['frete-pis', '--xmls', ...xmls];
   if (efd) args.push('--efd', efd);
+  if (Array.isArray(sped) && sped.length) args.push('--sped', ...sped);   // CFOP de entrada: uso e consumo / imobilizado
   const c = String(cnpj || '').replace(/\D/g, '');
   if (c) args.push('--cnpj', c);
   if (excluirIcms === false) args.push('--manter-icms');

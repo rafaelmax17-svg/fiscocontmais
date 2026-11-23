@@ -6578,7 +6578,7 @@ function audSelecao() {
 })();
 
 // ---- Crédito de PIS/COFINS sobre frete FOB (Admin · teste)
-const FP = { xmls: [], efd: '' };
+const FP = { xmls: [], efd: '', sped: [] };
 function fpInit() {
   const adm = window.fiscocont && window.fiscocont.admin;
   if (!adm || !adm.fpAnalisar || !$('#btnFpXmls')) return;
@@ -6586,6 +6586,7 @@ function fpInit() {
     const p = [];
     if (FP.xmls.length) p.push(`<span>${FP.xmls.length} zip · ${esc(FP.xmls.map((x) => x.split(/[\\/]/).pop()).join(', ')).slice(0, 90)}</span>`);
     if (FP.efd) p.push(`<span>EFD · ${esc(FP.efd.split(/[\\/]/).pop())}</span>`);
+    if (FP.sped.length) p.push(`<span>SPED Fiscal · ${FP.sped.length} arquivo(s)</span>`);
     $('#fpSel').hidden = !p.length; $('#fpSel').innerHTML = p.join(' ');
     $('#btnFpRodar').disabled = !FP.xmls.length;
   };
@@ -6597,10 +6598,14 @@ function fpInit() {
     const r = await adm.fpPickEfd(); if (!r || r.canceled) return; if (r.error) { toast(r.error, true); return; }
     FP.efd = r.path; $('#btnFpEfd').classList.add('ok'); sel();
   });
+  $('#btnFpSped').addEventListener('click', async () => {
+    const r = await adm.fpPickSped(); if (!r || r.canceled) return; if (r.error) { toast(r.error, true); return; }
+    FP.sped = r.paths; $('#btnFpSped').classList.add('ok'); sel();
+  });
   $('#btnFpRodar').addEventListener('click', async () => {
     overlay(true, 'Lendo os CT-e e as NF-e e calculando o crédito…');
     try {
-      const r = await adm.fpAnalisar({ xmls: FP.xmls, efd: FP.efd, cnpj: $('#fpCnpj').value, excluirIcms: $('#fpExclIcms').checked });
+      const r = await adm.fpAnalisar({ xmls: FP.xmls, efd: FP.efd, sped: FP.sped, cnpj: $('#fpCnpj').value, excluirIcms: $('#fpExclIcms').checked });
       overlay(false);
       if (!r || r.error) { toast((r && r.error) || 'Falha no cálculo.', true); return; }
       $('#fpVazio').hidden = true; const fr = $('#fpFrame'); fr.hidden = false; fr.srcdoc = r.html;

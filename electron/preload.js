@@ -304,6 +304,7 @@ contextBridge.exposeInMainWorld('fiscocont', {
     biDados: () => ipcRenderer.invoke('admin:biDados'),
     biExportar: (params) => ipcRenderer.invoke('admin:biExportar', params),
     fpPickEfd: () => ipcRenderer.invoke('admin:fpPickEfd'),
+    fpPickSped: () => ipcRenderer.invoke('admin:fpPickSped'),
     fpAnalisar: (params) => ipcRenderer.invoke('admin:fpAnalisar', params),
     fpExportar: (params) => ipcRenderer.invoke('admin:fpExportar', params),
     atribAnalisar: (params) => ipcRenderer.invoke('admin:atribAnalisar', params),
