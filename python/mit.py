@@ -9,8 +9,8 @@ Leitura (computador da equipe, sem internet):
 
 Montagem do MIT (leiaute JSON de importação 1.0, Receita Federal, retificado em 20/02/2025 — o mesmo do serviço
 ENCAPURACAO314): grupos na ordem Irpj, Csll, …, PisPasep, Cofins; IdDebito único e sequencial na apuração;
-CodigoDebito com 6 dígitos; ValorDebito com 2 casas. TransmissaoImediata vai sempre no fim (obrigatório quando
-SemMovimento = true).
+CodigoDebito com 6 dígitos; ValorDebito com 2 casas. TransmissaoImediata só no sem movimento (obrigatório lá; com
+movimento a Receita recusa o campo). RegimePisCofins só no Real/imune/isenta; BalancoLucroReal no Real anual.
 
 "Sem movimento": a IN RFB 2.237/2024, art. 6º, § 2º, trata do mês em que houve "interrupção temporária da ocorrência de
 fatos geradores". Com saldo credor a empresa teve fato gerador; por isso o sistema não envia sozinho — só quando a equipe
@@ -160,7 +160,7 @@ def montar(emp, resp, sem_movimento=False, tributacao=None, extras=None, transmi
     if not any(k in deb for k in ('Irpj', 'Csll', 'PisPasep', 'Cofins')):
         raise ValueError('Sem débito a declarar: com saldo credor o MIT não é necessário (ou marque "sem movimento").')
     out['Debitos'] = deb
-    out['TransmissaoImediata'] = bool(transmissao_imediata)
+    # TransmissaoImediata só vai no sem movimento (com movimento a Receita recusa: EntradaIncorreta-MIT-MSG_0020)
     return out
 
 
