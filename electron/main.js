@@ -3178,7 +3178,7 @@ ipcMain.handle('fiscal:rtcAnalisar', async (_evt, { xmls, sped, regime }) => {
   if (sped) args.push('--sped', sped);
   if (regime) args.push('--regime', String(regime).replace(/\D/g, ''));
   try {
-    await runFiscal([...args, '--json', jsonOut, '--html', htmlOut, '--html-cliente', htmlCli], jsonOut);
+    await runFiscal([...args, '--json', jsonOut, '--html', htmlOut], jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
     if (res.erro) return { error: res.erro };
     const html = fs.readFileSync(htmlOut, 'utf-8');
@@ -3394,7 +3394,7 @@ ipcMain.handle('fiscal:inutConferir', async (_evt, { dominio, portal, speds }) =
   }
   if (Array.isArray(speds) && speds.length) args.push('--sped', ...speds);
   try {
-    await runFiscal([...args, '--json', jsonOut, '--html', htmlOut, '--html-cliente', htmlCli], jsonOut);
+    await runFiscal([...args, '--json', jsonOut, '--html', htmlOut], jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
     if (res.erro) return { error: res.erro };
     const html = fs.readFileSync(htmlOut, 'utf-8');
