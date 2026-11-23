@@ -180,7 +180,7 @@ def _zero(ncm):
 
 
 _QUEIJOS = r'MU[CSZ]+AR+EL+A|MOZ+AREL+A|MINAS|PRATO|COALHO|RICOTA|REQUEIJ|PROVOLONE|PARMES|DO REINO|FRESCAL|NAO MATURAD'
-_DOMESTICO = r'DESINFET|SANITARI|ALVEJ|LIMPA|LIMPEZA|MULTIUSO|AROMATIZ|PERFUMAD|REPELENT|INSETICIDA (?:AEROSOL|SPRAY)|AEROSOL|SBP|RAID|BAYGON|MATA ?(?:MOSCA|BARATA|MOSQUITO)|DETERG|CLORO|LISOFORM|PINHO|VEJA|HARPIC'
+_DOMESTICO = r'DESINF|SANIT|ODORIZ|ALVEJ|LIMPA|LIMPEZA|MULTIUSO|AROMATIZ|PERFUMAD|REPELENT|INSETICIDA (?:AEROSOL|SPRAY)|AEROSOL|SBP|RAID|BAYGON|MATA ?(?:MOSCA|BARATA|MOSQUITO)|DETERG|CLORO|LISOFORM|PINHO|VEJA|HARPIC'
 _AGRO = r'HERBIC|FUNGIC|AGRICOL|AGROTOX|DEFENSIV|NEMATIC|ACARIC|FORMICID|CUPINIC|ROUNDUP|GLIFOSATO'
 
 
@@ -194,7 +194,8 @@ def classificar(item, nfe, regra_ncm):
     if ncm.startswith('3808'):
         if re.search(_AGRO, desc):
             return 'zero', 'Tabela 4.3.13 (alíquota zero), código 102 – Defensivos agropecuários da posição 38.08'
-        if re.search(_DOMESTICO, desc):
+        # 3808.94 é a subposição dos desinfetantes: desinfetante doméstico (saneante) não é defensivo agropecuário
+        if ncm.startswith('380894') or re.search(_DOMESTICO, desc):
             return 'tributado', ''
         return 'verificar', 'Posição 38.08: só tem alíquota zero se for defensivo agropecuário (Tabela 4.3.13, código 102) — confira o produto'
     if ncm.startswith('0406'):
@@ -461,7 +462,8 @@ const NOME={tributado:'Tributado',monofasico:'Monofásico',st:'Subst. tributári
 const CLIENTE=/*CLIENTE*/false;
 if(CLIENTE){
  // versão do cliente: sem os CT-e em "Verificar", totais refeitos só com os CT-e que ficaram
- D.linhas=D.linhas.filter(l=>l.sit!=='Verificar');
+ // também sai o CT-e que tem algum item ainda em "Verificar" (o cliente só vê o que está fechado)
+ D.linhas=D.linhas.filter(l=>l.sit!=='Verificar'&&!((l.cats||{}).verificar>0));
  D.pendencias=D.pendencias.filter(p=>p.sit!=='Verificar');
  D.linhas.forEach(l=>{l.motivo=String(l.motivo||'').replace(/\s*·\s*[\d.,]+% para verificar/i,'');l.notas.forEach(n=>n.itens.forEach(it=>{if(it.cat==='verificar')it.motivo='';}));});
  const s=k=>Math.round(D.linhas.reduce((a,l)=>a+(+l[k]||0),0)*100)/100;
@@ -473,7 +475,7 @@ if(CLIENTE){
  document.title='Crédito de PIS/COFINS sobre frete FOB';
  $('#admTag').remove();
  $('#hCte').textContent='Por CT-e (clique no CT-e para ver as notas)';
- $('#lgV').innerHTML='<i style="background:#cbd5e1"></i>fora da base';
+ $('#lgV').remove();
  $('#lei').innerHTML='<b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. A tributação de cada item é conferida pelo NCM nas tabelas oficiais da EFD-Contribuições (4.3.10, monofásicos, e 4.3.13, alíquota zero). Só se aplica ao regime não cumulativo.';
 }
 const T=D.totais;
