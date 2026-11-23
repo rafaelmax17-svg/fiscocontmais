@@ -7,11 +7,12 @@ compra para revenda de produto monofásico e de produto com alíquota zero não 
 I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II). Por isso o frete de cada CT-e é rateado pelo valor
 dos itens tributados das notas que ele transportou.
 
-Classificação de cada item pelo CST de PIS informado pelo fornecedor:
-  01 → tributado · 02, 03, 04 → monofásico · 05 → substituição tributária · 06, 07, 08 → alíquota zero / isento /
-  sem incidência · 09, 49, 99 e demais → "Verificar". Fornecedor do Simples Nacional (CRT 1/4) → tributado.
-Item com NCM da lista de monofásicos (Tabela 4.3.10, oportunidades.py) e CST 01 → "Verificar" (o CST e o NCM não
-batem; quem decide é o contador). Itens "Verificar" ficam fora da base e aparecem como crédito adicional possível.
+Classificação de cada item pelo NCM, nas tabelas oficiais da EFD-Contribuições (o CST do fornecedor não decide, porque
+pode estar errado — o crédito depende do tratamento legal do produto, Lei 10.833/2003, art. 3º, §2º, II):
+  NCM na Tabela 4.3.13 (alíquota zero) → alíquota zero · NCM na Tabela 4.3.10 (monofásico) → monofásico ·
+  NCM fora das duas → tributado · NCM que sozinho não define (38.08, queijos, bebidas frias…) → "Verificar".
+O motivo mostra só o embasamento da tabela, e só quando o item não gera crédito (pedido do Rafael, 23/11/2026).
+Itens "Verificar" ficam fora da base e aparecem como crédito adicional possível.
 
 Nada nos arquivos é alterado. O cálculo é para conferência.
 """
@@ -130,19 +131,95 @@ def ler_efd(caminho):
     return {'cnpj': cnpj, 'nome': nome, 'ini': ini, 'fim': fim, 'por_cte': dict(por_cte)}
 
 
+# ------------------------------------------------------------------ Tabela 4.3.13 (alíquota zero, CST 06) por NCM
+# Prefixos tirados do texto da Tabela 4.3.13 (versão 1.36, 16/09/2026) carregada no FiscoCont+ (efd_tabelas_natureza_dados).
+_ZERO = [
+    ('101', 'Adubos e fertilizantes (Capítulo 31)', ['31']),
+    ('105', 'Feijões, arroz e farinha de mandioca', ['07133319', '07133329', '07133399', '100620', '100630', '110620']),
+    ('107', 'Vacinas para medicina veterinária', ['300230']),
+    ('108', 'Farinha, grumos e sêmolas de milho', ['110220', '110313', '110419']),
+    ('109', 'Pintos de 1 dia', ['010511']),
+    ('110', 'Leite fluido, leite em pó e fórmulas infantis', ['0401', '0402', '190110']),
+    ('113', 'Farinha de trigo', ['11010010']),
+    ('114', 'Trigo', ['1001']),
+    ('115', 'Pré-misturas para pão comum', ['190120']),
+    ('116', 'Produtos hortícolas e frutas (Capítulos 7 e 8)', ['07', '08']),
+    ('117', 'Ovos', ['0407']),
+    ('118', 'Sêmens e embriões', ['05111000', '05119910', '05119920']),
+    ('119', 'Massas alimentícias', ['19021100', '19021900', '19022000', '19023000']),
+    ('121', 'Carnes e produtos de origem animal', ['0201', '0202', '02061000', '02062', '02102000', '05069000', '05100010', '1502101',
+                                                   '0203', '02063000', '02064', '0207', '0209', '02101', '02109900', '0204', '02068000']),
+    ('122', 'Peixes', ['0302', '0303', '0304']),
+    ('123', 'Café', ['0901', '21011']),
+    ('124', 'Açúcar', ['17011400', '17019900']),
+    ('125', 'Óleo de soja e outros óleos vegetais (15.07 a 15.14)', ['1507', '1508', '1509', '1510', '1511', '1512', '1513', '1514']),
+    ('126', 'Manteiga', ['04051000']),
+    ('127', 'Margarina', ['15171000']),
+    ('128', 'Sabões de toucador', ['34011190']),
+    ('129', 'Produtos para higiene bucal ou dentária', ['3306']),
+    ('130', 'Papel higiênico', ['48181000']),
+    ('301', 'Cadeiras de rodas e veículos para inválidos', ['8713']),
+    ('302', 'Artigos e aparelhos ortopédicos', ['902110']),
+    ('303', 'Próteses', ['90213']),
+]
+_ZERO_EXC = ['03029000']          # 03.02, exceto 0302.90.00 (código 122)
+
+
+def _sem_acento(t):
+    import unicodedata
+    return ''.join(c for c in unicodedata.normalize('NFD', str(t or '').upper()) if unicodedata.category(c) != 'Mn')
+
+
+def _zero(ncm):
+    if any(ncm.startswith(e) for e in _ZERO_EXC):
+        return None
+    for cod, nome, pref in _ZERO:
+        if any(ncm.startswith(p) for p in pref):
+            return cod, nome
+    return None
+
+
+_QUEIJOS = r'MU[CSZ]+AR+EL+A|MOZ+AREL+A|MINAS|PRATO|COALHO|RICOTA|REQUEIJ|PROVOLONE|PARMES|DO REINO|FRESCAL|NAO MATURAD'
+_DOMESTICO = r'DESINFET|SANITARI|ALVEJ|LIMPA|LIMPEZA|MULTIUSO|AROMATIZ|PERFUMAD|REPELENT|INSETICIDA (?:AEROSOL|SPRAY)|AEROSOL|SBP|RAID|BAYGON|MATA ?(?:MOSCA|BARATA|MOSQUITO)|DETERG|CLORO|LISOFORM|PINHO|VEJA|HARPIC'
+_AGRO = r'HERBIC|FUNGIC|AGRICOL|AGROTOX|DEFENSIV|NEMATIC|ACARIC|FORMICID|CUPINIC|ROUNDUP|GLIFOSATO'
+
+
 def classificar(item, nfe, regra_ncm):
-    simples = nfe['crt'] in ('1', '4')
-    mono_ncm = regra_ncm(item['ncm']) is not None
-    if simples:
-        if mono_ncm:
-            return 'monofasico', 'Fornecedor do Simples; NCM da lista de monofásicos (Tabela 4.3.10)'
-        return 'tributado', 'Fornecedor do Simples Nacional: a compra gera crédito'
-    cat = CST_CAT.get(item['cst'])
-    if cat == 'tributado' and mono_ncm:
-        return 'verificar', f'CST {item["cst"]} (tributado) com NCM da lista de monofásicos: confira o produto'
-    if cat:
-        return cat, f'CST de PIS {item["cst"]} informado pelo fornecedor'
-    return 'verificar', f'CST de PIS {item["cst"] or "(vazio)"}: depende da operação; confira'
+    """(categoria, embasamento). O embasamento só é preenchido quando o item não gera crédito (ou precisa ser conferido)."""
+    ncm = re.sub(r'\D', '', item.get('ncm') or '')
+    desc = _sem_acento(item.get('desc'))
+    z = _zero(ncm) if len(ncm) >= 4 else None
+    if z:
+        return 'zero', f'Tabela 4.3.13 (alíquota zero), código {z[0]} – {z[1]}'
+    if ncm.startswith('3808'):
+        if re.search(_AGRO, desc):
+            return 'zero', 'Tabela 4.3.13 (alíquota zero), código 102 – Defensivos agropecuários da posição 38.08'
+        if re.search(_DOMESTICO, desc):
+            return 'tributado', ''
+        return 'verificar', 'Posição 38.08: só tem alíquota zero se for defensivo agropecuário (Tabela 4.3.13, código 102) — confira o produto'
+    if ncm.startswith('0406'):
+        if re.search(_QUEIJOS, desc):
+            return 'zero', 'Tabela 4.3.13 (alíquota zero), código 111 – Queijos (mozarela, minas, prato, coalho, ricota, requeijão, provolone, parmesão, frescal)'
+        return 'verificar', 'Queijos: só os tipos da Tabela 4.3.13, códigos 111 e 120, têm alíquota zero — confira o tipo'
+    if ncm.startswith('0403') or (ncm.startswith('1901') and 'COMPOSTO LACTEO' in desc):
+        if re.search(r'LEITE FERMENTADO|BEBIDA LACTEA|COMPOSTO LACTEO', desc):
+            return 'zero', 'Tabela 4.3.13 (alíquota zero), código 110 – Leite fermentado, bebidas e compostos lácteos'
+        if ncm.startswith('0403'):
+            return 'verificar', 'Posição 04.03: só leite fermentado e bebida láctea têm alíquota zero (Tabela 4.3.13, código 110) — confira o produto'
+    if ncm.startswith('19059090') and re.search(r'PAO (?:FRANCES|DE SAL|COMUM|CARECA)', desc):
+        return 'zero', 'Tabela 4.3.13 (alíquota zero), código 115 – Pão comum'
+    if ncm.startswith('2402'):
+        return 'st', 'Tabela 4.3.12 (substituição tributária), código 101 – Cigarros'
+    if ncm.startswith('8711'):
+        return 'st', 'Tabela 4.3.12 (substituição tributária), código 201 – Motocicletas'
+    r = regra_ncm(ncm)
+    if r:
+        if r.get('confianca') == 'Baixa':      # bebidas frias: depende de o cliente ser varejista ou atacadista
+            return 'verificar', 'Bebidas frias (22.01 a 22.03): o crédito depende do regime da Lei 13.097/2015 e de o cliente ser varejista — confira'
+        return 'monofasico', f'Tabela 4.3.10 (monofásico), código {r["tabela"]} – {r["grupo"]}'
+    if not ncm:
+        return 'verificar', 'Item sem NCM: não dá para conferir nas tabelas de PIS/COFINS'
+    return 'tributado', ''
 
 
 def analisar(caminhos, efd='', cnpj='', excluir_icms=True):
@@ -210,8 +287,8 @@ def analisar(caminhos, efd='', cnpj='', excluir_icms=True):
                      motivo=(f'{prop * 100:.1f}% das notas é tributado'.replace('.', ',')
                              + (f' · {prop_v * 100:.1f}% para verificar'.replace('.', ',') if prop_v else '')))
             if prop_v:
-                pend.append({'sit': 'Verificar', 'texto': f'CT-e {c["num"]}: itens para verificar (CST × NCM ou CST que depende da '
-                                                          f'operação) — R$ {_brl(adic)} de frete fora da base até a confirmação'})
+                pend.append({'sit': 'Verificar', 'texto': f'CT-e {c["num"]}: itens para verificar (NCM que sozinho não define a tributação) — '
+                                                          f'R$ {_brl(adic)} de frete fora da base até a confirmação'})
             for k, v in soma.items():
                 cats_tot[k] += v
         if ef:
@@ -373,7 +450,7 @@ input.q{border:1px solid #cbd5e1;border-radius:10px;padding:8px 12px;font-size:1
 <table><thead><tr><th>CT-e</th><th>Data</th><th>Transportadora</th><th>NF-e</th><th>Composição das notas</th><th class="n">Frete</th><th class="n">Base do crédito</th><th class="n">PIS + COFINS</th><th>Situação</th></tr></thead><tbody id="tb"></tbody></table>
 <h3 id="pendH">Pendências</h3><div id="pend"></div>
 <div id="cifbox"></div>
-<div class="lei" id="lei"><b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. Itens "verificar" (CST × NCM de monofásico, ou CST que depende da operação) ficam fora da base até a confirmação. Só se aplica ao regime não cumulativo. <b>O cálculo é para conferência; quem decide é o contador.</b></div></div>
+<div class="lei" id="lei"><b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. A tributação de cada item é conferida pelo NCM nas tabelas oficiais da EFD-Contribuições (4.3.10, monofásicos, e 4.3.13, alíquota zero). Itens "verificar" (NCM que sozinho não define a tributação, como a posição 38.08 e as bebidas frias) ficam fora da base até a confirmação. Só se aplica ao regime não cumulativo. <b>O cálculo é para conferência; quem decide é o contador.</b></div></div>
 <script>
 const D=/*DADOS*/;const $=s=>document.querySelector(s);
 const m=v=>(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -397,7 +474,7 @@ if(CLIENTE){
  $('#admTag').remove();
  $('#hCte').textContent='Por CT-e (clique no CT-e para ver as notas)';
  $('#lgV').innerHTML='<i style="background:#cbd5e1"></i>fora da base';
- $('#lei').innerHTML='<b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. Só se aplica ao regime não cumulativo.';
+ $('#lei').innerHTML='<b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. A tributação de cada item é conferida pelo NCM nas tabelas oficiais da EFD-Contribuições (4.3.10, monofásicos, e 4.3.13, alíquota zero). Só se aplica ao regime não cumulativo.';
 }
 const T=D.totais;
 $('#cab').innerHTML=`${D.empresa?e(D.empresa)+' · ':''}CNPJ ${e(D.cnpj)}<br>${D.qtd.fob} CT-e FOB · ${D.qtd.nfes} NF-e lidas · ICMS do CT-e ${D.excluir_icms?'excluído':'mantido'} na base`;
