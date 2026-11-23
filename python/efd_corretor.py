@@ -956,19 +956,25 @@ def det_part_mun(L):
 
 
 def _fix_part_mun(L, acoes, pend, ctx):
+    # 0150 campo 08 (COD_MUN): obrigatório para participante domiciliado no Brasil (tabela IBGE). Sem o código no cadastro de
+    # origem, o sistema preenche sozinho com o município da própria empresa (0000 campo 11) — pedido do Rafael, 23/11/2026.
+    # Só mexe onde o campo está VAZIO; município já informado nunca é trocado.
     p0 = _partes(L[0]['txt']) if L and _reg(L[0]) == '0000' else []
     mun = p0[10] if len(p0) > 10 else ''
     for f in det_part_mun(L):
         nome = f['p'][2]
-        if 'DIVERSO' in nome.upper() and len(mun) == 7:
+        if len(mun) == 7 and mun.isdigit():
             antes = L[f['i']]['txt']
             f['p'][7] = mun
             L[f['i']]['txt'] = _monta(f['p'])
+            pj = len(re.sub(r'\D', '', f['p'][4] or '')) == 14
+            motivo = (f'Participante "{nome}" sem município no cadastro: preenchido com o município da empresa ({mun}).'
+                      + (' Participante com CNPJ — confira a cidade dele no cadastro do Domínio.' if pj else ''))
             acoes.append({'cat': 'part_mun', 'tipo': 'alterado', 'linha': L[f['i']]['n'], 'registro': '0150', 'antes': antes, 'depois': L[f['i']]['txt'],
-                          'motivo': f'Participante genérico "{nome}": código do município preenchido com o da empresa ({mun}).'})
+                          'motivo': motivo})
         else:
             pend.append({'cat': 'part_mun', 'linha': L[f['i']]['n'], 'titulo': f'Participante {f["p"][1]} ({nome}) sem código do município',
-                         'detalhe': 'Participante do Brasil precisa do código IBGE do município. Corrija o cadastro no sistema de origem.'})
+                         'detalhe': 'O registro 0000 também está sem o município da empresa. Corrija o cadastro no sistema de origem.'})
     return L
 
 
@@ -2048,7 +2054,7 @@ _EXPLICA = {
     'cta_rec': ('A conta contábil analítica é obrigatória no C175 e no M400/M410/M800/M810.',
                 'Quando o arquivo usa uma única conta de receita, ela é usada nos registros em branco. Com mais de uma conta, fica pendência.'),
     'part_mun': ('Participante do Brasil precisa do código do município (IBGE).',
-                 'Participante genérico ("diversos") recebe o município da empresa. Os demais ficam como pendência para corrigir o cadastro.'),
+                 'Participante do Brasil sem município recebe automaticamente o município da empresa (registro 0000). Município já informado não é alterado.'),
     'avulsa': ('NF-e avulsa (série 890 a 899) é emitida pelo Fisco: a chave traz o CNPJ da SEFAZ, e o PVA acusa diferença com o participante.',
                'Regra do escritório: a nota passa para a situação 08 (documento emitido com base em regime especial ou norma específica) e os itens ficam com CST 70 de PIS/COFINS (aquisição sem direito a crédito), sem base nem crédito. Se havia crédito, a apuração (M105/M100/M200/M205 e M505/M500/M600/M605) é refeita.'),
     'pf': ('Compra de pessoa física não gera crédito de PIS/COFINS: o crédito vale exclusivamente para bens e serviços adquiridos de pessoa jurídica domiciliada no País (Lei 10.637/2002 e Lei 10.833/2003, art. 3º, §3º, I). Vale para produtor rural com NF-e avulsa da SEFAZ (séries 890 a 899), NF-e emitida por CPF (séries 920 a 969), nota de produtor e serviço tomado de pessoa física.',
