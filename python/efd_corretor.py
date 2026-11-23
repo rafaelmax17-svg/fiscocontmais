@@ -41,7 +41,9 @@ TITULOS = {
     'cta_m400': ('Conta sintética na receita não tributada (M400/M800)', '#9333ea'),
     'c100sem': ('Documento sem item (C100 sem C170 · NFC-e sem C175)', '#b45309'),
     'a100sem': ('Nota de serviço tomado sem item (A100 sem A170)', '#0e7490'),
-    'vlmerc': ('Valor da mercadoria do C100 menor que a soma dos itens (saída)', '#2563eb'),
+    'vlmerc': ('Valor da mercadoria do C100 menor que a soma dos itens (saída ou emissão própria)', '#2563eb'),
+    'dev98': ('Devolução de venda com crédito e CST 98 (C170 · M105/M505 natureza 12)', '#0f766e'),
+    'codrec': ('Código de receita do M205/M605 fora da tabela 4.4.1/4.4.2', '#4338ca'),
     'cst_ent': ('CST inválido em item de entrada (C170)', '#dc2626'),
     'cta_rec': ('Conta contábil em branco na receita (C175 · M400/M410 · M800/M810)', '#6d28d9'),
     'part_mun': ('Participante sem código do município (0150)', '#0891b2'),
@@ -760,7 +762,7 @@ def _blocos_c100(L):
 def det_vlmerc(L):
     out = []
     for i, pc, its in _blocos_c100(L):
-        if pc[1] != '1' or not its or pc[5] in ('02', '03', '04', '05'):
+        if (pc[1] != '1' and pc[2] != '0') or not its or pc[5] in ('02', '03', '04', '05'):   # saída ou emissão própria
             continue
         soma = round(sum(_num(_partes(L[j]['txt'])[6]) for j in its), 2)
         if _num(pc[15]) + 0.009 < soma:
@@ -769,7 +771,7 @@ def det_vlmerc(L):
 
 
 def _fix_vlmerc(L, acoes, pend, ctx):
-    """NF-e de saída com VL_MERC menor que a soma dos itens (o PVA exige >=). Acontece com nota que vem do sistema de origem
+    """NF-e de saída (ou de emissão própria) com VL_MERC menor que a soma dos itens (o PVA exige >=). Acontece com nota que vem do sistema de origem
     com a mercadoria zerada. VL_MERC passa a ser a soma dos itens; o total do documento não muda."""
     for f in det_vlmerc(L):
         pc = _partes(L[f['i']]['txt'])
@@ -873,8 +875,21 @@ def _fix_cta_rec(L, acoes, pend, ctx):
     achados = det_cta_rec(L)
     if not achados:
         return L
-    conta, usadas = _conta_receita_unica(L)
+    conta_geral, usadas = _conta_receita_unica(L)
+    contas0500 = _contas_0500(L)
     for f in achados:
+        conta = conta_geral
+        if f['reg'] in ('M400', 'M800'):
+            filho = 'M410' if f['reg'] == 'M400' else 'M810'
+            dos_filhos = set()
+            for l in L[f['i'] + 1:]:
+                if _reg(l) != filho:
+                    break
+                c = _partes(l['txt'])[3].strip() if len(_partes(l['txt'])) > 3 else ''
+                if c:
+                    dos_filhos.add(c)
+            if len(dos_filhos) == 1 and contas0500.get(next(iter(dos_filhos)), {}).get('analitica'):
+                conta = next(iter(dos_filhos))           # a mesma conta dos detalhamentos
         if not conta:
             pend.append({'cat': 'cta_rec', 'linha': L[f['i']]['n'], 'titulo': f"{f['reg']} sem conta contábil",
                          'detalhe': ('O arquivo usa mais de uma conta de receita (' + ', '.join(usadas) + '): informe a conta certa no sistema de origem.') if usadas
@@ -1670,12 +1685,167 @@ def _fix_c100sem(L, acoes, pend, ctx):
                       'motivo': f"NF-e {f['num']} ({tipo}) sem item: incluído 1 item de R$ {_brl(vl_item)} com CST {cst} (sem PIS/COFINS). {obs}"
                       + ('' if conta else ' Sem conta contábil analítica para preencher: confira.'),
                       'num': f['num'], 'tipo_op': tipo, 'cst': cst, 'cfop': cfop, 'valor': vl_item, 'conta': conta})
-    if incluidos and not any(_reg(l) == '0200' and _partes(l['txt'])[1] == COD_ITEM_SEM for l in L):
-        ult = max(i for i, l in enumerate(L) if _reg(l) in ('0190', '0200'))
-        reg0200 = {'n': L[ult]['n'], 'txt': _monta(['0200', COD_ITEM_SEM, 'DOCUMENTO SEM ITEM NO ARQUIVO DE ORIGEM', '', '', '1', '99', '', '', '', '', '']), 'novo': True}
-        L.insert(ult + 1, reg0200)
-        acoes.append({'cat': 'c100sem', 'tipo': 'incluido', 'linha': reg0200['n'], 'registro': '0200', 'antes': '', 'depois': reg0200['txt'],
-                      'motivo': 'Cadastro do item usado nas notas que vieram sem item (tipo 99 – outras).', 'num': '', 'tipo_op': '', 'cst': '', 'cfop': '', 'valor': 0, 'conta': ''})
+    return L
+
+
+# ------------------------------------------------------------------ 0200 do DOCSEMITEM em cada estabelecimento (2.4.32)
+# Na EFD-Contribuições o 0200 é filho do 0140: cada estabelecimento (C010) só enxerga os itens do próprio 0140. Antes o
+# cadastro ia só no último 0140 e o PVA acusava "Código do item inválido" nas notas dos outros estabelecimentos.
+def _blocos_0140(L):
+    """{cnpj: (índice do 0140, índice do fim do bloco)}"""
+    out, cur = {}, None
+    for i, l in enumerate(L):
+        r = _reg(l)
+        if r == '0140':
+            if cur:
+                out[cur[0]] = (cur[1], i - 1)
+            cur = (_partes(l['txt'])[3], i)
+        elif cur and r and not (r.startswith('01') or r.startswith('02') or r.startswith('04')):
+            out[cur[0]] = (cur[1], i - 1)
+            cur = None
+    if cur:
+        out[cur[0]] = (cur[1], len(L) - 1)
+    return out
+
+
+def det_0200_sem(L):
+    usa, est = set(), ''
+    for l in L:
+        r = _reg(l)
+        if r in ('C010', 'A010', 'D010', 'F010'):
+            est = _partes(l['txt'])[1]
+        elif r == 'C170' and _partes(l['txt'])[2] == COD_ITEM_SEM:
+            usa.add(est)
+    out = []
+    for cnpj, (a, b) in _blocos_0140(L).items():
+        if cnpj in usa and not (any(_reg(L[k]) == '0200' and _partes(L[k]['txt'])[1] == COD_ITEM_SEM for k in range(a, b + 1))
+                                and any(_reg(L[k]) == '0190' and _partes(L[k]['txt'])[1] == '1' for k in range(a, b + 1))):
+            out.append({'cnpj': cnpj, 'a': a, 'b': b})
+    return out
+
+
+def _fix_0200_sem(L, acoes, pend, ctx):
+    for f in sorted(det_0200_sem(L), key=lambda x: -x['a']):          # de baixo para cima
+        if not any(_reg(L[k]) == '0190' and _partes(L[k]['txt'])[1] == '1' for k in range(f['a'], f['b'] + 1)):
+            # a unidade "1" do item genérico precisa existir no 0190 do mesmo estabelecimento
+            pu = max([k for k in range(f['a'], f['b'] + 1) if _reg(L[k]) in ('0145', '0150', '0190')] or [f['a']])
+            L.insert(pu + 1, {'n': L[pu]['n'], 'txt': _monta(['0190', '1', 'UNIDADE']), 'novo': True})
+            f['b'] += 1
+            acoes.append({'cat': 'c100sem', 'tipo': 'incluido', 'linha': L[pu]['n'], 'registro': '0190', 'antes': '', 'depois': '|0190|1|UNIDADE|',
+                          'motivo': 'Unidade "1" do item das notas sem item, que não existia neste estabelecimento.', 'num': '', 'tipo_op': '', 'cst': '', 'cfop': '', 'valor': 0, 'conta': ''})
+        if any(_reg(L[k]) == '0200' and _partes(L[k]['txt'])[1] == COD_ITEM_SEM for k in range(f['a'], f['b'] + 1)):
+            continue
+        pos = max([k for k in range(f['a'], f['b'] + 1) if _reg(L[k]) in ('0150', '0190', '0200')] or [f['a']])
+        novo = {'n': L[pos]['n'], 'txt': _monta(['0200', COD_ITEM_SEM, 'DOCUMENTO SEM ITEM NO ARQUIVO DE ORIGEM', '', '', '1', '99', '', '', '', '', '']), 'novo': True}
+        L.insert(pos + 1, novo)
+        cn = f['cnpj']
+        acoes.append({'cat': 'c100sem', 'tipo': 'incluido', 'linha': novo['n'], 'registro': '0200', 'antes': '', 'depois': novo['txt'],
+                      'motivo': f'Cadastro do item das notas sem item no estabelecimento {cn[:2]}.{cn[2:5]}.{cn[5:8]}/{cn[8:12]}-{cn[12:]} (o 0200 é de cada 0140).',
+                      'num': '', 'tipo_op': '', 'cst': '', 'cfop': '', 'valor': 0, 'conta': ''})
+    return L
+
+
+# ------------------------------------------------------------------ devolução de venda com CST 98 (2.4.32)
+# Devolução de venda (CFOP x201/x202/x410/x411/x660…) com base e crédito calculados mas CST 98 ("outras operações de
+# entrada"): o PVA leva para o M105/M505 com natureza 12 e CST 98, que não é CST de crédito ("Código inválido") e o M100
+# deixa de bater com a soma dos M105. O crédito da devolução de venda tributada é do art. 3º, VIII, das Leis 10.637/2002
+# e 10.833/2003: o CST correto é o 50 (crédito vinculado à receita tributada no mercado interno), o mesmo que a própria
+# escrituração usa nas demais devoluções. O valor do crédito não muda (já estava no M100).
+CFOP_DEV_VENDA = {f'{u}{s}' for u in '123' for s in ('201', '202', '203', '204', '410', '411', '660', '661', '662')}
+CST_CRED = {f'{n:02d}' for n in list(range(50, 57)) + list(range(60, 67))}
+
+
+def det_dev98(L):
+    out = []
+    for i, pc, its in _blocos_c100(L):
+        if pc[1] != '0':
+            continue
+        for j in its:
+            q = _partes(L[j]['txt'])
+            if len(q) > 35 and q[10] in CFOP_DEV_VENDA and (q[24] in ('98', '99') and _num(q[29]) > 0 or q[30] in ('98', '99') and _num(q[35]) > 0):
+                out.append({'i': j, 'num': pc[7], 'cfop': q[10]})
+    for i, l in enumerate(L):
+        if _reg(l) in ('M105', 'M505'):
+            q = _partes(l['txt'])
+            if q[1] == '12' and q[2] not in CST_CRED:
+                out.append({'i': i, 'm105': True})
+    return out
+
+
+def _fix_dev98(L, acoes, pend, ctx):
+    achados = det_dev98(L)
+    if not achados:
+        return L
+    for f in [x for x in achados if not x.get('m105')]:
+        q = _partes(L[f['i']]['txt'])
+        antes = L[f['i']]['txt']
+        if q[24] in ('98', '99') and _num(q[29]) > 0:
+            q[24] = '50'
+        if q[30] in ('98', '99') and _num(q[35]) > 0:
+            q[30] = '50'
+        L[f['i']]['txt'] = _monta(q)
+        acoes.append({'cat': 'dev98', 'tipo': 'alterado', 'linha': L[f['i']]['n'], 'registro': 'C170', 'antes': antes, 'depois': L[f['i']]['txt'],
+                      'motivo': f"NF-e {f['num']} (CFOP {f['cfop']}, devolução de venda) com crédito calculado e CST 98: CST 50 (Leis 10.637/2002 e 10.833/2003, art. 3º, VIII)."})
+    # M105/M505 da natureza 12 com CST que não é de crédito: junta no CST 50 da mesma natureza (ou troca o CST)
+    remover = set()
+    for reg in ('M105', 'M505'):
+        idx = [i for i, l in enumerate(L) if _reg(l) == reg]
+        for i in idx:
+            q = _partes(L[i]['txt'])
+            if q[1] != '12' or q[2] in CST_CRED:
+                continue
+            alvo = next((k for k in idx if k != i and k not in remover and _partes(L[k]['txt'])[1] == '12' and _partes(L[k]['txt'])[2] == '50'), None)
+            antes = L[i]['txt']
+            if alvo is None:
+                q[2] = '50'
+                L[i]['txt'] = _monta(q)
+                acoes.append({'cat': 'dev98', 'tipo': 'alterado', 'linha': L[i]['n'], 'registro': reg, 'antes': antes, 'depois': L[i]['txt'],
+                              'motivo': f'{reg} da natureza 12 (devolução de venda) com CST {_partes(antes)[2]}: CST 50, como nos documentos.'})
+                continue
+            t = _partes(L[alvo]['txt'])
+            antes_t = L[alvo]['txt']
+            for k in (3, 4, 5, 6, 7, 8):
+                if len(t) > k and len(q) > k and (t[k].strip() or q[k].strip()):
+                    t[k] = _fmt(_num(t[k]) + _num(q[k])) if k < 7 else (str(_num(t[k]) + _num(q[k])).replace('.', ','))
+            L[alvo]['txt'] = _monta(t)
+            remover.add(i)
+            acoes.append({'cat': 'dev98', 'tipo': 'agrupado', 'linha': [L[alvo]['n'], L[i]['n']], 'registro': reg, 'antes': antes_t + ' + ' + antes, 'depois': L[alvo]['txt'],
+                          'motivo': f'{reg} da natureza 12 com CST {_partes(antes)[2]} juntado ao CST 50 da mesma natureza (a base do M100 já incluía esse valor).'})
+    if remover:
+        L = [l for k, l in enumerate(L) if k not in remover]
+    return L
+
+
+# ------------------------------------------------------------------ código de receita do M205/M605 (2.4.32)
+# Tabelas 4.4.1 (PIS) e 4.4.2 (COFINS): 6 dígitos (código + extensão). O NUM_CAMPO diz de qual campo do M200/M600 vem o
+# valor: 08 = contribuição não cumulativa (PIS 6912-01, COFINS 5856-01); 12 = cumulativa (PIS 8109-02, COFINS 2172-01).
+# O Domínio às vezes grava só 4 dígitos ou o código do outro regime ("8109" no campo 08 de empresa não cumulativa).
+_COD_REC = {('M205', '08'): '691201', ('M205', '12'): '810902', ('M605', '08'): '585601', ('M605', '12'): '217201'}
+_BASES_PADRAO = {'6912', '8109', '5856', '2172'}
+
+
+def det_codrec(L):
+    out = []
+    for i, l in enumerate(L):
+        r = _reg(l)
+        if r in ('M205', 'M605'):
+            q = _partes(l['txt'])
+            certo = _COD_REC.get((r, q[1]))
+            cod = re.sub(r'\D', '', q[2])
+            if certo and cod != certo and (len(cod) != 6 or cod[:4] in _BASES_PADRAO):
+                out.append({'i': i, 'reg': r, 'campo': q[1], 'de': q[2], 'para': certo})
+    return out
+
+
+def _fix_codrec(L, acoes, pend, ctx):
+    for f in det_codrec(L):
+        q = _partes(L[f['i']]['txt'])
+        antes = L[f['i']]['txt']
+        q[2] = f['para']
+        L[f['i']]['txt'] = _monta(q)
+        rot = {'691201': 'PIS não cumulativo', '810902': 'PIS cumulativo', '585601': 'COFINS não cumulativo', '217201': 'COFINS cumulativo'}[f['para']]
+        acoes.append({'cat': 'codrec', 'tipo': 'alterado', 'linha': L[f['i']]['n'], 'registro': f['reg'], 'antes': antes, 'depois': L[f['i']]['txt'],
+                      'motivo': f"Código de receita {f['de']} → {f['para'][:4]}-{f['para'][4:]} ({rot}): o campo {f['campo']} do {'M200' if f['reg'] == 'M205' else 'M600'} é da contribuição {'não cumulativa' if f['campo'] == '08' else 'cumulativa'} (Tabela 4.4.{'1' if f['reg'] == 'M205' else '2'})."})
     return L
 
 
@@ -1873,24 +2043,25 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
         'natureza': det_natureza(L), 'm410': det_m410(L), 'cta': det_cta(L), 'contadores': det_contadores(L),
         'cta_item': det_cta_item(L), 'cta_m400': det_cta_m400(L), 'c100sem': det_c100sem(L), 'a100sem': det_a100sem(L),
         'cst_ent': det_cst_ent(L), 'cta_rec': det_cta_rec(L), 'part_mun': det_part_mun(L), 'avulsa': det_avulsa(L), 'r0900': [],
-        'vlmerc': det_vlmerc(L), 'extemp': det_extemp(L), 'pf': det_pf(L),
+        'vlmerc': det_vlmerc(L), 'extemp': det_extemp(L), 'pf': det_pf(L), 'dev98': det_dev98(L), 'codrec': det_codrec(L),
     }
     atencao = det_atencao_aliquota(L)
     n_antes = len(L)
     acoes, pend = [], []
-    for fix in (_fix_extemp, _fix_cpf, _fix_c100, _fix_c175dup, _fix_mdup, _fix_msoma, _fix_natureza, _fix_m105, _fix_m410, _fix_cta,
-                _fix_0500, _fix_cta_itens, _fix_cta_m400, _fix_c100sem, _fix_a100sem,
+    for fix in (_fix_extemp, _fix_cpf, _fix_c100, _fix_c175dup, _fix_mdup, _fix_msoma, _fix_codrec, _fix_natureza, _fix_dev98, _fix_m105, _fix_m410, _fix_cta,
+                _fix_0500, _fix_cta_itens, _fix_cta_m400, _fix_c100sem, _fix_0200_sem, _fix_a100sem,
                 _fix_vlmerc, _fix_cst_ent, _fix_cta_rec, _fix_part_mun, _fix_avulsa, _fix_pf, _fix_0900):
         L = fix(L, acoes, pend, ctx)
     L = _recontar(L, acoes)
     depois = {'cpf': det_cpf(L), 'c100': det_c100(L), 'c175dup': det_c175dup(L), 'mdup': det_mdup(L), 'msoma': det_msoma(L),
               'natureza': det_natureza(L), 'm410': det_m410(L), 'cta': det_cta(L), 'contadores': det_contadores(L),
               'cta_item': det_cta_item(L), 'cta_m400': det_cta_m400(L), 'c100sem': det_c100sem(L), 'a100sem': det_a100sem(L),
-              'cst_ent': det_cst_ent(L), 'cta_rec': det_cta_rec(L), 'part_mun': det_part_mun(L), 'avulsa': det_avulsa(L), 'r0900': [], 'vlmerc': det_vlmerc(L), 'extemp': det_extemp(L), 'pf': det_pf(L)}
+              'cst_ent': det_cst_ent(L), 'cta_rec': det_cta_rec(L), 'part_mun': det_part_mun(L), 'avulsa': det_avulsa(L), 'r0900': [], 'vlmerc': det_vlmerc(L), 'extemp': det_extemp(L), 'pf': det_pf(L),
+              'dev98': det_dev98(L), 'codrec': det_codrec(L)}
     pva_cat = (pva or {}).get('por_cat', {})
     dup_total = pva_cat.get('dup')
     cats = []
-    for cid in ('cpf', 'c100', 'c175dup', 'mdup', 'msoma', 'natureza', 'm105', 'm410', 'cta', 'cta_item', 'cta_m400', 'c100sem', 'a100sem', 'vlmerc', 'cst_ent', 'cta_rec', 'part_mun', 'avulsa', 'pf', 'extemp', 'r0900', 'contadores'):
+    for cid in ('cpf', 'c100', 'c175dup', 'mdup', 'msoma', 'natureza', 'm105', 'm410', 'cta', 'cta_item', 'cta_m400', 'c100sem', 'a100sem', 'vlmerc', 'dev98', 'codrec', 'cst_ent', 'cta_rec', 'part_mun', 'avulsa', 'pf', 'extemp', 'r0900', 'contadores'):
         titulo, cor = TITULOS[cid]
         a_cat = [a for a in acoes if a['cat'] == cid]
         pendentes = sum(x.get('qtd', 1) for x in pend if x['cat'] == cid)
@@ -1947,7 +2118,9 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
         ('Conta sintética no M400/M800', len(antes['cta_m400']), len(depois['cta_m400'])),
         ('C100 sem item', len(antes['c100sem']), len(depois['c100sem'])),
         ('A100 (serviço) sem item', len(antes['a100sem']), len(depois['a100sem'])),
-        ('VL_MERC menor que a soma dos itens (saída)', len(antes['vlmerc']), len(depois['vlmerc'])),
+        ('VL_MERC menor que a soma dos itens (saída ou emissão própria)', len(antes['vlmerc']), len(depois['vlmerc'])),
+        ('Devolução de venda com crédito e CST 98', len(antes['dev98']), len(depois['dev98'])),
+        ('Código de receita do M205/M605 fora da tabela', len(antes['codrec']), len(depois['codrec'])),
         ('CST inválido em item de entrada', len(antes['cst_ent']), len(depois['cst_ent'])),
         ('Conta em branco na receita (C175/M400/M410/M800/M810)', len(antes['cta_rec']), len(depois['cta_rec'])),
         ('Participante sem código do município', len(antes['part_mun']), len(depois['part_mun'])),
@@ -2047,7 +2220,11 @@ _EXPLICA = {
                 'Com a opção "Notas sem item" desligada, só aponta. Ligada, inclui um item único sem PIS/COFINS: entrada com CST 70 e saída com CST 49 (CST de entrada não é aceito em saída). CFOP 5929 quando há NFC-e do mesmo cliente, dia e valor; senão CFOP genérico (5949/1949), a conferir no XML.'),
     'a100sem': ('Toda nota de serviço (A100) precisa de pelo menos um item (A170): "Registro filho obrigatório não foi informado".',
                 'Serviço tomado: incluído o item padrão do escritório — 0200 SERV (tipo 09), conta 362 SERVIÇOS PRESTADOS POR TERCEIROS no 0500 (se faltar) e A170 com o valor do documento, origem 0 e CST 73 de PIS/COFINS. Serviço prestado fica como pendência.'),
-    'vlmerc': ('Na NF-e de saída, o valor da mercadoria (VL_MERC) do C100 precisa ser maior ou igual à soma dos itens (C170).',
+    'dev98': ('Devolução de venda (CFOP x201/x202/x410/x411/x660…) com base e crédito calculados, mas CST 98: o PVA leva para o M105/M505 natureza 12 com CST 98, que não é CST de crédito, e o M100 deixa de bater com a soma dos M105.',
+              'CST 50 nos itens (crédito da devolução de venda tributada — Leis 10.637/2002 e 10.833/2003, art. 3º, VIII) e o M105/M505 com CST 98 juntado ao CST 50 da mesma natureza. O valor do crédito não muda.'),
+    'codrec': ('O código de receita do M205/M605 tem 6 dígitos (Tabelas 4.4.1 e 4.4.2) e depende do campo do M200/M600: 08 = não cumulativo, 12 = cumulativo.',
+               'Campo 08: PIS 6912-01 e COFINS 5856-01. Campo 12: PIS 8109-02 e COFINS 2172-01.'),
+    'vlmerc': ('Na NF-e de saída ou de emissão própria, o valor da mercadoria (VL_MERC) do C100 precisa ser maior ou igual à soma dos itens (C170).',
                'O VL_MERC passou a ser a soma dos itens. O total do documento não foi alterado.'),
     'cst_ent': ('Item de entrada só aceita CST 50 a 66, 70 a 75, 98 ou 99 (e "00" nem existe na tabela de PIS/COFINS).',
                 'Uso e consumo (x.556, x.407) e combustível para consumo (x.653) → CST 70 (aquisição sem direito a crédito). CFOP de outras entradas (x9xx: comodato, remessa, retorno…) → CST 98. Os dois sem base e sem crédito. Outros CFOPs ficam como pendência, porque podem dar direito a crédito.'),
@@ -2066,7 +2243,7 @@ _EXPLICA = {
     'contadores': ('Depois das correções o número de linhas muda, então os contadores do arquivo ficam errados.',
                    'Os contadores 9900, x990 e 9999 foram refeitos. Não é um erro do PVA: é consequência das correções.'),
 }
-_CURTO = {'cpf': 'CPF', 'c100': 'C100', 'c175dup': 'C175 duplic.', 'mdup': 'M210/M610', 'msoma': 'M205/M605', 'natureza': 'Natureza 0400', 'm105': 'M105/M505', 'm410': 'M410/M810', 'cta': 'COD_CTA ajustes', 'cta_item': 'COD_CTA itens', 'cta_m400': 'Conta M400', 'c100sem': 'C100 s/ item', 'a100sem': 'A100 s/ item', 'vlmerc': 'VL_MERC', 'cst_ent': 'CST entrada', 'cta_rec': 'Conta receita', 'part_mun': 'Município 0150', 'avulsa': 'NF-e avulsa', 'pf': 'Compra de PF', 'extemp': 'Extemporâneo', 'r0900': '0900'}
+_CURTO = {'cpf': 'CPF', 'c100': 'C100', 'c175dup': 'C175 duplic.', 'mdup': 'M210/M610', 'msoma': 'M205/M605', 'natureza': 'Natureza 0400', 'm105': 'M105/M505', 'm410': 'M410/M810', 'cta': 'COD_CTA ajustes', 'cta_item': 'COD_CTA itens', 'cta_m400': 'Conta M400', 'c100sem': 'C100 s/ item', 'a100sem': 'A100 s/ item', 'vlmerc': 'VL_MERC', 'cst_ent': 'CST entrada', 'cta_rec': 'Conta receita', 'part_mun': 'Município 0150', 'avulsa': 'NF-e avulsa', 'pf': 'Compra de PF', 'extemp': 'Extemporâneo', 'r0900': '0900', 'dev98': 'Devolução CST 98', 'codrec': 'Cód. receita'}
 
 
 def _mix(hexc, alvo, f):
@@ -2177,7 +2354,7 @@ def _tab_cat(c, res):
                                 [[str(x['linha']), _esc(x['num']), x['tipo_op'], _brl(x['valor']), _esc(x['cfop']), f'<b>{x["cst"]}</b>', _esc(x['conta'] or '—'), _esc(x['motivo'])] for x in inc],
                                 ['l', 'l', 'l', 'r', 'l', 'l', 'l', 'l'])
         return t
-    if cid in ('a100sem', 'vlmerc', 'cst_ent', 'cta_rec', 'part_mun', 'avulsa', 'r0900'):
+    if cid in ('a100sem', 'vlmerc', 'dev98', 'codrec', 'cst_ent', 'cta_rec', 'part_mun', 'avulsa', 'r0900'):
         p = [x for x in res['pendencias'] if x['cat'] == cid]
         return _linhas_tabela(['Linha', 'Registro', 'O que foi feito'], [[str(x['linha'] or '—'), x['registro'], _esc(x['motivo'])] for x in a] +
                               [[str(x['linha']), '—', '<span class="st dif">Pendente</span> ' + _esc(x['titulo'] + ' — ' + x['detalhe'])] for x in p], ['l', 'l', 'l'])
