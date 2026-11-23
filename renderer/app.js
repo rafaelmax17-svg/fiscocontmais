@@ -6654,6 +6654,17 @@ function rtcInit() {
       const fr = $('#rtcFrame'); fr.hidden = false; fr.srcdoc = r.html;
       $('#btnRtcHtml').disabled = false; $('#btnRtcXlsx').disabled = false;
       const s = r.res.situacao || {};
+      const at = r.atividade;
+      $('#rtcAtiv').hidden = true;
+      const sel = $('#rtcRegime');
+      if (at) {   // identificado pelo CNAE: mostra ao lado da lista o que o sistema escolheu e por quê
+        const nome = at.regime ? (sel.querySelector(`option[value="${at.regime}"]`) || {}).textContent || at.regime : 'Atividade geral';
+        const info = $('#rtcAtiv');
+        info.hidden = false;
+        info.textContent = `${nome}${at.origem ? ' · ' + at.origem : ''}`;
+        info.title = at.aviso || '';
+        if (at.aviso) toast(at.aviso);
+      }
       toast(`${r.res.notas.debito} saídas · ${r.res.notas.credito} entradas · ${s.Divergente || 0} item(ns) divergente(s) · ${s.Verificar || 0} para verificar`);
     } catch (e) { overlay(false); toast('Falha: ' + e.message, true); }
   });

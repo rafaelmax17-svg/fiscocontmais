@@ -1396,9 +1396,11 @@
           </button>
           <button class="act inv-export adm-btn" id="btnRtcSped" title="Opcional: só para conferir XML × escrituração">SPED Fiscal (opcional)</button>
           <select id="rtcRegime" class="rtc-sel" title="Regime específico da empresa (tabela oficial cClassTrib)">
-            <option value="">Atividade: geral</option>
+            <option value="auto">Atividade: identificar pelo CNAE</option>
+            <option value="">Atividade geral (sem regime específico)</option>
             <option value="200047">Bares e restaurantes (200047 · art. 275)</option>
           </select>
+          <span class="adm-sel" id="rtcAtiv" hidden></span>
           <span class="adm-sel" id="rtcSel" hidden></span>
           <span class="fiscal-spacer"></span>
           <button class="act inv-export" id="btnRtcHtml" disabled>Exportar HTML</button>

@@ -3169,23 +3169,59 @@ ipcMain.handle('fiscal:rtcPickSped', async () => {
   if (r.canceled || !r.filePaths.length) return { canceled: true };
   return { path: r.filePaths[0] };
 });
+// Atividade com regime específico do IBS/CBS que aparece em NF-e/NFC-e (tabela oficial cClassTrib):
+//   • 200047 — Bares e restaurantes (LC 214/2025, arts. 273 a 276; redução de 40%, art. 275): CNAE principal 5611-2 ou 5612-1
+//   • cooperativa (natureza jurídica 214-3): o regime do art. 271 (cClassTrib 200020/200054) vale só nas operações com
+//     associados, não na empresa inteira — o sistema só avisa.
+// Hotelaria, parques, agências de turismo, transporte, profissões intelectuais, saúde, educação e imóveis são serviços
+// faturados por NFS-e e não entram nesta apuração (que lê NF-e e NFC-e).
+function _atividadeRtc(api) {
+  if (!api) return null;
+  const cod = (c) => String(c || '').replace(/\D/g, '').padStart(7, '0');
+  const fmt = (c) => `${c.slice(0, 4)}-${c.slice(4, 5)}/${c.slice(5)}`;
+  const pri = cod(api.cnae_fiscal || (api.atividade_principal && api.atividade_principal[0] && api.atividade_principal[0].code));
+  const priDesc = api.cnae_fiscal_descricao || (api.atividade_principal && api.atividade_principal[0] && api.atividade_principal[0].text) || '';
+  const sec = (api.cnaes_secundarios || api.atividades_secundarias || []).map((x) => cod(x.codigo || x.code)).filter((c) => c !== '0000000');
+  const nat = String(api.codigo_natureza_juridica || api.natureza_juridica || '').replace(/\D/g, '');
+  const bar = (c) => /^(5611|5612)/.test(c);
+  if (bar(pri)) return { regime: '200047', origem: `CNAE principal ${fmt(pri)}${priDesc ? ' – ' + priDesc : ''}` };
+  const avisos = [];
+  if (sec.some(bar)) avisos.push(`a empresa tem bar/restaurante como atividade secundária (CNAE ${fmt(sec.find(bar))}); se for a atividade preponderante, escolha "Bares e restaurantes"`);
+  if (nat.startsWith('2143')) avisos.push('a empresa é cooperativa: se optou pelo regime específico, as operações com associados podem ter alíquota zero (LC 214/2025, art. 271 — cClassTrib 200020/200054); confira essas notas');
+  return { regime: '', origem: `CNAE principal ${fmt(pri)}${priDesc ? ' – ' + priDesc : ''}`, aviso: avisos.join(' · ') };
+}
 ipcMain.handle('fiscal:rtcAnalisar', async (_evt, { xmls, sped, regime }) => {
   if (!Array.isArray(xmls) || !xmls.length) return { error: 'Selecione os .zip com os XMLs.' };
   const stamp = Date.now();
   const jsonOut = path.join(os.tmpdir(), `fc_rtc_${stamp}.json`);
   const htmlOut = path.join(os.tmpdir(), `fc_rtc_${stamp}.html`);
-  const args = ['apuracao-rtc', '--xmls', ...xmls];
-  if (sped) args.push('--sped', sped);
-  if (regime) args.push('--regime', String(regime).replace(/\D/g, ''));
+  const auto = regime === 'auto';
+  const base = ['apuracao-rtc', '--xmls', ...xmls];
+  if (sped) base.push('--sped', sped);
+  let args = [...base];
+  if (regime && !auto) args.push('--regime', String(regime).replace(/\D/g, ''));
   try {
     await runFiscal([...args, '--json', jsonOut, '--html', htmlOut], jsonOut);
-    const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
+    let res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
     if (res.erro) return { error: res.erro };
+    // "identificar pelo CNAE": consulta o cadastro do CNPJ da empresa (o mesmo cache da Legalização) e, se a atividade
+    // principal tiver regime específico, refaz a apuração com ele
+    let atividade = null;
+    if (auto && res.cnpj) {
+      try { atividade = _atividadeRtc(await _cnpjApiCache(res.cnpj)); } catch (_) { atividade = null; }
+      if (!atividade) atividade = { regime: '', origem: '', aviso: 'Não foi possível consultar o CNAE na Receita agora: apuração feita como atividade geral.' };
+      if (atividade.regime) {
+        args = [...base, '--regime', atividade.regime];
+        await runFiscal([...args, '--json', jsonOut, '--html', htmlOut], jsonOut);
+        res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
+        if (res.erro) return { error: res.erro };
+      }
+    }
     const html = fs.readFileSync(htmlOut, 'utf-8');
     if (_rtcUltimo && _rtcUltimo.html && _rtcUltimo.html !== htmlOut) fs.unlink(_rtcUltimo.html, () => {});
     _rtcUltimo = { args, html: htmlOut, nome: res.empresa || res.cnpj || '' };
     _biRegistrar('apuracao', res);
-    return { ok: true, res, html };
+    return { ok: true, res, html, atividade };
   } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('fiscal:rtcExportar', async (_evt, { formato }) => {
