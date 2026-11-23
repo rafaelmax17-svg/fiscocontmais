@@ -3106,18 +3106,19 @@ ipcMain.handle('admin:fpAnalisar', async (_evt, { xmls, efd, cnpj, excluirIcms }
   const stamp = Date.now();
   const jsonOut = path.join(os.tmpdir(), `fc_fp_${stamp}.json`);
   const htmlOut = path.join(os.tmpdir(), `fc_fp_${stamp}.html`);
+  const htmlCli = path.join(os.tmpdir(), `fc_fp_${stamp}_cliente.html`);   // versão do cliente (sem os CT-e em "Verificar")
   const args = ['frete-pis', '--xmls', ...xmls];
   if (efd) args.push('--efd', efd);
   const c = String(cnpj || '').replace(/\D/g, '');
   if (c) args.push('--cnpj', c);
   if (excluirIcms === false) args.push('--manter-icms');
   try {
-    await runFiscal([...args, '--json', jsonOut, '--html', htmlOut], jsonOut);
+    await runFiscal([...args, '--json', jsonOut, '--html', htmlOut, '--html-cliente', htmlCli], jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
     if (res.erro) return { error: res.erro };
     const html = fs.readFileSync(htmlOut, 'utf-8');
-    if (_fpUltimo && _fpUltimo.html && _fpUltimo.html !== htmlOut) fs.unlink(_fpUltimo.html, () => {});
-    _fpUltimo = { args, html: htmlOut, nome: res.empresa || res.cnpj || '' };
+    if (_fpUltimo && _fpUltimo.html && _fpUltimo.html !== htmlOut) { fs.unlink(_fpUltimo.html, () => {}); if (_fpUltimo.cli) fs.unlink(_fpUltimo.cli, () => {}); }
+    _fpUltimo = { args, html: htmlOut, cli: htmlCli, nome: res.empresa || res.cnpj || '' };
     _biRegistrar('frete', res);
     return { ok: true, res, html };
   } catch (e) { return { error: String(e.message || e) }; }
@@ -3125,14 +3126,24 @@ ipcMain.handle('admin:fpAnalisar', async (_evt, { xmls, efd, cnpj, excluirIcms }
 ipcMain.handle('admin:fpExportar', async (_evt, { formato }) => {
   const bloq = _soAdmin(); if (bloq) return bloq;
   if (!_fpUltimo) return { error: 'Calcule o crédito primeiro.' };
-  const ext = formato === 'xlsx' ? 'xlsx' : 'html';
+  // HTML e PDF são para o cliente: saem da versão sem os CT-e em "Verificar". O Excel continua completo (conferência interna).
+  const ext = formato === 'xlsx' ? 'xlsx' : formato === 'pdf' ? 'pdf' : 'html';
+  const rot = { xlsx: ['Salvar Excel', 'Planilha Excel'], pdf: ['Salvar PDF', 'PDF'], html: ['Salvar HTML', 'Página HTML'] }[ext];
   const base = `Credito-PIS-COFINS-Frete-${String(_fpUltimo.nome || '').replace(/[^\w-]+/g, '_')}`.replace(/_+$/, '');
-  const r = await dialog.showSaveDialog(mainWindow, { title: ext === 'xlsx' ? 'Salvar Excel' : 'Salvar HTML',
-    defaultPath: `${base}.${ext}`, filters: [{ name: ext === 'xlsx' ? 'Planilha Excel' : 'Página HTML', extensions: [ext] }] });
+  const r = await dialog.showSaveDialog(mainWindow, { title: rot[0], defaultPath: `${base}.${ext}`, filters: [{ name: rot[1], extensions: [ext] }] });
   if (r.canceled || !r.filePath) return { canceled: true };
+  const cli = _fpUltimo.cli && fs.existsSync(_fpUltimo.cli) ? _fpUltimo.cli : _fpUltimo.html;
   try {
-    if (ext === 'html') fs.copyFileSync(_fpUltimo.html, r.filePath);
-    else {
+    if (ext === 'html') fs.copyFileSync(cli, r.filePath);
+    else if (ext === 'pdf') {
+      const w = new BrowserWindow({ show: false, width: 1400, height: 1000, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+      try {
+        await w.loadFile(cli);
+        await new Promise((ok) => setTimeout(ok, 1200));
+        fs.writeFileSync(r.filePath, await w.webContents.printToPDF({ landscape: true, printBackground: true, pageSize: 'A4',
+          margins: { marginType: 'custom', top: 0.3, bottom: 0.3, left: 0.3, right: 0.3 } }));
+      } finally { try { w.destroy(); } catch (_) {} }
+    } else {
       const jsonOut = path.join(os.tmpdir(), `fc_fpx_${Date.now()}.json`);
       await runFiscal([..._fpUltimo.args, '--json', jsonOut, '--xlsx', r.filePath], jsonOut);
       const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
@@ -3167,7 +3178,7 @@ ipcMain.handle('fiscal:rtcAnalisar', async (_evt, { xmls, sped, regime }) => {
   if (sped) args.push('--sped', sped);
   if (regime) args.push('--regime', String(regime).replace(/\D/g, ''));
   try {
-    await runFiscal([...args, '--json', jsonOut, '--html', htmlOut], jsonOut);
+    await runFiscal([...args, '--json', jsonOut, '--html', htmlOut, '--html-cliente', htmlCli], jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
     if (res.erro) return { error: res.erro };
     const html = fs.readFileSync(htmlOut, 'utf-8');
@@ -3383,7 +3394,7 @@ ipcMain.handle('fiscal:inutConferir', async (_evt, { dominio, portal, speds }) =
   }
   if (Array.isArray(speds) && speds.length) args.push('--sped', ...speds);
   try {
-    await runFiscal([...args, '--json', jsonOut, '--html', htmlOut], jsonOut);
+    await runFiscal([...args, '--json', jsonOut, '--html', htmlOut, '--html-cliente', htmlCli], jsonOut);
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {});
     if (res.erro) return { error: res.erro };
     const html = fs.readFileSync(htmlOut, 'utf-8');

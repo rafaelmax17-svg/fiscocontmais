@@ -6604,18 +6604,20 @@ function fpInit() {
       overlay(false);
       if (!r || r.error) { toast((r && r.error) || 'Falha no cálculo.', true); return; }
       $('#fpVazio').hidden = true; const fr = $('#fpFrame'); fr.hidden = false; fr.srcdoc = r.html;
-      $('#btnFpHtml').disabled = false; $('#btnFpXlsx').disabled = false;
+      $('#btnFpHtml').disabled = false; $('#btnFpPdf').disabled = false; $('#btnFpXlsx').disabled = false;
       const t = r.res.totais || {};
       toast(`${r.res.qtd.fob} CT-e FOB · crédito R$ ${(t.credito || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
     } catch (e) { overlay(false); toast('Falha: ' + e.message, true); }
   });
   const exp = async (formato) => {
     if (formato === 'xlsx') overlay(true, 'Montando o Excel…');
+    if (formato === 'pdf') overlay(true, 'Gerando o PDF…');
     const r = await adm.fpExportar({ formato }); overlay(false);
     if (!r || r.canceled) return; if (r.error) { toast(r.error, true); return; }
-    toast(formato === 'xlsx' ? 'Excel salvo.' : 'HTML salvo.');
+    toast(formato === 'xlsx' ? 'Excel salvo.' : formato === 'pdf' ? 'PDF salvo.' : 'HTML salvo.');
   };
   $('#btnFpHtml').addEventListener('click', () => exp('html'));
+  $('#btnFpPdf').addEventListener('click', () => exp('pdf'));
   $('#btnFpXlsx').addEventListener('click', () => exp('xlsx'));
 }
 
@@ -6661,7 +6663,7 @@ function rtcInit() {
     overlay(false);
     if (!r || r.canceled) return;
     if (r.error) { toast(r.error, true); return; }
-    toast(formato === 'xlsx' ? 'Excel salvo.' : 'HTML salvo.');
+    toast(formato === 'xlsx' ? 'Excel salvo.' : formato === 'pdf' ? 'PDF salvo.' : 'HTML salvo.');
   };
   $('#btnRtcHtml').addEventListener('click', () => exp('html'));
   $('#btnRtcXlsx').addEventListener('click', () => exp('xlsx'));
@@ -6783,7 +6785,7 @@ function atribInit() {
     overlay(false);
     if (!r || r.canceled) return;
     if (r.error) { toast(r.error, true); return; }
-    toast(formato === 'xlsx' ? 'Excel salvo.' : 'HTML salvo.');
+    toast(formato === 'xlsx' ? 'Excel salvo.' : formato === 'pdf' ? 'PDF salvo.' : 'HTML salvo.');
   };
   $('#btnAtribHtml').addEventListener('click', () => exp('html'));
   $('#btnAtribXlsx').addEventListener('click', () => exp('xlsx'));

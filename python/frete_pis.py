@@ -334,9 +334,11 @@ def gerar_xlsx(res, destino):
 
 
 # ------------------------------------------------------------------------------------------------ HTML
-def gerar_html(res):
+def gerar_html(res, cliente=False):
+    # cliente=True: versão para mandar ao cliente (Exportar HTML/PDF) — CT-e em "Verificar" ficam de fora e a palavra
+    # "verificar" não aparece (pedido do Rafael, 23/11/2026). A tela do sistema continua com tudo para a equipe.
     js = json.dumps(res, ensure_ascii=False).replace('</', '<\\/')
-    return HTML.replace('/*DADOS*/', js)
+    return HTML.replace('/*DADOS*/', js).replace('/*CLIENTE*/false', 'true' if cliente else 'false')
 
 
 HTML = r'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Crédito PIS/COFINS sobre frete FOB</title><style>
@@ -361,16 +363,17 @@ tr.sub td{background:#f8fafc;font-size:12px;color:#334155}tr.sub2 td{background:
 .lei{background:#eef2ff;border-left:4px solid #1e3a8a;border-radius:8px;padding:10px 14px;font-size:12px;color:#334155;margin-top:16px;line-height:1.55}
 input.q{border:1px solid #cbd5e1;border-radius:10px;padding:8px 12px;font-size:13px;min-width:320px;margin-bottom:8px}
 .sm{font-size:11px;color:#64748b}
+@media print{input.q{display:none}.c{animation:none}th{position:static}tr.cte{cursor:default}body{background:#fff}}
 </style></head><body>
-<div class="hd"><div><h1>Crédito de PIS/COFINS sobre frete FOB <span class="adm">ADMIN · TESTE</span></h1><div class="s">CT-e de frete na compra × itens das NF-e transportadas · rateio pelo valor dos itens tributados</div></div><div class="s" id="cab"></div></div>
+<div class="hd"><div><h1>Crédito de PIS/COFINS sobre frete FOB <span class="adm" id="admTag">ADMIN · TESTE</span></h1><div class="s">CT-e de frete na compra × itens das NF-e transportadas · rateio pelo valor dos itens tributados</div></div><div class="s" id="cab"></div></div>
 <div class="w"><div class="k" id="kpis"></div>
-<h3>Por CT-e (clique para ver as notas e o rateio)</h3>
-<div class="lg"><span><i style="background:#0ea472"></i>tributado</span><span><i style="background:#f59e0b"></i>monofásico</span><span><i style="background:#ef4444"></i>substituição tributária</span><span><i style="background:#94a3b8"></i>alíquota zero / isento</span><span><i style="background:#a78bfa"></i>verificar</span></div>
+<h3 id="hCte">Por CT-e (clique para ver as notas e o rateio)</h3>
+<div class="lg"><span><i style="background:#0ea472"></i>tributado</span><span><i style="background:#f59e0b"></i>monofásico</span><span><i style="background:#ef4444"></i>substituição tributária</span><span><i style="background:#94a3b8"></i>alíquota zero / isento</span><span id="lgV"><i style="background:#a78bfa"></i>verificar</span></div>
 <input class="q" id="q" placeholder="Pesquisar CT-e, NF-e, transportadora ou fornecedor">
 <table><thead><tr><th>CT-e</th><th>Data</th><th>Transportadora</th><th>NF-e</th><th>Composição das notas</th><th class="n">Frete</th><th class="n">Base do crédito</th><th class="n">PIS + COFINS</th><th>Situação</th></tr></thead><tbody id="tb"></tbody></table>
-<h3>Pendências</h3><div id="pend"></div>
+<h3 id="pendH">Pendências</h3><div id="pend"></div>
 <div id="cifbox"></div>
-<div class="lei"><b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. Itens "verificar" (CST × NCM de monofásico, ou CST que depende da operação) ficam fora da base até a confirmação. Só se aplica ao regime não cumulativo. <b>O cálculo é para conferência; quem decide é o contador.</b></div></div>
+<div class="lei" id="lei"><b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. Itens "verificar" (CST × NCM de monofásico, ou CST que depende da operação) ficam fora da base até a confirmação. Só se aplica ao regime não cumulativo. <b>O cálculo é para conferência; quem decide é o contador.</b></div></div>
 <script>
 const D=/*DADOS*/;const $=s=>document.querySelector(s);
 const m=v=>(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -378,12 +381,30 @@ const e=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>
 const br=d=>d&&d.length>=10?d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4):(d||'');
 const COR={tributado:'#0ea472',monofasico:'#f59e0b',st:'#ef4444',zero:'#94a3b8',verificar:'#a78bfa'};
 const NOME={tributado:'Tributado',monofasico:'Monofásico',st:'Subst. tributária',zero:'Alíquota zero / isento',verificar:'Verificar'};
+const CLIENTE=/*CLIENTE*/false;
+if(CLIENTE){
+ // versão do cliente: sem os CT-e em "Verificar", totais refeitos só com os CT-e que ficaram
+ D.linhas=D.linhas.filter(l=>l.sit!=='Verificar');
+ D.pendencias=D.pendencias.filter(p=>p.sit!=='Verificar');
+ D.linhas.forEach(l=>{l.motivo=String(l.motivo||'').replace(/\s*·\s*[\d.,]+% para verificar/i,'');l.notas.forEach(n=>n.itens.forEach(it=>{if(it.cat==='verificar')it.motivo='';}));});
+ const s=k=>Math.round(D.linhas.reduce((a,l)=>a+(+l[k]||0),0)*100)/100;
+ const t=D.totais;t.frete=s('vtprest');t.base_frete=s('base_frete');t.base=s('base');t.pis=s('pis');t.cofins=s('cofins');
+ t.credito=Math.round((t.pis+t.cofins)*100)/100;
+ if(D.tem_efd){t.efd=Math.round(D.linhas.reduce((a,l)=>a+(l.efd_pis||0)+(l.efd_cofins||0),0)*100)/100;t.diferenca=Math.round((t.credito-t.efd)*100)/100;}
+ D.qtd.fob=D.linhas.length;
+ COR.verificar='#cbd5e1';NOME.verificar='Fora da base';
+ document.title='Crédito de PIS/COFINS sobre frete FOB';
+ $('#admTag').remove();
+ $('#hCte').textContent='Por CT-e (clique no CT-e para ver as notas)';
+ $('#lgV').innerHTML='<i style="background:#cbd5e1"></i>fora da base';
+ $('#lei').innerHTML='<b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. Só se aplica ao regime não cumulativo.';
+}
 const T=D.totais;
 $('#cab').innerHTML=`${D.empresa?e(D.empresa)+' · ':''}CNPJ ${e(D.cnpj)}<br>${D.qtd.fob} CT-e FOB · ${D.qtd.nfes} NF-e lidas · ICMS do CT-e ${D.excluir_icms?'excluído':'mantido'} na base`;
 const kp=[['CT-e FOB analisados',D.qtd.fob,'tomador = empresa','#1e3a8a',1],['Frete total',T.frete,'valor da prestação','#0891b2'],
  ['Frete dos itens tributados',T.base,(T.base_frete?((T.base/T.base_frete*100).toFixed(1).replace('.',',')+'% pelo rateio'):''),'#0ea472'],
  ['Crédito PIS 1,65%',T.pis,'sobre a base rateada','#7c3aed'],['Crédito COFINS 7,6%',T.cofins,'sobre a base rateada','#7c3aed'],
- ['Crédito adicional possível',D.adicional_credito,'se os itens "verificar" forem confirmados','#a78bfa']];
+ ...(CLIENTE?[]:[['Crédito adicional possível',D.adicional_credito,'se os itens "verificar" forem confirmados','#a78bfa']])];
 if(D.tem_efd)kp.push(['Já tomado na EFD',T.efd,'diferença: R$ '+m(T.diferenca),'#ea580c']);
 $('#kpis').innerHTML=kp.map(([t,v,s,c,i],k)=>`<div class="c" style="--c:${c};animation-delay:${k*.06}s"><small>${t}</small><b>${i?v:'R$ '+m(v)}</b><span>${e(s)}</span></div>`).join('');
 const barra=cats=>{const t=Object.values(cats).reduce((a,b)=>a+b,0)||1;return `<div class="pb">${Object.entries(cats).map(([k,v])=>`<i style="width:${v/t*100}%;background:${COR[k]}" title="${NOME[k]}: R$ ${m(v)}"></i>`).join('')}</div>`};
@@ -400,6 +421,7 @@ function desenha(){const q=($('#q').value||'').toLowerCase();let h='';
  });$('#tb').innerHTML=h||'<tr><td colspan="9" class="sm">Nenhum CT-e com essa pesquisa.</td></tr>';
  document.querySelectorAll('tr.cte').forEach(r=>r.onclick=()=>{const i=+r.dataset.i;abertos.has(i)?abertos.delete(i):abertos.add(i);desenha();});}
 $('#q').oninput=desenha;desenha();
+if(CLIENTE&&!D.pendencias.length){$('#pendH').remove();$('#pend').remove();}else
 $('#pend').innerHTML=D.pendencias.length?`<table><tr><th>Situação</th><th>O que foi encontrado</th></tr>${D.pendencias.map(p=>`<tr><td><span class="tg t-${p.sit}">${p.sit}</span></td><td>${e(p.texto)}</td></tr>`).join('')}</table>`:'<div class="sm">Nenhuma pendência.</div>';
 if(D.cif.length)$('#cifbox').innerHTML=`<h3>CT-e com outro tomador (CIF) — fora do cálculo</h3><table><tr><th>CT-e</th><th>Data</th><th>Transportadora</th><th>Tomador</th><th class="n">Valor</th></tr>${D.cif.map(c=>`<tr><td>${e(c.num)}</td><td>${br(c.data)}</td><td>${e(c.transp)}</td><td>${e(c.toma)}</td><td class="n">${m(c.valor)}</td></tr>`).join('')}</table>`;
 </script></body></html>'''
@@ -435,6 +457,11 @@ def main_cli(argv):
                 with open(tmp, 'w', encoding='utf-8') as fh:
                     fh.write(gerar_html(res))
                 os.replace(tmp, opt('--html'))
+            if opt('--html-cliente'):
+                tmp = opt('--html-cliente') + '.parcial'
+                with open(tmp, 'w', encoding='utf-8') as fh:
+                    fh.write(gerar_html(res, cliente=True))
+                os.replace(tmp, opt('--html-cliente'))
             if opt('--xlsx'):
                 gerar_xlsx(res, opt('--xlsx'))
             res = {k: v for k, v in res.items() if k not in ('linhas',)}
