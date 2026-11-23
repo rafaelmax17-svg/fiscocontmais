@@ -223,6 +223,8 @@ async function iniciarRobo() {
     } catch (_) { return false; }
   };
   await assumir();
+  // sinal de vida já na abertura (antes só ia depois de 4 min: a equipe via "offline" logo depois do Admin entrar)
+  if (_souRobo) f.updateDoc(_ref(), { heartbeat: f.serverTimestamp(), roboNome: nome }).catch(() => {});
   _unsub = f.onSnapshot(_ref(), (s) => {
     const d = s.exists() ? s.data() : null;
     _souRobo = !!(d && d.ativo && d.roboMaquina === maq);

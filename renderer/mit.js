@@ -108,7 +108,8 @@
       </div>
       <div class="mt-w">
         <h1 class="mt-h1">MIT · PIS e COFINS</h1>
-        <div class="mt-s">Débitos lidos dos registros M205 (PIS) e M605 (COFINS) da EFD-Contribuições · envio pela Receita com a Liddera como procuradora${robo.ativo ? (robo.online ? '' : ' · <b style="color:var(--neg)">computador de envio offline</b> — os pedidos ficam na fila') : ' · <b style="color:var(--neg)">envio ainda não configurado pelo Admin</b>'}</div>
+        <div class="mt-s">Débitos lidos dos registros M205 (PIS) e M605 (COFINS) da EFD-Contribuições · envio pela Receita com a Liddera como procuradora${robo.ativo ? '' : ' · <b style="color:var(--neg)">envio ainda não configurado pelo Admin</b>'}</div>
+        ${robo.ativo && !robo.online ? `<div class="mt-warn" style="margin:-4px 0 14px">⏸ <b>Os envios estão parados:</b> quem fala com a Receita é o computador do Admin que tem o certificado da Liddera${robo.nome ? ` (<b>${e(robo.nome.split(' · ')[0])}</b>)` : ''}, com o FiscoCont+ aberto e o Admin logado — e ele está sem sinal${robo.visto ? ` desde ${e(new Date(robo.visto).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }))}` : ''}. Os pedidos ficam guardados na fila e são enviados sozinhos assim que esse computador abrir o FiscoCont+ com o Admin.</div>` : ''}
         <div class="mt-k">
           <div class="mt-c"><small>Empresas</small><b>${docs.length}</b></div>
           <div class="mt-c"><small>Com débito</small><b>${comDeb.length}</b></div>

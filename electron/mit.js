@@ -59,7 +59,7 @@ async function _estadoRobo() {
     const s = await f.getDoc(f.doc(db, 'fechamento_sn', 'integra'));
     const d = s.exists() ? s.data() : {};
     const hb = d.heartbeat && d.heartbeat.toMillis ? d.heartbeat.toMillis() : 0;
-    return { ativo: !!d.ativo, online: !!hb && Date.now() - hb < 12 * 60 * 1000, nome: d.roboNome || '' };
+    return { ativo: !!d.ativo, online: !!hb && Date.now() - hb < 12 * 60 * 1000, nome: d.roboNome || '', visto: hb || 0 };
   } catch (_) { return { ativo: false, online: false, nome: '' }; }
 }
 
