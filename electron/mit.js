@@ -97,14 +97,14 @@ async function importar(arquivos) {
     comps.add(e.comp);
     const ref = f.doc(db, COL, `${e.comp}_${e.cnpj}`);
     const s = await f.getDoc(ref); const ant = s.exists() ? s.data() : null;
-    let trib = 0;
-    try { const t = await f.getDoc(f.doc(db, COL_E, e.cnpj)); trib = t.exists() ? (t.data().tributacao || 0) : 0; } catch (_) {}
+    let trib = 0, bal = false;
+    try { const t = await f.getDoc(f.doc(db, COL_E, e.cnpj)); trib = t.exists() ? (t.data().tributacao || 0) : 0; bal = t.exists() ? !!t.data().balanco : false; } catch (_) {}
     const valores = JSON.stringify([e.pis, e.cofins]);
     const mudou = !!(ant && ant.mit && ant.mit.situacao === 3 && ant.valoresAssinatura && ant.valoresAssinatura !== valores);
     await f.setDoc(ref, _limpo({
       comp: e.comp, cnpj: e.cnpj, nome: e.nome, arquivo: path.basename(e.arquivo || ''), regime: e.regime, retificadora: !!e.retificadora,
       pis: e.pis, cofins: e.cofins, total: e.total, saldoPis: e.saldo_pis, saldoCofins: e.saldo_cofins,
-      tributacao: (ant && ant.tributacao) || trib || e.tributacao_sugerida || 1, extras: (ant && ant.extras) || [],
+      tributacao: (ant && ant.tributacao) || trib || e.tributacao_sugerida || 1, balanco: ant && ant.balanco !== undefined ? !!ant.balanco : bal, extras: (ant && ant.extras) || [],
       valoresAssinatura: valores, mudouDepoisDoEnvio: mudou, importadoPor: _quem(), importadoEm: new Date().toISOString(),
     }), { merge: true });
     ok.push(e.nome);
@@ -112,7 +112,7 @@ async function importar(arquivos) {
   return { importadas: ok.length, erros, comps: [...comps].sort(), codigos: r.codigos_irpj_csll || {} };
 }
 
-async function salvarEmpresa({ comp, cnpj, tributacao, extras } = {}) {
+async function salvarEmpresa({ comp, cnpj, tributacao, extras, balanco } = {}) {
   if (!podeUsar()) throw new Error('Sem acesso ao módulo MIT.');
   cnpj = _so(cnpj);
   if (!_comp(comp) || cnpj.length !== 14) throw new Error('Empresa inválida.');
@@ -127,6 +127,10 @@ async function salvarEmpresa({ comp, cnpj, tributacao, extras } = {}) {
     if (![1, 2, 3, 4, 5, 6].includes(t)) throw new Error('Tributação inválida.');
     campos.tributacao = t;
     await f.setDoc(f.doc(db, COL_E, cnpj), { tributacao: t, por: _quem(), em: new Date().toISOString() }, { merge: true });
+  }
+  if (balanco !== undefined) {
+    campos.balanco = !!balanco;
+    await f.setDoc(f.doc(db, COL_E, cnpj), { balanco: !!balanco, por: _quem(), em: new Date().toISOString() }, { merge: true });
   }
   if (extras !== undefined) {
     campos.extras = (extras || []).map((x) => ({ grupo: x.grupo === 'Csll' ? 'Csll' : 'Irpj', cod: _so(x.cod).padStart(6, '0').slice(-6), valor: _r2(x.valor), rotulo: String(x.rotulo || '').slice(0, 80) }))
@@ -273,7 +277,7 @@ async function _enviar(p) {
     const { ref, d } = await _doc(p.comp, cnpj);
     if (!d) { erros.push(`${cnpj}: não importada`); continue; }
     const sem = !!p.semMovimento;
-    const empresa = { cnpj, nome: d.nome, dados: { comp: d.comp, regime: d.regime, pis: d.pis || [], cofins: d.cofins || [] }, tributacao: d.tributacao, extras: d.extras || [] };
+    const empresa = { cnpj, nome: d.nome, dados: { comp: d.comp, regime: d.regime, pis: d.pis || [], cofins: d.cofins || [] }, tributacao: d.tributacao, balanco: !!d.balanco, extras: d.extras || [] };
     const r = await _robo.python({ acao: 'mit_enviar', comp: p.comp, empresa, semMovimento: sem });
     if (!r.ok) throw new Error(r.erro || 'Falha no envio do MIT.');
     await _consumo(r);

@@ -120,7 +120,7 @@
             const trava = !['a_enviar', 'saldo_credor'].includes(d.sit);
             return `<tr><td>${d.sit === 'a_enviar' && !fila(d.cnpj) ? `<input type="checkbox" data-sel="${e(d.cnpj)}" ${M.sel.has(d.cnpj) ? 'checked' : ''}>` : ''}</td>
               <td><b>${e(d.nome)}</b><div class="sm">CNPJ ${e(fmtCnpj(d.cnpj))} · ${e(compBr(d.comp))}${d.retificadora ? ' · <b>EFD retificadora</b>' : ''}</div><div class="sm">${e(d.arquivo || '')}</div></td>
-              <td><select class="mt-mini" data-trib="${e(d.cnpj)}" ${trava ? 'disabled' : ''}>${Object.entries(TRIB).map(([k, v]) => `<option value="${k}" ${+k === +d.tributacao ? 'selected' : ''}>${v}</option>`).join('')}</select><div class="sm">${e(REG[d.regime] || '')}</div></td>
+              <td><select class="mt-mini" data-trib="${e(d.cnpj)}" ${trava ? 'disabled' : ''}>${Object.entries(TRIB).map(([k, v]) => `<option value="${k}" ${+k === +d.tributacao ? 'selected' : ''}>${v}</option>`).join('')}</select><div class="sm">${e(REG[d.regime] || '')}</div>${+d.tributacao === 1 ? `<label class="mt-ck" title="Lucro Real Anual: como o IRPJ/CSLL do mês foi apurado (campo obrigatório do MIT)"><input type="checkbox" data-bal="${e(d.cnpj)}" ${d.balanco ? 'checked' : ''} ${trava ? 'disabled' : ''}> IRPJ/CSLL por balancete de suspensão/redução</label><div class="sm">${d.balanco ? '' : 'desmarcado = estimativa sobre a receita bruta'}</div>` : ''}</td>
               <td>${linhaDebitos(d)}</td>
               <td class="n"><b>${num(totalLinha(d))}</b></td>
               <td>${colSituacao(d)}</td></tr>`;
@@ -175,6 +175,7 @@
     q('[data-sel]').forEach((x) => { x.onchange = () => { x.checked ? M.sel.add(x.dataset.sel) : M.sel.delete(x.dataset.sel); desenhar(); }; });
     q('[data-conf]').forEach((x) => { x.onchange = () => { if (x.checked) { M.conf.add(x.dataset.conf); M.sel.add(x.dataset.conf); } else M.conf.delete(x.dataset.conf); desenhar(); }; });
     q('[data-trib]').forEach((x) => { x.onchange = () => salvar(x.dataset.trib, { tributacao: +x.value }); });
+    q('[data-bal]').forEach((x) => { x.onchange = () => salvar(x.dataset.bal, { balanco: x.checked }); });
     q('[data-sm]').forEach((x) => { x.onchange = () => { M.semMov = x.checked ? x.dataset.sm : ''; desenhar(); }; });
     q('[data-env-sm]').forEach((x) => { x.onclick = () => {
       const d = (M.d.docs || []).find((y) => y.cnpj === x.dataset.envSm);

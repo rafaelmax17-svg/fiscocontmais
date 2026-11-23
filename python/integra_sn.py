@@ -1032,7 +1032,8 @@ def processar(p):
                 try:
                     # sem movimento: a DCTFWeb (sem movimento) é transmitida logo após o encerramento (TransmissaoImediata)
                     emp['payload'] = _mit.montar(emp.get('dados') or {}, p.get('resp') or {}, sem_movimento=sem,
-                                                 tributacao=emp.get('tributacao'), extras=emp.get('extras'), transmissao_imediata=sem)
+                                                 tributacao=emp.get('tributacao'), extras=emp.get('extras'), transmissao_imediata=sem,
+                                                 balanco=bool(emp.get('balanco')))
                 except (ValueError, KeyError) as e:
                     return {'ok': True, 'token': tok, 'proc': proc, 'resultado': {'cnpj': emp.get('cnpj'), 'ok': False, 'msg': str(e)[:300]}, 'consumo': consumo}
                 try:

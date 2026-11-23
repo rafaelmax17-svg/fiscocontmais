@@ -105,7 +105,7 @@ def ler_efd(caminho):
     return emp
 
 
-def montar(emp, resp, sem_movimento=False, tributacao=None, extras=None, transmissao_imediata=False):
+def montar(emp, resp, sem_movimento=False, tributacao=None, extras=None, transmissao_imediata=False, balanco=False):
     """JSON do ENCAPURACAO314 (leiaute do MIT). resp = {cpf, tel, email, crcUf, crcNum}."""
     a, m = emp['comp'].split('-')
     cpf = re.sub(r'\D', '', resp.get('cpf') or '')
@@ -132,7 +132,10 @@ def montar(emp, resp, sem_movimento=False, tributacao=None, extras=None, transmi
     trib = int(tributacao or emp.get('tributacao_sugerida') or 1)
     ini['TributacaoLucro'] = trib
     ini['VariacoesMonetarias'] = 2                                   # regime de competência
-    ini['RegimePisCofins'] = emp.get('regime') if emp.get('regime') in (1, 2, 3) else 4
+    # RegimePisCofins (leiaute): obrigatório com QualificacaoPj 1 só quando TributacaoLucro é 1, 2, 5 ou 6 (Real anual,
+    # Real trimestral, imune, isenta); no Presumido e no Arbitrado a Receita recusa o campo (EntradaIncorreta-MIT-MSG_0003)
+    if trib in (1, 2, 5, 6):
+        ini['RegimePisCofins'] = emp.get('regime') if emp.get('regime') in (1, 2, 3) else 4
     ini['ResponsavelApuracao'] = rp
     out['DadosIniciais'] = ini
     grupos = {'Irpj': [], 'Csll': [], 'PisPasep': [], 'Cofins': []}
@@ -142,6 +145,10 @@ def montar(emp, resp, sem_movimento=False, tributacao=None, extras=None, transmi
     grupos['PisPasep'] = [(d['cod'], d['valor']) for d in emp.get('pis') or []]
     grupos['Cofins'] = [(d['cod'], d['valor']) for d in emp.get('cofins') or []]
     deb, n = {}, 0
+    # BalancoLucroReal (leiaute): obrigatório no Lucro Real Anual (sem evento especial) — true = IRPJ/CSLL do mês por
+    # balanço/balancete de suspensão ou redução; false = estimativa sobre a receita bruta
+    if trib == 1:
+        deb['BalancoLucroReal'] = bool(balanco)
     for g in ('Irpj', 'Csll', 'PisPasep', 'Cofins'):                 # ordem exigida pelo leiaute
         if not grupos[g]:
             continue
@@ -150,7 +157,7 @@ def montar(emp, resp, sem_movimento=False, tributacao=None, extras=None, transmi
             n += 1
             lista.append({'IdDebito': n, 'CodigoDebito': cod, 'ValorDebito': val})
         deb[g] = {'ListaDebitos': lista}
-    if not deb:
+    if not any(k in deb for k in ('Irpj', 'Csll', 'PisPasep', 'Cofins')):
         raise ValueError('Sem débito a declarar: com saldo credor o MIT não é necessário (ou marque "sem movimento").')
     out['Debitos'] = deb
     out['TransmissaoImediata'] = bool(transmissao_imediata)
