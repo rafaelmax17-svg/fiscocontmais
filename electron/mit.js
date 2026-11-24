@@ -417,7 +417,7 @@ async function _transmitir(p) {
     return { status: 'erro', msg: x.msg || 'A Receita não aceitou a transmissão.' };
   }
   await f.setDoc(ref, _limpo({ dctf: { ...dctf, situacao: 'transmitida', recibo: x.recibo || '', arquivo: x.arquivo || '', transmitidaEm: new Date().toISOString(), transmitidaPor: p.por || '' }, ultimoErro: '' }), { merge: true });
-  return { status: 'feito', msg: x.jaTransmitida ? 'A DCTFWeb já estava transmitida.' : `DCTFWeb${dctf.retificadora ? ' retificadora' : ''} transmitida${x.recibo ? ` · recibo ${x.recibo}` : ''}` };
+  return { status: 'feito', msg: `${d.nome}: ${x.jaTransmitida ? 'a DCTFWeb já estava transmitida' : `DCTFWeb${dctf.retificadora ? ' retificadora' : ''} transmitida${x.recibo ? ` · recibo ${x.recibo}` : ' · o recibo vem no próximo "Consultar"'}`}` };
 }
 
 // recibo da DCTFWeb já transmitida (a Receita não tinha liberado na hora, ou foi transmitida por fora do sistema)
@@ -449,7 +449,8 @@ async function _recibo(p) {
     const x = await _buscarRecibo(p.comp, cnpj, ref, d);
     if (x.ok) ok.push(d.nome); else erros.push(`${d.nome}: ${x.msg}`);
   }
-  if (!ok.length && erros.length) return { status: 'erro', msg: erros.join(' · ').slice(0, 400) };
+  // DCTFWeb ainda em andamento não é erro: só não há recibo para baixar ainda
+  if (!ok.length && erros.length) return { status: erros.every((x) => /em andamento/.test(x)) ? 'aviso' : 'erro', msg: erros.join(' · ').slice(0, 400) };
   return { status: 'feito', msg: `${ok.length} recibo(s) baixado(s)${erros.length ? ` · ${erros.length} sem recibo: ${erros.join(' · ')}` : ''}`.slice(0, 400) };
 }
 

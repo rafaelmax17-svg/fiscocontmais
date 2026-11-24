@@ -54,6 +54,7 @@
   function colSituacao(d) {
     const [cls, txt] = SIT[d.sit] || ['nm', d.sit];
     let h = `<span class="mt-tg ${cls}">${e(txt)}</span>`;
+    if (d.dctf && d.dctf.situacao === 'transmitida') h += ` <span class="mt-tg dc">DCTFWeb enviada</span>`;   // pelo sistema ou por fora
     const pf = fila(d.cnpj);
     if (pf) h += `<div class="sm">${e(PED[pf.tipo] || pf.tipo)} ${pf.status === 'rodando' ? 'em andamento…' : 'na fila…'}</div>`;
     if (d.ultimoErro) h += `<div class="mt-err">${e(d.ultimoErro)}</div>`;
@@ -83,8 +84,6 @@
     }
     // sem movimento: se a Receita não transmitiu sozinha, a DCTFWeb fica em andamento — transmite por aqui
     if (d.sit === 'sem_movimento' && !pf && d.dctf && d.dctf.situacao === 'em_andamento') h += `<div class="mt-acs"><button class="act mt-b" data-tr="${e(d.cnpj)}">Transmitir DCTFWeb</button></div>`;
-    // transmitida por fora (eCAC): confere de novo na Receita e baixa o recibo da que está valendo
-    if (['enviado', 'saldo_credor', 'sem_movimento'].includes(d.sit) && !pf && d.dctf && d.dctf.situacao === 'em_andamento') h += `<div class="sm"><button type="button" class="mt-lk" data-rec="${e(d.cnpj)}">Transmitiu por fora? Buscar o recibo</button></div>`;
     (d.guias || []).slice(-2).forEach((g) => { h += `<div class="sm">Guia ${e(dataBr(g.em))}${g.arquivo ? ` · <a href="#" class="mt-ab" data-arq="${e(g.arquivo)}">abrir PDF</a>` : ''}${g.aviso ? ` · ${e(g.aviso)}` : ''}</div>`; });
     if (d.dctf && d.dctf.arquivo) h += `<div class="sm">📄 <a href="#" class="mt-ab" data-arq="${e(d.dctf.arquivo)}">abrir recibo da DCTFWeb</a>${d.dctf.recibo ? ` · nº ${e(d.dctf.recibo)}` : ''}</div>`;
     else if (['enviado', 'saldo_credor', 'sem_movimento'].includes(d.sit) && !pf && !(d.dctf && d.dctf.situacao === 'em_andamento')) h += `<div class="mt-acs"><button class="act mt-b" data-rec="${e(d.cnpj)}" title="Busca na Receita o recibo da DCTFWeb do mês (transmitida pelo sistema ou por fora) e salva na pasta do cliente">Baixar recibo da DCTFWeb</button></div>`;
@@ -139,7 +138,7 @@
           }).join('')}</tbody></table>`
           : `<div class="mt-vz">Nenhuma EFD-Contribuições importada em ${compBr(M.comp)}. Clique em <b>EFD-Contribuições (.txt)</b> e escolha os arquivos — pode ser de várias empresas de uma vez; a competência vem do próprio arquivo.</div>`}
         <div class="mt-resp"><b>Responsável pela apuração</b> (vai em todos os MIT): ${rs && rs.cpf ? `${e(rs.nome || '')} · CPF ${e(rs.cpf)}${rs.crc ? ` · CRC ${e(rs.crc)}` : ''}${rs.email ? ` · ${e(rs.email)}` : ''}${rs.tel ? ` · ${e(rs.tel)}` : ''} · enviado com a Liddera como procuradora` : '<b style="color:var(--neg)">não configurado</b> (Admin › Integra Contador)'}</div>
-        ${(R.pedidos || []).length ? `<div class="mt-ped"><b>Últimos pedidos${window._ehAdminSessao && window._ehAdminSessao() ? ' <button class="mt-lk" id="mtLimpar" style="float:right">Limpar histórico</button>' : ''}</b>${R.pedidos.slice(0, 6).map((p) => `<div><span class="mt-tg ${p.status === 'feito' ? 'ok' : p.status === 'erro' ? 'er' : 'pe'}">${e({ novo: 'Na fila', rodando: 'Em andamento', feito: 'Feito', erro: 'Erro' }[p.status] || p.status)}</span> ${e(PED[p.tipo] || p.tipo)} · ${e(p.por)} · ${e(dataBr(p.emMs))}${p.msg ? ` — ${e(p.msg)}` : ''}</div>`).join('')}</div>` : ''}
+        ${(R.pedidos || []).length ? `<div class="mt-ped"><b>Últimos pedidos${window._ehAdminSessao && window._ehAdminSessao() ? ' <button class="mt-lk" id="mtLimpar" style="float:right">Limpar histórico</button>' : ''}</b>${R.pedidos.slice(0, 6).map((p) => `<div><span class="mt-tg ${p.status === 'feito' ? 'ok' : p.status === 'erro' ? 'er' : p.status === 'aviso' ? 'nm' : 'pe'}">${e({ novo: 'Na fila', rodando: 'Em andamento', feito: 'Feito', erro: 'Erro', aviso: 'Aviso' }[p.status] || p.status)}</span> ${e(PED[p.tipo] || p.tipo)} · ${e(p.por)} · ${e(dataBr(p.emMs))}${p.msg ? ` — ${e(p.msg)}` : ''}</div>`).join('')}</div>` : ''}
         <div class="mt-lei"><b>Como funciona:</b> o valor de cada código é o "a recolher" da EFD (M205/M605), já depois dos créditos, das retenções e das deduções. Com saldo credor não há débito a declarar e o MIT não é necessário. O MIT vence no último dia útil do mês seguinte (o mesmo prazo da DCTFWeb); a EFD-Contribuições precisa estar gerada e validada antes, mesmo que ainda não transmitida. Depois do MIT, a guia só do MIT e a transmissão da DCTFWeb saem daqui — a assinatura da DCTFWeb é feita pelo próprio sistema com o certificado do escritório, sem o assinador do portal.</div>
       </div>`;
     ligar();
