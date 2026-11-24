@@ -208,6 +208,7 @@ function ligarRobo(opc) {
     });
   };
   escuta();
+  _log(`fila ligada neste computador (${os.hostname()})${_robo.souRobo() ? ' · é o robô' : ' · aguardando ser o robô'}`);
   // varredura de segurança a cada minuto: pega pedido parado na fila e destrava a fila presa
   _vigia = setInterval(() => _varrer().catch(() => {}), 60 * 1000);
 }
@@ -219,8 +220,26 @@ function _prazo(pr, ms, oque) {
   return Promise.race([pr, new Promise((_, nao) => { t = setTimeout(() => nao(new Error(`sem resposta da nuvem (${oque})`)), ms); })]).finally(() => clearTimeout(t));
 }
 
+let _avisoNaoRobo = 0;
 async function _varrer() {
-  if (!_robo || !_robo.souRobo()) return;
+  if (!_robo) return;
+  if (!_robo.souRobo()) {
+    // 2.4.42: pedido parado na fila e este computador não é o robô → deixa registrado (antes ficava em silêncio)
+    if (Date.now() - _avisoNaoRobo > 10 * 60 * 1000) {
+      try {
+        const { db, f } = _fs();
+        const q = await _prazo(f.getDocs(f.query(f.collection(db, COL_P), f.where('status', '==', 'novo'))), 30000, 'fila');
+        const velhos = []; q.forEach((x) => { const d = x.data(); if (d.emMs && Date.now() - d.emMs > 3 * 60 * 1000) velhos.push(x.id); });
+        if (velhos.length) {
+          _avisoNaoRobo = Date.now();
+          const ro = await _prazo(f.getDoc(f.doc(db, 'fechamento_sn', 'integra')), 30000, 'robô').catch(() => null);
+          const d = ro && ro.exists() ? ro.data() : {};
+          _log(`${velhos.length} pedido(s) parado(s) na fila, mas este computador não está como robô (robô atual: ${d.roboNome || '—'}${d.ativo ? '' : ', desativado'})`);
+        }
+      } catch (_) {}
+    }
+    return;
+  }
   if (_rodando) {
     if (Date.now() - _rodandoDesde < 15 * 60 * 1000) return;
     _log('a fila estava presa havia 15 minutos; liberando');
@@ -264,12 +283,12 @@ async function _fila(novos) {
 async function _atender(p) {
   const { db, f } = _fs();
   const ref = f.doc(db, COL_P, p.id);
-  const ok = await f.runTransaction(db, async (tx) => {
+  const ok = await _prazo(f.runTransaction(db, async (tx) => {
     const s = await tx.get(ref);
     if (!s.exists() || s.data().status !== 'novo') return false;
     tx.update(ref, { status: 'rodando', roboNome: `${os.hostname()} · ${_quem()}`, inicioMs: Date.now() });
     return true;
-  }).catch(() => null);
+  }), 60000, 'pegar o pedido').catch(() => null);     // 2.4.42: transação que não responde não prende a fila
   if (ok === null) { _atendidos.delete(p.id); _log(`pedido ${p.id}: sem resposta da nuvem ao pegar; tenta de novo na próxima varredura`); return; }
   if (!ok) return;
   _log(`===== pedido ${p.tipo} ${p.comp} (${(p.cnpjs || []).length} empresa(s)) · por ${p.por}`);
