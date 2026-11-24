@@ -310,7 +310,7 @@ async function _consultar(p) {
   const r = await _robo.python({ acao: 'mit_consultar', comp: p.comp, empresas: (p.cnpjs || []).map((cnpj) => ({ cnpj })) });
   if (!r.ok) throw new Error(r.erro || 'Falha na consulta do MIT.');
   await _consumo(r);
-  let n = 0;
+  let n = 0, nr = 0;
   for (const x of r.resultados || []) {
     const { ref, d } = await _doc(p.comp, _so(x.cnpj)); if (!d) continue;
     if (!x.ok) { await f.setDoc(ref, _limpo({ ultimoErro: x.msg || 'falha', ultimoErroEm: new Date().toISOString() }), { merge: true }); continue; }
@@ -318,8 +318,11 @@ async function _consultar(p) {
     const mit = u ? { ...(d.mit || {}), id: u.id, situacao: u.situacao, texto: u.texto, data: u.data, valor: u.valor, consultadoEm: new Date().toISOString() } : (d.mit || null);
     await f.setDoc(ref, _limpo({ mit, ultimoErro: '' }), { merge: true });
     n++;
+    if (mit && mit.situacao === 3 && !(d.dctf && d.dctf.arquivo)) {
+      try { if ((await _buscarRecibo(p.comp, _so(x.cnpj), ref, { ...d, mit })).ok) nr++; } catch (e) { _log(`${d.nome}: recibo da DCTFWeb: ${e.message || e}`); }
+    }
   }
-  return { status: 'feito', msg: `${n} empresa(s) consultada(s) na Receita` };
+  return { status: 'feito', msg: `${n} empresa(s) consultada(s) na Receita${nr ? ` · ${nr} recibo(s) da DCTFWeb baixado(s)` : ''}` };
 }
 
 async function _enviar(p) {
@@ -418,26 +421,33 @@ async function _transmitir(p) {
 }
 
 // recibo da DCTFWeb já transmitida (a Receita não tinha liberado na hora, ou foi transmitida por fora do sistema)
-async function _recibo(p) {
+// 2.4.38: situação atual da DCTFWeb e, se já transmitida (pelo sistema ou por fora, original ou retificadora),
+// o recibo da que está valendo — a Receita devolve o recibo da última transmitida do período
+async function _buscarRecibo(comp, cnpj, ref, d) {
   const { f } = _fs();
+  const lida = await _lerDctf(comp, cnpj).catch(() => null);
+  if (lida && lida.situacao === 'em_andamento') {
+    await f.setDoc(ref, _limpo({ dctf: { ...(d.dctf || {}), ...lida } }), { merge: true });
+    return { ok: false, msg: 'a DCTFWeb do mês está em andamento — falta transmitir' };
+  }
+  const [a, m] = comp.split('-');
+  const pasta = pastaCliente.pastaDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
+  const r = await _robo.python({ acao: 'dctf_recibo', comp, empresa: { cnpj, nome: d.nome, pasta, retificadora: !!((lida && lida.retificadora) || (d.dctf && d.dctf.retificadora)) } });
+  if (!r.ok) throw new Error(r.erro || 'Falha ao buscar o recibo.');
+  await _consumo(r);
+  const x = r.resultado || {};
+  if (!x.ok) return { ok: false, msg: /dispon|transmit|n[aã]o encontr/i.test(x.msg || '') ? 'a DCTFWeb do mês ainda não está transmitida (ou o recibo não foi liberado)' : (x.msg || 'falha') };
+  await f.setDoc(ref, _limpo({ dctf: { ...(d.dctf || {}), ...(lida || {}), situacao: 'transmitida', recibo: x.recibo || '', arquivo: x.arquivo || '', reciboAviso: x.aviso || '', reciboEm: new Date().toISOString() } }), { merge: true });
+  return { ok: true };
+}
+
+async function _recibo(p) {
   const ok = [], erros = [];
   for (const cnpj of p.cnpjs || []) {
     const { ref, d } = await _doc(p.comp, cnpj);
     if (!d) { erros.push(`${cnpj}: não importada`); continue; }
-    const [a, m] = p.comp.split('-');
-    const pasta = pastaCliente.pastaDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
-    const lida = await _lerDctf(p.comp, cnpj).catch(() => null);           // 2.4.36: situação atual antes do recibo
-    if (lida && lida.situacao === 'em_andamento') {
-      await f.setDoc(ref, _limpo({ dctf: { ...(d.dctf || {}), ...lida } }), { merge: true });
-      erros.push(`${d.nome}: a DCTFWeb do mês está em andamento — falta transmitir`); continue;
-    }
-    const r = await _robo.python({ acao: 'dctf_recibo', comp: p.comp, empresa: { cnpj, nome: d.nome, pasta, retificadora: !!((lida && lida.retificadora) || (d.dctf && d.dctf.retificadora)) } });
-    if (!r.ok) throw new Error(r.erro || 'Falha ao buscar o recibo.');
-    await _consumo(r);
-    const x = r.resultado || {};
-    if (!x.ok) { erros.push(`${d.nome}: ${/dispon|transmit|n[aã]o encontr/i.test(x.msg || '') ? 'a DCTFWeb do mês ainda não está transmitida (ou o recibo não foi liberado)' : (x.msg || 'falha')}`); continue; }
-    await f.setDoc(ref, _limpo({ dctf: { ...(d.dctf || {}), situacao: 'transmitida', recibo: x.recibo || '', arquivo: x.arquivo || '', reciboAviso: x.aviso || '', reciboEm: new Date().toISOString() } }), { merge: true });
-    ok.push(d.nome);
+    const x = await _buscarRecibo(p.comp, cnpj, ref, d);
+    if (x.ok) ok.push(d.nome); else erros.push(`${d.nome}: ${x.msg}`);
   }
   if (!ok.length && erros.length) return { status: 'erro', msg: erros.join(' · ').slice(0, 400) };
   return { status: 'feito', msg: `${ok.length} recibo(s) baixado(s)${erros.length ? ` · ${erros.length} sem recibo: ${erros.join(' · ')}` : ''}`.slice(0, 400) };

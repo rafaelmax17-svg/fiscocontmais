@@ -2305,3 +2305,5 @@ body.menu-grupos .mg-lista{display:flex;flex-direction:column;gap:2px}
 .cpg-s{font-size:12px;color:var(--ink2);margin-top:7px;min-height:16px}
 [data-theme="dark"] .cpg-ic,[data-theme="dark"] .cpg-tr{background:rgba(139,92,246,.16)}
 [data-theme="dark"] .cpg-ok{color:#c4b5fd}[data-theme="dark"] .cpg-spin{border-color:rgba(196,181,253,.35);border-top-color:#c4b5fd}
+.mt-lk{background:none;border:0;padding:0;font:inherit;font-size:12px;color:#6d28d9;text-decoration:underline;cursor:pointer}
+[data-theme="dark"] .mt-lk{color:#c4b5fd}

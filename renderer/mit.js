@@ -83,6 +83,8 @@
     }
     // sem movimento: se a Receita não transmitiu sozinha, a DCTFWeb fica em andamento — transmite por aqui
     if (d.sit === 'sem_movimento' && !pf && d.dctf && d.dctf.situacao === 'em_andamento') h += `<div class="mt-acs"><button class="act mt-b" data-tr="${e(d.cnpj)}">Transmitir DCTFWeb</button></div>`;
+    // transmitida por fora (eCAC): confere de novo na Receita e baixa o recibo da que está valendo
+    if (['enviado', 'saldo_credor', 'sem_movimento'].includes(d.sit) && !pf && d.dctf && d.dctf.situacao === 'em_andamento') h += `<div class="sm"><button type="button" class="mt-lk" data-rec="${e(d.cnpj)}">Transmitiu por fora? Buscar o recibo</button></div>`;
     (d.guias || []).slice(-2).forEach((g) => { h += `<div class="sm">Guia ${e(dataBr(g.em))}${g.arquivo ? ` · <a href="#" class="mt-ab" data-arq="${e(g.arquivo)}">abrir PDF</a>` : ''}${g.aviso ? ` · ${e(g.aviso)}` : ''}</div>`; });
     if (d.dctf && d.dctf.arquivo) h += `<div class="sm">📄 <a href="#" class="mt-ab" data-arq="${e(d.dctf.arquivo)}">abrir recibo da DCTFWeb</a>${d.dctf.recibo ? ` · nº ${e(d.dctf.recibo)}` : ''}</div>`;
     else if (['enviado', 'saldo_credor', 'sem_movimento'].includes(d.sit) && !pf && !(d.dctf && d.dctf.situacao === 'em_andamento')) h += `<div class="mt-acs"><button class="act mt-b" data-rec="${e(d.cnpj)}" title="Busca na Receita o recibo da DCTFWeb do mês (transmitida pelo sistema ou por fora) e salva na pasta do cliente">Baixar recibo da DCTFWeb</button></div>`;
