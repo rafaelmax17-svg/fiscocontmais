@@ -802,7 +802,15 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
             r['msg'] = ('A Receita não aceitou a transmissão: ' + (rt.get('msg') or f"HTTP {rt.get('http')}"))[:400]
             return r
         r.update(origens=d['origens'], reinf=d['reinf'], saldo=d['saldo'])
-    # recibo de entrega (PDF) na pasta do cliente
+    r.update({k: v for k, v in dctf_recibo_empresa(tok, cert, contratante, emp, comp, consumo).items() if k in ('recibo', 'arquivo', 'aviso')})
+    return r
+
+
+def dctf_recibo_empresa(tok, cert, contratante, emp, comp, consumo):
+    """Recibo de entrega da DCTFWeb (CONSRECIBO32) em PDF na pasta do cliente. Serve logo depois da transmissão e também
+    para buscar depois (recibo que a Receita ainda não tinha liberado, ou DCTFWeb transmitida por fora do sistema)."""
+    cnpj = re.sub(r'\D', '', emp.get('cnpj') or '')
+    r = {'cnpj': cnpj, 'ok': False, 'msg': ''}
     rr = _dctf(tok, cert, contratante, cnpj, 'Consultar', 'CONSRECIBO32', _periodo_dctf(comp), consumo)
     pdfs = _pdfs(rr.get('dados')) if rr.get('http') == 200 else []
     if not pdfs and isinstance(rr.get('dados'), dict) and rr['dados'].get('PDFByteArrayBase64'):
@@ -819,8 +827,11 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
                 r['arquivo'] = _grava(pasta, f'Recibo DCTFWeb {m}{a} - {_nome_arq(emp.get("nome") or cnpj)}.pdf', pdfs[0][2])
             except OSError as e:
                 r['aviso'] = f'Recibo não gravado na pasta: {e}'[:200]
+        r['ok'] = True
+        r['msg'] = f"Recibo {r.get('recibo') or ''} baixado".strip()
     else:
         r['aviso'] = ('Recibo ainda não disponível: ' + (rr.get('msg') or ''))[:200]
+        r['msg'] = r['aviso']
     return r
 
 
@@ -1051,6 +1062,13 @@ def processar(p):
                 except Exception as e:                          # uma empresa com problema não para as outras
                     out.append({'cnpj': emp.get('cnpj'), 'situacao': 'erro', 'msg': f'Falha na consulta: {e}'[:300]})
             return {'ok': True, 'token': tok, 'resultados': out, 'consumo': consumo}
+        if acao == 'dctf_recibo':
+            consumo = {'consulta': 0, 'emissao': 0, 'declaracao': 0}
+            try:
+                r = dctf_recibo_empresa(tok, cert, contratante, p['empresa'], p['comp'], consumo)
+            except Exception as e:
+                r = {'cnpj': (p.get('empresa') or {}).get('cnpj'), 'ok': False, 'msg': f'Falha ao buscar o recibo: {e}'[:300]}
+            return {'ok': True, 'token': tok, 'resultado': r, 'consumo': consumo}
         if acao == 'dctf_guia':
             consumo = {'consulta': 0, 'emissao': 0, 'declaracao': 0}
             try:

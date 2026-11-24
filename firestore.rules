@@ -194,7 +194,7 @@ service cloud.firestore {
     match /mit_pedidos/{id} {
       allow read: if mitOk();
       allow create: if mitOk() && request.resource.data.uid == request.auth.uid && request.resource.data.status == 'novo'
-        && request.resource.data.tipo in ['consultar', 'enviar', 'guia', 'transmitir'];
+        && request.resource.data.tipo in ['consultar', 'enviar', 'guia', 'transmitir', 'recibo'];
       allow update, delete: if admin();
     }
     match /dctfweb_pedidos/{id} {

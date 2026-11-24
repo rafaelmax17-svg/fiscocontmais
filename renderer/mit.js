@@ -16,7 +16,7 @@
   };
   const SIT = { a_enviar: ['pe', 'A enviar'], saldo_credor: ['cr', 'Saldo credor · MIT não necessário'], em_curso: ['pe', 'Encerramento em curso'],
     enviado: ['ok', 'MIT enviado'], sem_movimento: ['en', 'Sem movimento enviado'] };
-  const PED = { consultar: 'Consulta na Receita', enviar: 'Envio do MIT', guia: 'Guia do MIT', transmitir: 'Transmissão da DCTFWeb' };
+  const PED = { consultar: 'Consulta na Receita', enviar: 'Envio do MIT', guia: 'Guia do MIT', transmitir: 'Transmissão da DCTFWeb', recibo: 'Recibo da DCTFWeb' };
   const M = { comp: '', d: null, sel: new Set(), conf: new Set(), irAberto: '', semMov: '', trans: '' };
   let desliga = null, recarga = null;
   const raiz = () => document.getElementById('mtRaiz');
@@ -78,7 +78,8 @@
       h += '</div>';
     }
     (d.guias || []).slice(-2).forEach((g) => { h += `<div class="sm">Guia ${e(dataBr(g.em))}${g.arquivo ? ` · <a href="#" class="mt-ab" data-arq="${e(g.arquivo)}">abrir PDF</a>` : ''}${g.aviso ? ` · ${e(g.aviso)}` : ''}</div>`; });
-    if (d.dctf && d.dctf.arquivo) h += `<div class="sm"><a href="#" class="mt-ab" data-arq="${e(d.dctf.arquivo)}">abrir recibo da DCTFWeb</a></div>`;
+    if (d.dctf && d.dctf.arquivo) h += `<div class="sm">📄 <a href="#" class="mt-ab" data-arq="${e(d.dctf.arquivo)}">abrir recibo da DCTFWeb</a>${d.dctf.recibo ? ` · nº ${e(d.dctf.recibo)}` : ''}</div>`;
+    else if (['enviado', 'saldo_credor', 'sem_movimento'].includes(d.sit) && !pf && !(d.dctf && d.dctf.situacao === 'em_andamento')) h += `<div class="mt-acs"><button class="act mt-b" data-rec="${e(d.cnpj)}" title="Busca na Receita o recibo da DCTFWeb do mês (transmitida pelo sistema ou por fora) e salva na pasta do cliente">Baixar recibo da DCTFWeb</button></div>`;
     if (M.trans === d.cnpj) {
       h += `<div class="mt-trbox"><b>Antes de transmitir, confirme:</b>
         <label class="mt-ck"><input type="checkbox" id="mtCf1"> a folha (eSocial) do mês está fechada e conferida</label>
@@ -94,6 +95,7 @@
     const docs = R.docs || [];
     const comDeb = docs.filter((d) => d.sit === 'a_enviar'), cred = docs.filter((d) => d.sit === 'saldo_credor');
     const totalDeclarar = comDeb.reduce((s, d) => s + totalLinha(d), 0);
+    const semRecibo = docs.filter((d) => ['enviado', 'saldo_credor', 'sem_movimento'].includes(d.sit) && !(d.dctf && d.dctf.arquivo) && !fila(d.cnpj));
     const comps = new Set([M.comp, compAnterior()]); for (let i = 1; i <= 6; i++) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); comps.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
     const rs = R.resp;
     const robo = R.robo || {};
@@ -103,6 +105,7 @@
         <button class="act inv-export adm-btn" id="mtEfd">EFD-Contribuições (.txt)</button>
         <select class="rtc-sel" id="mtComp">${[...comps].sort().reverse().map((c) => `<option value="${c}" ${c === M.comp ? 'selected' : ''}>Competência ${compBr(c)}</option>`).join('')}</select>
         <span class="fiscal-spacer"></span>
+        <button class="act inv-export" id="mtRecs" ${semRecibo.length ? '' : 'disabled'} title="Recibo da DCTFWeb de todas as empresas da competência que ainda não têm o recibo na pasta">Baixar recibos da DCTFWeb${semRecibo.length ? ` (${semRecibo.length})` : ''}</button>
         <button class="act inv-export" id="mtCons" ${docs.length ? '' : 'disabled'}>Consultar situação na Receita</button>
         <button class="act adm-go" id="mtEnv" ${podeEnviar ? '' : 'disabled'} title="Envia as empresas marcadas com 'confere com a EFD'">Enviar MIT selecionados${podeEnviar ? ` (${podeEnviar})` : ''}</button>
       </div>
@@ -121,7 +124,7 @@
             const trava = !['a_enviar', 'saldo_credor'].includes(d.sit);
             return `<tr><td>${d.sit === 'a_enviar' && !fila(d.cnpj) ? `<input type="checkbox" data-sel="${e(d.cnpj)}" ${M.sel.has(d.cnpj) ? 'checked' : ''}>` : ''}</td>
               <td><b>${e(d.nome)}</b><div class="sm">CNPJ ${e(fmtCnpj(d.cnpj))} · ${e(compBr(d.comp))}${d.retificadora ? ' · <b>EFD retificadora</b>' : ''}</div><div class="sm">${e(d.arquivo || '')}</div></td>
-              <td><select class="mt-mini" data-trib="${e(d.cnpj)}" ${trava ? 'disabled' : ''}>${Object.entries(TRIB).map(([k, v]) => `<option value="${k}" ${+k === +d.tributacao ? 'selected' : ''}>${v}</option>`).join('')}</select><div class="sm">${e(REG[d.regime] || '')}</div>${+d.tributacao === 1 ? `<label class="mt-ck" title="Lucro Real Anual: como o IRPJ/CSLL do mês foi apurado (campo obrigatório do MIT)"><input type="checkbox" data-bal="${e(d.cnpj)}" ${d.balanco ? 'checked' : ''} ${trava ? 'disabled' : ''}> IRPJ/CSLL por balancete de suspensão/redução</label><div class="sm">${d.balanco ? '' : 'desmarcado = estimativa sobre a receita bruta'}</div>` : ''}</td>
+              <td><select class="mt-mini" data-trib="${e(d.cnpj)}" ${trava ? 'disabled' : ''}>${Object.entries(TRIB).map(([k, v]) => `<option value="${k}" ${+k === +d.tributacao ? 'selected' : ''}>${v}</option>`).join('')}</select><div class="sm">${e(REG[d.regime] || '')}</div>${+d.tributacao === 1 && !trava ? `<label class="mt-ck" title="Lucro Real Anual: como o IRPJ/CSLL do mês foi apurado (campo obrigatório do MIT)"><input type="checkbox" data-bal="${e(d.cnpj)}" ${d.balanco ? 'checked' : ''} ${trava ? 'disabled' : ''}> IRPJ/CSLL por balancete de suspensão/redução</label><div class="sm">${d.balanco ? '' : 'desmarcado = estimativa sobre a receita bruta'}</div>` : ''}</td>
               <td>${linhaDebitos(d)}</td>
               <td class="n"><b>${num(totalLinha(d))}</b></td>
               <td>${colSituacao(d)}</td></tr>`;
@@ -164,6 +167,11 @@
     };
     $('#mtComp').onchange = (ev) => { M.comp = ev.target.value; M.sel.clear(); M.conf.clear(); carregar(); };
     $('#mtCons').onclick = () => pedir({ tipo: 'consultar', cnpjs: (M.d.docs || []).map((d) => d.cnpj) }, 'Consulta pedida.');
+    $('#mtRecs').onclick = () => {
+      const lista = (M.d.docs || []).filter((d) => ['enviado', 'saldo_credor', 'sem_movimento'].includes(d.sit) && !(d.dctf && d.dctf.arquivo) && !fila(d.cnpj)).map((d) => d.cnpj);
+      if (lista.length) pedir({ tipo: 'recibo', cnpjs: lista }, `Recibos pedidos (${lista.length}): vão para a pasta de cada cliente.`);
+    };
+    q('[data-rec]').forEach((x) => { x.onclick = () => pedir({ tipo: 'recibo', cnpjs: [x.dataset.rec] }, 'Recibo pedido: vai para a pasta do cliente.'); });
     $('#mtEnv').onclick = async () => {
       const lista = [...M.sel].filter((c) => M.conf.has(c));
       const docs = (M.d.docs || []).filter((d) => lista.includes(d.cnpj));

@@ -142,7 +142,7 @@ async function salvarEmpresa({ comp, cnpj, tributacao, extras, balanco } = {}) {
 
 async function pedir({ tipo, comp, cnpjs, semMovimento, confirmado, data } = {}) {
   if (!podeUsar()) throw new Error('Sem acesso ao módulo MIT.');
-  if (!['consultar', 'enviar', 'guia', 'transmitir'].includes(tipo)) throw new Error('Pedido inválido.');
+  if (!['consultar', 'enviar', 'guia', 'transmitir', 'recibo'].includes(tipo)) throw new Error('Pedido inválido.');
   if (!_comp(comp)) throw new Error('Competência inválida.');
   const robo = await _estadoRobo();
   if (!robo.ativo) throw new Error('O envio pela Receita ainda não foi configurado pelo Admin.');
@@ -226,7 +226,8 @@ async function _atender(p) {
   _log(`===== pedido ${p.tipo} ${p.comp} (${(p.cnpjs || []).length} empresa(s)) · por ${p.por}`);
   let fim;
   try {
-    fim = p.tipo === 'enviar' ? await _enviar(p) : p.tipo === 'guia' ? await _guia(p) : p.tipo === 'transmitir' ? await _transmitir(p) : await _consultar(p);
+    fim = p.tipo === 'enviar' ? await _enviar(p) : p.tipo === 'guia' ? await _guia(p) : p.tipo === 'transmitir' ? await _transmitir(p)
+      : p.tipo === 'recibo' ? await _recibo(p) : await _consultar(p);
   } catch (e) {
     fim = { status: 'erro', msg: String(e.message || e).slice(0, 300) };
   }
@@ -350,6 +351,27 @@ async function _transmitir(p) {
   }
   await f.setDoc(ref, _limpo({ dctf: { ...dctf, situacao: 'transmitida', recibo: x.recibo || '', arquivo: x.arquivo || '', transmitidaEm: new Date().toISOString(), transmitidaPor: p.por || '' }, ultimoErro: '' }), { merge: true });
   return { status: 'feito', msg: x.jaTransmitida ? 'A DCTFWeb já estava transmitida.' : `DCTFWeb transmitida${x.recibo ? ` · recibo ${x.recibo}` : ''}` };
+}
+
+// recibo da DCTFWeb já transmitida (a Receita não tinha liberado na hora, ou foi transmitida por fora do sistema)
+async function _recibo(p) {
+  const { f } = _fs();
+  const ok = [], erros = [];
+  for (const cnpj of p.cnpjs || []) {
+    const { ref, d } = await _doc(p.comp, cnpj);
+    if (!d) { erros.push(`${cnpj}: não importada`); continue; }
+    const [a, m] = p.comp.split('-');
+    const pasta = pastaCliente.pastaDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
+    const r = await _robo.python({ acao: 'dctf_recibo', comp: p.comp, empresa: { cnpj, nome: d.nome, pasta } });
+    if (!r.ok) throw new Error(r.erro || 'Falha ao buscar o recibo.');
+    await _consumo(r);
+    const x = r.resultado || {};
+    if (!x.ok) { erros.push(`${d.nome}: ${/dispon|transmit|n[aã]o encontr/i.test(x.msg || '') ? 'a DCTFWeb do mês ainda não está transmitida (ou o recibo não foi liberado)' : (x.msg || 'falha')}`); continue; }
+    await f.setDoc(ref, _limpo({ dctf: { ...(d.dctf || {}), situacao: 'transmitida', recibo: x.recibo || '', arquivo: x.arquivo || '', reciboAviso: x.aviso || '', reciboEm: new Date().toISOString() } }), { merge: true });
+    ok.push(d.nome);
+  }
+  if (!ok.length && erros.length) return { status: 'erro', msg: erros.join(' · ').slice(0, 400) };
+  return { status: 'feito', msg: `${ok.length} recibo(s) baixado(s)${erros.length ? ` · ${erros.length} sem recibo: ${erros.join(' · ')}` : ''}`.slice(0, 400) };
 }
 
 // Admin: apaga o histórico de pedidos da competência (e os avisos de erro das empresas)
