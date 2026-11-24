@@ -42,6 +42,13 @@ function _log(m) {
   _logTxt.push(`${new Date().toLocaleString('pt-BR')} ${m}`);
   try { fs.writeFileSync(path.join(D.userData(), 'dctfweb_log.txt'), _logTxt.slice(-600).join('\n')); } catch (_) {}
 }
+// 2.4.34: débitos de todas as origens somados por código (o mesmo código pode vir da folha e da REINF: somar, nunca sobrescrever)
+function _tudo(x) {
+  if (x && x.tudo && Object.keys(x.tudo).length) return x.tudo;
+  const m = {};
+  for (const o of [(x && x.outros) || {}, (x && x.reinf) || {}]) for (const [k, v] of Object.entries(o)) m[k] = Math.round(((m[k] || 0) + Number(v || 0)) * 100) / 100;
+  return m;
+}
 function _limpo(o) { return JSON.parse(JSON.stringify(o, (k, v) => (v === undefined ? null : v))); }
 
 // débitos que a REINF mandou para a DCTFWeb, por código de receita (4 dígitos): totalizador do R-4099 e do R-2099
@@ -268,7 +275,7 @@ async function _conferir(p) {
       _log(`${b.nome}: DCTFWeb ${x.situacao} · REINF ${JSON.stringify(b.esperado)} × DCTFWeb ${JSON.stringify(x.reinf || {})} → ${cmp.comparacao}${x.msg ? ` (${x.msg})` : ''}`);
       await f.setDoc(f.doc(db, COL, `${comp}_${b.cnpj}`), _limpo({
         ...b, situacao: x.situacao, msg: x.msg || '', naDctf: x.reinf || {}, reinfOrigem: x.reinfOrigem || {}, codigos: x.codigos || [],
-        esperadoTudo: { ...(x.outros || {}), ...(x.reinf || {}) }, totalDctf: _soma(x.reinf), origens: x.origens || {}, outros: x.outros || {},
+        esperadoTudo: _tudo(x), totalDctf: _soma(x.reinf), origens: x.origens || {}, outros: x.outros || {},
         saldo: x.saldo ?? null, ...cmp, consultadoEm: new Date().toISOString(), consultadoPor: p.por || '',
       }), { merge: true });
     }

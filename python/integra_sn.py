@@ -577,7 +577,7 @@ def dctf_debitos(xml):
     O leiaute não é publicado: a leitura é tolerante e devolve os caminhos das tags (sem valores) para o passo a passo."""
     from lxml import etree
     raiz = etree.fromstring(xml.encode('utf-8') if isinstance(xml, str) else xml, etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True))
-    out = {'origens': {}, 'reinf': {}, 'reinfOrigem': {}, 'outros': {}, 'codigos': [], 'saldo': 0.0, 'estrutura': [], 'arvore': _arvore(raiz), 'periodo': '', 'cnpj': ''}
+    out = {'origens': {}, 'reinf': {}, 'reinfOrigem': {}, 'outros': {}, 'tudo': {}, 'codigos': [], 'saldo': 0.0, 'estrutura': [], 'arvore': _arvore(raiz), 'periodo': '', 'cnpj': ''}
     for el in raiz.iter():
         n = _local(el.tag).lower()
         if n in ('perapuracao', 'periodoapuracao') and not out['periodo']:
@@ -643,6 +643,7 @@ def dctf_debitos(xml):
             out['codigos'].append({'cod': cod, 'ext': ext, 'origem': origem, 'valor': round(v, 2), 'venc': venc})
             alvo = out['reinf'] if origem.startswith('REINF') else out['outros']
             alvo[cod] = round(alvo.get(cod, 0.0) + v, 2)
+            out['tudo'][cod] = round(out['tudo'].get(cod, 0.0) + v, 2)   # 2.4.34: todas as origens somadas por código
             if origem.startswith('REINF'):
                 out['reinfOrigem'][cod] = origem
     # nenhum débito ligado a uma origem: se a declaração só tem UMA origem, os débitos soltos são dela
@@ -661,6 +662,7 @@ def dctf_debitos(xml):
                 out['origens'][origem] = round(out['origens'].get(origem, 0.0) + v, 2)
                 alvo = out['reinf'] if origem.startswith('REINF') else out['outros']
                 alvo[cod] = round(alvo.get(cod, 0.0) + v, 2)
+                out['tudo'][cod] = round(out['tudo'].get(cod, 0.0) + v, 2)
                 if origem.startswith('REINF'):
                     out['reinfOrigem'][cod] = origem
     return out
@@ -689,7 +691,7 @@ def dctf_conferir_empresa(tok, cert, contratante, emp, comp, consumo):
     if d['cnpj'] and d['cnpj'][:8] != cnpj[:8]:
         r.update(situacao='erro', msg='O XML devolvido é de outro contribuinte.')
         return r
-    r.update(origens=d['origens'], reinf=d['reinf'], reinfOrigem=d['reinfOrigem'], outros=d['outros'], codigos=d['codigos'][:80], saldo=d['saldo'], estrutura=d['estrutura'], arvore=d['arvore'])
+    r.update(origens=d['origens'], reinf=d['reinf'], reinfOrigem=d['reinfOrigem'], outros=d['outros'], tudo=d['tudo'], codigos=d['codigos'][:80], saldo=d['saldo'], estrutura=d['estrutura'], arvore=d['arvore'])
     return r
 
 
@@ -754,6 +756,16 @@ def _numero_recibo(pdf):
         return ''
 
 
+def dctf_diferencas(visto, agora):
+    """Códigos de receita cujo valor na DCTFWeb agora não é o que foi conferido: [{cod, visto, agora}]."""
+    out = []
+    for k in sorted(set(visto) | set(agora)):
+        a, b = round(float(visto.get(k, 0.0)), 2), round(float(agora.get(k, 0.0)), 2)
+        if abs(a - b) > 0.01:
+            out.append({'cod': k, 'visto': a, 'agora': b})
+    return out
+
+
 def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_priv, cert_b64):
     """Transmite só se a declaração continua em andamento e os débitos da REINF ainda conferem com o que a equipe viu."""
     cnpj = re.sub(r'\D', '', emp.get('cnpj') or '')
@@ -776,11 +788,9 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
             # 2.4.17: declaração com folha (eSocial) e/ou MIT — a pessoa confirmou que estão fechados. Todos os débitos
             # (de todas as origens) precisam ser exatamente os que ela viu na tela.
             visto = {k[:4]: round(float(v), 2) for k, v in (emp.get('esperadoTudo') or {}).items()}
-            agora = {}
-            for x in d['codigos']:
-                agora[x['cod']] = round(agora.get(x['cod'], 0.0) + x['valor'], 2)
-            if not agora or any(abs(agora.get(k, 0.0) - v) > 0.01 for k, v in visto.items()) or any(k not in visto and v > 0.01 for k, v in agora.items()):
-                r.update(msg='Os débitos da DCTFWeb mudaram desde que você conferiu; nada foi transmitido. Atualize a DCTFWeb e confira de novo.', origens=d['origens'])
+            dif = dctf_diferencas(visto, d['tudo'])
+            if not d['tudo'] or dif:
+                r.update(msg='Os débitos da DCTFWeb mudaram desde que você conferiu; nada foi transmitido. Atualize a DCTFWeb e confira de novo.', origens=d['origens'], diferencas=dif)
                 return r
         else:
             esperado = {k[:4]: round(float(v), 2) for k, v in (emp.get('esperado') or {}).items()}

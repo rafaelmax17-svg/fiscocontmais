@@ -39,6 +39,13 @@ const _quem = () => { const s = auth.sessao() || {}; return s.nome || s.email ||
 const _so = (s) => String(s || '').replace(/\D/g, '');
 const _comp = (c) => /^\d{4}-(0[1-9]|1[0-2])$/.test(c || '');
 const _r2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+// 2.4.34: débitos de todas as origens somados por código (o mesmo código pode vir da folha e da REINF: somar, nunca sobrescrever)
+function _tudo(x) {
+  if (x && x.tudo && Object.keys(x.tudo).length) return x.tudo;
+  const m = {};
+  for (const o of [(x && x.outros) || {}, (x && x.reinf) || {}]) for (const [k, v] of Object.entries(o)) m[k] = Math.round(((m[k] || 0) + Number(v || 0)) * 100) / 100;
+  return m;
+}
 function _limpo(o) { return JSON.parse(JSON.stringify(o, (k, v) => (v === undefined ? null : v))); }
 function _log(m) {
   const l = `[${new Date().toLocaleString('pt-BR')}] ${m}`;
@@ -251,7 +258,7 @@ async function _lerDctf(comp, cnpj) {
   await _consumo(r);
   const x = (r.resultados || [])[0] || {};
   return _limpo({ situacao: x.situacao || '', msg: x.msg || '', origens: x.origens || {}, outros: x.outros || {}, reinf: x.reinf || {},
-    esperadoTudo: { ...(x.outros || {}), ...(x.reinf || {}) }, lidaEm: new Date().toISOString() });
+    esperadoTudo: _tudo(x), lidaEm: new Date().toISOString() });
 }
 
 async function _consultar(p) {
@@ -334,17 +341,29 @@ async function _transmitir(p) {
   if (!p.confirmado || !p.confirmado.folha || !p.confirmado.reinf || !p.confirmado.mit) return { status: 'erro', msg: 'Faltou a confirmação da folha, da REINF e do MIT.' };
   const sit = situacaoDe(d);
   if (!['enviado', 'saldo_credor'].includes(sit)) return { status: 'erro', msg: 'Envie o MIT antes de transmitir a DCTFWeb.' };
-  const dctf = await _lerDctf(p.comp, cnpj);
+  let dctf = await _lerDctf(p.comp, cnpj);
   if (!dctf || dctf.situacao !== 'em_andamento') {
     if (dctf && dctf.situacao === 'transmitida') { await f.setDoc(ref, _limpo({ dctf }), { merge: true }); return { status: 'feito', msg: 'A DCTFWeb já estava transmitida.' }; }
     return { status: 'erro', msg: `A DCTFWeb não está em andamento (${(dctf && (dctf.msg || dctf.situacao)) || 'sem resposta'}).` };
   }
   const [a, m] = p.comp.split('-');
   const pasta = pastaCliente.pastaDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
-  const r = await _robo.python({ acao: 'dctf_transmitir', comp: p.comp, empresa: { cnpj, nome: d.nome, esperado: dctf.reinf || {}, esperadoTudo: dctf.esperadoTudo || {}, pasta } });
-  if (!r.ok) throw new Error(r.erro || 'Falha na transmissão.');
-  await _consumo(r);
-  const x = r.resultado || {};
+  const envia = async (lida) => {
+    const r = await _robo.python({ acao: 'dctf_transmitir', comp: p.comp, empresa: { cnpj, nome: d.nome, esperado: lida.reinf || {}, esperadoTudo: lida.esperadoTudo || {}, pasta } });
+    if (!r.ok) throw new Error(r.erro || 'Falha na transmissão.');
+    await _consumo(r);
+    return r.resultado || {};
+  };
+  let x = await envia(dctf);
+  // 2.4.34: a Receita ainda estava juntando os débitos (comum logo depois do MIT, sobretudo quando a folha já tinha
+  // transmitido e a DCTFWeb virou retificadora). Registra o que mudou, espera, lê de novo e tenta uma vez só.
+  if (!x.ok && Array.isArray(x.diferencas)) {
+    _log(`${d.nome}: débitos mudaram entre as leituras → ${x.diferencas.map((y) => `${y.cod}: ${y.visto} → ${y.agora}`).join(' · ') || 'sem débitos na 2ª leitura'}`);
+    await new Promise((ok) => setTimeout(ok, 20000));
+    const nova = await _lerDctf(p.comp, cnpj);
+    if (nova && nova.situacao === 'em_andamento') { dctf = nova; x = await envia(nova); }
+    if (!x.ok && Array.isArray(x.diferencas)) _log(`${d.nome}: ainda mudando → ${x.diferencas.map((y) => `${y.cod}: ${y.visto} → ${y.agora}`).join(' · ')}`);
+  }
   if (!x.ok) {
     await f.setDoc(ref, _limpo({ ultimoErro: x.msg || 'falha', ultimoErroEm: new Date().toISOString() }), { merge: true });
     return { status: 'erro', msg: x.msg || 'A Receita não aceitou a transmissão.' };
