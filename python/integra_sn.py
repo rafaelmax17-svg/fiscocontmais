@@ -839,12 +839,28 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
         rt = _dctf(tok, cert, contratante, cnpj, 'Declarar', 'TRANSDECLARACAO310', dados, consumo, 'declaracao')
         t = _msgs_txt(rt)
         r['msgReceita'] = (rt.get('msg') or f"HTTP {rt.get('http')}")[:300]
-        if 200 <= (rt.get('http') or 0) < 300 and 'sucesso' in t:
+        # 2.4.43: "Requisição efetuada com sucesso" vem até quando a Receita recusa ("Houve erro de negócio") — não basta.
+        # Só conta como transmitida se não houver mensagem de erro E a Receita deixar de mostrar a declaração em andamento.
+        erro_neg = re.search(r'\[erro|erro de negocio|msgic01|nao (foi possivel|pode|sera)|invalid|rejeitad|recusad', t)
+        if 200 <= (rt.get('http') or 0) < 300 and 'sucesso' in t and not erro_neg:
+            import time as _tm
+            sit2 = 'em_andamento'
+            for espera in (4, 8, 12):
+                _tm.sleep(espera)
+                sit2 = dctf_situacao(_dctf(tok, cert, contratante, cnpj, 'Consultar', 'CONSDECCOMPLETA33', _periodo_dctf(comp), consumo))
+                if sit2 != 'em_andamento':
+                    break
+            if sit2 == 'em_andamento':
+                r['msg'] = ('A Receita respondeu à transmissão, mas a DCTFWeb continua em andamento (não foi transmitida): '
+                            + (rt.get('msg') or ''))[:400]
+                return r
             r.update(ok=True, msg='Transmitida.')
         elif re.search(r'ja_?\s*transmitida|ja foi transmitida', t):
             r.update(ok=True, jaTransmitida=True, msg='A DCTFWeb já estava transmitida.')
         else:
-            r['msg'] = ('A Receita não aceitou a transmissão: ' + (rt.get('msg') or f"HTTP {rt.get('http')}"))[:400]
+            # mostra só o que importa (tira o "Requisição efetuada com sucesso" genérico)
+            partes = [x.strip() for x in re.split(r';\s*', rt.get('msg') or '') if x.strip() and 'efetuada com sucesso' not in _txt(x)]
+            r['msg'] = ('A Receita não aceitou a transmissão: ' + ('; '.join(partes) or rt.get('msg') or f"HTTP {rt.get('http')}"))[:400]
             return r
         r.update(origens=d['origens'], reinf=d['reinf'], saldo=d['saldo'], retificadora=d['retificadora'])
         emp = {**emp, 'retificadora': d['retificadora']}

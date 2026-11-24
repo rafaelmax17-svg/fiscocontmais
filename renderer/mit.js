@@ -54,7 +54,7 @@
   function colSituacao(d) {
     const [cls, txt] = SIT[d.sit] || ['nm', d.sit];
     let h = `<span class="mt-tg ${cls}">${e(txt)}</span>`;
-    if (d.dctf && d.dctf.situacao === 'transmitida') h += ` <span class="mt-tg dc">DCTFWeb enviada</span>`;   // pelo sistema ou por fora
+    if (d.dctf && d.dctf.situacao === 'transmitida' && (d.dctf.recibo || d.dctf.arquivo)) h += ` <span class="mt-tg dc">DCTFWeb enviada</span>`;   // só com recibo (2.4.43)
     const pf = fila(d.cnpj);
     if (pf) h += `<div class="sm">${e(PED[pf.tipo] || pf.tipo)} ${pf.status === 'rodando' ? 'em andamento…' : 'na fila…'}</div>`;
     if (d.ultimoErro) h += `<div class="mt-err">${e(d.ultimoErro)}</div>`;
