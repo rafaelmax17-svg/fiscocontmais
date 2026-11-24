@@ -17,7 +17,7 @@
       ic: '<path d="M4 13h6V4H4zM14 20h6V4h-6zM4 20h6v-4H4z"/>' },
     { id: 'conf', sec: 'Fiscal', nome: 'Conferências', sub: 'compara XMLs e SPED, nota por nota', views: ['fiscal-conf', 'fiscal-docs', 'fiscal-confs', 'fiscal-deson', 'fiscal-frete', 'fiscal-inut'],
       ic: '<path d="M9 11l3 3 8-8M4 12a8 8 0 108-8"/>' },
-    { id: 'analise', sec: 'Fiscal', nome: 'Análise e Apuração', sub: 'classificação, tributação e Reforma Tributária', views: ['fiscal-audit', 'fiscal-atrib', 'fiscal-rtc'],
+    { id: 'analise', sec: 'Fiscal', nome: 'Análise e Apuração', sub: 'classificação, tributação e Reforma Tributária', views: ['fiscal-audit', 'fiscal-atrib', 'fiscal-rtc', 'admin-corrigir-sped'],
       ic: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M16 11h0M8 15h2M12 15h2M8 18h8"/>' },
     { id: 'notas', sec: 'Fiscal', nome: 'Notas e documentos', sub: 'baixa automática e consulta de documentos', views: ['fiscal-downloads', 'fiscal-nfechave'],
       ic: '<path d="M12 4v11M7.5 11.5L12 16l4.5-4.5M5 20h14"/>' },
@@ -25,7 +25,7 @@
       ic: '<path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18"/>' },
     { id: 'contabil', sec: 'Contábil', nome: 'Balancete e DRE', sub: 'análise do balancete do Domínio', views: ['overview', 'dre', 'balancete', 'invertidas', 'indicadores', 'historico', 'lote-balancetes', 'conciliacao'],
       ic: '<path d="M4 19V5m0 14h16M8 15l3-4 3 2 4-6"/>' },
-    { id: 'admin', sec: 'Administração', nome: 'Administração', sub: 'usuários, correções e módulos em teste', views: ['admin-usuarios', 'admin-lic', 'admin-integra', 'admin-corrigir-sped', 'admin-corrigir-efd', 'admin-lmc',
+    { id: 'admin', sec: 'Administração', nome: 'Administração', sub: 'usuários, correções e módulos em teste', views: ['admin-usuarios', 'admin-lic', 'admin-integra', 'admin-corrigir-efd', 'admin-lmc',
       'admin-radar', 'admin-audam', 'admin-evo', 'admin-legal', 'admin-frete-pis', 'admin-planilhas', 'admin-bi'],
       ic: '<path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/>' },
   ];
@@ -39,7 +39,7 @@
     'fiscal-fisconforme': 'notificações de todas as empresas', 'fiscal-dare': 'débitos, guias e extratos', 'fiscal-giam': 'recibos de entrega e produtor rural',
     overview: 'resumo do balancete importado', dre: 'DRE com receitas × despesas', balancete: 'todas as contas, com exportação', invertidas: 'contas com saldo do lado errado',
     indicadores: 'liquidez, margens e endividamento', historico: 'balancetes já analisados', 'lote-balancetes': 'vários balancetes de uma vez', conciliacao: 'extrato × fornecedores → TXT do Domínio',
-    'admin-usuarios': 'cadastro, módulos e senhas', 'admin-lic': 'computadores liberados', 'admin-integra': 'chave e computador da Receita', 'admin-corrigir-sped': 'Corretor completo',
+    'admin-usuarios': 'cadastro, módulos e senhas', 'admin-lic': 'computadores liberados', 'admin-integra': 'chave e computador da Receita', 'admin-corrigir-sped': 'Análise Inteligente e correção do SPED',
     'admin-corrigir-efd': 'erros do PVA', 'admin-lmc': 'combustíveis', 'admin-radar': 'monofásico, Tema 69, CIAP', 'admin-audam': 'ICMS do Amazonas', 'admin-evo': 'faturamento e tributos no período',
     'admin-legal': 'dados cadastrais e certidões', 'admin-frete-pis': 'crédito do frete FOB', 'admin-planilhas': 'planilhas do cliente', 'admin-bi': 'indicadores da empresa',
   };
