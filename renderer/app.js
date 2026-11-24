@@ -6644,7 +6644,8 @@ function fpInit() {
       $('#fpVazio').hidden = true; const fr = $('#fpFrame'); fr.hidden = false; fr.srcdoc = r.html;
       $('#btnFpHtml').disabled = false; $('#btnFpPdf').disabled = false; $('#btnFpXlsx').disabled = false;
       const t = r.res.totais || {};
-      toast(`${r.res.qtd.fob} CT-e FOB · crédito R$ ${(t.credito || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+      const cn = r.res.cif_nf || {}, brl = (v) => (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+      toast(`${r.res.qtd.fob} CT-e FOB · crédito R$ ${brl(t.credito)}${cn.qtd ? ` · ${cn.qtd} NF-e com frete do fornecedor${r.res.tem_efd ? ` · a recuperar R$ ${brl((cn.totais || {}).recuperar)}` : ''}` : ''}${t.indevido ? ` · indevido R$ ${brl(t.indevido)}` : ''}`);
     } catch (e) { overlay(false); toast('Falha: ' + e.message, true); }
   });
   const exp = async (formato) => {

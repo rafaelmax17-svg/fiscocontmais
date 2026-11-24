@@ -65,12 +65,19 @@ def _ler_nfe(texto):
             continue
         pis = imp.find('PIS') if imp is not None else None
         g = list(pis)[0] if pis is not None and len(list(pis)) else None
+        icms = imp.find('ICMS') if imp is not None else None
+        gi = list(icms)[0] if icms is not None and len(list(icms)) else None
+        ipi = imp.find('IPI/IPITrib') if imp is not None else None
         itens.append({'n': det.get('nItem'), 'cod': t(prod, 'cProd'), 'desc': t(prod, 'xProd'), 'ncm': t(prod, 'NCM'),
                       'cfop': t(prod, 'CFOP'), 'cst': t(g, 'CST'),
-                      'valor': round(_fx(t(prod, 'vProd')) - _fx(t(prod, 'vDesc')), 2)})
+                      'valor': round(_fx(t(prod, 'vProd')) - _fx(t(prod, 'vDesc')), 2),
+                      # 2.4.40: frete do fornecedor (CIF) destacado na nota e o que mais compõe o custo do item
+                      'vprod': _fx(t(prod, 'vProd')), 'vdesc': _fx(t(prod, 'vDesc')), 'vfrete': _fx(t(prod, 'vFrete')),
+                      'vseg': _fx(t(prod, 'vSeg')), 'voutro': _fx(t(prod, 'vOutro')), 'vipi': _fx(t(ipi, 'vIPI')),
+                      'vicms': _fx(t(gi, 'vICMS')), 'vicmsst': _fx(t(gi, 'vICMSST'))})
     return {'chave': m.group(1), 'num': t(ide, 'nNF'), 'data': (t(ide, 'dhEmi') or t(ide, 'dEmi'))[:10],
             'emit': t(emit, 'CNPJ') or t(emit, 'CPF'), 'emit_nome': t(emit, 'xNome'), 'crt': t(emit, 'CRT'),
-            'dest': t(inf.find('dest'), 'CNPJ'), 'itens': itens}
+            'dest': t(inf.find('dest'), 'CNPJ'), 'mod_frete': t(inf.find('transp'), 'modFrete'), 'itens': itens}
 
 
 def _ler_cte(texto):
@@ -112,6 +119,7 @@ def ler_efd(caminho):
     texto, _ = dr._ler(caminho)
     cnpj, nome, ini, fim = '', '', '', ''
     por_cte = defaultdict(lambda: {'pis': 0.0, 'cofins': 0.0})
+    nfe, nf_atual = {}, None                  # 2.4.40: C100 de entrada (chave) → itens C170 com a base do crédito
     atual = None
     for l in texto.replace('\r\n', '\n').split('\n'):
         c = l.split('|')
@@ -120,6 +128,16 @@ def ler_efd(caminho):
         r = c[1]
         if r == '0000' and len(c) > 9:
             ini, fim, nome, cnpj = c[6], c[7], c[8], c[9]
+        elif r == 'C100' and len(c) > 18:
+            nf_atual = None
+            if c[2] == '0' and len(c[9]) == 44:
+                nf_atual = nfe.setdefault(c[9], {'ind_frt': c[17], 'vl_frt': _fx(c[18].replace(',', '.')), 'itens': []})
+        elif r == 'C170' and nf_atual is not None and len(c) > 32:
+            n = lambda i: _fx(c[i].replace(',', '.'))
+            nf_atual['itens'].append({'num': c[2].strip(), 'vl_item': n(7), 'vl_desc': n(8), 'vl_icms': n(15),
+                                      'cst_pis': c[25], 'bc_pis': n(26), 'cst_cof': c[31], 'bc_cof': n(32)})
+        elif r in ('C001', 'C990', 'D001') :
+            nf_atual = None
         elif r == 'D100' and len(c) > 10:
             atual = c[10] if c[2] == '0' else None
         elif r == 'D101' and atual and len(c) > 8:
@@ -128,7 +146,7 @@ def ler_efd(caminho):
             por_cte[atual]['cofins'] += _fx(c[8].replace(',', '.'))
         elif r == '9999':
             break
-    return {'cnpj': cnpj, 'nome': nome, 'ini': ini, 'fim': fim, 'por_cte': dict(por_cte)}
+    return {'cnpj': cnpj, 'nome': nome, 'ini': ini, 'fim': fim, 'por_cte': dict(por_cte), 'nfe': nfe}
 
 
 # ------------------------------------------------------------------ SPED Fiscal (opcional): CFOP de entrada de cada item
@@ -284,6 +302,113 @@ def classificar(item, nfe, regra_ncm):
     return 'tributado', ''
 
 
+CST_CRED = {str(x) for x in list(range(50, 57)) + list(range(60, 67))}
+
+
+def _frete_na_base(it, ef_it):
+    """O frete destacado no item entrou na base do crédito da EFD? Explica a diferença base − (valor − desconto) pelas
+    parcelas que podem compor o custo do item (frete, seguro, outras despesas, IPI, ICMS-ST; menos o ICMS da compra,
+    excluído por lei desde 2023). 'sim' / 'nao' / None (não dá para concluir — nenhuma combinação explica a base)."""
+    from itertools import combinations
+    r = ef_it['bc_pis'] - (ef_it['vl_item'] - ef_it['vl_desc'])
+    icms = ef_it['vl_icms'] or it.get('vicms', 0.0)
+    partes = [('frete', it['vfrete']), ('seg', it['vseg']), ('outro', it['voutro']), ('ipi', it['vipi']),
+              ('st', it['vicmsst']), ('icms', -icms)]
+    partes = [x for x in partes if abs(x[1]) > 0.004]
+    tol = 0.06 + 0.0002 * ef_it['vl_item']
+    com, sem = False, False
+    for k in range(len(partes) + 1):
+        for comb in combinations(partes, k):
+            if abs(sum(v for _, v in comb) - r) <= tol:
+                if any(nm == 'frete' for nm, _ in comb):
+                    com = True
+                else:
+                    sem = True
+    if com and not sem:
+        return 'sim'
+    if sem and not com:
+        return 'nao'
+    return None
+
+
+def conferir_cif(nfes, raiz, cancel, ef, sp, regra):
+    """Frete do fornecedor (CIF) destacado nas NF-e de compra: integra o custo de aquisição e acompanha o crédito do item
+    (Lei 10.833/2003 e Lei 10.637/2002, art. 3º, I; RIR/2018, art. 301, § 1º). Sem CT-e próprio: o crédito vem pela nota."""
+    notas, tot = [], defaultdict(float)
+    for n in sorted(nfes.values(), key=lambda x: (x['data'], x['num'])):
+        if n['chave'] in cancel or (n.get('dest') or '')[:8] != raiz or n.get('mod_frete') != '0':
+            continue
+        if sum(it.get('vfrete', 0.0) for it in n['itens']) <= 0.009:
+            continue
+        en = (ef or {}).get('nfe', {}).get(n['chave']) if ef else None
+        livres = list(en['itens']) if en else []
+        its, sit_n = [], Counter()
+        for it in n['itens']:
+            if it.get('vfrete', 0.0) <= 0.004:
+                continue
+            dst = _destino_item(n['chave'], it, sp) if sp is not None else None
+            cat, motivo = dst if dst else classificar(it, n, regra)
+            cred = round(it['vfrete'] * (ALIQ_PIS + ALIQ_COFINS) / 100, 2)
+            x = {'n': it['n'], 'desc': it['desc'], 'ncm': it['ncm'], 'cat': cat, 'motivo': motivo, 'vprod': it['vprod'],
+                 'vfrete': round(it['vfrete'], 2), 'credito': 0.0, 'recuperar': 0.0, 'bc_efd': None}
+            if cat != 'tributado':
+                x['sit'] = 'Verificar' if cat == 'verificar' else 'Sem crédito'
+                x['motivo'] = motivo or 'o item não gera crédito'
+            elif not ef:
+                x.update(sit='Confira na EFD', credito=cred, motivo='anexe a EFD-Contribuições para conferir se o frete entrou na base')
+            else:
+                e_it = None
+                if en:
+                    e_it = next((y for y in livres if y['num'] == str(it['n']) and abs(y['vl_item'] - it['vprod']) <= 0.02), None) \
+                        or next((y for y in livres if abs(y['vl_item'] - it['vprod']) <= 0.02), None)
+                if e_it:
+                    livres.remove(e_it)
+                    x['bc_efd'] = e_it['bc_pis']
+                if not en:
+                    x.update(sit='Fora da EFD', motivo='a nota não está na EFD-Contribuições anexada (outro mês ou não escriturada)')
+                elif not e_it:
+                    x.update(sit='Verificar', motivo='o item não foi encontrado nos C170 da nota na EFD')
+                elif e_it['cst_pis'] not in CST_CRED:
+                    x.update(sit='Verificar', motivo=f'na EFD o item está com CST {e_it["cst_pis"]}, sem crédito — o item é tributado pelo NCM')
+                else:
+                    v = _frete_na_base(it, e_it)
+                    x['credito'] = cred
+                    if v == 'sim':
+                        x.update(sit='Na base', motivo='o frete já entrou na base do crédito')
+                    elif v == 'nao':
+                        x.update(sit='Fora da base', recuperar=cred, motivo='o frete da nota não entrou na base do crédito do item')
+                    else:
+                        x.update(sit='Não conclusivo', motivo='a base da EFD não fecha com o valor do item, com ou sem o frete — confira o item')
+            sit_n[x['sit']] += 1
+            its.append(x)
+            tot['frete'] += x['vfrete']
+            if cat == 'tributado':
+                tot['frete_trib'] += x['vfrete']
+                tot['credito'] += x['credito'] or cred
+            tot['recuperar'] += x['recuperar']
+            if x['sit'] == 'Na base':
+                tot['na_base'] += x['vfrete']
+        if not its:
+            continue
+        rec = round(sum(i['recuperar'] for i in its), 2)
+        if rec > 0:
+            sit = 'Fora da base'
+        elif sit_n.get('Confira na EFD'):
+            sit = 'Confira na EFD'
+        elif sit_n.get('Na base') and set(sit_n) <= {'Na base', 'Sem crédito'}:
+            sit = 'Na base'
+        elif set(sit_n) == {'Sem crédito'}:
+            sit = 'Sem crédito'
+        elif set(sit_n) == {'Fora da EFD'}:
+            sit = 'Fora da EFD'
+        else:
+            sit = 'Verificar'
+        notas.append({'chave': n['chave'], 'num': n['num'], 'data': n['data'], 'emit_nome': n['emit_nome'],
+                      'frete': round(sum(i['vfrete'] for i in its), 2), 'frete_trib': round(sum(i['vfrete'] for i in its if i['cat'] == 'tributado'), 2),
+                      'recuperar': rec, 'sit': sit, 'itens': its})
+    return {'notas': notas, 'totais': {k: round(v, 2) for k, v in tot.items()}}
+
+
 def analisar(caminhos, efd='', cnpj='', excluir_icms=True, sped=None):
     from oportunidades import _regra_ncm
     ctes, nfes, cancel, erros = ler_arquivos(caminhos)
@@ -294,6 +419,9 @@ def analisar(caminhos, efd='', cnpj='', excluir_icms=True, sped=None):
     if not cnpj:
         cont = Counter(c['toma_cnpj'] for c in ctes.values() if c.get('toma_cnpj'))
         cnpj = cont.most_common(1)[0][0] if cont else ''
+    if not cnpj:                              # só NF-e (frete CIF): a empresa é a destinatária mais comum
+        cont = Counter(n.get('dest') for n in nfes.values() if n.get('dest'))
+        cnpj = cont.most_common(1)[0][0] if cont else ''
     raiz = cnpj[:8]
     linhas, pend, cif = [], [], []
     tot = defaultdict(float)
@@ -303,7 +431,7 @@ def analisar(caminhos, efd='', cnpj='', excluir_icms=True, sped=None):
             pend.append({'sit': 'Informativo', 'texto': f'CT-e {c["num"]} cancelado (evento no lote): fora do cálculo'})
             continue
         if not raiz or (c.get('toma_cnpj') or '')[:8] != raiz:
-            cif.append({'num': c['num'], 'data': c['data'], 'transp': c['emit_nome'], 'toma': c.get('toma_cnpj', ''),
+            cif.append({'chave': c['chave'], 'num': c['num'], 'data': c['data'], 'transp': c['emit_nome'], 'toma': c.get('toma_cnpj', ''),
                         'valor': c['vtprest']})
             continue
         base_frete = round(c['vtprest'] - (c['vicms'] if excluir_icms else 0), 2)
@@ -394,6 +522,15 @@ def analisar(caminhos, efd='', cnpj='', excluir_icms=True, sped=None):
         'competencia': (Counter(l['data'][:7] for l in linhas if l.get('data')).most_common(1) or [('', 0)])[0][0],
     }
     res['totais']['credito'] = r2(tot['pis'] + tot['cofins'])
+    # 2.4.40: frete do fornecedor (CIF) nas NF-e de compra + crédito tomado em CT-e de outro tomador (indevido)
+    res['cif_nf'] = conferir_cif(nfes, raiz, cancel, ef, sp, _regra_ncm)
+    res['indevidos'] = []
+    if ef:
+        for c in cif:
+            ja = ef['por_cte'].get(c['chave'])
+            if ja and ja['pis'] + ja['cofins'] > 0.009:
+                res['indevidos'].append({**c, 'pis': r2(ja['pis']), 'cofins': r2(ja['cofins'])})
+    res['totais']['indevido'] = r2(sum(x['pis'] + x['cofins'] for x in res['indevidos']))
     if ef:
         res['totais']['diferenca'] = r2(tot['pis'] + tot['cofins'] - tot['efd'])
     return res
@@ -438,7 +575,7 @@ def gerar_xlsx(res, destino):
            f"ICMS do CT-e {'excluído' if res['excluir_icms'] else 'mantido'} na base · cálculo para conferência")
     ws = wb.active
     ws.title = 'Resumo'
-    faixa(ws, 'CRÉDITO DE PIS/COFINS SOBRE FRETE FOB', sub, 6)
+    faixa(ws, 'CRÉDITO DE PIS/COFINS SOBRE FRETE NAS COMPRAS (FOB E CIF)', sub, 6)
     lin = [('CT-e FOB (tomador = empresa)', res['qtd']['fob']), ('CT-e CIF / de outro tomador (fora)', res['qtd']['cif']),
            ('Frete total dos CT-e FOB', t.get('frete', 0)), ('Base do frete (após ICMS, se excluído)', t.get('base_frete', 0)),
            ('Frete dos itens tributados (base do crédito)', t.get('base', 0)), ('Crédito de PIS', t.get('pis', 0)),
@@ -446,6 +583,14 @@ def gerar_xlsx(res, destino):
            ('Crédito adicional possível (itens para verificar)', res['adicional_credito'])]
     if res['tem_efd']:
         lin += [('Já tomado na EFD-Contribuições (D101/D105)', t.get('efd', 0)), ('Diferença', t.get('diferenca', 0))]
+    ct = (res.get('cif_nf') or {}).get('totais') or {}
+    if (res.get('cif_nf') or {}).get('notas'):
+        lin += [('NF-e de compra com frete do fornecedor (CIF)', len(res['cif_nf']['notas'])), ('Frete destacado nessas notas', ct.get('frete', 0.0)),
+                ('Frete dos itens tributados', ct.get('frete_trib', 0.0)),
+                ('Crédito a recuperar (frete fora da base na EFD)' if res['tem_efd'] else 'Crédito possível (anexe a EFD para conferir)',
+                 ct.get('recuperar', 0.0) if res['tem_efd'] else ct.get('credito', 0.0))]
+    if res.get('indevidos'):
+        lin += [('Crédito indevido em CT-e de outro tomador', t.get('indevido', 0.0))]
     for i, (rot, v) in enumerate(lin, 4):
         ws.cell(i, 1, rot).font = Font(bold='Crédito' in rot or 'Diferença' in rot)
         x = ws.cell(i, 2, v)
@@ -485,6 +630,20 @@ def gerar_xlsx(res, destino):
         faixa(w, 'CT-E COM OUTRO TOMADOR (CIF) — FORA DO CÁLCULO', sub, 5)
         tabela(w, 3, ['CT-e', 'Data', 'Transportadora', 'Tomador', 'Valor'],
                [[c['num'], _br(c['data']), c['transp'], c['toma'], c['valor']] for c in res['cif']], [10, 11, 36, 18, 13], (4,))
+    cn = (res.get('cif_nf') or {}).get('notas') or []
+    if cn:
+        w = wb.create_sheet('Frete nas NF-e (CIF)')
+        faixa(w, 'FRETE DO FORNECEDOR NAS NF-E DE COMPRA (CIF)', sub, 10)
+        tabela(w, 3, ['NF-e', 'Data', 'Fornecedor', 'Item', 'NCM', 'Classificação', 'Frete do item', 'Base na EFD', 'Crédito a recuperar' if res['tem_efd'] else 'Crédito possível', 'Situação', 'Chave'],
+               [[n['num'], _br(n['data']), n['emit_nome'], i['desc'], i['ncm'], CAT_NOME.get(i['cat'], i['cat']), i['vfrete'], i['bc_efd'] if i['bc_efd'] is not None else '',
+                 i['recuperar'] if res['tem_efd'] else i['credito'], i['sit'] + (' · ' + i['motivo'] if i.get('motivo') else ''), n['chave']]
+                for n in cn for i in n['itens']], [9, 11, 30, 36, 11, 18, 12, 12, 14, 60, 47], (6, 7, 8))
+    if res.get('indevidos'):
+        w = wb.create_sheet('Crédito indevido (CT-e)')
+        faixa(w, 'CRÉDITO INDEVIDO — CT-E DE OUTRO TOMADOR CREDITADO NA EFD', sub, 7)
+        tabela(w, 3, ['CT-e', 'Data', 'Transportadora', 'Tomador', 'Frete', 'PIS creditado', 'COFINS creditada', 'Chave'],
+               [[c['num'], _br(c['data']), c['transp'], c['toma'], c['valor'], c['pis'], c['cofins'], c['chave']] for c in res['indevidos']],
+               [10, 11, 36, 18, 12, 13, 14, 47], (4, 5, 6))
     tmp = destino + '.parcial'
     wb.save(tmp)
     os.replace(tmp, destino)
@@ -498,7 +657,7 @@ def gerar_html(res, cliente=False):
     return HTML.replace('/*DADOS*/', js).replace('/*CLIENTE*/false', 'true' if cliente else 'false')
 
 
-HTML = r'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Crédito PIS/COFINS sobre frete FOB</title><style>
+HTML = r'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Crédito PIS/COFINS sobre frete nas compras</title><style>
 *{box-sizing:border-box}body{margin:0;font-family:"Segoe UI",Arial,sans-serif;background:#f1f4f9;color:#0f172a}
 .hd{background:#1e3a8a;color:#fff;padding:20px 28px;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
 .hd h1{margin:0;font-size:21px}.hd .s{font-size:12.5px;color:#c7d2fe;margin-top:4px}
@@ -517,20 +676,22 @@ tr.sub td{background:#f8fafc;font-size:12px;color:#334155}tr.sub2 td{background:
 .tg{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap}
 .t-Calculado,.t-Sem{background:#dcfce7;color:#15803d}.t-Verificar{background:#fef3c7;color:#b45309}.t-Informativo{background:#e0e7ff;color:#4338ca}
 .lg{display:flex;gap:14px;font-size:11.5px;color:#475569;margin:6px 0;flex-wrap:wrap}.lg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.t-Na,.t-Confira{background:#dcfce7;color:#15803d}.t-Fora{background:#fee2e2;color:#b91c1c}.t-Não,.t-Sem{background:#f1f5f9;color:#475569}.t-Indevido{background:#fee2e2;color:#b91c1c}
+tr.nf{cursor:pointer}tr.nf:hover td{background:#f8fafc}
 .lei{background:#eef2ff;border-left:4px solid #1e3a8a;border-radius:8px;padding:10px 14px;font-size:12px;color:#334155;margin-top:16px;line-height:1.55}
 input.q{border:1px solid #cbd5e1;border-radius:10px;padding:8px 12px;font-size:13px;min-width:320px;margin-bottom:8px}
 .sm{font-size:11px;color:#64748b}
 @media print{input.q{display:none}.c{animation:none}th{position:static}tr.cte{cursor:default}body{background:#fff}}
 </style></head><body>
-<div class="hd"><div><h1>Crédito de PIS/COFINS sobre frete FOB <span class="adm" id="admTag">ADMIN · TESTE</span></h1><div class="s">CT-e de frete na compra × itens das NF-e transportadas · rateio pelo valor dos itens tributados</div></div><div class="s" id="cab"></div></div>
+<div class="hd"><div><h1>Crédito de PIS/COFINS sobre frete nas compras <span class="adm" id="admTag">ADMIN · TESTE</span></h1><div class="s">Frete FOB (CT-e pago pela empresa) rateado pelos itens tributados · frete do fornecedor (CIF) destacado nas NF-e</div></div><div class="s" id="cab"></div></div>
 <div class="w"><div class="k" id="kpis"></div>
 <h3 id="hCte">Por CT-e (clique para ver as notas e o rateio)</h3>
 <div class="lg"><span><i style="background:#0ea472"></i>tributado</span><span><i style="background:#f59e0b"></i>monofásico</span><span><i style="background:#ef4444"></i>substituição tributária</span><span><i style="background:#94a3b8"></i>alíquota zero / isento</span><span id="lgU" hidden><i style="background:#0ea5e9"></i>uso e consumo / imobilizado</span><span id="lgV"><i style="background:#a78bfa"></i>verificar</span></div>
 <input class="q" id="q" placeholder="Pesquisar CT-e, NF-e, transportadora ou fornecedor">
 <table><thead><tr><th>CT-e</th><th>Data</th><th>Transportadora</th><th>NF-e</th><th>Composição das notas</th><th class="n">Frete</th><th class="n">Base do crédito</th><th class="n">PIS + COFINS</th><th>Situação</th></tr></thead><tbody id="tb"></tbody></table>
 <h3 id="pendH">Pendências</h3><div id="pend"></div>
-<div id="cifbox"></div>
-<div class="lei" id="lei"><b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. A tributação de cada item é conferida pelo NCM nas tabelas oficiais da EFD-Contribuições (4.3.10, monofásicos, e 4.3.13, alíquota zero). Com o SPED Fiscal anexado, o item escriturado com CFOP de entrada de uso e consumo (1.556, 2.556, 1.407, 2.407) ou de ativo imobilizado (1.551, 2.551, 1.406, 2.406) fica fora da base: o frete desses bens não é custo de mercadoria para revenda nem insumo (art. 3º, I e II). Itens "verificar" (NCM que sozinho não define a tributação, como a posição 38.08 e as bebidas frias) ficam fora da base até a confirmação. Só se aplica ao regime não cumulativo. <b>O cálculo é para conferência; quem decide é o contador.</b></div></div>
+<div id="cifnf"></div><div id="indev"></div><div id="cifbox"></div>
+<div class="lei" id="lei"><b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. A tributação de cada item é conferida pelo NCM nas tabelas oficiais da EFD-Contribuições (4.3.10, monofásicos, e 4.3.13, alíquota zero). Com o SPED Fiscal anexado, o item escriturado com CFOP de entrada de uso e consumo (1.556, 2.556, 1.407, 2.407) ou de ativo imobilizado (1.551, 2.551, 1.406, 2.406) fica fora da base: o frete desses bens não é custo de mercadoria para revenda nem insumo (art. 3º, I e II). Itens "verificar" (NCM que sozinho não define a tributação, como a posição 38.08 e as bebidas frias) ficam fora da base até a confirmação. Só se aplica ao regime não cumulativo. <br><br><b>Frete do fornecedor (CIF):</b> quando o fornecedor paga a transportadora e cobra o frete na própria NF-e (modalidade "por conta do emitente"), o frete faz parte do custo de aquisição da mercadoria (RIR/2018, art. 301, § 1º) e entra na base do crédito do item, na mesma medida dele (Lei 10.833/2003 e Lei 10.637/2002, art. 3º, I). Não há crédito sobre o CT-e, porque o tomador do transporte é o fornecedor — creditar o CT-e e também o frete da nota seria crédito em dobro. A conferência compara a base do crédito de cada item na EFD-Contribuições (C170) com o valor do item e o frete destacado na nota. <b>O cálculo é para conferência; quem decide é o contador.</b></div></div>
 <script>
 const D=/*DADOS*/;const $=s=>document.querySelector(s);
 const m=v=>(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -551,11 +712,11 @@ if(CLIENTE){
  if(D.tem_efd){t.efd=Math.round(D.linhas.reduce((a,l)=>a+(l.efd_pis||0)+(l.efd_cofins||0),0)*100)/100;t.diferenca=Math.round((t.credito-t.efd)*100)/100;}
  D.qtd.fob=D.linhas.length;
  COR.verificar='#cbd5e1';NOME.verificar='Fora da base';
- document.title='Crédito de PIS/COFINS sobre frete FOB';
+ document.title='Crédito de PIS/COFINS sobre frete nas compras';
  $('#admTag').remove();
  $('#hCte').textContent='Por CT-e (clique no CT-e para ver as notas)';
  $('#lgV').remove();
- $('#lei').innerHTML='<b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. A tributação de cada item é conferida pelo NCM nas tabelas oficiais da EFD-Contribuições (4.3.10, monofásicos, e 4.3.13, alíquota zero). Com o SPED Fiscal anexado, o item escriturado com CFOP de entrada de uso e consumo (1.556, 2.556, 1.407, 2.407) ou de ativo imobilizado (1.551, 2.551, 1.406, 2.406) fica fora da base: o frete desses bens não é custo de mercadoria para revenda nem insumo (art. 3º, I e II). Só se aplica ao regime não cumulativo.';
+ $('#lei').innerHTML='<b>Critério:</b> o frete pago na compra (FOB) integra o custo de aquisição e gera crédito na mesma medida dos bens transportados. A compra para revenda de produto monofásico e de produto com alíquota zero não gera crédito (Lei 10.833/2003, art. 3º, I, "b", e §2º, II; Lei 10.637/2002, art. 3º, I, "b", e §2º, II), então o frete de cada CT-e é rateado pelo valor dos itens tributados das notas transportadas. A tributação de cada item é conferida pelo NCM nas tabelas oficiais da EFD-Contribuições (4.3.10, monofásicos, e 4.3.13, alíquota zero). Com o SPED Fiscal anexado, o item escriturado com CFOP de entrada de uso e consumo (1.556, 2.556, 1.407, 2.407) ou de ativo imobilizado (1.551, 2.551, 1.406, 2.406) fica fora da base: o frete desses bens não é custo de mercadoria para revenda nem insumo (art. 3º, I e II). Só se aplica ao regime não cumulativo.<br><br><b>Frete do fornecedor (CIF):</b> quando o fornecedor paga a transportadora e cobra o frete na própria NF-e, o frete faz parte do custo de aquisição da mercadoria (RIR/2018, art. 301, § 1º) e entra na base do crédito do item, na mesma medida dele (Lei 10.833/2003 e Lei 10.637/2002, art. 3º, I).';
 }
 if(D.tem_sped)$('#lgU').hidden=false;
 const T=D.totais;
@@ -583,6 +744,26 @@ $('#q').oninput=desenha;desenha();
 if(CLIENTE&&!D.pendencias.length){$('#pendH').remove();$('#pend').remove();}else
 $('#pend').innerHTML=D.pendencias.length?`<table><tr><th>Situação</th><th>O que foi encontrado</th></tr>${D.pendencias.map(p=>`<tr><td><span class="tg t-${p.sit}">${p.sit}</span></td><td>${e(p.texto)}</td></tr>`).join('')}</table>`:'<div class="sm">Nenhuma pendência.</div>';
 if(D.cif.length)$('#cifbox').innerHTML=`<h3>CT-e com outro tomador (CIF) — fora do cálculo</h3><table><tr><th>CT-e</th><th>Data</th><th>Transportadora</th><th>Tomador</th><th class="n">Valor</th></tr>${D.cif.map(c=>`<tr><td>${e(c.num)}</td><td>${br(c.data)}</td><td>${e(c.transp)}</td><td>${e(c.toma)}</td><td class="n">${m(c.valor)}</td></tr>`).join('')}</table>`;
+// 2.4.40 — frete do fornecedor (CIF) nas NF-e de compra e crédito indevido em CT-e de outro tomador
+(function(){const C=D.cif_nf||{notas:[],totais:{}};
+ if(CLIENTE){C.notas=C.notas.map(n=>({...n,itens:n.itens.filter(i=>i.sit==='Fora da base'||i.sit==='Na base')})).filter(n=>n.itens.length);D.indevidos=[];}
+ if(!D.linhas.length){['#kpis','#hCte','#q'].forEach(s=>{const x=$(s);if(x)x.remove();});const tb=$('#tb');if(tb)tb.closest('table').remove();const lg=document.querySelector('.lg');if(lg)lg.remove();}
+ if(!C.notas.length&&!(D.indevidos||[]).length)return;
+ const CT=C.totais||{};const rec=CLIENTE?Math.round(C.notas.reduce((a,n)=>a+n.itens.reduce((b,i)=>b+(i.recuperar||0),0),0)*100)/100:(CT.recuperar||0);
+ const kp=[['NF-e com frete do fornecedor',C.notas.length,'modalidade por conta do emitente','#0f766e',1],['Frete destacado nas notas',CLIENTE?C.notas.reduce((a,n)=>a+n.frete,0):CT.frete,'soma do frete das NF-e','#0891b2'],
+  ['Frete dos itens tributados',CLIENTE?C.notas.reduce((a,n)=>a+n.frete_trib,0):CT.frete_trib,'acompanha o crédito do item','#0ea472']];
+ if(D.tem_efd)kp.push(['Crédito a recuperar',rec,'frete que ficou fora da base na EFD','#dc2626']);else kp.push(['Crédito possível',CT.credito,'anexe a EFD para conferir','#7c3aed']);
+ if(!CLIENTE&&(D.indevidos||[]).length)kp.push(['Crédito indevido em CT-e',D.totais.indevido,'CT-e de outro tomador creditado','#b91c1c']);
+ let h=`<h3>Frete do fornecedor nas NF-e de compra (CIF)</h3><div class="k">${kp.map(([t,v,s,c,i],k)=>`<div class="c" style="--c:${c};animation-delay:${k*.06}s"><small>${t}</small><b>${i?v:'R$ '+m(v)}</b><span>${e(s)}</span></div>`).join('')}</div>`;
+ if(C.notas.length){h+=`<table style="margin-top:10px"><thead><tr><th>NF-e</th><th>Data</th><th>Fornecedor</th><th class="n">Frete na nota</th><th class="n">Frete itens tributados</th><th class="n">${D.tem_efd?'Crédito a recuperar':'Crédito possível'}</th><th>Situação</th></tr></thead><tbody id="tbNf"></tbody></table>`;}
+ if((D.indevidos||[]).length)h+=`<h3>Crédito indevido — CT-e de outro tomador creditado na EFD</h3><table><tr><th>CT-e</th><th>Data</th><th>Transportadora</th><th>Tomador</th><th class="n">Frete</th><th class="n">PIS + COFINS creditados</th><th>Situação</th></tr>${D.indevidos.map(c=>`<tr><td>${e(c.num)}</td><td>${br(c.data)}</td><td>${e(c.transp)}</td><td>${e(c.toma)}</td><td class="n">${m(c.valor)}</td><td class="n">${m(c.pis+c.cofins)}</td><td><span class="tg t-Indevido">Indevido</span><div class="sm">o frete foi pago pelo fornecedor (outro tomador): o custo já vem na nota de compra</div></td></tr>`).join('')}</table>`;
+ $('#cifnf').innerHTML=h;
+ const ab=new Set();
+ function nf(){let x='';C.notas.forEach((n,k)=>{const cr=D.tem_efd?n.recuperar:n.itens.reduce((a,i)=>a+(i.credito||0),0);
+  x+=`<tr class="nf" data-k="${k}"><td><b>${e(n.num)}</b></td><td>${br(n.data)}</td><td>${e(n.emit_nome)}</td><td class="n">${m(n.frete)}</td><td class="n">${m(n.frete_trib)}</td><td class="n">${m(cr)}</td><td><span class="tg t-${n.sit.split(' ')[0]}">${e(n.sit)}</span></td></tr>`;
+  if(ab.has(k))n.itens.forEach(i=>{x+=`<tr class="sub2"><td></td><td colspan="2">${e(i.desc)} <span class="sm">· NCM ${e(i.ncm)}</span></td><td class="n">${m(i.vfrete)}</td><td class="n"><span style="color:${COR[i.cat]};font-weight:700">${NOME[i.cat]}</span>${i.bc_efd!=null?`<div class="sm">base na EFD R$ ${m(i.bc_efd)}</div>`:''}</td><td class="n">${m(D.tem_efd?i.recuperar:i.credito)}</td><td><span class="tg t-${i.sit.split(' ')[0]}">${e(i.sit)}</span><div class="sm">${e(i.motivo||'')}</div></td></tr>`;});});
+  const tb=$('#tbNf');if(tb){tb.innerHTML=x;tb.querySelectorAll('tr.nf').forEach(r=>r.onclick=()=>{const k=+r.dataset.k;ab.has(k)?ab.delete(k):ab.add(k);nf();});}}
+ nf();})();
 </script></body></html>'''
 
 
@@ -607,10 +788,11 @@ def main_cli(argv):
     try:
         res = analisar(xmls, efd=opt('--efd') or '', cnpj=opt('--cnpj') or '', excluir_icms='--manter-icms' not in argv,
                        sped=lista('--sped') or None)
-        if not res['qtd']['ctes']:
-            res = {'erro': 'Nenhum CT-e foi encontrado nos arquivos selecionados.'}
-        elif not res['qtd']['fob']:
-            res = {'erro': 'Nenhum CT-e tem a empresa como tomadora do serviço (frete FOB). Confira o CNPJ ou os arquivos.'}
+        tem_cif = bool(res['cif_nf']['notas'] or res['indevidos'])
+        if not res['qtd']['ctes'] and not tem_cif:
+            res = {'erro': 'Nenhum CT-e nem NF-e de compra com frete do fornecedor (CIF) foi encontrado nos arquivos selecionados.'}
+        elif not res['qtd']['fob'] and not tem_cif:
+            res = {'erro': 'Nenhum CT-e tem a empresa como tomadora do serviço (frete FOB) e nenhuma NF-e de compra traz frete do fornecedor (CIF). Confira o CNPJ ou os arquivos.'}
         else:
             if opt('--html'):
                 tmp = opt('--html') + '.parcial'
@@ -625,6 +807,7 @@ def main_cli(argv):
             if opt('--xlsx'):
                 gerar_xlsx(res, opt('--xlsx'))
             res = {k: v for k, v in res.items() if k not in ('linhas',)}
+            res['cif_nf'] = {'totais': res['cif_nf']['totais'], 'qtd': len(res['cif_nf']['notas'])}
     except Exception as e:  # pragma: no cover
         import traceback
         traceback.print_exc()
