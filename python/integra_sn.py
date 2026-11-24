@@ -728,7 +728,7 @@ def _c14n_trecho(el):
 
 def assinar_dctf(xml, chave_priv, cert_der_b64):
     """XMLDSig envelopada do <ConteudoDeclaracao id="..."> do ProcDctf: C14N 1.0, SHA-256, RSA-SHA256, X509Certificate;
-    a assinatura vai como último filho de <ProcDctf>. Assina o XML devolvido pela Receita sem alterar o conteúdo."""
+    a assinatura vai como último filho do próprio <ConteudoDeclaracao>. Assina o XML devolvido pela Receita sem alterar o conteúdo."""
     import hashlib
     from lxml import etree
     from cryptography.hazmat.primitives import hashes
@@ -740,12 +740,15 @@ def assinar_dctf(xml, chave_priv, cert_der_b64):
     ref = alvo.get('id') or alvo.get('Id') or alvo.get('ID')
     if not ref:
         raise ValueError('o ConteudoDeclaracao não tem id')
-    proc = raiz if _local(raiz.tag) == 'ProcDctf' else next((el for el in raiz.iter() if _local(el.tag) == 'ProcDctf'), raiz)
-    for velha in [el for el in proc if _local(el.tag) == 'Signature']:
-        proc.remove(velha)
+    # 2.4.44: a Receita recusou (TRANS09 "Assinatura inválida") a assinatura como irmã do ConteudoDeclaracao. O padrão
+    # usado por quem transmite pelo Integra Contador (ACBr: docElement = ConteudoDeclaracao, IdAttr = id) é a assinatura
+    # ENVELOPADA: <Signature> como último filho do próprio ConteudoDeclaracao, com Reference="#id" e a transformação
+    # enveloped-signature (o digest é do ConteudoDeclaracao sem a assinatura).
+    for velha in [el for el in raiz.iter() if _local(el.tag) == 'Signature']:
+        velha.getparent().remove(velha)
     digest = base64.b64encode(hashlib.sha256(_c14n_trecho(alvo)).digest()).decode('ascii')
     E = lambda n: '{%s}%s' % (NS_DS, n)                       # noqa: E731
-    sig = etree.SubElement(proc, E('Signature'), nsmap={None: NS_DS})
+    sig = etree.SubElement(alvo, E('Signature'), nsmap={None: NS_DS})
     si = etree.SubElement(sig, E('SignedInfo'))
     etree.SubElement(si, E('CanonicalizationMethod'), Algorithm='http://www.w3.org/TR/2001/REC-xml-c14n-20010315')
     etree.SubElement(si, E('SignatureMethod'), Algorithm='http://www.w3.org/2001/04/xmldsig-more#rsa-sha256')
@@ -838,7 +841,7 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
         dados = {**_periodo_dctf(comp), 'xmlAssinadoBase64': base64.b64encode(assinado.encode('utf-8')).decode('ascii')}
         rt = _dctf(tok, cert, contratante, cnpj, 'Declarar', 'TRANSDECLARACAO310', dados, consumo, 'declaracao')
         t = _msgs_txt(rt)
-        r['msgReceita'] = (rt.get('msg') or f"HTTP {rt.get('http')}")[:300]
+        r['msgReceita'] = (rt.get('msg') or f"HTTP {rt.get('http')}")[:1500]       # inteira: a recusa diz a tag com erro
         # 2.4.43: "Requisição efetuada com sucesso" vem até quando a Receita recusa ("Houve erro de negócio") — não basta.
         # Só conta como transmitida se não houver mensagem de erro E a Receita deixar de mostrar a declaração em andamento.
         erro_neg = re.search(r'\[erro|erro de negocio|msgic01|nao (foi possivel|pode|sera)|invalid|rejeitad|recusad', t)
