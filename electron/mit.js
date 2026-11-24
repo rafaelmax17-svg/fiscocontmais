@@ -302,7 +302,7 @@ async function _lerDctf(comp, cnpj) {
   const x = (r.resultados || [])[0] || {};
   if (x.indRetif && !_indVisto) { _indVisto = true; _log(`DCTFWeb ${comp} ${cnpj}: indRetificacao = "${x.indRetif}" → ${x.retificadora === true ? 'retificadora' : x.retificadora === false ? 'original' : 'não reconhecido'}`); }
   return _limpo({ situacao: x.situacao || '', msg: x.msg || '', retificadora: x.retificadora ?? null, origens: x.origens || {}, outros: x.outros || {}, reinf: x.reinf || {},
-    esperadoTudo: _tudo(x), lidaEm: new Date().toISOString() });
+    esperadoTudo: _tudo(x), xmlHash: x.xmlHash || '', lidaEm: new Date().toISOString() });
 }
 
 async function _consultar(p) {
@@ -393,7 +393,7 @@ async function _transmitir(p) {
   const [a, m] = p.comp.split('-');
   const pasta = pastaCliente.pastaDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
   const envia = async (lida) => {
-    const r = await _robo.python({ acao: 'dctf_transmitir', comp: p.comp, empresa: { cnpj, nome: d.nome, esperado: lida.reinf || {}, esperadoTudo: lida.esperadoTudo || {}, pasta, semMovimento: sit === 'sem_movimento' } });
+    const r = await _robo.python({ acao: 'dctf_transmitir', comp: p.comp, empresa: { cnpj, nome: d.nome, esperado: lida.reinf || {}, esperadoTudo: lida.esperadoTudo || {}, esperadoHash: lida.xmlHash || '', pasta, semMovimento: sit === 'sem_movimento' } });
     if (!r.ok) throw new Error(r.erro || 'Falha na transmissão.');
     await _consumo(r);
     return r.resultado || {};
@@ -402,7 +402,8 @@ async function _transmitir(p) {
   // 2.4.34: a Receita ainda estava juntando os débitos (comum logo depois do MIT, sobretudo quando a folha já tinha
   // transmitido e a DCTFWeb virou retificadora). Registra o que mudou, espera, lê de novo e tenta uma vez só.
   if (!x.ok && Array.isArray(x.diferencas)) {
-    _log(`${d.nome}: débitos mudaram entre as leituras → ${x.diferencas.map((y) => `${y.cod}: ${y.visto} → ${y.agora}`).join(' · ') || 'sem débitos na 2ª leitura'}`);
+    _log(`${d.nome}: débitos mudaram entre as leituras → ${x.diferencas.map((y) => `${y.cod}: ${y.visto} → ${y.agora}`).join(' · ') || 'nenhum débito reconhecido no XML'}`);
+    if (Array.isArray(x.arvore)) _log(`leiaute do XML (só nomes das tags): ${x.arvore.join(' | ').slice(0, 3000)}`);
     await new Promise((ok) => setTimeout(ok, 20000));
     const nova = await _lerDctf(p.comp, cnpj);
     if (nova && nova.situacao === 'em_andamento') { dctf = nova; x = await envia(nova); }

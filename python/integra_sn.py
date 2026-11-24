@@ -650,16 +650,19 @@ def dctf_debitos(xml):
             if origem.startswith('REINF'):
                 out['reinfOrigem'][cod] = origem
     # nenhum débito ligado a uma origem: se a declaração só tem UMA origem, os débitos soltos são dela
+    # 2.4.37: declaração só com o MIT veio sem nenhum <sistemaUsuarioDctf> — os débitos soltos também contam
     origs = {ORIGEM_DCTF.get((x.text or '').strip(), 'outra') for x in sis}
-    if not out['codigos'] and len(origs) == 1:
-        origem = origs.pop()
+    if not out['codigos'] and len(origs) <= 1:
+        origem = origs.pop() if origs else 'outra'
         for el in raiz.iter():
             if eh_cod(el) and el.getparent() is not None:
                 pai = el.getparent()
                 cam = [_local(x.tag) for x in pai.iterancestors()][:6] + [_local(pai.tag)]
                 if any(_RX_NAO_DEB.search(c) for c in cam):
                     continue
-                v = next((_numxml(f.text) for f in pai if not len(f) and f is not el and (_RX_VAL_DEB.search(_local(f.tag)) or _RX_VAL_ALT.search(_local(f.tag)))), None) or 0.0
+                v = next((_numxml(f.text) for f in pai if not len(f) and f is not el and (_RX_VAL_DEB.search(_local(f.tag)) or _RX_VAL_ALT.search(_local(f.tag)))), None)
+                if v is None:
+                    v = next((_numxml(f.text) for f in pai if not len(f) and f is not el and _RX_SALDO.search(_local(f.tag))), None) or 0.0
                 cod = el.text.strip()[:4]
                 out['codigos'].append({'cod': cod, 'ext': re.sub(r'\D', '', el.text)[4:6], 'origem': origem, 'valor': round(v, 2), 'venc': ''})
                 out['origens'][origem] = round(out['origens'].get(origem, 0.0) + v, 2)
@@ -669,6 +672,15 @@ def dctf_debitos(xml):
                 if origem.startswith('REINF'):
                     out['reinfOrigem'][cod] = origem
     return out
+
+
+def dctf_hash(xml):
+    """Impressão digital do XML da declaração (sem assinatura e espaços): confirma que nada mudou entre duas leituras
+    quando a leitura dos débitos não reconhece o leiaute."""
+    import hashlib
+    t = xml if isinstance(xml, str) else xml.decode('utf-8', 'replace')
+    t = re.sub(r'<(\w+:)?Signature\b.*?</(\w+:)?Signature>', '', t, flags=re.S)
+    return hashlib.sha256(re.sub(r'\s+', '', t).encode('utf-8')).hexdigest()
 
 
 def dctf_conferir_empresa(tok, cert, contratante, emp, comp, consumo):
@@ -694,7 +706,7 @@ def dctf_conferir_empresa(tok, cert, contratante, emp, comp, consumo):
     if d['cnpj'] and d['cnpj'][:8] != cnpj[:8]:
         r.update(situacao='erro', msg='O XML devolvido é de outro contribuinte.')
         return r
-    r.update(origens=d['origens'], reinf=d['reinf'], reinfOrigem=d['reinfOrigem'], outros=d['outros'], tudo=d['tudo'], retificadora=d['retificadora'], indRetif=d['indRetif'], codigos=d['codigos'][:80], saldo=d['saldo'], estrutura=d['estrutura'], arvore=d['arvore'])
+    r.update(xmlHash=dctf_hash(xml), origens=d['origens'], reinf=d['reinf'], reinfOrigem=d['reinfOrigem'], outros=d['outros'], tudo=d['tudo'], retificadora=d['retificadora'], indRetif=d['indRetif'], codigos=d['codigos'][:80], saldo=d['saldo'], estrutura=d['estrutura'], arvore=d['arvore'])
     return r
 
 
@@ -805,8 +817,11 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
             visto = {k[:4]: round(float(v), 2) for k, v in (emp.get('esperadoTudo') or {}).items()}
             dif = dctf_diferencas(visto, d['tudo'])
             # sem movimento: a DCTFWeb não tem débito nenhum — vazio é o esperado (nas demais, vazio é leitura falha)
-            if dif or (not d['tudo'] and not emp.get('semMovimento')):
+            vazio_ok = emp.get('semMovimento') or (not visto and emp.get('esperadoHash') and emp.get('esperadoHash') == dctf_hash(xml))
+            if dif or (not d['tudo'] and not vazio_ok):
                 r.update(msg='Os débitos da DCTFWeb mudaram desde que você conferiu; nada foi transmitido. Atualize a DCTFWeb e confira de novo.', origens=d['origens'], diferencas=dif)
+                if not d['tudo']:
+                    r['arvore'] = d['arvore']           # leiaute que a leitura não reconheceu (só os nomes das tags)
                 return r
         else:
             esperado = {k[:4]: round(float(v), 2) for k, v in (emp.get('esperado') or {}).items()}
