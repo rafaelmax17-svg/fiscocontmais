@@ -496,7 +496,9 @@ def dctf_situacao(res):
     t = _msgs_txt(res)
     if res.get('http') == 403 or 'procura' in t or 'nao autorizad' in t:
         return 'semproc'
-    if 'em andamento' in t:
+    # 2.4.41: "não há declaração em andamento" (depois de transmitida) não pode virar "em andamento"
+    neg = re.search(r'(nao|nenhuma|sem)\s+(ha\s+|existe\s+|possui\s+|consta\s+)?(nenhuma\s+)?(declaracao\s+)?em andamento', t)
+    if 'em andamento' in t and not neg:
         return 'em_andamento'
     if re.search(r'nao (foi )?(encontrad|localizad)|nao existe|inexistente|nenhuma declara|sem declara', t):
         return 'sem_declaracao'
@@ -688,6 +690,7 @@ def dctf_conferir_empresa(tok, cert, contratante, emp, comp, consumo):
     r = {'cnpj': cnpj, 'situacao': '', 'msg': ''}
     res = _dctf(tok, cert, contratante, cnpj, 'Consultar', 'CONSDECCOMPLETA33', _periodo_dctf(comp), consumo)
     r['situacao'] = dctf_situacao(res)
+    r['msgReceita'] = (res.get('msg') or f"HTTP {res.get('http')}")[:300]     # o que a Receita respondeu, para o registro
     if r['situacao'] in ('semproc', 'erro', 'sem_declaracao'):
         r['msg'] = (res.get('msg') or '')[:300]
         if r['situacao'] == 'semproc':
@@ -835,6 +838,7 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
         dados = {**_periodo_dctf(comp), 'xmlAssinadoBase64': base64.b64encode(assinado.encode('utf-8')).decode('ascii')}
         rt = _dctf(tok, cert, contratante, cnpj, 'Declarar', 'TRANSDECLARACAO310', dados, consumo, 'declaracao')
         t = _msgs_txt(rt)
+        r['msgReceita'] = (rt.get('msg') or f"HTTP {rt.get('http')}")[:300]
         if 200 <= (rt.get('http') or 0) < 300 and 'sucesso' in t:
             r.update(ok=True, msg='Transmitida.')
         elif re.search(r'ja_?\s*transmitida|ja foi transmitida', t):
@@ -873,6 +877,7 @@ def dctf_recibo_empresa(tok, cert, contratante, emp, comp, consumo):
         r['ok'] = True
         r['msg'] = f"Recibo {r.get('recibo') or ''} baixado".strip()
     else:
+        r['msgReceita'] = (rr.get('msg') or f"HTTP {rr.get('http')}")[:300]
         r['aviso'] = ('Recibo ainda não disponível: ' + (rr.get('msg') or ''))[:200]
         r['msg'] = r['aviso']
     return r
