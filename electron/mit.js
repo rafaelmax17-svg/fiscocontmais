@@ -426,6 +426,9 @@ async function _transmitir(p) {
 async function _buscarRecibo(comp, cnpj, ref, d) {
   const { f } = _fs();
   const lida = await _lerDctf(comp, cnpj).catch(() => null);
+  // logo depois de transmitir, a Receita pode ainda responder "em andamento" por alguns minutos: não apaga o "transmitida"
+  const recente = d.dctf && d.dctf.situacao === 'transmitida' && d.dctf.transmitidaEm && Date.now() - Date.parse(d.dctf.transmitidaEm) < 2 * 3600 * 1000;
+  if (lida && lida.situacao === 'em_andamento' && recente) return { ok: false, msg: 'transmitida há pouco; a Receita ainda não liberou o recibo — vem no próximo "Consultar"' };
   if (lida && lida.situacao === 'em_andamento') {
     await f.setDoc(ref, _limpo({ dctf: { ...(d.dctf || {}), ...lida } }), { merge: true });
     return { ok: false, msg: 'a DCTFWeb do mês está em andamento — falta transmitir' };
@@ -450,7 +453,7 @@ async function _recibo(p) {
     if (x.ok) ok.push(d.nome); else erros.push(`${d.nome}: ${x.msg}`);
   }
   // DCTFWeb ainda em andamento não é erro: só não há recibo para baixar ainda
-  if (!ok.length && erros.length) return { status: erros.every((x) => /em andamento/.test(x)) ? 'aviso' : 'erro', msg: erros.join(' · ').slice(0, 400) };
+  if (!ok.length && erros.length) return { status: erros.every((x) => /em andamento|ainda não liberou/.test(x)) ? 'aviso' : 'erro', msg: erros.join(' · ').slice(0, 400) };
   return { status: 'feito', msg: `${ok.length} recibo(s) baixado(s)${erros.length ? ` · ${erros.length} sem recibo: ${erros.join(' · ')}` : ''}`.slice(0, 400) };
 }
 
