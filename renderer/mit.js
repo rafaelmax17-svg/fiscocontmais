@@ -70,7 +70,7 @@
     }
     if (['enviado', 'saldo_credor'].includes(d.sit) && d.dctf) {
       const sd = { em_andamento: 'DCTFWeb em andamento', transmitida: 'DCTFWeb transmitida', sem_declaracao: 'Sem DCTFWeb no mês' }[d.dctf.situacao] || d.dctf.situacao;
-      h += `<div class="sm">${e(sd)}${d.dctf.recibo ? ` · recibo ${e(d.dctf.recibo)}` : ''}</div>`;
+      h += `<div class="sm">${e(sd)}${d.dctf.retificadora ? ' · <span class="mt-retif" title="A original já tinha sido transmitida (normalmente pela folha). Esta inclui os débitos do MIT.">retificadora</span>' : ''}${d.dctf.recibo ? ` · recibo ${e(d.dctf.recibo)}` : ''}</div>`;
     }
     if (d.sit === 'enviado' && !pf) {
       h += `<div class="mt-acs"><button class="act mt-b" data-guia="${e(d.cnpj)}">Gerar guia do MIT</button>`;
@@ -81,7 +81,7 @@
     if (d.dctf && d.dctf.arquivo) h += `<div class="sm">📄 <a href="#" class="mt-ab" data-arq="${e(d.dctf.arquivo)}">abrir recibo da DCTFWeb</a>${d.dctf.recibo ? ` · nº ${e(d.dctf.recibo)}` : ''}</div>`;
     else if (['enviado', 'saldo_credor', 'sem_movimento'].includes(d.sit) && !pf && !(d.dctf && d.dctf.situacao === 'em_andamento')) h += `<div class="mt-acs"><button class="act mt-b" data-rec="${e(d.cnpj)}" title="Busca na Receita o recibo da DCTFWeb do mês (transmitida pelo sistema ou por fora) e salva na pasta do cliente">Baixar recibo da DCTFWeb</button></div>`;
     if (M.trans === d.cnpj) {
-      h += `<div class="mt-trbox"><b>Antes de transmitir, confirme:</b>
+      h += `<div class="mt-trbox">${d.dctf && d.dctf.retificadora ? '<div class="mt-warn">Esta DCTFWeb é <b>retificadora</b>: a original já foi transmitida (normalmente pela folha). A retificadora traz os débitos de todas as origens — folha, REINF e MIT — e substitui a original. Dentro do prazo, retificar não gera multa.</div>' : ''}<b>Antes de transmitir, confirme:</b>
         <label class="mt-ck"><input type="checkbox" id="mtCf1"> a folha (eSocial) do mês está fechada e conferida</label>
         <label class="mt-ck"><input type="checkbox" id="mtCf2"> a EFD-Reinf do mês está fechada (ou não tem)</label>
         <label class="mt-ck"><input type="checkbox" id="mtCf3"> os débitos do MIT conferem com a EFD-Contribuições</label>

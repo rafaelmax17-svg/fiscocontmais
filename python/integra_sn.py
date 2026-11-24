@@ -577,13 +577,16 @@ def dctf_debitos(xml):
     O leiaute não é publicado: a leitura é tolerante e devolve os caminhos das tags (sem valores) para o passo a passo."""
     from lxml import etree
     raiz = etree.fromstring(xml.encode('utf-8') if isinstance(xml, str) else xml, etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True))
-    out = {'origens': {}, 'reinf': {}, 'reinfOrigem': {}, 'outros': {}, 'tudo': {}, 'codigos': [], 'saldo': 0.0, 'estrutura': [], 'arvore': _arvore(raiz), 'periodo': '', 'cnpj': ''}
+    out = {'origens': {}, 'reinf': {}, 'reinfOrigem': {}, 'outros': {}, 'tudo': {}, 'indRetif': '', 'retificadora': None, 'codigos': [], 'saldo': 0.0, 'estrutura': [], 'arvore': _arvore(raiz), 'periodo': '', 'cnpj': ''}
     for el in raiz.iter():
         n = _local(el.tag).lower()
         if n in ('perapuracao', 'periodoapuracao') and not out['periodo']:
             out['periodo'] = (el.text or '').strip()
         if n in ('nrinsc', 'insccontrib', 'nrinscricao', 'cnpj') and not out['cnpj']:
             out['cnpj'] = re.sub(r'\D', '', el.text or '')
+        if n == 'indretificacao' and not out['indRetif']:     # 2.4.34: original × retificadora
+            out['indRetif'] = (el.text or '').strip()
+    out['retificadora'] = dctf_eh_retificadora(out['indRetif'])
     sis = [el for el in raiz.iter() if _local(el.tag) == 'sistemaUsuarioDctf']
     arv = raiz.getroottree()
     cp = arv.getpath                   # a chave é o caminho do nó (o id() dos objetos do lxml muda a cada acesso)
@@ -691,7 +694,7 @@ def dctf_conferir_empresa(tok, cert, contratante, emp, comp, consumo):
     if d['cnpj'] and d['cnpj'][:8] != cnpj[:8]:
         r.update(situacao='erro', msg='O XML devolvido é de outro contribuinte.')
         return r
-    r.update(origens=d['origens'], reinf=d['reinf'], reinfOrigem=d['reinfOrigem'], outros=d['outros'], tudo=d['tudo'], codigos=d['codigos'][:80], saldo=d['saldo'], estrutura=d['estrutura'], arvore=d['arvore'])
+    r.update(origens=d['origens'], reinf=d['reinf'], reinfOrigem=d['reinfOrigem'], outros=d['outros'], tudo=d['tudo'], retificadora=d['retificadora'], indRetif=d['indRetif'], codigos=d['codigos'][:80], saldo=d['saldo'], estrutura=d['estrutura'], arvore=d['arvore'])
     return r
 
 
@@ -756,6 +759,17 @@ def _numero_recibo(pdf):
         return ''
 
 
+def dctf_eh_retificadora(ind):
+    """indRetificacao do XML da DCTFWeb: True retificadora, False original, None quando o valor não é reconhecido
+    (aí o sistema não afirma nada)."""
+    v = (ind or '').strip().upper()
+    if v in ('1', 'S', 'SIM', 'TRUE', 'R', 'RETIFICADORA'):
+        return True
+    if v in ('0', 'N', 'NAO', 'NÃO', 'FALSE', 'O', 'ORIGINAL'):
+        return False
+    return None
+
+
 def dctf_diferencas(visto, agora):
     """Códigos de receita cujo valor na DCTFWeb agora não é o que foi conferido: [{cod, visto, agora}]."""
     out = []
@@ -811,7 +825,8 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
         else:
             r['msg'] = ('A Receita não aceitou a transmissão: ' + (rt.get('msg') or f"HTTP {rt.get('http')}"))[:400]
             return r
-        r.update(origens=d['origens'], reinf=d['reinf'], saldo=d['saldo'])
+        r.update(origens=d['origens'], reinf=d['reinf'], saldo=d['saldo'], retificadora=d['retificadora'])
+        emp = {**emp, 'retificadora': d['retificadora']}
     r.update({k: v for k, v in dctf_recibo_empresa(tok, cert, contratante, emp, comp, consumo).items() if k in ('recibo', 'arquivo', 'aviso')})
     return r
 
@@ -834,7 +849,8 @@ def dctf_recibo_empresa(tok, cert, contratante, emp, comp, consumo):
         if pasta:
             a, m = comp.split('-')
             try:
-                r['arquivo'] = _grava(pasta, f'Recibo DCTFWeb {m}{a} - {_nome_arq(emp.get("nome") or cnpj)}.pdf', pdfs[0][2])
+                tipo = ' Retificadora' if emp.get('retificadora') else ''   # não sobrescreve o recibo da original
+                r['arquivo'] = _grava(pasta, f'Recibo DCTFWeb{tipo} {m}{a} - {_nome_arq(emp.get("nome") or cnpj)}.pdf', pdfs[0][2])
             except OSError as e:
                 r['aviso'] = f'Recibo não gravado na pasta: {e}'[:200]
         r['ok'] = True

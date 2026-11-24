@@ -252,12 +252,14 @@ async function _doc(comp, cnpj) {
 const _consumo = async (r) => { if (_robo.consumo) await _robo.consumo(r.consumo || {}).catch(() => {}); };
 
 // DCTFWeb do mês depois do MIT (situação, débitos por origem) — guardada no documento do MIT
+let _indVisto = false;
 async function _lerDctf(comp, cnpj) {
   const r = await _robo.python({ acao: 'dctf_conferir', comp, empresas: [{ cnpj }] });
   if (!r.ok) return null;
   await _consumo(r);
   const x = (r.resultados || [])[0] || {};
-  return _limpo({ situacao: x.situacao || '', msg: x.msg || '', origens: x.origens || {}, outros: x.outros || {}, reinf: x.reinf || {},
+  if (x.indRetif && !_indVisto) { _indVisto = true; _log(`DCTFWeb ${comp} ${cnpj}: indRetificacao = "${x.indRetif}" → ${x.retificadora === true ? 'retificadora' : x.retificadora === false ? 'original' : 'não reconhecido'}`); }
+  return _limpo({ situacao: x.situacao || '', msg: x.msg || '', retificadora: x.retificadora ?? null, origens: x.origens || {}, outros: x.outros || {}, reinf: x.reinf || {},
     esperadoTudo: _tudo(x), lidaEm: new Date().toISOString() });
 }
 
@@ -369,7 +371,7 @@ async function _transmitir(p) {
     return { status: 'erro', msg: x.msg || 'A Receita não aceitou a transmissão.' };
   }
   await f.setDoc(ref, _limpo({ dctf: { ...dctf, situacao: 'transmitida', recibo: x.recibo || '', arquivo: x.arquivo || '', transmitidaEm: new Date().toISOString(), transmitidaPor: p.por || '' }, ultimoErro: '' }), { merge: true });
-  return { status: 'feito', msg: x.jaTransmitida ? 'A DCTFWeb já estava transmitida.' : `DCTFWeb transmitida${x.recibo ? ` · recibo ${x.recibo}` : ''}` };
+  return { status: 'feito', msg: x.jaTransmitida ? 'A DCTFWeb já estava transmitida.' : `DCTFWeb${dctf.retificadora ? ' retificadora' : ''} transmitida${x.recibo ? ` · recibo ${x.recibo}` : ''}` };
 }
 
 // recibo da DCTFWeb já transmitida (a Receita não tinha liberado na hora, ou foi transmitida por fora do sistema)
@@ -381,7 +383,7 @@ async function _recibo(p) {
     if (!d) { erros.push(`${cnpj}: não importada`); continue; }
     const [a, m] = p.comp.split('-');
     const pasta = pastaCliente.pastaDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
-    const r = await _robo.python({ acao: 'dctf_recibo', comp: p.comp, empresa: { cnpj, nome: d.nome, pasta } });
+    const r = await _robo.python({ acao: 'dctf_recibo', comp: p.comp, empresa: { cnpj, nome: d.nome, pasta, retificadora: !!(d.dctf && d.dctf.retificadora) } });
     if (!r.ok) throw new Error(r.erro || 'Falha ao buscar o recibo.');
     await _consumo(r);
     const x = r.resultado || {};
