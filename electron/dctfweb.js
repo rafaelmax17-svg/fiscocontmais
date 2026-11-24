@@ -25,6 +25,7 @@ const MODULO = 'fiscal-reinf';
 const LOTE = 8;
 let D = null;
 let _unsub = null, _robo = null, _rodando = false, _logTxt = [];
+let _vigia = null, _rodandoDesde = 0, _geracao = 0;
 const _atendidos = new Set();
 
 function init(deps) { D = deps; }
@@ -175,34 +176,73 @@ function ligarRobo(opc) {
   _robo = opc;                             // { souRobo(), python(pedido), consumo({consulta, declaracao}) }
   let f, db;
   try { ({ db, f } = _fs()); } catch (_) { return; }
-  _unsub = f.onSnapshot(f.query(f.collection(db, COL_P), f.where('status', '==', 'novo')), (snap) => {
-    if (!_robo || !_robo.souRobo()) return;
-    const novos = [];
-    snap.forEach((x) => { if (!_atendidos.has(x.id)) novos.push({ id: x.id, ...x.data() }); });
-    novos.sort((a, b) => (a.emMs || 0) - (b.emMs || 0));
-    if (novos.length) _fila(novos);
-  }, () => {});
+  const q = f.query(f.collection(db, COL_P), f.where('status', '==', 'novo'));
+  // 2.4.36: se a escuta da nuvem cair (rede/servidor), o Firestore não religa sozinho — antes a fila parava em silêncio
+  const escuta = () => {
+    _unsub = f.onSnapshot(q, (snap) => {
+      if (!_robo || !_robo.souRobo()) return;
+      const novos = [];
+      snap.forEach((x) => { if (!_atendidos.has(x.id)) novos.push({ id: x.id, ...x.data() }); });
+      novos.sort((a, b) => (a.emMs || 0) - (b.emMs || 0));
+      if (novos.length) _fila(novos);
+    }, (e) => {
+      _log(`escuta da fila caiu (${(e && (e.code || e.message)) || 'sem detalhe'}); religando em 15 s`);
+      _unsub = null;
+      setTimeout(() => { if (_robo && !_unsub) escuta(); }, 15000);
+    });
+  };
+  escuta();
+  // varredura de segurança a cada minuto: pega pedido parado na fila e destrava a fila presa
+  _vigia = setInterval(() => _varrer().catch(() => {}), 60 * 1000);
 }
-function desligarRobo() { if (_unsub) { try { _unsub(); } catch (_) {} _unsub = null; } _robo = null; }
+function desligarRobo() { if (_unsub) { try { _unsub(); } catch (_) {} _unsub = null; } if (_vigia) { clearInterval(_vigia); _vigia = null; } _robo = null; }
+
+// promessa com prazo: chamada à nuvem que não responde não pode segurar a fila para sempre
+function _prazo(pr, ms, oque) {
+  let t;
+  return Promise.race([pr, new Promise((_, nao) => { t = setTimeout(() => nao(new Error(`sem resposta da nuvem (${oque})`)), ms); })]).finally(() => clearTimeout(t));
+}
+
+async function _varrer() {
+  if (!_robo || !_robo.souRobo()) return;
+  if (_rodando) {
+    if (Date.now() - _rodandoDesde < 15 * 60 * 1000) return;
+    _log('a fila estava presa havia 15 minutos; liberando');
+    _geracao++; _rodando = false;
+  }
+  const { db, f } = _fs();
+  const novos = [], presos = [];
+  (await _prazo(f.getDocs(f.query(f.collection(db, COL_P), f.where('status', '==', 'novo'))), 30000, 'fila')).forEach((x) => { if (!_atendidos.has(x.id)) novos.push({ id: x.id, ...x.data() }); });
+  (await _prazo(f.getDocs(f.query(f.collection(db, COL_P), f.where('status', '==', 'rodando'))), 30000, 'fila')).forEach((x) => {
+    const d = x.data();
+    if (d.inicioMs && Date.now() - d.inicioMs > 20 * 60 * 1000) presos.push(x.ref);
+  });
+  for (const r of presos) await f.updateDoc(r, { status: 'erro', msg: 'Interrompido antes de terminar (o computador ou a conexão caiu). Peça de novo.', fimMs: Date.now() }).catch(() => {});
+  if (novos.length) { novos.sort((a, b) => (a.emMs || 0) - (b.emMs || 0)); _fila(novos); }
+}
 
 async function _fila(novos) {
   if (_rodando) return;                   // o laço abaixo pega os que chegarem enquanto roda
-  _rodando = true;
+  _rodando = true; _rodandoDesde = Date.now();
+  const g = ++_geracao;
   try {
     let lista = novos;
-    while (lista.length) {
+    while (lista.length && g === _geracao) {
       for (const p of lista) {
-        if (_atendidos.has(p.id)) continue;
+        if (_atendidos.has(p.id) || g !== _geracao) continue;
         _atendidos.add(p.id);
+        _rodandoDesde = Date.now();
         await _atender(p).catch((e) => _log(`pedido ${p.id}: ${e.message || e}`));
       }
       // chegou mais alguma coisa enquanto atendia?
       const { db, f } = _fs();
       const mais = [];
-      (await f.getDocs(f.query(f.collection(db, COL_P), f.where('status', '==', 'novo')))).forEach((x) => { if (!_atendidos.has(x.id)) mais.push({ id: x.id, ...x.data() }); });
+      (await _prazo(f.getDocs(f.query(f.collection(db, COL_P), f.where('status', '==', 'novo'))), 30000, 'fila')).forEach((x) => { if (!_atendidos.has(x.id)) mais.push({ id: x.id, ...x.data() }); });
       lista = mais.sort((a, b) => (a.emMs || 0) - (b.emMs || 0));
     }
-  } finally { _rodando = false; }
+  } catch (e) {
+    _log(`fila: ${e.message || e} (a varredura tenta de novo em 1 minuto)`);
+  } finally { if (g === _geracao) _rodando = false; }
 }
 
 async function _atender(p) {
@@ -214,7 +254,8 @@ async function _atender(p) {
     if (!s.exists() || s.data().status !== 'novo') return false;
     tx.update(ref, { status: 'rodando', roboNome: `${os.hostname()} · ${_quem()}`, inicioMs: Date.now() });
     return true;
-  }).catch(() => false);
+  }).catch(() => null);
+  if (ok === null) { _atendidos.delete(p.id); _log(`pedido ${p.id}: sem resposta da nuvem ao pegar; tenta de novo na próxima varredura`); return; }
   if (!ok) return;
   _log(`===== pedido ${p.tipo} ${p.comp} (${(p.cnpjs || []).length || 'todas'} empresa(s)) · por ${p.por}`);
   let fim;
@@ -224,7 +265,7 @@ async function _atender(p) {
     fim = { status: 'erro', msg: String(e.message || e).slice(0, 300) };
   }
   _log(`pedido ${p.id}: ${fim.status} · ${fim.msg || ''}`);
-  await f.updateDoc(ref, _limpo({ ...fim, fimMs: Date.now() })).catch(() => {});
+  await _prazo(f.updateDoc(ref, _limpo({ ...fim, fimMs: Date.now() })), 30000, 'gravar o pedido').catch((e) => _log(`pedido ${p.id}: ${e.message || e}`));
   try { D.notificar('dctf:mudou', { comp: p.comp }); } catch (_) {}
 }
 

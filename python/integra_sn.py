@@ -763,9 +763,10 @@ def dctf_eh_retificadora(ind):
     """indRetificacao do XML da DCTFWeb: True retificadora, False original, None quando o valor não é reconhecido
     (aí o sistema não afirma nada)."""
     v = (ind or '').strip().upper()
-    if v in ('1', 'S', 'SIM', 'TRUE', 'R', 'RETIFICADORA'):
+    # padrão do eSocial/EFD-Reinf, que a DCTFWeb segue: 1 = original, 2 = retificadora (visto em produção: "2" numa retificadora)
+    if v in ('2', 'S', 'SIM', 'TRUE', 'R', 'RETIFICADORA'):
         return True
-    if v in ('0', 'N', 'NAO', 'NÃO', 'FALSE', 'O', 'ORIGINAL'):
+    if v in ('1', '0', 'N', 'NAO', 'NÃO', 'FALSE', 'O', 'ORIGINAL'):
         return False
     return None
 
@@ -803,7 +804,8 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
             # (de todas as origens) precisam ser exatamente os que ela viu na tela.
             visto = {k[:4]: round(float(v), 2) for k, v in (emp.get('esperadoTudo') or {}).items()}
             dif = dctf_diferencas(visto, d['tudo'])
-            if not d['tudo'] or dif:
+            # sem movimento: a DCTFWeb não tem débito nenhum — vazio é o esperado (nas demais, vazio é leitura falha)
+            if dif or (not d['tudo'] and not emp.get('semMovimento')):
                 r.update(msg='Os débitos da DCTFWeb mudaram desde que você conferiu; nada foi transmitido. Atualize a DCTFWeb e confira de novo.', origens=d['origens'], diferencas=dif)
                 return r
         else:

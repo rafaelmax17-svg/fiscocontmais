@@ -66,10 +66,14 @@
     }
     if (['enviado', 'sem_movimento', 'em_curso'].includes(d.sit) && d.mit) {
       h += `<div class="sm">${d.mit.id ? `apuração nº ${e(d.mit.id)} · ` : ''}${e(dataBr(d.mit.enviadoEm) || ymdBr(d.mit.data))}${d.mit.enviadoPor ? ` · ${e(d.mit.enviadoPor)}` : ''}</div>`;
-      (d.mit.avisos || []).slice(0, 2).forEach((a) => { h += `<div class="sm">${e(a)}</div>`; });
+      (d.mit.avisos || []).slice(0, 2).forEach((a) => {
+        // a Receita manda ir ao eCAC; aqui a transmissão é pelo botão abaixo
+        if (/transmiss[aã]o imediata/i.test(a)) a = 'A Receita encerrou o MIT, mas não transmitiu a DCTFWeb sozinha. Use "Transmitir DCTFWeb" abaixo.';
+        h += `<div class="sm">${e(a)}</div>`;
+      });
     }
-    if (['enviado', 'saldo_credor'].includes(d.sit) && d.dctf) {
-      const sd = { em_andamento: 'DCTFWeb em andamento', transmitida: 'DCTFWeb transmitida', sem_declaracao: 'Sem DCTFWeb no mês' }[d.dctf.situacao] || d.dctf.situacao;
+    if (['enviado', 'saldo_credor', 'sem_movimento'].includes(d.sit) && d.dctf) {
+      const sd = { em_andamento: 'DCTFWeb em andamento — falta transmitir', transmitida: 'DCTFWeb transmitida ✓', sem_declaracao: 'Sem DCTFWeb no mês' }[d.dctf.situacao] || d.dctf.situacao;
       h += `<div class="sm">${e(sd)}${d.dctf.retificadora ? ' · <span class="mt-retif" title="A original já tinha sido transmitida (normalmente pela folha). Os débitos dela continuam os mesmos; esta só acrescenta os do MIT.">retificadora</span>' : ''}${d.dctf.recibo ? ` · recibo ${e(d.dctf.recibo)}` : ''}</div>`;
     }
     if (d.sit === 'enviado' && !pf) {
@@ -77,6 +81,8 @@
       if (!d.dctf || d.dctf.situacao !== 'transmitida') h += `<button class="act mt-b" data-tr="${e(d.cnpj)}">Transmitir DCTFWeb</button>`;
       h += '</div>';
     }
+    // sem movimento: se a Receita não transmitiu sozinha, a DCTFWeb fica em andamento — transmite por aqui
+    if (d.sit === 'sem_movimento' && !pf && d.dctf && d.dctf.situacao === 'em_andamento') h += `<div class="mt-acs"><button class="act mt-b" data-tr="${e(d.cnpj)}">Transmitir DCTFWeb</button></div>`;
     (d.guias || []).slice(-2).forEach((g) => { h += `<div class="sm">Guia ${e(dataBr(g.em))}${g.arquivo ? ` · <a href="#" class="mt-ab" data-arq="${e(g.arquivo)}">abrir PDF</a>` : ''}${g.aviso ? ` · ${e(g.aviso)}` : ''}</div>`; });
     if (d.dctf && d.dctf.arquivo) h += `<div class="sm">📄 <a href="#" class="mt-ab" data-arq="${e(d.dctf.arquivo)}">abrir recibo da DCTFWeb</a>${d.dctf.recibo ? ` · nº ${e(d.dctf.recibo)}` : ''}</div>`;
     else if (['enviado', 'saldo_credor', 'sem_movimento'].includes(d.sit) && !pf && !(d.dctf && d.dctf.situacao === 'em_andamento')) h += `<div class="mt-acs"><button class="act mt-b" data-rec="${e(d.cnpj)}" title="Busca na Receita o recibo da DCTFWeb do mês (transmitida pelo sistema ou por fora) e salva na pasta do cliente">Baixar recibo da DCTFWeb</button></div>`;
