@@ -2868,7 +2868,7 @@ function fiscalRunner() {
   return { cmd, base: [fiscalScriptPath()] };
 }
 
-function runFiscal(cliArgs, readyFile) {
+function runFiscal(cliArgs, readyFile, prog) {   // prog: { arq, cb } — etapa real lida do núcleo enquanto roda (2.4.34)
   return new Promise((resolve, reject) => {
     const runner = fiscalRunner();
     let child;
@@ -2883,7 +2883,11 @@ function runFiscal(cliArgs, readyFile) {
     if (child.stderr) child.stderr.on('data', (d) => (err += d.toString()));
     if (child.stdout) child.stdout.on('data', () => {});
     const t0 = Date.now();
+    let progUlt = '';
     const timer = setInterval(() => {
+      if (prog && prog.arq) {
+        try { const t = fs.readFileSync(prog.arq, 'utf-8'); if (t && t !== progUlt) { progUlt = t; prog.cb(JSON.parse(t)); } } catch (_) {}
+      }
       if (fs.existsSync(readyFile)) {
         try {
           const st = fs.statSync(readyFile);
@@ -3969,7 +3973,11 @@ ipcMain.handle('admin:acum7000Aplicar', async (_evt, { spedPath, usarCorrigido, 
 });
 
 // 🔎 Analisar tudo / Aplicar tudo (todas as conferências do Corretor num painel só) e Desconto × XML — só Admin
-ipcMain.handle('admin:tudoAnalisar', async (_evt, { spedPath, usarCorrigido, xmls }) => {
+function _corrProg(evt, nome) {
+  const arq = path.join(os.tmpdir(), `fc_prog_${nome}_${Date.now()}.json`);
+  return { arq, cb: (d) => { try { if (!evt.sender.isDestroyed()) evt.sender.send('corr:progresso', d); } catch (_) {} } };
+}
+ipcMain.handle('admin:tudoAnalisar', async (evt, { spedPath, usarCorrigido, xmls }) => {
   const bloq = _soCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
@@ -3977,14 +3985,16 @@ ipcMain.handle('admin:tudoAnalisar', async (_evt, { spedPath, usarCorrigido, xml
   try {
     const perm = await _corrPermitidas();
     const regimes = await _regimesJson([base.arq]);
+    const prog = _corrProg(evt, 'tudo');
     await runFiscal(['analisar-tudo', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--regimes', regimes, '--json', jsonOut,
-      ...(perm ? ['--etapas', perm.join(',')] : [])], jsonOut);
+      '--progresso', prog.arq, ...(perm ? ['--etapas', perm.join(',')] : [])], jsonOut, prog);
+    fs.unlink(prog.arq, () => {});
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {}); fs.unlink(regimes, () => {});
     if (res.erro) return { error: res.erro };
     return { ok: true, res, origem: base.origem };
   } catch (e) { return { error: String(e.message || e) }; }
 });
-ipcMain.handle('admin:tudoAplicar', async (_evt, { spedPath, usarCorrigido, xmls, escolhas }) => {
+ipcMain.handle('admin:tudoAplicar', async (evt, { spedPath, usarCorrigido, xmls, escolhas }) => {
   const bloq = _soCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
@@ -3994,10 +4004,12 @@ ipcMain.handle('admin:tudoAplicar', async (_evt, { spedPath, usarCorrigido, xmls
   const saida = path.join(os.tmpdir(), `fc_tudo_sped_${stamp}.txt`);
   try {
     fs.writeFileSync(escJson, JSON.stringify(escolhas || {}), 'utf-8');
+    const prog = _corrProg(evt, 'aplica');
     const perm = await _corrPermitidas();
     const regimes = await _regimesJson([base.arq]);
     await runFiscal(['analisar-tudo', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--regimes', regimes, '--json', jsonOut,
-      '--aplicar', escJson, '--saida', saida, ...(perm ? ['--etapas', perm.join(',')] : [])], jsonOut);
+      '--aplicar', escJson, '--saida', saida, '--progresso', prog.arq, ...(perm ? ['--etapas', perm.join(',')] : [])], jsonOut, prog);
+    fs.unlink(prog.arq, () => {});
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
     for (const f of [jsonOut, escJson, regimes]) fs.unlink(f, () => {});
     if (res.precisa_e116) return { precisa_e116: true, error: res.erro };

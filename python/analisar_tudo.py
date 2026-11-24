@@ -67,6 +67,35 @@ import pva_cadastro as pc
 from xml_entradas import ler_xmls
 
 
+# ------------------------------------------------------------------ progresso (2.4.34)
+# O Electron passa --progresso ARQ.json e lê o arquivo enquanto roda: a barra da tela mostra a etapa real.
+_PROG = {'arq': None, 'plano': [], 'reg': 0}
+PLANO_ANALISE = ['Lendo o SPED', 'Lendo os XMLs', 'Chave de acesso × XML', 'NCM × XML das entradas', 'Uso e consumo lançado como revenda',
+                 'Combustível × uso e consumo', 'ICMS-ST na entrada', 'Uso e consumo · DIFAL e crédito', 'Validação do PVA · cadastro e ajustes',
+                 'Desconto, ICMS e valor × XML', 'Crédito maçã e pera', 'Acumulador 7000', 'Cadastro de produtos (0200)', 'Unidade × XML',
+                 'Somando o impacto']
+PLANO_APLICA = ['Lendo o SPED', 'Lendo os XMLs', 'Preparando a correção', 'Chave de acesso × XML', 'NCM × XML das entradas',
+                'Uso e consumo lançado como revenda', 'Combustível × uso e consumo', 'ICMS-ST na entrada', 'Uso e consumo · DIFAL e crédito',
+                'Desconto, ICMS e valor × XML', 'Crédito maçã e pera', 'Acumulador 7000', 'Cadastro de produtos (0200)', 'Unidade × XML',
+                'Validação do PVA · cadastro e ajustes', 'Gravando o arquivo corrigido']
+
+
+def _P(etapa, reg=None):
+    if reg:
+        _PROG['reg'] = reg
+    if not _PROG['arq']:
+        return
+    pl = _PROG['plano']
+    i = pl.index(etapa) if etapa in pl else -1
+    try:
+        tmp = _PROG['arq'] + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as fh:
+            json.dump({'p': round(i / len(pl) * 100) if i >= 0 else None, 't': etapa, 'k': i + 1, 'n': len(pl), 'reg': _PROG['reg']}, fh, ensure_ascii=False)
+        os.replace(tmp, _PROG['arq'])
+    except OSError:
+        pass
+
+
 def _ch(s):
     return re.sub(r'\D', '', s or '')
 
@@ -143,9 +172,13 @@ def _itens_sped(corr):
 
 
 def _base(sped, xml_dir):
+    _P('Lendo o SPED')
     texto, enc = fc._ler_sped(sped)
+    _P('Lendo o SPED', texto.count('\n') + 1)
     corr, rc = fc.corrigir_sped_fiscal(texto, [])
     corr, rc['c197_campos_ajustados'] = fc.ajusta_campos_c197(corr)
+    if xml_dir:
+        _P('Lendo os XMLs')
     xmls, lidos, erros = ler_xmls([xml_dir]) if xml_dir else ({}, 0, 0)
     return texto, enc, corr, rc, xmls, lidos, erros
 
@@ -157,18 +190,24 @@ def analisar(sped, xml_dir, permitidas=None):
     pode = lambda k: _pode(permitidas, k)
     corr_v = corr                                     # arquivo só com a validação (é o que a etapa 1 mostra)
     ca_uc = ca_comb = ca_ch = None
+    _P('Chave de acesso × XML')
     if pode('chave'):
         corr, ca_ch = _todas(ck, corr, xmls)         # as demais etapas acham o XML pela chave já corrigida
     ca_ncm = None
+    _P('NCM × XML das entradas')
     if pode('ncm') and xmls:
         corr, ca_ncm = _todas(nx, corr, xmls)        # a ICMS-ST na entrada usa o NCM já corrigido pelo XML
+    _P('Uso e consumo lançado como revenda')
     if pode('ucons'):
         corr, ca_uc = _todas(uc, corr, xmls)         # as demais etapas olham o arquivo já com o CFOP de uso e consumo
+    _P('Combustível × uso e consumo')
     if pode('comb'):
         corr, ca_comb = _todas(cc, corr, xmls)       # … e com o combustível
     ca_st = None
+    _P('ICMS-ST na entrada')
     if pode('stent'):
         corr, ca_st = _todas(se, corr, xmls)         # … e com a ST da entrada
+    _P('Uso e consumo · DIFAL e crédito')
     auto, dec, an, sn = ls.plano_empresa(corr, xmls, lidos)
     por_doc = {d['id']: d for d in an['docs']}
     itens_sped = _itens_sped(corr)
@@ -189,6 +228,7 @@ def analisar(sped, xml_dir, permitidas=None):
                    'tipo': 'auto' if n_val else 'zero', 'fixo': True, 'grupos': [{'id': 'val', 'titulo': 'Correções de validação', 'linhas': linhas_val}] if n_val else []})
 
     # 1·) validação do PVA · cadastro e ajustes (EM TESTE; é aplicada por último)
+    _P('Validação do PVA · cadastro e ajustes')
     if pode('pvacad'):
         pa = pc.analisar_texto(corr_v)
         grupos = []
@@ -365,6 +405,7 @@ def analisar(sped, xml_dir, permitidas=None):
                    'tipo': 'decidir' if n_dec else ('auto' if n_dif else 'zero'), 'grupos': grupos})
 
 
+    _P('Desconto, ICMS e valor × XML')
     # 3) desconto (sobre o arquivo de validação; a aplicação reanalisa depois do DIFAL)
     if xmls:
         da = dx.analisar_texto(corr, xmls)
@@ -426,6 +467,7 @@ def analisar(sped, xml_dir, permitidas=None):
                            'tipo': 'sem_xml', 'grupos': []})
 
     # 6b) crédito maçã e pera (RO10000038) — só pelo SPED, não precisa de XML
+    _P('Crédito maçã e pera')
     ma = cm.analisar_texto(corr)
     lin = []
     for x in ma['docs']:
@@ -455,6 +497,7 @@ def analisar(sped, xml_dir, permitidas=None):
                                'linhas': lin}] if lin else []})
 
     # 7) acumulador 7000
+    _P('Acumulador 7000')
     aa = ad.analisar_texto(corr)
     nomes = {a['cod']: a['nome'] for a in aa['acumuladores']}
     def _nfs(i):
@@ -472,6 +515,7 @@ def analisar(sped, xml_dir, permitidas=None):
                                'acumuladores': [{'cod': k, 'nome': v} for k, v in nomes.items()]}] if lin else []})
 
     # 8) cadastro 0200
+    _P('Cadastro de produtos (0200)')
     ca = c2.analisar_texto(corr)
     lin = [{'sel': i['cod'], 'nota': i['desc'], 'det': f"cód. {i['cod']} · NCM {i['ncm'] or '—'} · CFOP " + ', '.join(f'{c} ({n})' for c, n in i['cfops'])
             + ('' if i['pode'] else ' · NÃO ALTERAR: ' + '; '.join(i['motivos'])), 'valor': i['valor'], 'padrao': i['sugestao'],
@@ -483,6 +527,7 @@ def analisar(sped, xml_dir, permitidas=None):
                    'grupos': [{'id': 'cad', 'titulo': 'Produtos tipo 00 usados como uso e consumo / ativo', 'sugestao': '07 uso e consumo / 08 ativo',
                                'linhas': lin}] if lin else []})
 
+    _P('Unidade × XML')
     # 9) unidade × XML (código da unidade do C170 pelo da nota; o 0190/0220 acompanha)
     if xmls:
         ua = ux.analisar_texto(corr, xmls)
@@ -504,6 +549,7 @@ def analisar(sped, xml_dir, permitidas=None):
     ks = [e['key'] for e in etapas]                       # mesma ordem da aplicação: uso e consumo, combustível, ST da entrada
     if 'stent' in ks and 'comb' in ks and ks.index('stent') < ks.index('comb'):
         etapas.insert(ks.index('comb'), etapas.pop(ks.index('stent')))
+    _P('Somando o impacto')
     e110 = ls._e110(corr) or {}
     return {'arquivo': os.path.basename(sped), 'xmls': xml_dir, 'xml_lidos': lidos, 'xml_erros': erros,
             'empresa': {'nome': cab.get('nome', ''), 'cnpj': cab.get('cnpj', ''), 'dt_ini': cab.get('dt_ini', ''), 'dt_fin': cab.get('dt_fin', '')},
@@ -517,8 +563,10 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
     liga = lambda k: _pode(permitidas, k) and (esc.get('etapas') or {}).get(k, True) is not False
     texto, enc, corr, rc, xmls, lidos, erros = _base(sped, xml_dir)
     final, resumo, avisos = corr, {}, []
+    _P('Preparando a correção')
     base_an = _base_analise(corr, xmls, permitidas)                               # o que a análise usou
     # 1·) chave de acesso × XML
+    _P('Chave de acesso × XML')
     if liga('chave'):
         ek = esc.get('chave') or {}
         ids = [i['id'] for i in ck.analisar_texto(final, xmls)['itens'] if ek.get(i['id'], True) is not False]
@@ -526,6 +574,7 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
             final, r = ck.aplicar_texto(final, ids, xmls)
             resumo['chave'] = {'itens': r['itens'], 'entradas': r['entradas'], 'saidas': r['saidas']}
     # 1·) NCM × XML das entradas (antes da ICMS-ST, que usa o NCM)
+    _P('NCM × XML das entradas')
     if xmls and liga('ncm'):
         en = esc.get('ncm') or {}
         an_ncm = nx.analisar_texto(final, xmls)
@@ -535,6 +584,7 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
             final, r = nx.aplicar_texto(final, cods, xmls)
             resumo['ncm'] = {'produtos': r['produtos'], **nx.detalhe_pdf(final, an_ncm, r['feitos'])}
     # 1a) uso e consumo lançado como revenda (antes do DIFAL)
+    _P('Uso e consumo lançado como revenda')
     if liga('ucons'):
         eu = esc.get('ucons') or {}
         ids = [i['id'] for i in uc.analisar_texto(final, xmls)['itens'] if eu.get(i['id'], True) is not False]
@@ -543,6 +593,7 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
             resumo['ucons'] = {'itens': r['itens'], 'notas': r['notas'], 'c190': r['c190_divididos']}
             avisos += r.get('avisos') or []
     # 1b) combustível × uso e consumo (antes do DIFAL)
+    _P('Combustível × uso e consumo')
     if liga('comb'):
         ec = esc.get('comb') or {}
         ids = [i['id'] for i in cc.analisar_texto(final, xmls)['itens'] if ec.get(i['id'], True) is not False]
@@ -552,6 +603,7 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
             avisos += r.get('avisos') or []
     e116 = esc.get('e116') if isinstance(esc.get('e116'), dict) else None
     # 1c) ICMS-ST na entrada (antes do DIFAL)
+    _P('ICMS-ST na entrada')
     if liga('stent'):
         es_ = esc.get('stent') or {}
         ids = [i['id'] for i in se.analisar_texto(final, xmls)['itens'] if es_.get(i['id'], True) is not False]
@@ -579,6 +631,7 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
         return None
 
     # 2) DIFAL e crédito
+    _P('Uso e consumo · DIFAL e crédito')
     if liga('difal'):
         ed = _traduz_ids(esc.get('difal') or {}, base_an, final)
         auto_f = dict(auto)
@@ -609,6 +662,7 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
             resumo['difal'] = {'difal': rd.get('difal_total', 0.0), 'notas': rd.get('difal_incluidos', 0), 'cfop': rd.get('notas_cfop', 0),
                                'credito': rd.get('cred_total', 0.0), 'fretes': rd.get('fretes_incluidos', 0)}
             avisos += rd.get('avisos') or []
+    _P('Desconto, ICMS e valor × XML')
     if xmls:
         # 3) desconto
         if liga('desconto'):
@@ -663,6 +717,7 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
                     resumo['simples'] = {'notas': r.get('notas', 0), 'credito': r.get('credito_c197', 0.0)}
                     avisos += r.get('avisos') or []
     # 6b) crédito maçã e pera
+    _P('Crédito maçã e pera')
     if liga('maca'):
         em = esc.get('maca') or {}
         ma = cm.analisar_texto(final)
@@ -679,6 +734,7 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
             resumo['maca'] = {'notas': r.get('notas', 0), 'credito': r.get('credito', 0.0)}
             avisos += r.get('avisos') or []
     # 7) acumulador 7000
+    _P('Acumulador 7000')
     if liga('acum'):
         ea = esc.get('acum') or {}
         aa = ad.analisar_texto(final)
@@ -692,6 +748,7 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
             resumo['acum'] = {'itens': r['alterados'], 'valor': r['valor'], 'acumuladores': r['acumuladores']}
             avisos += r.get('avisos') or []
     # 8) cadastro 0200
+    _P('Cadastro de produtos (0200)')
     if liga('cad'):
         ec = esc.get('cad') or {}
         ca = c2.analisar_texto(final)
@@ -707,6 +764,7 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
             resumo['cad'] = {'produtos': r['alterados'], 'por_tipo': r['por_tipo']}
             avisos += [a for a in r.get('avisos') or [] if 'assinado' not in a]
     # 9) unidade × XML
+    _P('Unidade × XML')
     if xmls and liga('unid'):
         novo, r = ux.aplicar_texto(final, xmls)
         if r.get('itens'):
@@ -714,6 +772,7 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
             resumo['unid'] = {'itens': r['itens']}
             avisos += r.get('avisos') or []
     # 10) validação do PVA · cadastro e ajustes (por último: só mexe no cadastro e em ajuste zerado)
+    _P('Validação do PVA · cadastro e ajustes')
     if liga('pvacad'):
         ep = esc.get('pvacad') or {}
         ids = [i['id'] for i in pc.analisar_texto(final)['itens'] if not i.get('bloqueado') and ep.get(i['id'], True) is not False]
@@ -742,6 +801,8 @@ def main_cli(argv):
         print('uso: analisar-tudo --sped ARQ.txt [--xmls PASTA] [--regimes R.json] --json saida.json [--aplicar esc.json --saida novo.txt]')
         return 1
     dr.carrega_regimes(opt('--regimes'))
+    _PROG['arq'] = opt('--progresso')
+    _PROG['plano'] = PLANO_APLICA if opt('--aplicar') else PLANO_ANALISE
     perm = opt('--etapas')
     perm = None if perm is None else {k for k in perm.split(',') if k}
     try:
@@ -750,6 +811,7 @@ def main_cli(argv):
                 esc = json.load(fh)
             final, enc, res = aplicar(sped, opt('--xmls'), esc, perm)
             if final is not None and res.get('ok'):
+                _P('Gravando o arquivo corrigido')
                 fc._grava_sped(opt('--saida'), final, enc)
         else:
             res = analisar(sped, opt('--xmls'), perm)

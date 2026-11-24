@@ -2283,3 +2283,25 @@ body.menu-grupos .mg-lista{display:flex;flex-direction:column;gap:2px}
 [data-theme="dark"] .mt-err{background:rgba(220,38,38,.12);border-color:rgba(220,38,38,.35);color:#fca5a5}
 [data-theme="dark"] .mt-lei{background:rgba(99,102,241,.12);color:var(--ink2)}
 .mt-t td:nth-child(2){min-width:230px}.mt-t td:nth-child(4){min-width:240px}
+
+/* 2.4.34 — progresso do Corretor do SPED (modelo 1F: ícone girando, barra fina com brilho, resumo) */
+.cpg-ov{position:fixed;inset:0;z-index:9000;background:rgba(15,18,37,.38);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center}
+.cpg-ov[hidden]{display:none}
+.cpg{width:min(520px,92vw);display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;box-shadow:0 18px 50px rgba(40,30,110,.22);animation:cpgIn .25s ease}
+@keyframes cpgIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+.cpg-ic{width:44px;height:44px;border-radius:50%;background:#ede9fe;flex:none;display:flex;align-items:center;justify-content:center;position:relative}
+.cpg-spin{width:22px;height:22px;border-radius:50%;border:2.5px solid #c4b5fd;border-top-color:#6d28d9;animation:cpgGira .9s linear infinite}
+.cpg-ok{display:none;color:#6d28d9;font-size:20px}
+.cpg.fim .cpg-spin{display:none}.cpg.fim .cpg-ok{display:block;animation:cpgIn .25s ease}
+@keyframes cpgGira{to{transform:rotate(360deg)}}
+.cpg-c{flex:1;min-width:0}
+.cpg-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:7px}
+.cpg-h span{font-size:14px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cpg-h b{font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums}
+.cpg-tr{height:8px;border-radius:999px;background:#ede9fe;overflow:hidden}
+.cpg-f{height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,#7c3aed,#8b5cf6);position:relative;overflow:hidden;transition:width .45s ease}
+.cpg-f::after{content:"";position:absolute;top:0;bottom:0;width:40%;left:-40%;background:rgba(255,255,255,.38);transform:skewX(-20deg);animation:cpgBrilho 1.6s ease-in-out infinite}
+@keyframes cpgBrilho{to{left:115%}}
+.cpg-s{font-size:12px;color:var(--ink2);margin-top:7px;min-height:16px}
+[data-theme="dark"] .cpg-ic,[data-theme="dark"] .cpg-tr{background:rgba(139,92,246,.16)}
+[data-theme="dark"] .cpg-ok{color:#c4b5fd}[data-theme="dark"] .cpg-spin{border-color:rgba(196,181,253,.35);border-top-color:#c4b5fd}

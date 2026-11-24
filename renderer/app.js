@@ -2276,9 +2276,9 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
     async function tdAbrir() {
       if (!corrSpedPath) return;
       corrSoMostra('#corrTudo');
-      overlay(true, 'Fazendo a Análise Inteligente…');
+      corrProg(true, 'Conferindo');
       const r = await window.fiscocont.admin.tudoAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path });
-      overlay(false);
+      await corrProg(false, r.error ? false : undefined);
       if (r.error) { toast(r.error, true); return; }
       TD.e116 = null;
       corrChip(r.res);
@@ -2287,9 +2287,9 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       $('#corrTudo').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     async function tdAplicar() {
-      overlay(true, 'Aplicando todas as correções marcadas, uma sobre a outra…');
+      corrProg(true, 'Corrigindo');
       const res = await window.fiscocont.admin.tudoAplicar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path, escolhas: tdEscolhas() });
-      overlay(false);
+      await corrProg(false, res.error ? false : undefined);
       const out = $('#tdRes');
       if (res.precisa_e116) {
         out.innerHTML = `<div class="dif-av"><b>${esc(res.error)}</b><div style="display:flex;gap:8px;margin-top:8px;align-items:center">
@@ -3985,6 +3985,37 @@ function toast(msg, err = false) {
   const t = $('#toast'); t.textContent = msg; t.classList.toggle('err', err); t.hidden = false;
   clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), 4200);
 }
+// 2.4.34 — barra de progresso do Corretor do SPED: etapa real que o núcleo informa; entre uma etapa e outra a barra
+// anda devagar só até o começo da próxima (nunca passa da etapa em que está de fato)
+const CPG = { p: 0, alvo: 0, teto: 0, timer: 0, info: null, verbo: 'Conferindo' };
+function corrProg(on, verbo) {
+  const ov = $('#corrProg'), card = ov.querySelector('.cpg');
+  clearInterval(CPG.timer);
+  if (on) {
+    Object.assign(CPG, { p: 0, alvo: 0, teto: 6, info: null, verbo: verbo || 'Conferindo' });
+    card.classList.remove('fim'); $('#cpgT').textContent = 'Lendo o SPED…'; $('#cpgS').textContent = ''; corrProgPinta();
+    ov.hidden = false;
+    if (window.fiscocont.admin.onCorrProgresso) window.fiscocont.admin.onCorrProgresso(corrProgRecebe);
+    CPG.timer = setInterval(() => { if (CPG.p < CPG.teto) { CPG.p = Math.min(CPG.teto, CPG.p + Math.max(0.15, (CPG.teto - CPG.p) / 40)); corrProgPinta(); } }, 200);
+    return Promise.resolve();
+  }
+  CPG.p = 100; corrProgPinta(); card.classList.add('fim');
+  const d = CPG.info;
+  $('#cpgT').textContent = verbo === false ? 'Não concluído' : 'Concluído';
+  if (d && d.n) $('#cpgS').textContent = `${d.n} etapas${d.reg ? ` · ${d.reg.toLocaleString('pt-BR')} registros` : ''}`;
+  return new Promise((ok) => setTimeout(() => { ov.hidden = true; ok(); }, verbo === false ? 0 : 650));
+}
+function corrProgRecebe(d) {
+  if (!d || $('#corrProg').hidden) return;
+  CPG.info = d;
+  if (typeof d.p === 'number') { CPG.alvo = d.p; CPG.p = Math.max(CPG.p, d.p); CPG.teto = Math.min(99, d.p + (d.n ? 100 / d.n : 5) - 1); }
+  const t = d.t || '';
+  $('#cpgT').textContent = /^(Lendo|Preparando|Somando|Gravando)/.test(t) ? `${t}…` : `${CPG.verbo} ${t}…`;
+  $('#cpgS').textContent = `Etapa ${d.k} de ${d.n}${d.reg ? ` · ${d.reg.toLocaleString('pt-BR')} registros` : ''}`;
+  corrProgPinta();
+}
+function corrProgPinta() { const v = Math.round(CPG.p); $('#cpgF').style.width = v + '%'; $('#cpgP').textContent = v + '%'; }
+
 function overlay(on, txt) { $('#ovTxt').textContent = txt || 'Processando…'; $('#overlay').hidden = !on; }
 
 // Modal genérico "HTML animado × PDF" — usado no "Gerar para o Cliente".

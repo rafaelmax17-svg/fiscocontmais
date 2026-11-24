@@ -338,6 +338,7 @@ contextBridge.exposeInMainWorld('fiscocont', {
     macaAplicar: (params) => ipcRenderer.invoke('admin:macaAplicar', params),
     tudoAnalisar: (params) => ipcRenderer.invoke('admin:tudoAnalisar', params),
     tudoAplicar: (params) => ipcRenderer.invoke('admin:tudoAplicar', params),
+    onCorrProgresso: (cb) => { ipcRenderer.removeAllListeners('corr:progresso'); ipcRenderer.on('corr:progresso', (_e, d) => cb(d)); },
     ncmPdf: (ncm) => ipcRenderer.invoke('admin:ncmPdf', { ncm }),
     equipeLer: () => ipcRenderer.invoke('corr:equipeLer'),
     equipeSalvar: (key, ligada) => ipcRenderer.invoke('corr:equipeSalvar', { key, ligada }),
