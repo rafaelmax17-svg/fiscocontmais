@@ -230,7 +230,10 @@ if (!_instanciaPrincipal) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus(); }
+    if (mainWindow && !mainWindow.isDestroyed()) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus(); return; }
+    // 2.4.46: o processo ficou vivo sem janela (ex.: fechou no meio de uma tarefa) → abrir o atalho de novo não fazia
+    // nada. Agora recria a janela.
+    if (app.isReady()) createMainWindow();
   });
 }
 
