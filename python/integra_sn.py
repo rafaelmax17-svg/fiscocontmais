@@ -803,7 +803,16 @@ def assinar_dctf(xml, chave_priv, cert_der_b64):
     etree.SubElement(sig, E('SignatureValue')).text = base64.b64encode(chave_priv.sign(canon_si, padding.PKCS1v15(), hashes.SHA256())).decode('ascii')
     ki = etree.SubElement(sig, E('KeyInfo'))
     etree.SubElement(etree.SubElement(ki, E('X509Data')), E('X509Certificate')).text = cert_der_b64
-    return '<?xml version="1.0" encoding="UTF-8"?>' + etree.tostring(raiz, encoding='unicode')
+    # 2.4.52: a Receita confere o XML assinado com o XML que ela gerou (TRANS07/TRANS10). Antes o arquivo voltava
+    # reescrito (prólogo "UTF-8" no lugar do "utf-8" da Receita) e ela respondia TRANS10 em toda transmissão. Agora o
+    # XML da Receita vai byte a byte como veio, só com a <Signature> acrescentada antes do </ProcDctf>.
+    sig_txt = etree.tostring(sig, encoding='unicode')
+    fim = xml.rfind('</ProcDctf>')
+    if (_local(raiz.tag) == 'ProcDctf' and fim > 0 and not xml[fim + len('</ProcDctf>'):].strip()
+            and 'Signature' not in xml and not re.search(r'>\s+<', xml)):
+        return xml[:fim] + sig_txt + xml[fim:]
+    prolog = re.match(r'\s*(<\?xml[^>]*\?>)', xml)
+    return (prolog.group(1) if prolog else '<?xml version="1.0" encoding="utf-8"?>') + etree.tostring(raiz, encoding='unicode')
 
 
 def _numero_recibo(pdf):
@@ -852,8 +861,8 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
         return r
     if not r.get('jaTransmitida'):
         # 2.4.50: TRANS10 = a declaração mudou depois que a Receita gerou o XML (ex.: guia emitida em andamento logo antes) —
-        # espera, busca o XML de novo (conferindo os débitos outra vez) e tenta mais 2 vezes
-        for tentativa in range(3):
+        # espera, busca o XML de novo (conferindo os débitos outra vez) e tenta só mais 1 vez (cada envio é cobrado)
+        for tentativa in range(2):
             rx = _dctf(tok, cert, contratante, cnpj, 'Consultar', 'CONSXMLDECLARACAO38', _periodo_dctf(comp), consumo)
             xml = dctf_xml(rx.get('dados')) if rx.get('http') == 200 else None
             if not xml:
@@ -894,7 +903,7 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
             dados = {**_periodo_dctf(comp), 'xmlAssinadoBase64': base64.b64encode(assinado.encode('utf-8')).decode('ascii')}
             rt = _dctf(tok, cert, contratante, cnpj, 'Declarar', 'TRANSDECLARACAO310', dados, consumo, 'declaracao')
             t = _msgs_txt(rt)
-            if 'trans10' in t and tentativa < 2:
+            if 'trans10' in t and tentativa < 1:
                 import time as _tm0
                 _tm0.sleep(20 * (tentativa + 1))
                 continue
