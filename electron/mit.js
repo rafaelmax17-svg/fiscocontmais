@@ -87,8 +87,10 @@ async function dados(comp) {
   pedidos.sort((a, b) => b.emMs - a.emMs);
   let resp = null;
   try { const s = await f.getDoc(f.doc(db, 'mit_config', 'responsavel')); resp = s.exists() ? s.data() : null; } catch (_) {}
+  let auto = { ligado: false };
+  try { const s = await f.getDoc(f.doc(db, 'mit_config', 'automatico')); if (s.exists()) auto = { ligado: !!s.data().ligado, por: s.data().por || '', em: s.data().em || '' }; } catch (_) {}
   docs.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || '')));
-  return { comp, docs, pedidos: pedidos.slice(0, 30), robo: await _estadoRobo(), resp };
+  return { comp, docs, pedidos: pedidos.slice(0, 30), robo: await _estadoRobo(), resp, auto };
 }
 
 // lê as EFD-Contribuições escolhidas e grava uma linha por empresa (a competência vem do próprio arquivo)
@@ -105,14 +107,14 @@ async function importar(arquivos) {
     comps.add(e.comp);
     const ref = f.doc(db, COL, `${e.comp}_${e.cnpj}`);
     const s = await f.getDoc(ref); const ant = s.exists() ? s.data() : null;
-    let trib = 0, bal = false;
-    try { const t = await f.getDoc(f.doc(db, COL_E, e.cnpj)); trib = t.exists() ? (t.data().tributacao || 0) : 0; bal = t.exists() ? !!t.data().balanco : false; } catch (_) {}
+    let trib = 0, bal = false, semFolha = false;
+    try { const t = await f.getDoc(f.doc(db, COL_E, e.cnpj)); trib = t.exists() ? (t.data().tributacao || 0) : 0; bal = t.exists() ? !!t.data().balanco : false; semFolha = t.exists() ? !!t.data().semFolha : false; } catch (_) {}
     const valores = JSON.stringify([e.pis, e.cofins]);
     const mudou = !!(ant && ant.mit && ant.mit.situacao === 3 && ant.valoresAssinatura && ant.valoresAssinatura !== valores);
     await f.setDoc(ref, _limpo({
       comp: e.comp, cnpj: e.cnpj, nome: e.nome, arquivo: path.basename(e.arquivo || ''), regime: e.regime, retificadora: !!e.retificadora,
       pis: e.pis, cofins: e.cofins, total: e.total, saldoPis: e.saldo_pis, saldoCofins: e.saldo_cofins,
-      tributacao: (ant && ant.tributacao) || trib || e.tributacao_sugerida || 1, balanco: ant && ant.balanco !== undefined ? !!ant.balanco : bal, extras: (ant && ant.extras) || [],
+      tributacao: (ant && ant.tributacao) || trib || e.tributacao_sugerida || 1, balanco: ant && ant.balanco !== undefined ? !!ant.balanco : bal, semFolha: ant && ant.semFolha !== undefined ? !!ant.semFolha : semFolha, extras: (ant && ant.extras) || [],
       valoresAssinatura: valores, mudouDepoisDoEnvio: mudou, importadoPor: _quem(), importadoEm: new Date().toISOString(),
     }), { merge: true });
     ok.push(e.nome);
@@ -120,7 +122,7 @@ async function importar(arquivos) {
   return { importadas: ok.length, erros, comps: [...comps].sort(), codigos: r.codigos_irpj_csll || {} };
 }
 
-async function salvarEmpresa({ comp, cnpj, tributacao, extras, balanco } = {}) {
+async function salvarEmpresa({ comp, cnpj, tributacao, extras, balanco, semFolha } = {}) {
   if (!podeUsar()) throw new Error('Sem acesso ao módulo MIT.');
   cnpj = _so(cnpj);
   if (!_comp(comp) || cnpj.length !== 14) throw new Error('Empresa inválida.');
@@ -128,8 +130,14 @@ async function salvarEmpresa({ comp, cnpj, tributacao, extras, balanco } = {}) {
   const ref = f.doc(db, COL, `${comp}_${cnpj}`);
   const s = await f.getDoc(ref);
   if (!s.exists()) throw new Error('Empresa não importada nesta competência.');
-  if ((s.data().mit || {}).situacao === 3) throw new Error('O MIT desta empresa já foi enviado.');
   const campos = {};
+  // 2.4.53: "sem folha" (a DCTFWeb original pode ser transmitida sozinha) vale para a empresa toda, mesmo depois do MIT
+  if (semFolha !== undefined) {
+    campos.semFolha = !!semFolha;
+    await f.setDoc(f.doc(db, COL_E, cnpj), { semFolha: !!semFolha, por: _quem(), em: new Date().toISOString() }, { merge: true });
+    if (tributacao === undefined && balanco === undefined && extras === undefined) { await f.setDoc(ref, _limpo(campos), { merge: true }); return { ok: true }; }
+  }
+  if ((s.data().mit || {}).situacao === 3) throw new Error('O MIT desta empresa já foi enviado.');
   if (tributacao !== undefined) {
     const t = Number(tributacao);
     if (![1, 2, 3, 4, 5, 6].includes(t)) throw new Error('Tributação inválida.');
@@ -146,6 +154,16 @@ async function salvarEmpresa({ comp, cnpj, tributacao, extras, balanco } = {}) {
   }
   await f.setDoc(ref, _limpo(campos), { merge: true });
   return { ok: true };
+}
+
+// 2.4.53: envio automático (vale para a equipe toda): MIT com movimento → guia → DCTFWeb (retificadora ou empresa
+// "sem folha") → recibo na pasta da competência
+async function configAuto(ligado) {
+  const ss = auth.sessao();
+  if (!ss || ss.perfil !== 'admin') throw new Error('Só o Admin liga ou desliga o envio automático.');
+  const { db, f } = _fs();
+  await f.setDoc(f.doc(db, 'mit_config', 'automatico'), { ligado: !!ligado, por: _quem(), em: new Date().toISOString() }, { merge: true });
+  return { ligado: !!ligado };
 }
 
 async function pedir({ tipo, comp, cnpjs, semMovimento, confirmado, data } = {}) {
@@ -167,6 +185,9 @@ async function pedir({ tipo, comp, cnpjs, semMovimento, confirmado, data } = {})
       if (semMovimento ? sit !== 'saldo_credor' : sit !== 'a_enviar') throw new Error(`${d.nome}: ${semMovimento ? 'o sem movimento só vale para empresa sem débito' : 'sem débito a declarar (saldo credor)'}.`);
     }
     if (semMovimento) { if (lista.length !== 1) throw new Error('O sem movimento é enviado uma empresa por vez.'); extra.semMovimento = true; }
+    else {
+      try { const a = await f.getDoc(f.doc(db, 'mit_config', 'automatico')); if (a.exists() && a.data().ligado) extra.auto = true; } catch (_) {}
+    }
   }
   if (tipo === 'transmitir') {
     if (lista.length !== 1) throw new Error('Escolha uma empresa para transmitir.');
@@ -272,6 +293,84 @@ async function _varrer() {
   });
   for (const r of presos) await f.updateDoc(r, { status: 'erro', msg: 'Interrompido antes de terminar (o computador ou a conexão caiu). Peça de novo.', fimMs: Date.now() }).catch(() => {});
   if (novos.length) { novos.sort((a, b) => (a.emMs || 0) - (b.emMs || 0)); _fila(novos); }
+  else _autoVarrer().catch((e) => _log(`automático: ${e.message || e}`));
+}
+
+// ------------------------------------------------------------------ envio automático (2.4.53)
+// Cada empresa guarda em "auto" a etapa em que está: dctf (esperando a Receita montar a DCTFWeb) → guia → transmitir →
+// recibo → feito. A varredura de 1 minuto anda uma etapa por vez, uma empresa por vez, sem prender a fila de pedidos.
+let _autoRodando = false;
+async function _autoVarrer() {
+  if (!_robo || !_robo.souRobo() || _autoRodando || _rodando) return;
+  _autoRodando = true;
+  try {
+    const { db, f } = _fs();
+    const lista = [];
+    (await _prazo(f.getDocs(f.query(f.collection(db, COL), f.where('auto.pendente', '==', true))), 30000, 'automático')).forEach((x) => lista.push({ ref: x.ref, d: x.data() }));
+    lista.sort((a, b) => (a.d.auto.proxMs || 0) - (b.d.auto.proxMs || 0));
+    for (const { ref, d } of lista) {
+      if (_rodando || !_robo) break;                       // pedido da equipe chegou: ele vai primeiro
+      if ((d.auto.proxMs || 0) > Date.now()) continue;
+      await _autoPasso(ref, d).catch(async (e) => {
+        _log(`automático ${d.nome}: ${e.message || e}`);
+        const t = (d.auto.tent || 0) + 1;
+        await f.setDoc(ref, _limpo({ auto: { ...d.auto, tent: t, proxMs: Date.now() + 2 * 60 * 1000, ...(t > 5 ? { pendente: false, etapa: 'erro', msg: String(e.message || e).slice(0, 200) } : {}) } }), { merge: true });
+      });
+    }
+  } finally { _autoRodando = false; }
+}
+
+async function _autoPasso(ref, d) {
+  const { db, f } = _fs();
+  const a = d.auto, comp = d.comp, cnpj = d.cnpj, por = `${a.por || 'equipe'} (automático)`;
+  const grava = async (o) => { await f.setDoc(ref, _limpo({ auto: { ...a, ...o, emEtapa: new Date().toISOString() } }), { merge: true }); try { D.notificar('mit:mudou', { comp }); } catch (_) {} };
+  if (a.etapa === 'dctf') {
+    const dctf = await _lerDctf(comp, cnpj);
+    if (!dctf || !['em_andamento', 'transmitida'].includes(dctf.situacao)) {
+      const t = (a.tent || 0) + 1;
+      if (t >= 15) { _log(`automático ${d.nome}: a DCTFWeb não apareceu na Receita em 15 minutos`); return grava({ pendente: false, etapa: 'erro', msg: 'a DCTFWeb não apareceu na Receita em 15 minutos — gere a guia e transmita pelos botões' }); }
+      return grava({ tent: t, proxMs: Date.now() + 60 * 1000, msg: 'aguardando a DCTFWeb na Receita' });
+    }
+    await f.setDoc(ref, _limpo({ dctf: { ...(d.dctf || {}), ...dctf } }), { merge: true });
+    if (dctf.situacao === 'transmitida') return grava({ etapa: (d.guias || []).length ? 'recibo' : 'guia', tent: 0, proxMs: Date.now(), msg: '' });
+    return grava({ etapa: 'guia', tent: 0, proxMs: Date.now(), msg: 'gerando a guia' });
+  }
+  if (a.etapa === 'guia') {
+    const enviadoEm = Date.parse((d.mit && d.mit.enviadoEm) || '') || 0;
+    const temGuia = (d.guias || []).some((g) => Date.parse(g.em || '') >= enviadoEm);
+    if (!temGuia) {
+      const r = await _guia({ comp, cnpjs: [cnpj], por });
+      _log(`automático ${d.nome}: guia · ${r.msg || r.status}`);
+      if (r.status !== 'feito' || /com problema/.test(r.msg || '')) throw new Error(`guia: ${r.msg || 'falha'}`);
+    }
+    return grava({ etapa: 'transmitir', tent: 0, proxMs: Date.now(), msg: 'transmitindo a DCTFWeb' });
+  }
+  if (a.etapa === 'transmitir') {
+    const { d: atual } = await _doc(comp, cnpj);
+    const dc = (atual && atual.dctf) || {};
+    if (dc.situacao === 'transmitida' && dc.recibo) return grava({ pendente: false, etapa: 'feito', msg: '' });
+    let semFolha = !!(atual && atual.semFolha);
+    try { const e = await f.getDoc(f.doc(db, COL_E, cnpj)); if (e.exists() && e.data().semFolha !== undefined) semFolha = !!e.data().semFolha; } catch (_) {}
+    if (dc.retificadora !== true && !semFolha) {
+      _log(`automático ${d.nome}: DCTFWeb original — fica para a equipe confirmar a folha e transmitir`);
+      return grava({ pendente: false, etapa: 'confirmar', msg: 'DCTFWeb original: confirme a folha e a REINF e transmita' });
+    }
+    const r = await _transmitir({ comp, cnpjs: [cnpj], confirmado: { folha: true, reinf: true, mit: true }, por });
+    _log(`automático ${d.nome}: transmissão · ${r.msg || r.status}`);
+    if (r.status !== 'feito') return grava({ pendente: false, etapa: 'erro', msg: String(r.msg || 'a Receita não aceitou a transmissão').slice(0, 300) });
+    const { d: dep } = await _doc(comp, cnpj);
+    if (dep && dep.dctf && dep.dctf.arquivo) return grava({ pendente: false, etapa: 'feito', msg: '' });
+    return grava({ etapa: 'recibo', tent: 0, proxMs: Date.now() + 60 * 1000, msg: 'baixando o recibo' });
+  }
+  if (a.etapa === 'recibo') {
+    const { ref: r2, d: atual } = await _doc(comp, cnpj);
+    const x = await _buscarRecibo(comp, cnpj, r2, atual);
+    if (x.ok) return grava({ pendente: false, etapa: 'feito', msg: '' });
+    const t = (a.tent || 0) + 1;
+    if (t >= 6) return grava({ pendente: false, etapa: 'feito', msg: 'o recibo vem no próximo "Consultar"' });
+    return grava({ tent: t, proxMs: Date.now() + 2 * 60 * 1000, msg: 'aguardando a Receita liberar o recibo' });
+  }
+  return grava({ pendente: false });
 }
 
 async function _fila(novos) {
@@ -382,12 +481,14 @@ async function _enviar(p) {
       protocolo: x.protocolo || '', semMovimento: sem, enviadoPor: p.por || '', enviadoEm: new Date().toISOString(), jaEnviado: !!x.jaEnviado,
       valor: _r2((d.total || 0) + _totalExtras(d.extras)) };
     const dctf = await _lerDctf(p.comp, cnpj).catch(() => null);
-    await f.setDoc(ref, _limpo({ mit, ...(dctf ? { dctf } : {}), ultimoErro: '', mudouDepoisDoEnvio: false }), { merge: true });
+    const auto = p.auto && !sem ? { pendente: true, etapa: 'dctf', tent: 0, proxMs: Date.now() + 15000, desde: new Date().toISOString(), por: p.por || '', msg: 'aguardando a DCTFWeb na Receita' } : null;
+    await f.setDoc(ref, _limpo({ mit, ...(dctf ? { dctf } : {}), ...(auto ? { auto } : {}), ultimoErro: '', mudouDepoisDoEnvio: false }), { merge: true });
     ok.push(d.nome);
     _log(`MIT ${sem ? 'sem movimento ' : ''}${d.nome}: ${x.msg || ''}`);
   }
+  if (p.auto && ok.length) setTimeout(() => _autoVarrer().catch((e) => _log(`automático: ${e.message || e}`)), 20000);
   if (!ok.length && erros.length) return { status: 'erro', msg: erros.join(' · ').slice(0, 400) };
-  return { status: 'feito', msg: `${ok.length} MIT enviado(s)${erros.length ? ` · ${erros.length} com problema: ${erros.join(' · ')}` : ''}`.slice(0, 400) };
+  return { status: 'feito', msg: `${ok.length} MIT enviado(s)${p.auto ? ' · guia e DCTFWeb seguem no automático' : ''}${erros.length ? ` · ${erros.length} com problema: ${erros.join(' · ')}` : ''}`.slice(0, 400) };
 }
 
 // guia só dos débitos do MIT (origem 8); a Receita calcula vencimento e acréscimos; o PDF vai para a pasta do cliente
@@ -399,9 +500,9 @@ async function _guia(p) {
     if (!d) { erros.push(`${cnpj}: não importada`); continue; }
     const dctf = await _lerDctf(p.comp, cnpj);
     if (!dctf || !['em_andamento', 'transmitida'].includes(dctf.situacao)) { erros.push(`${d.nome}: a DCTFWeb do mês ainda não está disponível (${(dctf && (dctf.msg || dctf.situacao)) || 'sem resposta'})`); continue; }
+    // 2.4.53: a guia vai para a pasta da competência (10/2026), não a do mês do vencimento
     const [a, m] = p.comp.split('-');
-    const mp = +m === 12 ? [String(+a + 1), '01'] : [a, String(+m + 1).padStart(2, '0')];
-    const pasta = pastaCliente.pastaDoMes({ nome: d.nome, cnpj }, mp[0], mp[1], true) || '';
+    const pasta = pastaCliente.pastaDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
     const r = await _robo.python({ acao: 'dctf_guia', comp: p.comp, empresa: { cnpj, nome: d.nome, situacao: dctf.situacao, origens: ['MIT'], data: p.data ? p.data.replace(/-/g, '') : '', pasta, rotulo: 'MIT PIS-COFINS' } });
     if (!r.ok) throw new Error(r.erro || 'Falha ao gerar a guia.');
     await _consumo(r);
@@ -532,4 +633,4 @@ async function limparErrosAntigos() {
   fs.writeFileSync(marca, new Date().toISOString());
 }
 
-module.exports = { init, podeUsar, dados, importar, salvarEmpresa, pedir, limparHistorico, limparErrosAntigos, ligarRobo, desligarRobo, situacaoDe };
+module.exports = { init, podeUsar, dados, importar, salvarEmpresa, pedir, configAuto, limparHistorico, limparErrosAntigos, ligarRobo, desligarRobo, situacaoDe };

@@ -693,6 +693,7 @@ ipcMain.handle('mit:escolherEfd', async () => {
 ipcMain.handle('mit:importar', (_evt, arquivos) => _mit(() => mitMod.importar(arquivos)));
 ipcMain.handle('mit:salvarEmpresa', (_evt, o) => _mit(() => mitMod.salvarEmpresa(o || {})));
 ipcMain.handle('mit:pedir', (_evt, o) => _mit(() => mitMod.pedir(o || {})));
+ipcMain.handle('mit:auto', (_evt, ligado) => _mit(() => mitMod.configAuto(!!ligado)));
 ipcMain.handle('mit:limparHistorico', (_evt, comp) => _mit(() => mitMod.limparHistorico(comp)));
 ipcMain.handle('mit:abrir', (_evt, { caminho }) => _mit(async () => {
   if (!caminho || !fs.existsSync(caminho)) throw new Error('O arquivo não está acessível neste computador (pasta do cliente no Drive).');
