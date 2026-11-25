@@ -23,6 +23,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import sys
 import time
 import unicodedata
@@ -728,27 +729,28 @@ def _c14n_trecho(el):
 
 def assinar_dctf(xml, chave_priv, cert_der_b64):
     """XMLDSig envelopada do <ConteudoDeclaracao id="..."> do ProcDctf: C14N 1.0, SHA-256, RSA-SHA256, X509Certificate;
-    a assinatura vai como último filho do próprio <ConteudoDeclaracao>. Assina o XML devolvido pela Receita sem alterar o conteúdo."""
+    a assinatura vai como último filho de <ProcDctf>. Assina o XML devolvido pela Receita sem alterar o conteúdo."""
     import hashlib
     from lxml import etree
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.asymmetric import padding
-    raiz = etree.fromstring(xml.encode('utf-8'), etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True, remove_blank_text=False))
+    # 2.4.45: sem os espaços/quebras de formatação entre as tags (regra dos validadores da Receita — eSocial/Reinf/DCTFWeb
+    # recusam assinatura feita sobre XML formatado); o conteúdo da declaração não muda
+    raiz = etree.fromstring(xml.encode('utf-8'), etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True, remove_blank_text=True))
     alvo = next((el for el in raiz.iter() if _local(el.tag) == 'ConteudoDeclaracao'), None)
     if alvo is None:
         raise ValueError('o XML não tem o ConteudoDeclaracao')
     ref = alvo.get('id') or alvo.get('Id') or alvo.get('ID')
     if not ref:
         raise ValueError('o ConteudoDeclaracao não tem id')
-    # 2.4.44: a Receita recusou (TRANS09 "Assinatura inválida") a assinatura como irmã do ConteudoDeclaracao. O padrão
-    # usado por quem transmite pelo Integra Contador (ACBr: docElement = ConteudoDeclaracao, IdAttr = id) é a assinatura
-    # ENVELOPADA: <Signature> como último filho do próprio ConteudoDeclaracao, com Reference="#id" e a transformação
-    # enveloped-signature (o digest é do ConteudoDeclaracao sem a assinatura).
+    # a Receita procura a assinatura em /ProcDctf/Signature (resposta TRANS09 "Tag com erro: /ProcDctf/Signature" quando
+    # ela foi posta dentro do ConteudoDeclaracao na 2.4.44): último filho de ProcDctf, Reference="#id" do ConteudoDeclaracao
+    proc = raiz if _local(raiz.tag) == 'ProcDctf' else next((el for el in raiz.iter() if _local(el.tag) == 'ProcDctf'), raiz)
     for velha in [el for el in raiz.iter() if _local(el.tag) == 'Signature']:
         velha.getparent().remove(velha)
     digest = base64.b64encode(hashlib.sha256(_c14n_trecho(alvo)).digest()).decode('ascii')
     E = lambda n: '{%s}%s' % (NS_DS, n)                       # noqa: E731
-    sig = etree.SubElement(alvo, E('Signature'), nsmap={None: NS_DS})
+    sig = etree.SubElement(proc, E('Signature'), nsmap={None: NS_DS})
     si = etree.SubElement(sig, E('SignedInfo'))
     etree.SubElement(si, E('CanonicalizationMethod'), Algorithm='http://www.w3.org/TR/2001/REC-xml-c14n-20010315')
     etree.SubElement(si, E('SignatureMethod'), Algorithm='http://www.w3.org/2001/04/xmldsig-more#rsa-sha256')
@@ -762,7 +764,7 @@ def assinar_dctf(xml, chave_priv, cert_der_b64):
     etree.SubElement(sig, E('SignatureValue')).text = base64.b64encode(chave_priv.sign(canon_si, padding.PKCS1v15(), hashes.SHA256())).decode('ascii')
     ki = etree.SubElement(sig, E('KeyInfo'))
     etree.SubElement(etree.SubElement(ki, E('X509Data')), E('X509Certificate')).text = cert_der_b64
-    return etree.tostring(raiz.getroottree(), encoding='UTF-8', xml_declaration=True).decode('utf-8')
+    return '<?xml version="1.0" encoding="UTF-8"?>' + etree.tostring(raiz, encoding='unicode')
 
 
 def _numero_recibo(pdf):
@@ -838,6 +840,15 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
                 r.update(msg='A DCTFWeb tem débitos de ' + ', '.join(sorted(outras)) + ': confirme a folha e o MIT antes de transmitir.', origens=d['origens'])
                 return r
         assinado = assinar_dctf(xml, chave_priv, cert_b64)
+        try:                                     # cópia local da última tentativa (diagnóstico de recusa da assinatura)
+            pasta_dbg = os.path.join(os.environ.get('APPDATA') or tempfile.gettempdir(), 'fiscocont-plus', 'dctf_diagnostico')
+            os.makedirs(pasta_dbg, exist_ok=True)
+            with open(os.path.join(pasta_dbg, 'original.xml'), 'w', encoding='utf-8') as fh:
+                fh.write(xml)
+            with open(os.path.join(pasta_dbg, 'assinado.xml'), 'w', encoding='utf-8') as fh:
+                fh.write(assinado)
+        except Exception:
+            pass
         dados = {**_periodo_dctf(comp), 'xmlAssinadoBase64': base64.b64encode(assinado.encode('utf-8')).decode('ascii')}
         rt = _dctf(tok, cert, contratante, cnpj, 'Declarar', 'TRANSDECLARACAO310', dados, consumo, 'declaracao')
         t = _msgs_txt(rt)
