@@ -353,14 +353,13 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 
 /* ===================== TELA DE LOGIN ===================== */
 .login-gate{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;
-  background:linear-gradient(160deg,var(--side),var(--side2));padding:32px;overflow:hidden}
-.lg-stage{display:flex;width:100%;max-width:1450px;height:760px;max-height:88vh;
-  border-radius:26px;overflow:hidden;box-shadow:0 40px 110px rgba(0,0,0,.5);
-  animation:stageIn .5s cubic-bezier(.2,.8,.2,1)}
+  background:linear-gradient(160deg,var(--side),var(--side2));padding:0;overflow:hidden}
+/* 2.4.51: tela cheia — sem a moldura cinza em volta */
+.lg-stage{display:flex;width:100vw;height:100vh;overflow:hidden;animation:stageIn .5s cubic-bezier(.2,.8,.2,1)}
 @keyframes stageIn{from{opacity:0;transform:translateY(18px) scale(.985)}to{opacity:1;transform:none}}
-.lg-left{width:460px;flex:0 0 460px;display:flex;align-items:center;justify-content:center;position:relative;z-index:2;
-  background:linear-gradient(165deg,#171b3d,#20254e)}
-.login-card{width:320px;text-align:center;color:#fff;padding:36px 32px;background:rgba(255,255,255,.06);
+.lg-left{width:clamp(420px,32vw,560px);flex:0 0 clamp(420px,32vw,560px);display:flex;align-items:center;justify-content:center;position:relative;z-index:2;
+  background:linear-gradient(165deg,#171b3d,#20254e);box-shadow:12px 0 40px rgba(0,0,0,.25)}
+.login-card{width:clamp(320px,20vw,360px);text-align:center;color:#fff;padding:36px 32px;background:rgba(255,255,255,.06);
   border:1px solid rgba(255,255,255,.14);border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,.35);
   animation:loginIn .4s ease;}
 @keyframes loginIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
@@ -382,26 +381,26 @@ body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
 
 /* ---- painel direito: vitrine animada de benefícios ---- */
 .lg-right{flex:1;position:relative;display:flex;flex-direction:column;justify-content:center;
-  padding:60px 68px;color:#fff;overflow:hidden;min-width:0;background:#0e1130}
+  padding:60px clamp(68px,7vw,140px);color:#fff;overflow:hidden;min-width:0;background:#0e1130}
 .bg-blob{position:absolute;border-radius:50%;filter:blur(60px);opacity:.32;pointer-events:none}
-.bg-blob.b1{width:380px;height:380px;background:#4f46e5;top:-110px;right:-90px;animation:blobFloat1 14s ease-in-out infinite}
-.bg-blob.b2{width:340px;height:340px;background:#e8632b;bottom:-130px;right:100px;animation:blobFloat2 16s ease-in-out infinite}
-.bg-blob.b3{width:270px;height:270px;background:#0ea472;bottom:40px;left:-70px;animation:blobFloat1 18s ease-in-out infinite reverse}
+.bg-blob.b1{width:560px;height:560px;background:#4f46e5;top:-110px;right:-90px;animation:blobFloat1 14s ease-in-out infinite}
+.bg-blob.b2{width:520px;height:520px;background:#e8632b;bottom:-130px;right:100px;animation:blobFloat2 16s ease-in-out infinite}
+.bg-blob.b3{width:420px;height:420px;background:#0ea472;bottom:40px;left:-70px;animation:blobFloat1 18s ease-in-out infinite reverse}
 @keyframes blobFloat1{0%,100%{transform:translate(0,0)}50%{transform:translate(26px,-22px)}}
 @keyframes blobFloat2{0%,100%{transform:translate(0,0)}50%{transform:translate(-22px,26px)}}
 .lg-brand{position:relative;z-index:2;margin-bottom:44px}
 .lg-bname{font-size:15.5px;font-weight:800;letter-spacing:.6px;color:#c7d2fe;text-transform:uppercase}
-.lg-brand h1{font-size:38px;font-weight:800;margin-top:8px;line-height:1.22}
-.lg-brand p{margin-top:12px;font-size:16px;color:rgba(255,255,255,.7);max-width:560px;line-height:1.6}
-.carousel{position:relative;z-index:2;height:150px;min-width:0}
+.lg-brand h1{font-size:clamp(38px,2.6vw,52px);font-weight:800;margin-top:8px;line-height:1.22}
+.lg-brand p{margin-top:12px;font-size:clamp(16px,1vw,19px);color:rgba(255,255,255,.7);max-width:640px;line-height:1.6}
+.carousel{position:relative;z-index:2;height:clamp(150px,10.5vw,200px);min-width:0}
 .carousel .slide{position:absolute;inset:0;opacity:0;transform:translateY(14px);animation:cycle 27s ease-in-out infinite}
-@keyframes cycle{0%{opacity:0;transform:translateY(14px)}2.2%{opacity:1;transform:translateY(0)}11.1%{opacity:1;transform:translateY(0)}14.8%{opacity:0;transform:translateY(-14px)}100%{opacity:0}}
+@keyframes cycle{0%{opacity:0;transform:translateY(14px)}2.2%{opacity:1;transform:translateY(0)}9.4%{opacity:1;transform:translateY(0)}11.1%{opacity:0;transform:translateY(-14px)}100%{opacity:0}}
 .s-ic{width:40px;height:40px;color:#e8632b;margin-bottom:14px}
-.s-t{font-size:25px;font-weight:800;margin-bottom:9px}
-.s-d{font-size:16px;color:rgba(255,255,255,.74);max-width:540px;line-height:1.55}
+.s-t{font-size:clamp(25px,1.7vw,32px);font-weight:800;margin-bottom:9px}
+.s-d{font-size:clamp(16px,1vw,19px);color:rgba(255,255,255,.74);max-width:620px;line-height:1.55}
 .dots{position:relative;z-index:2;display:flex;gap:8px;margin-top:22px}
 .dots .dot{width:20px;height:4px;border-radius:3px;background:rgba(255,255,255,.18);animation:dotfill 27s ease-in-out infinite}
-@keyframes dotfill{0%{background:rgba(255,255,255,.18)}1.9%{background:#e8632b}11.1%{background:#e8632b}14.8%{background:rgba(255,255,255,.18)}100%{background:rgba(255,255,255,.18)}}
+@keyframes dotfill{0%{background:rgba(255,255,255,.18)}1.9%{background:#e8632b}9.4%{background:#e8632b}11.1%{background:rgba(255,255,255,.18)}100%{background:rgba(255,255,255,.18)}}
 .login-shake{animation:loginShake .35s}
 @keyframes loginShake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(3px)}
   30%,50%,70%{transform:translateX(-6px)}40%,60%{transform:translateX(6px)}}
