@@ -133,6 +133,8 @@ async function salvarEmpresa({ comp, cnpj, tributacao, extras, balanco, semFolha
   const campos = {};
   // 2.4.53: "sem folha" (a DCTFWeb original pode ser transmitida sozinha) vale para a empresa toda, mesmo depois do MIT
   if (semFolha !== undefined) {
+    const ss = auth.sessao();
+    if (!ss || ss.perfil !== 'admin') throw new Error('Só o Admin marca ou desmarca "sem folha".');
     campos.semFolha = !!semFolha;
     await f.setDoc(f.doc(db, COL_E, cnpj), { semFolha: !!semFolha, por: _quem(), em: new Date().toISOString() }, { merge: true });
     if (tributacao === undefined && balanco === undefined && extras === undefined) { await f.setDoc(ref, _limpo(campos), { merge: true }); return { ok: true }; }

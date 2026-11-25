@@ -2344,3 +2344,5 @@ body.menu-grupos .mg-lista{display:flex;flex-direction:column;gap:2px}
 .mt-pulse{width:8px;height:8px;border-radius:50%;background:#6366f1;box-shadow:0 0 0 0 rgba(99,102,241,.5);animation:mtPulso 1.4s infinite}
 @keyframes mtPulso{70%{box-shadow:0 0 0 8px rgba(99,102,241,0)}100%{box-shadow:0 0 0 0 rgba(99,102,241,0)}}
 @media (max-width:1250px){.mt-dash{grid-template-columns:1fr 1fr}}
+.mt-sf{font-size:11px;color:#6d28d9}[data-theme="dark"] .mt-sf{color:#c4b5fd}
+.mt-sfb{display:inline-block;margin-top:5px;padding:1px 8px;border-radius:99px;background:#ede9fe;color:#6d28d9;font-weight:650}

@@ -85,7 +85,7 @@
     let h = stepper(d);
     const pf = fila(d.cnpj);
     if (d.auto && d.auto.pendente) h += `<div class="mt-auto-l"><span class="mt-pulse"></span>Automático: ${e(d.auto.msg || 'em andamento')}</div>`;
-    else if (d.auto && d.auto.etapa === 'confirmar') h += `<div class="mt-warn">${e(d.auto.msg || 'DCTFWeb original: confirme a folha e a REINF e transmita')}. Se a empresa não tem folha, marque "sem folha" ao lado e o automático passa a transmitir sozinho.</div>`;
+    else if (d.auto && d.auto.etapa === 'confirmar') h += `<div class="mt-warn">${e(d.auto.msg || 'DCTFWeb original: confirme a folha e a REINF e transmita')}. </div>`;
     else if (d.auto && d.auto.etapa === 'erro') h += `<div class="mt-err">O automático parou: ${e(d.auto.msg || '')}. Continue pelos botões.</div>`;
     if (pf) h += `<div class="sm">${e(PED[pf.tipo] || pf.tipo)} ${pf.status === 'rodando' ? 'em andamento…' : 'na fila…'}</div>`;
     if (d.ultimoErro) h += `<div class="mt-err">${e(d.ultimoErro)}</div>`;
@@ -164,7 +164,7 @@
             const trava = !['a_enviar', 'saldo_credor'].includes(d.sit);
             return `<tr><td>${d.sit === 'a_enviar' && !fila(d.cnpj) ? `<input type="checkbox" data-sel="${e(d.cnpj)}" ${M.sel.has(d.cnpj) ? 'checked' : ''}>` : ''}</td>
               <td><b>${e(d.nome)}</b><div class="sm">CNPJ ${e(fmtCnpj(d.cnpj))} · ${e(compBr(d.comp))}${d.retificadora ? ' · <b>EFD retificadora</b>' : ''}</div><div class="sm">${e(d.arquivo || '')}</div></td>
-              <td><select class="mt-mini" data-trib="${e(d.cnpj)}" ${trava ? 'disabled' : ''}>${Object.entries(TRIB).map(([k, v]) => `<option value="${k}" ${+k === +d.tributacao ? 'selected' : ''}>${v}</option>`).join('')}</select><div class="sm">${e(REG[d.regime] || '')}</div>${+d.tributacao === 1 && !trava ? `<label class="mt-ck" title="Lucro Real Anual: como o IRPJ/CSLL do mês foi apurado (campo obrigatório do MIT)"><input type="checkbox" data-bal="${e(d.cnpj)}" ${d.balanco ? 'checked' : ''} ${trava ? 'disabled' : ''}> IRPJ/CSLL por balancete de suspensão/redução</label><div class="sm">${d.balanco ? '' : 'desmarcado = estimativa sobre a receita bruta'}</div>` : ''}<label class="mt-ck" title="Empresa sem empregados e sem EFD-Reinf: a DCTFWeb original só tem o MIT, então o envio automático pode transmitir sozinho"><input type="checkbox" data-sf="${e(d.cnpj)}" ${d.semFolha ? 'checked' : ''}> sem folha</label></td>
+              <td><select class="mt-mini" data-trib="${e(d.cnpj)}" ${trava ? 'disabled' : ''}>${Object.entries(TRIB).map(([k, v]) => `<option value="${k}" ${+k === +d.tributacao ? 'selected' : ''}>${v}</option>`).join('')}</select><div class="sm">${e(REG[d.regime] || '')}</div>${+d.tributacao === 1 && !trava ? `<label class="mt-ck" title="Lucro Real Anual: como o IRPJ/CSLL do mês foi apurado (campo obrigatório do MIT)"><input type="checkbox" data-bal="${e(d.cnpj)}" ${d.balanco ? 'checked' : ''} ${trava ? 'disabled' : ''}> IRPJ/CSLL por balancete de suspensão/redução</label><div class="sm">${d.balanco ? '' : 'desmarcado = estimativa sobre a receita bruta'}</div>` : ''}${window._ehAdminSessao && window._ehAdminSessao() ? `<label class="mt-ck mt-sf" title="Só para empresa que NUNCA tem folha (eSocial) nem EFD-Reinf. Marcada, o envio automático transmite a DCTFWeb original sozinho. Só o Admin vê esta opção."><input type="checkbox" data-sf="${e(d.cnpj)}" ${d.semFolha ? 'checked' : ''}> Admin: sem folha e sem REINF</label>` : d.semFolha ? '<div class="sm mt-sfb" title="Marcada pelo Admin: a DCTFWeb original desta empresa é transmitida sozinha pelo envio automático">sem folha e sem REINF</div>' : ''}</td>
               <td>${linhaDebitos(d)}</td>
               <td class="n"><b>${num(totalLinha(d))}</b></td>
               <td>${colSituacao(d)}</td></tr>`;
@@ -312,7 +312,11 @@
     }; });
     q('[data-guia]').forEach((x) => { x.onclick = () => pedir({ tipo: 'guia', cnpjs: [x.dataset.guia] }, `Guia pedida: o PDF vai para a pasta do cliente (competência ${compBr(M.comp)}).`); });
     q('[data-fil]').forEach((x) => { x.onclick = () => { M.filtro = x.dataset.fil; desenhar(); }; });
-    q('[data-sf]').forEach((x) => { x.onchange = () => salvar(x.dataset.sf, { semFolha: x.checked }); });
+    q('[data-sf]').forEach((x) => { x.onchange = () => {
+      const d = (M.d.docs || []).find((y) => y.cnpj === x.dataset.sf);
+      if (x.checked && !confirm(`Marcar ${d.nome} como SEM FOLHA E SEM REINF?\n\nSó marque se a empresa nunca tem empregados (eSocial) nem EFD-Reinf.\n\nCom isso, o envio automático transmite a DCTFWeb ORIGINAL sozinho, só com o MIT. Se a empresa tiver folha, a DCTFWeb vai antes da folha fechar e depois vira retificadora.\n\nA marcação vale para os próximos meses também.`)) { x.checked = false; return; }
+      salvar(d.cnpj, { semFolha: x.checked });
+    }; });
     const au = $('#mtAuto');
     if (au) au.onchange = async () => {
       const r = await api().auto(au.checked);
