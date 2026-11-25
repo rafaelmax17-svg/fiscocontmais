@@ -209,7 +209,13 @@ function createMainWindow() {
   });
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
+  // 2.4.46: se a janela não avisar que está pronta em 15 s, mostra assim mesmo (antes o sistema ficava aberto sem tela)
+  const _mwSeguranca = setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
+    fecharSplash(() => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.maximize(); mainWindow.show(); } });
+  }, 15000);
   mainWindow.once('ready-to-show', () => {
+    clearTimeout(_mwSeguranca);
     const wait = splashWindow ? Math.max(0, SPLASH_MIN_MS - (Date.now() - (splashShownAt || Date.now()))) : 0;
     setTimeout(() => {
       fecharSplash(() => {
@@ -225,6 +231,19 @@ function createMainWindow() {
 
 // Uma janela só: abrir o atalho de novo traz a janela que já está aberta (dois FiscoCont+ ao mesmo tempo
 // travavam arquivos durante a atualização).
+// 2.4.46: placa de vídeo/driver com problema → a janela nunca chegava a ser desenhada ("ready-to-show" não vinha) e o
+// sistema ficava aberto sem tela. Se o processo da GPU cair, grava a marca e reabre sem aceleração de vídeo.
+let _semGpuArq = '';
+try { _semGpuArq = path.join(String(app.getPath('userData')), 'sem-gpu.flag'); } catch (_) {}
+if ((_semGpuArq && fs.existsSync(_semGpuArq)) || process.argv.includes('--sem-gpu')) {
+  app.disableHardwareAcceleration();
+}
+app.on('child-process-gone', (_e, d) => {
+  if (d && d.type === 'GPU' && _semGpuArq && !fs.existsSync(_semGpuArq)) {
+    try { fs.writeFileSync(_semGpuArq, new Date().toISOString() + ' ' + (d.reason || '')); } catch (_) {}
+    app.relaunch(); app.exit(0);
+  }
+});
 const _instanciaPrincipal = app.requestSingleInstanceLock();
 if (!_instanciaPrincipal) {
   app.quit();
