@@ -10,8 +10,17 @@
   Sleep 500
 !macroend
 
+; 2.4.53: "Falha ao desinstalar os arquivos do aplicativo antigo ...: 2" — sobrava FiscoCont+.exe aberto (robô da fila
+; ou processo da GPU/renderer). Encerra só os processos com esse nome, SEM /T: o instalador é outro executável e,
+; sem /T, não é derrubado junto (o problema de 25/10/2026 era o /T). Depois espera o Windows soltar os arquivos.
+!macro _fcEncerraApp
+  nsExec::Exec 'taskkill /F /IM "FiscoCont+.exe"'
+  Sleep 1500
+!macroend
+
 !macro customInit
   !insertmacro _fcEncerra
+  !insertmacro _fcEncerraApp
 !macroend
 
 !macro customUnInit
