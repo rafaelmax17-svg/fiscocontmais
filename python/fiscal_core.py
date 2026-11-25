@@ -3284,9 +3284,13 @@ def main(argv):
             return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
         import efd_corretor as _corr
         try:
+            xmls = None
+            if optc('--xml-lista'):                 # 2.4.56: XMLs das NF-e de saída (lista de caminhos em JSON: arquivos, pastas, .zip)
+                with open(optc('--xml-lista'), 'r', encoding='utf-8') as fh:
+                    xmls = [x for x in json.load(fh) if isinstance(x, str)]
             _corr.corrigir_arquivo(argv[1], optc('--pva'), optc('--saida', 'efd_corrigido.txt'), optc('--painel-html'), optc('--json'), optc('--conta-ajuste', ''),
                                    optc('--conta-uso', '359'), optc('--conta-entrada', '55'), '--itens-genericos' in args,
-                                   '--incluir-0500' in args, '--incluir-0900' in args)
+                                   '--incluir-0500' in args, '--incluir-0900' in args, xmls)
         except Exception as e:
             res = {'erro': f'Não consegui corrigir esse arquivo: {e}'}
             if '--json' in args:

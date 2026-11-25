@@ -4594,7 +4594,18 @@ ipcMain.handle('fiscal:pickPvaPdf', async () => {
   return { path: r.filePaths[0] };
 });
 
-ipcMain.handle('fiscal:efdCorrigir', async (_evt, spedPath, pvaPath, contaAjuste, contaUso, contaEntrada, itensSem, incluir0500, incluir0900) => {
+// 2.4.56: XMLs das NF-e de saída (vários arquivos .xml e/ou .zip) para montar os itens das notas que vieram sem C170
+ipcMain.handle('fiscal:pickXmlsSaida', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: 'XMLs das NF-e de saída (pode escolher vários ou o .zip)',
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'XML ou ZIP', extensions: ['xml', 'zip'] }],
+  });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  return { paths: r.filePaths };
+});
+
+ipcMain.handle('fiscal:efdCorrigir', async (_evt, spedPath, pvaPath, contaAjuste, contaUso, contaEntrada, itensSem, incluir0500, incluir0900, xmls) => {
   if (!spedPath) return { error: 'Selecione o arquivo da EFD-Contribuições.' };
   const stamp = Date.now();
   const htmlOut = path.join(os.tmpdir(), `fc_efdcorr_${stamp}.html`);
@@ -4609,7 +4620,11 @@ ipcMain.handle('fiscal:efdCorrigir', async (_evt, spedPath, pvaPath, contaAjuste
     if (itensSem) args.push('--itens-genericos');
     if (incluir0500) args.push('--incluir-0500');
     if (incluir0900) args.push('--incluir-0900');
+    const xmlLista = path.join(os.tmpdir(), `fc_efdcorr_${stamp}_xmls.json`);
+    const listaXml = (Array.isArray(xmls) ? xmls : []).filter((x) => typeof x === 'string' && fs.existsSync(x));
+    if (listaXml.length) { fs.writeFileSync(xmlLista, JSON.stringify(listaXml), 'utf-8'); args.push('--xml-lista', xmlLista); }
     await runFiscal(args, jsonOut);
+    fs.unlink(xmlLista, () => {});
     const resumo = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
     if (resumo.erro) return { error: resumo.erro };
     const painelHtml = fs.readFileSync(htmlOut, 'utf-8');

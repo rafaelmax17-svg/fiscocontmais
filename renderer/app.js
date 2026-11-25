@@ -5424,7 +5424,7 @@ function bindEfdContrib() {
 function bindCorrigirEfd() {
   const btnPick = $('#btnCorrEfdPick');
   if (!btnPick) return;
-  const est = { sped: null, pva: null, html: null, corrigido: null, empresa: '' };
+  const est = { sped: null, pva: null, html: null, corrigido: null, empresa: '', xmls: [] };
   const nome = (p) => p.split(/[\\/]/).pop();
   btnPick.addEventListener('click', async () => {
     const pick = await window.fiscocont.fiscal.pickEfdContrib();
@@ -5432,6 +5432,7 @@ function bindCorrigirEfd() {
     est.sped = pick.path; est.html = null; est.corrigido = null;
     est.pva = null;                       // o PDF do PVA é de uma empresa/período: ao trocar o SPED, escolhe de novo
     $('#corrEfdPvaNome').textContent = '';
+    est.xmls = []; if ($('#corrEfdXmlNome')) $('#corrEfdXmlNome').textContent = '';
     $('#corrEfdNome').textContent = nome(pick.path);
     $('#btnCorrEfdRodar').disabled = false;
     $('#btnCorrEfdMono').disabled = false;
@@ -5445,12 +5446,18 @@ function bindCorrigirEfd() {
     est.pva = pick.path;
     $('#corrEfdPvaNome').textContent = nome(pick.path);
   });
+  if ($('#btnCorrEfdXml')) $('#btnCorrEfdXml').addEventListener('click', async () => {
+    const pick = await window.fiscocont.fiscal.pickXmlsSaida();
+    if (!pick || pick.canceled) return;
+    est.xmls = pick.paths || [];
+    $('#corrEfdXmlNome').textContent = est.xmls.length === 1 ? nome(est.xmls[0]) : `${est.xmls.length} arquivos`;
+  });
   $('#btnCorrEfdRodar').addEventListener('click', async () => {
     if (!est.sped) return;
-    overlay(true, 'Corrigindo a EFD-Contribuições…');
+    overlay(true, est.xmls.length ? 'Corrigindo a EFD-Contribuições e montando os itens pelos XMLs…' : 'Corrigindo a EFD-Contribuições…');
     const res = await window.fiscocont.fiscal.efdCorrigir(est.sped, est.pva, ($('#corrEfdConta')?.value || '').trim(),
       ($('#corrEfdContaUso')?.value || '').trim(), ($('#corrEfdContaEnt')?.value || '').trim(), !!($('#corrEfdItensSem') || {}).checked,
-      !!($('#corrEfdInc0500') || {}).checked, !!($('#corrEfdInc0900') || {}).checked);
+      !!($('#corrEfdInc0500') || {}).checked, !!($('#corrEfdInc0900') || {}).checked, est.xmls);
     overlay(false);
     if (res.error) { toast(res.error, true); return; }
     $('#corrEfdVazio').hidden = true;
@@ -5463,7 +5470,9 @@ function bindCorrigirEfd() {
     $('#btnCorrEfdBaixar').disabled = false;
     $('#btnCorrEfdHtml').disabled = false;
     const pend = res.resumo?.pendencias || 0;
-    toast(pend ? `Correção concluída — ${pend} pendência(s) para a sua decisão.` : 'Correção concluída.');
+    const xr = res.resumo?.xml;
+    const xmlTxt = xr ? ` · ${xr.corrigidas} NF-e de saída com itens pelo XML${xr.sem_xml ? `, ${xr.sem_xml} sem XML` : ''}` : '';
+    toast(pend ? `Correção concluída${xmlTxt} — ${pend} pendência(s) para a sua decisão.` : `Correção concluída${xmlTxt}.`);
   });
   $('#btnCorrEfdBaixar').addEventListener('click', async () => {
     const r = await window.fiscocont.fiscal.efdCorrigirSalvar(est.corrigido, nome(est.sped));

@@ -51,6 +51,7 @@ TITULOS = {
     'pf': ('Crédito de PIS/COFINS em compra de pessoa física', '#c2410c'),
     'extemp': ('Crédito extemporâneo (1101/1501 e notas extemporâneas)', '#b45309'),
     'r0900': ('Composição das receitas do período (0900)', '#047857'),
+    'xml_itens': ('NF-e de saída sem item: itens incluídos pelos XMLs', '#047857'),
     'contadores': ('Contadores do arquivo (9900, x990, 9999)', '#6b7392'),
 }
 
@@ -2126,7 +2127,7 @@ def ler_erros_pva(caminho):
 
 
 # ------------------------------------------------------------------ orquestração
-def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste='', conta_uso='359', conta_entrada='55', itens_genericos=False, incluir_0500=False, incluir_0900=False):
+def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste='', conta_uso='359', conta_entrada='55', itens_genericos=False, incluir_0500=False, incluir_0900=False, xmls=None):
     L, eol, termina = _ler(texto)
     ctx = {'pva': pva or {}, 'hoje': hoje or '', 'ajustes': [], 'mapa_n': {}, 'conta_ajuste': conta_ajuste or '',
            'conta_uso': conta_uso or '', 'conta_entrada': conta_entrada or '', 'itens_genericos': itens_genericos,
@@ -2146,6 +2147,16 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
     atencao = det_atencao_aliquota(L)
     n_antes = len(L)
     acoes, pend = [], []
+    # 2.4.56: NF-e de saída sem item → itens pelos XMLs (antes das outras correções, que já enxergam os itens novos)
+    xml_res = None
+    if xmls:
+        import efd_itens_xml
+        notas, canc, lidos = efd_itens_xml.ler_xmls(xmls)
+        ctx['xml_lidos'] = lidos
+        L, xml_res = efd_itens_xml.aplicar(L, notas, canc, ctx, acoes, pend)
+        xml_res['lidos'] = lidos
+        antes['xml_itens'] = [None] * (len(xml_res['corrigidas']) + len(xml_res['sem_xml']) + len(xml_res['divergentes']) + len(xml_res['canceladas']))
+        antes['c100sem'], antes['vlmerc'] = det_c100sem(L), det_vlmerc(L)      # o que sobrou depois dos itens pelo XML
     for fix in (_fix_extemp, _fix_cpf, _fix_c100, _fix_c175dup, _fix_mdup, _fix_msoma, _fix_codrec, _fix_natureza, _fix_dev98, _fix_m105, _fix_m410, _fix_cta,
                 _fix_0500, _fix_cta_itens, _fix_cta_m400, _fix_c100sem, _fix_0200_sem, _fix_a100sem,
                 _fix_vlmerc, _fix_cst_ent, _fix_cta_rec, _fix_part_mun, _fix_avulsa, _fix_pf, _fix_0900):
@@ -2159,7 +2170,9 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
     pva_cat = (pva or {}).get('por_cat', {})
     dup_total = pva_cat.get('dup')
     cats = []
-    for cid in ('cpf', 'c100', 'c175dup', 'mdup', 'msoma', 'natureza', 'm105', 'm410', 'cta', 'cta_item', 'cta_m400', 'c100sem', 'a100sem', 'vlmerc', 'dev98', 'codrec', 'cst_ent', 'cta_rec', 'part_mun', 'avulsa', 'pf', 'extemp', 'r0900', 'contadores'):
+    for cid in ('xml_itens', 'cpf', 'c100', 'c175dup', 'mdup', 'msoma', 'natureza', 'm105', 'm410', 'cta', 'cta_item', 'cta_m400', 'c100sem', 'a100sem', 'vlmerc', 'dev98', 'codrec', 'cst_ent', 'cta_rec', 'part_mun', 'avulsa', 'pf', 'extemp', 'r0900', 'contadores'):
+        if cid == 'xml_itens' and not xml_res:
+            continue
         titulo, cor = TITULOS[cid]
         a_cat = [a for a in acoes if a['cat'] == cid]
         pendentes = sum(x.get('qtd', 1) for x in pend if x['cat'] == cid)
@@ -2197,6 +2210,9 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
             achados, corrigidos = len(antes[cid]), len(antes[cid]) - len(depois[cid])
         elif cid == 'r0900':
             achados, corrigidos = len(a_cat), len(a_cat)
+        elif cid == 'xml_itens':
+            achados, corrigidos = len(antes[cid]), len(xml_res['corrigidas'])
+            pendentes = len(xml_res['sem_xml']) + len(xml_res['divergentes']) + len(xml_res['canceladas'])
         else:
             achados, corrigidos = len(antes[cid]), len(a_cat)
         if not achados and not a_cat and not pendentes:
@@ -2233,7 +2249,8 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
         'verificacao': verif, 'avisos': avisos, 'pva': {'total': (pva or {}).get('total'), 'por_cat': pva_cat} if pva else None,
         'removidas': sum(1 for a in acoes if a['tipo'] in ('removido',)) + sum(len(a['linha']) - 1 for a in acoes if a['tipo'] == 'agrupado'),
         'alteradas': sum(1 for a in acoes if a['tipo'] == 'alterado' and a['cat'] != 'contadores'),
-        'incluidas': sum(1 for a in acoes if a['tipo'] == 'incluido'),
+        'incluidas': sum(1 for a in acoes if a['tipo'] == 'incluido') + sum(a.get('qtd', 1) - 1 for a in acoes if a['cat'] == 'xml_itens' and a['registro'] == 'C170'),
+        'xml': xml_res,
     }
     return _escrever(L, eol, termina), resumo
 
@@ -2338,10 +2355,15 @@ _EXPLICA = {
                'Regra do escritório: o crédito extemporâneo sai deste arquivo. Os 1101/1501 são retirados, o 1100/1500 fica sem o valor extemporâneo, e o que tinha sido descontado aqui volta para a contribuição a recolher (M200/M600 e M205/M605). Nota de entrada extemporânea (situação 01) com crédito no C170 fica com CST 70, sem base nem crédito.'),
     'r0900': ('Escrituração entregue depois do prazo precisa do 0900 (composição das receitas do período).',
               'Com a opção marcada, o 0900 é gerado com a receita de cada bloco: valor bruto das operações com CST de receita (01 a 09), como o PVA confere. Um 0900 já existente é recalculado.'),
+    'xml_itens': ('Nota fiscal de saída (NF-e) sem item no C100: a receita da venda fica fora da apuração. Acontece quando o Domínio não importa o cadastro de produtos do estabelecimento.',
+                  'Com os XMLs, cada item virou um C170 (produto, NCM, quantidade, valores, CFOP e ICMS do XML) e os produtos e unidades foram cadastrados no 0200/0190 do estabelecimento. '
+                  'O CST de PIS/COFINS segue, nesta ordem: o tratamento que a empresa já dá ao mesmo NCM nas outras notas do arquivo; a tabela do monofásico (CST 04); tributado (CST 01). '
+                  'Base = valor do item − desconto − ICMS próprio, como o arquivo já faz. A apuração (M210/M610, M400/M410, M800/M810, a redução linear da LC 224/2025 sobre o CST 06 e o M200/M600) foi refeita. '
+                  'Nota sem XML fica como estava; XML sem nota no arquivo só é listado.'),
     'contadores': ('Depois das correções o número de linhas muda, então os contadores do arquivo ficam errados.',
                    'Os contadores 9900, x990 e 9999 foram refeitos. Não é um erro do PVA: é consequência das correções.'),
 }
-_CURTO = {'cpf': 'CPF', 'c100': 'C100', 'c175dup': 'C175 duplic.', 'mdup': 'M210/M610', 'msoma': 'M205/M605', 'natureza': 'Natureza 0400', 'm105': 'M105/M505', 'm410': 'M410/M810', 'cta': 'COD_CTA ajustes', 'cta_item': 'COD_CTA itens', 'cta_m400': 'Conta M400', 'c100sem': 'C100 s/ item', 'a100sem': 'A100 s/ item', 'vlmerc': 'VL_MERC', 'cst_ent': 'CST entrada', 'cta_rec': 'Conta receita', 'part_mun': 'Município 0150', 'avulsa': 'NF-e avulsa', 'pf': 'Compra de PF', 'extemp': 'Extemporâneo', 'r0900': '0900', 'dev98': 'Devolução CST 98', 'codrec': 'Cód. receita'}
+_CURTO = {'xml_itens': 'Itens pelo XML', 'cpf': 'CPF', 'c100': 'C100', 'c175dup': 'C175 duplic.', 'mdup': 'M210/M610', 'msoma': 'M205/M605', 'natureza': 'Natureza 0400', 'm105': 'M105/M505', 'm410': 'M410/M810', 'cta': 'COD_CTA ajustes', 'cta_item': 'COD_CTA itens', 'cta_m400': 'Conta M400', 'c100sem': 'C100 s/ item', 'a100sem': 'A100 s/ item', 'vlmerc': 'VL_MERC', 'cst_ent': 'CST entrada', 'cta_rec': 'Conta receita', 'part_mun': 'Município 0150', 'avulsa': 'NF-e avulsa', 'pf': 'Compra de PF', 'extemp': 'Extemporâneo', 'r0900': '0900', 'dev98': 'Devolução CST 98', 'codrec': 'Cód. receita'}
 
 
 def _mix(hexc, alvo, f):
@@ -2459,6 +2481,34 @@ def _tab_cat(c, res):
         p = [x for x in res['pendencias'] if x['cat'] == cid]
         return _linhas_tabela(['Linha', 'Registro', 'O que foi feito'], [[str(x['linha'] or '—'), x['registro'], _esc(x['motivo'])] for x in a] +
                               [[str(x['linha']), '—', '<span class="st dif">Pendente</span> ' + _esc(x['titulo'] + ' — ' + x['detalhe'])] for x in p], ['l', 'l', 'l'])
+    if cid == 'xml_itens':
+        x = res.get('xml') or {}
+        dm = lambda d: f'{d[:2]}/{d[2:4]}' if len(d or '') == 8 else (d or '')
+        t = _linhas_tabela(['Linha do C100', 'NF-e', 'Data', 'Valor', 'Itens', 'CST', 'PIS', 'COFINS'],
+                           [[str(n['linha']), _esc(n['num']), dm(n['data']), _brl(n['valor']), str(n['itens']), _esc(' · '.join(f'{k}: {v}' for k, v in sorted(n['cst'].items()))),
+                             _brl(n['pis']), _brl(n['cofins'])] for n in x.get('corrigidas', [])], ['l', 'l', 'l', 'r', 'r', 'l', 'r', 'r'])
+        cad = sum(c.get('produtos', 0) for c in (x.get('cadastros') or {}).values())
+        resumo_x = (f'<div class="kv"><span>XMLs lidos</span><span>{x.get("lidos", 0)} arquivo(s) · {x.get("notas_xml", 0)} nota(s)</span>'
+                    f'<span>NF-e com itens incluídos</span><span><b>{len(x.get("corrigidas", []))}</b> · {x.get("itens", 0)} item(ns) · R$ {_brl(x.get("receita", 0))}</span>'
+                    f'<span>Receita por CST</span><span>{_esc(" · ".join(f"CST {k}: R$ {_brl(v)}" for k, v in sorted((x.get("por_cst") or {}).items())))}</span>'
+                    f'<span>PIS/COFINS a mais na apuração</span><span>PIS R$ {_brl(x.get("pis", 0))} · COFINS R$ {_brl(x.get("cofins", 0))}'
+                    + (f' · redução linear LC 224 (CST 06): PIS R$ {_brl((x.get("lc224") or {}).get("PIS", 0))} · COFINS R$ {_brl((x.get("lc224") or {}).get("COFINS", 0))}' if x.get('lc224') else '') + '</span>'
+                    f'<span>Produtos cadastrados (0200)</span><span>{cad}</span>'
+                    f'<span>Notas sem XML</span><span>{len(x.get("sem_xml", []))} (ficaram como estavam)</span>'
+                    f'<span>XMLs sem nota no arquivo</span><span>{len(x.get("xml_sem_nota", []))} (não incluídos — veja a lista abaixo)</span></div>')
+        t = resumo_x + t
+        if x.get('regras'):
+            t = resumo_x + _linhas_tabela(['CST · como foi definido', 'Itens'], [[_esc(k), str(v)] for k, v in sorted(x['regras'].items(), key=lambda z: -z[1])], ['l', 'r']) + '<div style="height:10px"></div>' + t[len(resumo_x):]
+        if x.get('sem_xml'):
+            t += '<h3 style="margin-top:14px">Notas sem XML no lote (ficaram como estavam)</h3>' + _linhas_tabela(['Linha', 'NF-e', 'Data', 'Valor'],
+                 [[str(L_['i'] + 1), _esc(L_['num']), dm(L_['data']), _brl(L_['valor'])] for L_ in x['sem_xml']], ['l', 'l', 'l', 'r'])
+        if x.get('xml_sem_nota'):
+            t += '<h3 style="margin-top:14px">XMLs da empresa sem nota no arquivo (não incluídos)</h3>' + _linhas_tabela(['NF-e', 'Data', 'Valor', 'CFOP', 'Situação'],
+                 [[_esc(n['num']), _esc(n['data'][8:10] + '/' + n['data'][5:7]), _brl(n['valor']), _esc(', '.join(n['cfops'])), _esc(n['motivo'])] for n in x['xml_sem_nota'][:400]], ['l', 'l', 'r', 'l', 'l'])
+        p = [y for y in res['pendencias'] if y['cat'] == 'xml_itens']
+        if p:
+            t += _linhas_tabela(['Linha', 'Pendência', 'Orientação'], [[str(y['linha'] or '—'), _esc(y['titulo']), _esc(y['detalhe'])] for y in p], ['l', 'l', 'l'])
+        return t
     if cid == 'contadores':
         return _linhas_tabela(['Contador', 'Antes', 'Depois'], [[_esc(x['registro']), '—' if x['antes'] is None else str(x['antes']), f'<b>{x["depois"]}</b>'] for x in a], ['l', 'r', 'r'])
     return ''
@@ -2560,10 +2610,11 @@ def resumo_leve(res):
             'removidas': res['removidas'], 'alteradas': res['alteradas'], 'incluidas': res['incluidas'],
             'categorias': [{'id': c['id'], 'titulo': c['titulo'], 'achados': c['achados'], 'corrigidos': c['corrigidos'], 'pendentes': c['pendentes']} for c in res['categorias']],
             'ajustes': [{'tributo': a['tributo'], 'registro': a['registro'], 'valor': a['valor'], 'ind': a['ind']} for a in res['ajustes']],
-            'pendencias': len(res['pendencias']), 'avisos': res['avisos']}
+            'pendencias': len(res['pendencias']), 'avisos': res['avisos'],
+            'xml': ({k: (v if not isinstance(v, list) else len(v)) for k, v in res['xml'].items()} if res.get('xml') else None)}
 
 
-def corrigir_arquivo(sped_path, pva_path=None, saida_path=None, html_path=None, json_path=None, conta_ajuste='', conta_uso='359', conta_entrada='55', itens_genericos=False, incluir_0500=False, incluir_0900=False):
+def corrigir_arquivo(sped_path, pva_path=None, saida_path=None, html_path=None, json_path=None, conta_ajuste='', conta_uso='359', conta_entrada='55', itens_genericos=False, incluir_0500=False, incluir_0900=False, xmls=None):
     import datetime
     import json
     import os
@@ -2575,7 +2626,7 @@ def corrigir_arquivo(sped_path, pva_path=None, saida_path=None, html_path=None, 
             pva = ler_erros_pva(pva_path)
         except Exception as ex:
             aviso_pva = f'Não consegui ler o relatório do PVA ({ex}); a correção seguiu só com o SPED.'
-    novo, res = corrigir_efd(texto, pva, os.path.basename(sped_path), datetime.date.today().strftime('%d/%m/%Y'), conta_ajuste, conta_uso, conta_entrada, itens_genericos, incluir_0500, incluir_0900)
+    novo, res = corrigir_efd(texto, pva, os.path.basename(sped_path), datetime.date.today().strftime('%d/%m/%Y'), conta_ajuste, conta_uso, conta_entrada, itens_genericos, incluir_0500, incluir_0900, xmls)
     if aviso_pva:
         res['avisos'].append(aviso_pva)
     if saida_path:
