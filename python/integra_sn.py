@@ -715,16 +715,50 @@ def dctf_conferir_empresa(tok, cert, contratante, emp, comp, consumo):
 
 
 def _c14n_trecho(el):
-    """C14N 1.0 inclusivo de um trecho do documento. O lxml, ao canonicalizar um subelemento cujo namespace padrão vem
-    de um ancestral, escreve xmlns="" nos netos (defeito do libxml2): por isso o trecho é copiado para uma árvore própria
-    com TODOS os namespaces em vigor no ápice — exatamente o que a especificação manda renderizar."""
-    import copy
+    """C14N 1.0 inclusivo do subconjunto 'el e descendentes', como os validadores (Apache Santuario/xmlsec) calculam.
+
+    2.4.47: a versão anterior copiava o trecho para uma árvore nova — e a cópia trocava 'tns1:DctfXml' por 'DctfXml'
+    (mesmo namespace do padrão) — e o c14n direto do lxml num subelemento escreve xmlns="" nos netos (defeito do libxml2).
+    Os dois mudam o texto canônico e o digest não bate na Receita (TRANS09). Aqui o documento INTEIRO é canonicalizado
+    (sem defeito nenhum), o trecho do elemento é recortado e o ápice recebe as declarações de namespace em vigor,
+    exatamente como manda a especificação para um subconjunto do documento."""
+    import re as _re
     from lxml import etree
-    novo = etree.Element(el.tag, attrib=dict(el.attrib), nsmap=el.nsmap)
-    novo.text = el.text
-    for ch in el:
-        novo.append(copy.deepcopy(ch))
-    return etree.tostring(novo, method='c14n', exclusive=False, with_comments=False)
+    raiz = el.getroottree().getroot()
+    marca = '__fc_c14n_%d__' % id(el)
+    el.set(marca, '1')                                  # marca só para achar o trecho; removida logo em seguida
+    try:
+        doc = etree.tostring(raiz.getroottree(), method='c14n', exclusive=False, with_comments=False).decode('utf-8')
+    finally:
+        del el.attrib[marca]
+    nome = (el.prefix + ':' if el.prefix else '') + etree.QName(el).localname
+    m = _re.search(r'<' + _re.escape(nome) + r'(\s[^>]*?)?\s' + marca + r'="1"([^>]*)>', doc)
+    if not m:
+        raise ValueError('não achei o trecho para canonicalizar')
+    ini, fim_tag = m.start(), m.end()
+    # fim do elemento: conta aberturas/fechamentos do mesmo nome a partir do início
+    prof, pos = 0, ini
+    rx = _re.compile(r'<(/?)' + _re.escape(nome) + r'(?=[\s>/])')
+    for t in rx.finditer(doc, ini):
+        if t.group(1):
+            prof -= 1
+            if prof == 0:
+                pos = doc.index('>', t.end()) + 1
+                break
+        else:
+            prof += 1
+    corpo = doc[fim_tag:pos]
+    # atributos do ápice (já em ordem canônica), sem a marca e sem declarações de namespace (refeitas abaixo)
+    attrs = _re.findall(r'\s([^\s=]+)="([^"]*)"', (m.group(1) or '') + ' ' + marca + '="1"' + (m.group(2) or ''))
+    outros = [(k, v) for k, v in attrs if k != marca and k != 'xmlns' and not k.startswith('xmlns:')]
+    ns = el.nsmap                                       # todos os namespaces em vigor no ápice
+    decl = ''
+    if ns.get(None):
+        decl += ' xmlns="%s"' % ns[None]
+    for pfx in sorted(k for k in ns if k):
+        decl += ' xmlns:%s="%s"' % (pfx, ns[pfx])
+    ini_tag = '<' + nome + decl + ''.join(' %s="%s"' % kv for kv in outros) + '>'
+    return (ini_tag + corpo).encode('utf-8')
 
 
 def assinar_dctf(xml, chave_priv, cert_der_b64):

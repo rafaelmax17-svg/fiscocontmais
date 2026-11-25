@@ -1945,12 +1945,110 @@ def _fix_m105(L, acoes, pend, ctx):
     return L
 
 
+# 2.4.47 — M410/M810 com natureza de outra tabela sob CST 02/04 (monofásico, tabela 4.3.10): quando o código identifica
+# o produto sem dúvida, a natureza certa dentro da própria 4.3.10 é a de REVENDA (o CST e o valor não mudam):
+#   combustíveis (GLP, diesel, QAV, etanol, biodiesel, gasolina, GNV)  → 001  Revenda de combustíveis – alíquota zero
+#   perfumaria / higiene (monofásicos)                                → 002  Revenda de fármacos e perfumarias
+#   veículos, autopeças, pneus                                         → 003  Revenda de veículos, máquinas e autopeças
+_NAT_REVENDA_4310 = {
+    '001': {('4.3.13', c) for c in ('203', '204', '216', '217', '218', '219', '220', '221', '222', '224', '225', '226', '229')}
+           | {('4.3.15', c) for c in ('101', '102', '201')} | {('4.3.12', c) for c in ('401', '402', '403')},
+    '002': {('4.3.12', '409')},
+    '003': {('4.3.12', c) for c in ('201', '404', '405', '406')},
+}
+_NOME_4310 = {'001': 'Revenda de combustíveis – alíquota zero', '002': 'Revenda de fármacos e perfumarias – alíquota zero',
+              '003': 'Revenda de veículos, máquinas e autopeças – alíquota zero'}
+
+
+def _nat_revenda(nat):
+    for novo, cods in _NAT_REVENDA_4310.items():
+        if any(c == nat and t in _TABELAS_NATUREZA and nat in _TABELAS_NATUREZA[t]['itens'] for t, c in cods):
+            return novo
+    return ''
+
+
+def _orient_m410(cst, nat, existe_em):
+    """Orientação da pendência, conforme o código e o CST (o arquivo não traz os itens das NFC-e — C175 —, então a troca
+    do CST precisa ser feita no cadastro do produto e o arquivo gerado de novo, ou pelos XMLs das NFC-e)."""
+    c2 = cst.zfill(2)
+    if nat in ('000', ''):
+        return ('A natureza não foi informada no cadastro do produto (000 não existe em nenhuma tabela). Informe a natureza '
+                'do produto no cadastro e gere o arquivo de novo.')
+    if nat == '918':
+        return ('918 é a venda de bebidas frias por varejista: alíquota zero, CST 06 (Tabela 4.3.13). A própria Tabela 4.3.10 '
+                'manda escriturar a revenda de bebidas frias por varejista com o código 918 da 4.3.13 (art. 28 da Lei 13.097/2015). '
+                f'Troque o CST do produto de {c2} para 06 no cadastro.')
+    if nat == '914':
+        return ('914 é a venda de água mineral natural (2201.10.00 Ex 01 e Ex 02): alíquota zero, CST 06 (Tabela 4.3.13). '
+                f'Troque o CST do produto de {c2} para 06 no cadastro.')
+    rev = _nat_revenda(nat)
+    if rev and c2 not in ('02', '04'):
+        return (f'O código {nat} é de produto monofásico ({_NOME_4310[rev].lower()}). Na revenda, o CST é 04 com a natureza {rev} '
+                f'(Tabela 4.3.10), não {c2}. Troque o CST do produto para 04 no cadastro.')
+    if nat == '003' and c2 not in ('02', '04'):
+        return (f'003 é a revenda de veículos, máquinas e autopeças (monofásico): CST 04 (Tabela 4.3.10), não {c2}. '
+                'Troque o CST do produto para 04 no cadastro.')
+    if nat in ('001', '002') and c2 not in ('02', '04'):
+        return (f'{nat} é revenda de produto monofásico ({_NOME_4310[nat].lower()}): CST 04 (Tabela 4.3.10), não {c2}. '
+                'Troque o CST do produto para 04 no cadastro.')
+    onde = '; '.join(existe_em) or 'nenhuma das tabelas'
+    return f'O código {nat} não existe na tabela do CST {c2}. Ele existe em: {onde}. Confira o CST e a natureza no cadastro do produto.'
+
+
 def _fix_m410(L, acoes, pend, ctx):
+    # 1) corrige sozinho o que é certo: natureza de produto monofásico sob CST 02/04 → código de revenda da 4.3.10
+    cst, bloco = '', None
+    blocos = []
+    for i, l in enumerate(L):
+        r = _reg(l)
+        if r in ('M400', 'M800'):
+            cst = _partes(l['txt'])[1]
+            bloco = {'cst': cst, 'pai': i, 'filhos': []}
+            blocos.append(bloco)
+        elif r in ('M410', 'M810') and bloco is not None:
+            bloco['filhos'].append(i)
+        elif r not in ('M410', 'M810'):
+            bloco = None if r not in ('M400', 'M800') else bloco
+    apagar = set()
+    for b in blocos:
+        c2 = b['cst'].zfill(2)
+        if c2 not in ('02', '04'):
+            continue
+        itens = _TABELAS_NATUREZA.get('4.3.10', {}).get('itens', {})
+        for i in b['filhos']:
+            p = _partes(L[i]['txt'])
+            nat = p[1]
+            if nat in itens:
+                continue
+            novo = _nat_revenda(nat)
+            if not novo:
+                continue
+            reg = _reg(L[i])
+            antes = L[i]['txt']
+            alvo = next((k for k in b['filhos'] if k != i and k not in apagar and _partes(L[k]['txt'])[1] == novo
+                         and _partes(L[k]['txt'])[3:4] == p[3:4]), None)
+            motivo = (f'Natureza {nat} ({_onde_existe(nat)[0] if _onde_existe(nat) else "outra tabela"}) sob CST {c2}: na revenda o código '
+                      f'certo é {novo} da Tabela 4.3.10 ({_NOME_4310[novo]}). O CST e o valor não mudam.')
+            if alvo is not None:
+                pa = _partes(L[alvo]['txt'])
+                antes_alvo = L[alvo]['txt']
+                pa[2] = _fmt(_num(pa[2]) + _num(p[2]))
+                L[alvo]['txt'] = _monta(pa)
+                apagar.add(i)
+                acoes.append({'cat': 'm410', 'tipo': 'alterado', 'linha': L[alvo]['n'], 'registro': reg, 'antes': antes + '  +  ' + antes_alvo,
+                              'depois': L[alvo]['txt'], 'motivo': motivo + f' Somado à linha da natureza {novo} que já existia (mesma conta).',
+                              'cst': c2, 'nat_antes': nat, 'nat_depois': novo, 'valor': _num(p[2])})
+            else:
+                p[1] = novo
+                L[i]['txt'] = _monta(p)
+                acoes.append({'cat': 'm410', 'tipo': 'alterado', 'linha': L[i]['n'], 'registro': reg, 'antes': antes, 'depois': L[i]['txt'],
+                              'motivo': motivo, 'cst': c2, 'nat_antes': nat, 'nat_depois': novo, 'valor': _num(p[2])})
+    if apagar:
+        L = [l for k, l in enumerate(L) if k not in apagar]
+    # 2) o resto fica como pendência, com a orientação certa para cada caso
     for f in det_m410(L):
-        onde = '; '.join(f['existe_em']) or 'nenhuma das tabelas carregadas'
         pend.append({'cat': 'm410', 'linha': L[f['i']]['n'], 'titulo': f"{f['reg']}: natureza {f['nat']} sob CST {f['cst']} (R$ {_brl(f['valor'])})",
-                     'detalhe': f"O código {f['nat']} não existe na tabela {f['tabela']} (CST {f['cst']}). Ele existe em: {onde}. Decisão sua: ou o CST da receita está errado (a receita iria para o CST da tabela correta) "
-                                f"ou a natureza está errada. O sistema não muda classificação tributária sozinho.",
+                     'detalhe': _orient_m410(f['cst'], f['nat'], f['existe_em']),
                      'reg': f['reg'], 'cst': f['cst'], 'nat': f['nat'], 'valor': f['valor'], 'existe_em': f['existe_em']})
     return L
 
@@ -2083,7 +2181,7 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
         elif cid == 'contadores':
             achados, corrigidos = 0, len(a_cat)
         elif cid == 'm410':
-            achados, corrigidos = len(antes[cid]), 0
+            achados, corrigidos = len(antes[cid]), len(a_cat)
         elif cid == 'c100sem':
             achados, corrigidos = len(antes[cid]), len([x for x in a_cat if x['registro'] == 'C170'])
         elif cid == 'cta_item':
@@ -2209,7 +2307,7 @@ _EXPLICA = {
     'm105': ('A base do crédito por natureza (M105/M505) precisa fechar com a soma dos documentos por natureza e CST.',
              'Os valores esperados vêm do próprio relatório do PVA. Se o arquivo já traz o valor esperado, nada é alterado.'),
     'm410': ('A natureza da receita (M410/M810) precisa existir na tabela oficial do CST do M400/M800.',
-             'O sistema não altera classificação tributária sozinho: fica como pendência, com a indicação de onde o código existe.'),
+             'Quando o código identifica o produto sem dúvida (ex.: GLP, diesel, autopeças) e o CST é 04, o sistema troca pela natureza de revenda da Tabela 4.3.10 (001/002/003), sem mudar CST nem valor. Quando o CST está errado (ex.: bebidas frias e água mineral sob CST 04, autopeças sob CST 08), fica como pendência com a orientação: as NFC-e (C175) não trazem os itens, então o CST precisa ser trocado no cadastro do produto.'),
     'cta': ('No detalhamento dos ajustes da contribuição (M225/M625) e do crédito (M115/M515), a conta contábil é obrigatória e precisa ser uma conta analítica do 0500.',
             'O sistema usa a conta dos itens da nota cuja chave está na descrição do ajuste (mesmo CST). Se não houver, usa a mesma conta dos outros ajustes do arquivo ou a conta informada na tela. Sem nenhuma dessas, fica como pendência.'),
     'cta_item': ('Nos itens de entrada (C170), a conta contábil é obrigatória e precisa ser analítica no 0500.',
@@ -2321,8 +2419,11 @@ def _tab_cat(c, res):
                               ['l', 'l', 'r', 'r', 'r', 'c'])
     if cid == 'm410':
         p = [x for x in res['pendencias'] if x['cat'] == 'm410']
-        return _linhas_tabela(['Registro', 'Linha', 'CST', 'Natureza', 'Valor', 'Onde o código existe', 'Orientação'],
-                              [[x['reg'], str(x['linha']), _esc(x['cst']), _esc(x['nat']), _brl(x['valor']), _esc('; '.join(x['existe_em']) or '—'), _esc(x['detalhe'])] for x in p],
+        return _linhas_tabela(['Registro', 'Linha', 'CST', 'Natureza', 'Valor', 'Onde o código existe', 'Situação / orientação'],
+                              [[x['registro'], str(x['linha'] or '—'), _esc(x['cst']), f"{_esc(x['nat_antes'])} → <b>{_esc(x['nat_depois'])}</b>", _brl(x['valor']),
+                                '—', '<span class="st ok">Corrigido</span> ' + _esc(x['motivo'])] for x in a] +
+                              [[x['reg'], str(x['linha']), _esc(x['cst']), _esc(x['nat']), _brl(x['valor']), _esc('; '.join(x['existe_em']) or '—'),
+                                '<span class="st dif">Pendente</span> ' + _esc(x['detalhe'])] for x in p],
                               ['l', 'l', 'l', 'l', 'r', 'l', 'l'])
     if cid == 'cta':
         p = [x for x in res['pendencias'] if x['cat'] == 'cta']

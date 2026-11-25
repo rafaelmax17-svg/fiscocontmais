@@ -209,11 +209,13 @@ function createMainWindow() {
   });
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
-  // 2.4.46: se a janela não avisar que está pronta em 15 s, mostra assim mesmo (antes o sistema ficava aberto sem tela)
+  // 2.4.47: se a janela não ficar pronta em 12 s (antivírus/driver bloqueando a placa de vídeo), reabre sem aceleração
+  // de vídeo; se já estiver sem aceleração, mostra a janela assim mesmo (antes o sistema ficava aberto sem tela)
   const _mwSeguranca = setTimeout(() => {
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
+    if (_reabrirSemGpu('a janela não foi desenhada em 12 s')) return;
     fecharSplash(() => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.maximize(); mainWindow.show(); } });
-  }, 15000);
+  }, 12000);
   mainWindow.once('ready-to-show', () => {
     clearTimeout(_mwSeguranca);
     const wait = splashWindow ? Math.max(0, SPLASH_MIN_MS - (Date.now() - (splashShownAt || Date.now()))) : 0;
@@ -231,20 +233,25 @@ function createMainWindow() {
 
 // Uma janela só: abrir o atalho de novo traz a janela que já está aberta (dois FiscoCont+ ao mesmo tempo
 // travavam arquivos durante a atualização).
-// 2.4.46: placa de vídeo/driver com problema → a janela nunca chegava a ser desenhada ("ready-to-show" não vinha) e o
-// sistema ficava aberto sem tela. Se o processo da GPU cair, grava a marca e reabre sem aceleração de vídeo.
-let _semGpuArq = '';
+// Aceleração de vídeo LIGADA (as animações dependem dela). Se numa máquina a placa de vídeo for bloqueada (caso real de
+// 25/11: antivírus → a janela nunca era desenhada), o sistema grava a marca "sem-gpu.flag" e reabre sozinho sem
+// aceleração. A marca vale só para a versão em que aconteceu: na próxima atualização ele tenta de novo com a placa.
+let _semGpuArq = '', _semGpu = false;
 try { _semGpuArq = path.join(String(app.getPath('userData')), 'sem-gpu.flag'); } catch (_) {}
-// Confirmado em 25/11 no computador do robô: com o antivírus ativo a janela não era desenhada; abrindo sem aceleração
-// de vídeo, abriu. O sistema não precisa da placa de vídeo (telas e gráficos rodam bem no processador), então a
-// aceleração fica desligada para todos — evita o problema em qualquer máquina com antivírus/driver que bloqueie a GPU.
-app.disableHardwareAcceleration();
-app.on('child-process-gone', (_e, d) => {
-  if (d && d.type === 'GPU' && _semGpuArq && !fs.existsSync(_semGpuArq)) {
-    try { fs.writeFileSync(_semGpuArq, new Date().toISOString() + ' ' + (d.reason || '')); } catch (_) {}
-    app.relaunch(); app.exit(0);
+try {
+  if (_semGpuArq && fs.existsSync(_semGpuArq)) {
+    _semGpu = fs.readFileSync(_semGpuArq, 'utf-8').split(' ')[0] === app.getVersion();
+    if (!_semGpu) fs.unlinkSync(_semGpuArq);
   }
-});
+} catch (_) {}
+if (_semGpu || process.argv.includes('--sem-gpu') || process.argv.includes('--disable-gpu')) app.disableHardwareAcceleration();
+function _reabrirSemGpu(motivo) {
+  if (_semGpu || !_semGpuArq) return false;
+  try { fs.writeFileSync(_semGpuArq, `${app.getVersion()} ${new Date().toISOString()} ${motivo}`); } catch (_) { return false; }
+  app.relaunch(); app.exit(0);
+  return true;
+}
+app.on('child-process-gone', (_e, d) => { if (d && d.type === 'GPU') _reabrirSemGpu('a placa de vídeo parou: ' + (d.reason || '')); });
 const _instanciaPrincipal = app.requestSingleInstanceLock();
 if (!_instanciaPrincipal) {
   app.quit();
