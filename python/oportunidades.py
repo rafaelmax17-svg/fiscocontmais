@@ -167,6 +167,9 @@ EM_DESENVOLVIMENTO = [
 # CFOP (sem o 1º dígito) de revenda de combustível e de mercadoria com ICMS-ST
 CFOP_COMBUSTIVEL = ('651', '652', '653', '654', '655', '656', '667')
 CFOP_ST = ('405', '404', '403')
+# o C175 (NFC-e) não traz o produto; o CFOP 5656/5667 também é usado na venda de lubrificante, que é tributado
+_OBS_C175 = ('Identificado só pelo CFOP (NFC-e, registro C175, sem produto nem NCM). Atenção: o mesmo CFOP é usado na venda de '
+             'lubrificante, que é tributado — confirme no XML da NFC-e que o item é combustível antes de pedir qualquer valor.')
 
 
 # ----------------------------------------------------------------------------- EFD-Contribuições
@@ -222,7 +225,7 @@ def _analisar_efdc(caminho):
             cob['cst_saida'][cst_p] += 1
             if cfop[1:] in CFOP_COMBUSTIVEL and cst_p in ('01', '02') and (v_p > 0 or v_c > 0):
                 reg = REGRAS_MONOFASICO[3]
-                g = mono[(reg['grupo'], reg['tabela'], reg['lei'], reg['confianca'], reg['obs'] + ' Identificado pelo CFOP de combustível (NFC-e, registro C175, sem NCM).')]
+                g = mono[(reg['grupo'], reg['tabela'], reg['lei'], 'Baixa', _OBS_C175)]
                 g['itens'] += 1
                 g['base'] += _num(c[6])
                 g['pis'] += v_p
@@ -230,7 +233,7 @@ def _analisar_efdc(caminho):
                 if len(g['exemplos']) < 6:
                     g['exemplos'].append({'nota': nota, 'data': _data(dt), 'produto': 'NFC-e, CFOP ' + cfop, 'ncm': '(sem NCM no C175)',
                                           'cst': cst_p, 'valor': round(v_p + v_c, 2)})
-                cob['c175_ev'][chave_atual].append(('comb', (reg['grupo'], reg['tabela'], reg['lei'], reg['confianca'], reg['obs'] + ' Identificado pelo CFOP de combustível (NFC-e, registro C175, sem NCM).'), _num(c[6]), v_p, v_c))
+                cob['c175_ev'][chave_atual].append(('comb', (reg['grupo'], reg['tabela'], reg['lei'], 'Baixa', _OBS_C175), _num(c[6]), v_p, v_c))
             elif cfop[1:] in CFOP_ST and cst_p in ('01', '02') and (v_p > 0 or v_c > 0):
                 cob['st_cst01_linhas'] += 1
                 cob['st_cst01_valor'] += v_p + v_c

@@ -155,8 +155,12 @@ def _diagnostico(L):
                     'nota': nota, 'cfop': p[1], 'cst': cst, 'receita': round(ec._num(p[2]) - ec._num(p[3]), 2),
                     'base_p': ec._num(p[5]), 'v_p': v_p, 'base_c': ec._num(p[11]), 'v_c': v_c, 'aliq_p': ec._num(p[6]),
                     'cod_cta': p[16] if len(p) > 16 else ''}
-            motivo = _motivo_fora(REGRAS_MONOFASICO[3], cst, p[1], ec._num(p[6]))
-            (fora if motivo else cands).append({**item, 'motivo': motivo} if motivo else item)
+            # 2.4.48: o C175 não traz o produto, e o CFOP 5656/5667 serve tanto para combustível quanto para
+            # lubrificante — que é tributado. Sem o XML da NFC-e não dá para saber: nunca corrige sozinho.
+            motivo = _motivo_fora(REGRAS_MONOFASICO[3], cst, p[1], ec._num(p[6])) or (
+                f'NFC-e consolidada (C175) não traz o produto: o CFOP {p[1]} vale para combustível e também para lubrificante, '
+                'que é tributado. Confira no XML da NFC-e se é combustível antes de trocar o CST.')
+            fora.append({**item, 'motivo': motivo})
     return cands, fora, kpi
 
 

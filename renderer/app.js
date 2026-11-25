@@ -5538,7 +5538,7 @@ function bindCorrigirEfd() {
         <div class="mono-card">
           <div class="dif-k">Apuração antes × depois do que está marcado</div>
           <div id="monoPrev"></div>
-          <div class="dif-sub" style="margin-top:10px"><b>O que o arquivo novo muda:</b> CST 01 → 04 nos itens (C170, C175 de combustível, C181/C185), zera base, alíquota e valor,
+          <div class="dif-sub" style="margin-top:10px"><b>O que o arquivo novo muda:</b> CST 01 → 04 nos itens identificados pelo NCM (C170, C181/C185) — o C175 da NFC-e não traz o produto e fica para conferir, porque o CFOP de combustível também é usado para lubrificante (tributado) —, zera base, alíquota e valor,
             ajusta o VL_PIS/VL_COFINS do C100, refaz M210/M610, M200/M600 e M205/M605, informa a receita a alíquota zero no M400/M410 e M800/M810 e recalcula os contadores. O original nunca é alterado.</div>
           <label class="mono-conf"><input type="checkbox" id="monoRevenda"><span>Confirmo que a empresa <b>revende</b> esses produtos (não é fabricante nem importadora).</span></label>
           <div class="dif-acts"><button class="act inv-export" id="btnMonoAplicar" disabled style="background:#0ea472;color:#fff;border-color:transparent">⚡ Aplicar e gerar EFD corrigida</button></div>
