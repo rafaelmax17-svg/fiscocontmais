@@ -549,6 +549,9 @@ _RX_SALDO = re.compile(r'saldo\w*pagar', re.I)
 
 _RX_VAL_ALT = re.compile(r'^(valor|vlr|vl)', re.I)
 _RX_NAO_DEB = re.compile(r'credit|dedu|compens|suspens|pagament|parcel|exclus', re.I)
+# 2.4.50: no leiaute v3 sem <sistemaUsuarioDctf> (ex.: folha + MIT) os débitos ficam em A050-CreditosTributariosApurados /
+# CreditoTributarioApurado ("crédito tributário" = o débito do contribuinte) com o valor em <ctValor>
+_RX_NAO_DEB2 = re.compile(r'credit(?!os?tributarios?apurad)|dedu|compens|suspens|pagament|parcel|exclus', re.I)
 
 
 def _arvore(raiz, limite=90):
@@ -661,9 +664,11 @@ def dctf_debitos(xml):
             if eh_cod(el) and el.getparent() is not None:
                 pai = el.getparent()
                 cam = [_local(x.tag) for x in pai.iterancestors()][:6] + [_local(pai.tag)]
-                if any(_RX_NAO_DEB.search(c) for c in cam):
+                if any(_RX_NAO_DEB2.search(c) for c in cam):
                     continue
-                v = next((_numxml(f.text) for f in pai if not len(f) and f is not el and (_RX_VAL_DEB.search(_local(f.tag)) or _RX_VAL_ALT.search(_local(f.tag)))), None)
+                v = next((_numxml(f.text) for f in pai if not len(f) and f is not el and _local(f.tag).lower() == 'ctvalor'), None)
+                if v is None:
+                    v = next((_numxml(f.text) for f in pai if not len(f) and f is not el and (_RX_VAL_DEB.search(_local(f.tag)) or _RX_VAL_ALT.search(_local(f.tag)))), None)
                 if v is None:
                     v = next((_numxml(f.text) for f in pai if not len(f) and f is not el and _RX_SALDO.search(_local(f.tag))), None) or 0.0
                 cod = el.text.strip()[:4]
@@ -846,46 +851,54 @@ def dctf_transmitir_empresa(tok, cert, contratante, emp, comp, consumo, chave_pr
         r['msg'] = {'sem_declaracao': 'A Receita não tem DCTFWeb em andamento nesta competência.', 'semproc': 'Sem procuração eletrônica no e-CAC para a Liddera (DCTFWeb).'}.get(sit, 'A situação da DCTFWeb não pôde ser confirmada; nada foi transmitido.')
         return r
     if not r.get('jaTransmitida'):
-        rx = _dctf(tok, cert, contratante, cnpj, 'Consultar', 'CONSXMLDECLARACAO38', _periodo_dctf(comp), consumo)
-        xml = dctf_xml(rx.get('dados')) if rx.get('http') == 200 else None
-        if not xml:
-            r['msg'] = 'Sem o XML da declaração na Receita; nada foi transmitido.'
-            return r
-        d = dctf_debitos(xml)
-        outras = {k: v for k, v in d['origens'].items() if not k.startswith('REINF') and v > 0.009}
-        if emp.get('esperadoTudo') is not None:
-            # 2.4.17: declaração com folha (eSocial) e/ou MIT — a pessoa confirmou que estão fechados. Todos os débitos
-            # (de todas as origens) precisam ser exatamente os que ela viu na tela.
-            visto = {k[:4]: round(float(v), 2) for k, v in (emp.get('esperadoTudo') or {}).items()}
-            dif = dctf_diferencas(visto, d['tudo'])
-            # sem movimento: a DCTFWeb não tem débito nenhum — vazio é o esperado (nas demais, vazio é leitura falha)
-            vazio_ok = emp.get('semMovimento') or (not visto and emp.get('esperadoHash') and emp.get('esperadoHash') == dctf_hash(xml))
-            if dif or (not d['tudo'] and not vazio_ok):
-                r.update(msg='Os débitos da DCTFWeb mudaram desde que você conferiu; nada foi transmitido. Atualize a DCTFWeb e confira de novo.', origens=d['origens'], diferencas=dif)
-                if not d['tudo']:
-                    r['arvore'] = d['arvore']           # leiaute que a leitura não reconheceu (só os nomes das tags)
+        # 2.4.50: TRANS10 = a declaração mudou depois que a Receita gerou o XML (ex.: guia emitida em andamento logo antes) —
+        # espera, busca o XML de novo (conferindo os débitos outra vez) e tenta mais 2 vezes
+        for tentativa in range(3):
+            rx = _dctf(tok, cert, contratante, cnpj, 'Consultar', 'CONSXMLDECLARACAO38', _periodo_dctf(comp), consumo)
+            xml = dctf_xml(rx.get('dados')) if rx.get('http') == 200 else None
+            if not xml:
+                r['msg'] = 'Sem o XML da declaração na Receita; nada foi transmitido.'
                 return r
-        else:
-            esperado = {k[:4]: round(float(v), 2) for k, v in (emp.get('esperado') or {}).items()}
-            if not esperado or any(abs(d['reinf'].get(k, 0.0) - v) > 0.01 for k, v in esperado.items()) or any(k not in esperado and v > 0.01 for k, v in d['reinf'].items()):
-                r.update(msg='Os débitos da REINF na DCTFWeb mudaram desde a conferência; nada foi transmitido. Atualize a conferência.', reinf=d['reinf'])
-                return r
-            if outras:                                   # eSocial / MIT sem a confirmação da pessoa: não transmite
-                r.update(msg='A DCTFWeb tem débitos de ' + ', '.join(sorted(outras)) + ': confirme a folha e o MIT antes de transmitir.', origens=d['origens'])
-                return r
-        assinado = assinar_dctf(xml, chave_priv, cert_b64)
-        try:                                     # cópia local da última tentativa (diagnóstico de recusa da assinatura)
-            pasta_dbg = os.path.join(os.environ.get('APPDATA') or tempfile.gettempdir(), 'fiscocont-plus', 'dctf_diagnostico')
-            os.makedirs(pasta_dbg, exist_ok=True)
-            with open(os.path.join(pasta_dbg, 'original.xml'), 'w', encoding='utf-8') as fh:
-                fh.write(xml)
-            with open(os.path.join(pasta_dbg, 'assinado.xml'), 'w', encoding='utf-8') as fh:
-                fh.write(assinado)
-        except Exception:
-            pass
-        dados = {**_periodo_dctf(comp), 'xmlAssinadoBase64': base64.b64encode(assinado.encode('utf-8')).decode('ascii')}
-        rt = _dctf(tok, cert, contratante, cnpj, 'Declarar', 'TRANSDECLARACAO310', dados, consumo, 'declaracao')
-        t = _msgs_txt(rt)
+            d = dctf_debitos(xml)
+            outras = {k: v for k, v in d['origens'].items() if not k.startswith('REINF') and v > 0.009}
+            if emp.get('esperadoTudo') is not None:
+                # 2.4.17: declaração com folha (eSocial) e/ou MIT — a pessoa confirmou que estão fechados. Todos os débitos
+                # (de todas as origens) precisam ser exatamente os que ela viu na tela.
+                visto = {k[:4]: round(float(v), 2) for k, v in (emp.get('esperadoTudo') or {}).items()}
+                dif = dctf_diferencas(visto, d['tudo'])
+                # sem movimento: a DCTFWeb não tem débito nenhum — vazio é o esperado (nas demais, vazio é leitura falha)
+                vazio_ok = emp.get('semMovimento') or (not visto and emp.get('esperadoHash') and emp.get('esperadoHash') == dctf_hash(xml))
+                if dif or (not d['tudo'] and not vazio_ok):
+                    r.update(msg='Os débitos da DCTFWeb mudaram desde que você conferiu; nada foi transmitido. Atualize a DCTFWeb e confira de novo.', origens=d['origens'], diferencas=dif)
+                    if not d['tudo']:
+                        r['arvore'] = d['arvore']           # leiaute que a leitura não reconheceu (só os nomes das tags)
+                    return r
+            else:
+                esperado = {k[:4]: round(float(v), 2) for k, v in (emp.get('esperado') or {}).items()}
+                if not esperado or any(abs(d['reinf'].get(k, 0.0) - v) > 0.01 for k, v in esperado.items()) or any(k not in esperado and v > 0.01 for k, v in d['reinf'].items()):
+                    r.update(msg='Os débitos da REINF na DCTFWeb mudaram desde a conferência; nada foi transmitido. Atualize a conferência.', reinf=d['reinf'])
+                    return r
+                if outras:                                   # eSocial / MIT sem a confirmação da pessoa: não transmite
+                    r.update(msg='A DCTFWeb tem débitos de ' + ', '.join(sorted(outras)) + ': confirme a folha e o MIT antes de transmitir.', origens=d['origens'])
+                    return r
+            assinado = assinar_dctf(xml, chave_priv, cert_b64)
+            try:                                     # cópia local da última tentativa (diagnóstico de recusa da assinatura)
+                pasta_dbg = os.path.join(os.environ.get('APPDATA') or tempfile.gettempdir(), 'fiscocont-plus', 'dctf_diagnostico')
+                os.makedirs(pasta_dbg, exist_ok=True)
+                with open(os.path.join(pasta_dbg, 'original.xml'), 'w', encoding='utf-8') as fh:
+                    fh.write(xml)
+                with open(os.path.join(pasta_dbg, 'assinado.xml'), 'w', encoding='utf-8') as fh:
+                    fh.write(assinado)
+            except Exception:
+                pass
+            dados = {**_periodo_dctf(comp), 'xmlAssinadoBase64': base64.b64encode(assinado.encode('utf-8')).decode('ascii')}
+            rt = _dctf(tok, cert, contratante, cnpj, 'Declarar', 'TRANSDECLARACAO310', dados, consumo, 'declaracao')
+            t = _msgs_txt(rt)
+            if 'trans10' in t and tentativa < 2:
+                import time as _tm0
+                _tm0.sleep(20 * (tentativa + 1))
+                continue
+            break
         r['msgReceita'] = (rt.get('msg') or f"HTTP {rt.get('http')}")[:1500]       # inteira: a recusa diz a tag com erro
         # 2.4.43: "Requisição efetuada com sucesso" vem até quando a Receita recusa ("Houve erro de negócio") — não basta.
         # Só conta como transmitida se não houver mensagem de erro E a Receita deixar de mostrar a declaração em andamento.

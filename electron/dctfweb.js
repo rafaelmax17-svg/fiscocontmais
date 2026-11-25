@@ -191,12 +191,30 @@ function ligarRobo(opc) {
       setTimeout(() => { if (_robo && !_unsub) escuta(); }, 15000);
     });
   };
+  _escuta = escuta;
   escuta();
   _log(`fila ligada neste computador (${os.hostname()})${_robo.souRobo() ? ' · é o robô' : ' · aguardando ser o robô'}`);
   // varredura de segurança a cada minuto: pega pedido parado na fila e destrava a fila presa
-  _vigia = setInterval(() => _varrer().catch(() => {}), 60 * 1000);
+  _vigia = setInterval(() => _varrer().then(() => { _nFalha = 0; }).catch((e) => _falhaNuvem(e)), 60 * 1000);
 }
-function desligarRobo() { if (_unsub) { try { _unsub(); } catch (_) {} _unsub = null; } if (_vigia) { clearInterval(_vigia); _vigia = null; } _robo = null; }
+
+// 2.4.50: a conexão com a nuvem pode cair sem dar erro (computador que dormiu, rede que trocou) — a escuta para de avisar e a
+// leitura devolve a cópia local, sem pedido novo. A varredura lê direto do servidor; 2 falhas seguidas → reconecta sozinho.
+let _escuta = null, _nFalha = 0, _religou = 0;
+async function _falhaNuvem(e) {
+  _nFalha++;
+  if (_nFalha === 1 || _nFalha % 10 === 0) _log(`varredura da fila sem resposta da nuvem (${(e && (e.code || e.message)) || e}) · ${_nFalha}ª vez`);
+  if (_nFalha < 2 || !_robo || Date.now() - _religou < 5 * 60 * 1000) return;
+  _religou = Date.now();
+  _log('reconectando à nuvem e religando a escuta da fila');
+  try {
+    const { db, f } = _fs();
+    if (f.disableNetwork && f.enableNetwork) { await _prazo(f.disableNetwork(db), 15000, 'desligar').catch(() => {}); await _prazo(f.enableNetwork(db), 15000, 'religar').catch(() => {}); }
+    if (_unsub) { try { _unsub(); } catch (_) {} _unsub = null; }
+    if (_escuta && _robo) _escuta();
+  } catch (x) { _log(`reconexão: ${x.message || x}`); }
+}
+function desligarRobo() { if (_unsub) { try { _unsub(); } catch (_) {} _unsub = null; } if (_vigia) { clearInterval(_vigia); _vigia = null; } _robo = null; _escuta = null; _nFalha = 0; }
 
 // promessa com prazo: chamada à nuvem que não responde não pode segurar a fila para sempre
 function _prazo(pr, ms, oque) {
@@ -231,7 +249,7 @@ async function _varrer() {
   }
   const { db, f } = _fs();
   const novos = [], presos = [];
-  (await _prazo(f.getDocs(f.query(f.collection(db, COL_P), f.where('status', '==', 'novo'))), 30000, 'fila')).forEach((x) => { if (!_atendidos.has(x.id)) novos.push({ id: x.id, ...x.data() }); });
+  (await _prazo((f.getDocsFromServer || f.getDocs)(f.query(f.collection(db, COL_P), f.where('status', '==', 'novo'))), 30000, 'fila')).forEach((x) => { if (!_atendidos.has(x.id)) novos.push({ id: x.id, ...x.data() }); });
   (await _prazo(f.getDocs(f.query(f.collection(db, COL_P), f.where('status', '==', 'rodando'))), 30000, 'fila')).forEach((x) => {
     const d = x.data();
     if (d.inicioMs && Date.now() - d.inicioMs > 20 * 60 * 1000) presos.push(x.ref);
