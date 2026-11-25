@@ -235,9 +235,10 @@ function createMainWindow() {
 // sistema ficava aberto sem tela. Se o processo da GPU cair, grava a marca e reabre sem aceleração de vídeo.
 let _semGpuArq = '';
 try { _semGpuArq = path.join(String(app.getPath('userData')), 'sem-gpu.flag'); } catch (_) {}
-if ((_semGpuArq && fs.existsSync(_semGpuArq)) || process.argv.includes('--sem-gpu')) {
-  app.disableHardwareAcceleration();
-}
+// Confirmado em 25/11 no computador do robô: com o antivírus ativo a janela não era desenhada; abrindo sem aceleração
+// de vídeo, abriu. O sistema não precisa da placa de vídeo (telas e gráficos rodam bem no processador), então a
+// aceleração fica desligada para todos — evita o problema em qualquer máquina com antivírus/driver que bloqueie a GPU.
+app.disableHardwareAcceleration();
 app.on('child-process-gone', (_e, d) => {
   if (d && d.type === 'GPU' && _semGpuArq && !fs.existsSync(_semGpuArq)) {
     try { fs.writeFileSync(_semGpuArq, new Date().toISOString() + ' ' + (d.reason || '')); } catch (_) {}
