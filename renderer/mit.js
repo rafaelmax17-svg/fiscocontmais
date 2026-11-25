@@ -59,12 +59,15 @@
     const temGuia = (d.guias || []).length > 0, transm = dc.situacao === 'transmitida' && !!(dc.recibo || dc.arquivo);
     const mit = mitFeito ? ['ok', d.sit === 'sem_movimento' ? 'MIT sem<br>movimento' : `MIT<br>${e(hm(d.mit && d.mit.enviadoEm))}`]
       : (pf && pf.tipo === 'enviar') || d.sit === 'em_curso' ? ['ru', 'MIT<br>enviando…'] : d.sit === 'saldo_credor' ? ['cr', 'Saldo<br>credor'] : ['pe', 'MIT<br>pendente'];
+    // 2.4.55: ordem MIT → DCTFWeb → recibo → guia (a guia só depois da DCTFWeb entregue)
+    const espera = ['dctf', 'transmitir', 'recibo'].includes(a) || (d.auto && d.auto.etapa === 'confirmar' && !temGuia);
     const guia = temGuia ? ['ok', `Guia<br>${e(hm((d.guias || []).slice(-1)[0].em))}`] : semGuia ? ['na', 'Guia<br>não tem']
-      : (pf && pf.tipo === 'guia') || a === 'guia' || (a === 'dctf' && mitFeito) ? ['ru', a === 'dctf' ? 'Guia<br>esperando a Receita' : 'Guia<br>gerando…'] : mitFeito ? ['pe', 'Guia<br>falta gerar'] : ['no', 'Guia'];
+      : (pf && pf.tipo === 'guia') || a === 'guia' ? ['ru', 'Guia<br>gerando…'] : espera ? ['no', 'Guia<br>depois da DCTFWeb'] : mitFeito ? ['pe', 'Guia<br>falta gerar'] : ['no', 'Guia'];
     const dctf = transm ? ['ok', `DCTFWeb<br>transmitida${dc.retificadora ? ' <span class="mt-rt">retif.</span>' : ''}`]
-      : (pf && pf.tipo === 'transmitir') || a === 'transmitir' ? ['ru', 'DCTFWeb<br>transmitindo…'] : dc.situacao === 'em_andamento' ? ['pe', 'DCTFWeb<br>falta transmitir'] : ['no', 'DCTFWeb'];
+      : (pf && pf.tipo === 'transmitir') || a === 'transmitir' ? ['ru', 'DCTFWeb<br>transmitindo…'] : a === 'dctf' ? ['ru', 'DCTFWeb<br>esperando a Receita']
+      : dc.situacao === 'em_andamento' ? ['pe', 'DCTFWeb<br>falta transmitir'] : ['no', 'DCTFWeb'];
     const rec = dc.arquivo ? ['ok', 'Recibo<br>na pasta'] : (pf && pf.tipo === 'recibo') || a === 'recibo' ? ['ru', 'Recibo<br>baixando…'] : transm ? ['pe', 'Recibo<br>falta baixar'] : ['no', 'Recibo'];
-    return [mit, guia, dctf, rec];
+    return [mit, dctf, rec, guia];
   }
   const ICO = { ok: '✓', ru: '↻', pe: '!', no: '', na: '–', cr: '≡' };
   function stepper(d) {
@@ -156,7 +159,7 @@
         <div class="mt-s">Débitos lidos dos registros M205 (PIS) e M605 (COFINS) da EFD-Contribuições · envio pela Receita com a Liddera como procuradora${robo.ativo ? '' : ' · <b style="color:var(--neg)">envio ainda não configurado pelo Admin</b>'}</div>
         ${robo.ativo && !robo.online ? `<div class="mt-warn" style="margin:-4px 0 14px">⏸ <b>Os envios estão parados:</b> quem fala com a Receita é o computador do Admin que tem o certificado da Liddera${robo.nome ? ` (<b>${e(robo.nome.split(' · ')[0])}</b>)` : ''}, com o FiscoCont+ aberto e o Admin logado — e ele está sem sinal${robo.visto ? ` desde ${e(new Date(robo.visto).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }))}` : ''}. Os pedidos ficam guardados na fila e são enviados sozinhos assim que esse computador abrir o FiscoCont+ com o Admin.</div>` : ''}
         ${robo.ativo && window._ehAdminSessao && window._ehAdminSessao() ? `<label class="mt-autobar"><span class="mt-sw ${R.auto && R.auto.ligado ? 'on' : ''}"><input type="checkbox" id="mtAuto" ${R.auto && R.auto.ligado ? 'checked' : ''} ><i></i></span>
-          <span><b>Envio automático ${R.auto && R.auto.ligado ? 'ligado' : 'desligado'}:</b> ao enviar o MIT com movimento, o robô gera a guia, transmite a DCTFWeb (retificadora, ou original de empresa marcada "sem folha e sem REINF") e salva guia e recibo na pasta da competência (${compBr(M.comp)}).${R.auto && R.auto.por ? ` <span class="sm">· ${R.auto.ligado ? 'ligado' : 'desligado'} por ${e(R.auto.por)}</span>` : ''}</span></label>` : ''}
+          <span><b>Envio automático ${R.auto && R.auto.ligado ? 'ligado' : 'desligado'}:</b> ao enviar o MIT com movimento, o robô transmite a DCTFWeb (retificadora, ou original de empresa marcada "sem folha e sem REINF"), baixa o recibo e só então gera a guia do MIT, salvando os dois na pasta da competência (${compBr(M.comp)}).${R.auto && R.auto.por ? ` <span class="sm">· ${R.auto.ligado ? 'ligado' : 'desligado'} por ${e(R.auto.por)}</span>` : ''}</span></label>` : ''}
         ${painel(docs, totalDeclarar)}
         ${docs.length ? chips(docs) : ''}
         ${docs.length ? `<table class="mt-t"><thead><tr><th style="width:26px"><input type="checkbox" id="mtTodos" title="Marcar todas a enviar"></th><th>Empresa</th><th>Tributação</th><th>Débitos (código · valor)</th><th class="n">Total</th><th style="width:34%">Situação</th></tr></thead><tbody>
@@ -321,7 +324,7 @@
     if (au) au.onchange = async () => {
       const r = await api().auto(au.checked);
       if (!r || r.error) { toast((r && r.error) || 'Falha.', true); au.checked = !au.checked; return; }
-      toast(r.ligado ? 'Envio automático ligado: depois do MIT, o robô gera a guia e transmite a DCTFWeb.' : 'Envio automático desligado.');
+      toast(r.ligado ? 'Envio automático ligado: depois do MIT, o robô transmite a DCTFWeb, baixa o recibo e gera a guia.' : 'Envio automático desligado.');
       carregar();
     };
     q('[data-tr]').forEach((x) => { x.onclick = () => { M.trans = x.dataset.tr; desenhar(); }; });

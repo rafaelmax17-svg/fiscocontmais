@@ -299,8 +299,8 @@ async function _varrer() {
 }
 
 // ------------------------------------------------------------------ envio automático (2.4.53)
-// Cada empresa guarda em "auto" a etapa em que está: dctf (esperando a Receita montar a DCTFWeb) → guia → transmitir →
-// recibo → feito. A varredura de 1 minuto anda uma etapa por vez, uma empresa por vez, sem prender a fila de pedidos.
+// Cada empresa guarda em "auto" a etapa em que está: dctf (esperando a Receita montar a DCTFWeb) → transmitir → recibo →
+// guia → feito (2.4.55: a guia só depois da DCTFWeb entregue). A varredura de 1 minuto anda uma etapa por vez, uma empresa por vez, sem prender a fila de pedidos.
 let _autoRodando = false;
 async function _autoVarrer() {
   if (!_robo || !_robo.souRobo() || _autoRodando || _rodando) return;
@@ -334,8 +334,8 @@ async function _autoPasso(ref, d) {
       return grava({ tent: t, proxMs: Date.now() + 60 * 1000, msg: 'aguardando a DCTFWeb na Receita' });
     }
     await f.setDoc(ref, _limpo({ dctf: { ...(d.dctf || {}), ...dctf } }), { merge: true });
-    if (dctf.situacao === 'transmitida') return grava({ etapa: (d.guias || []).length ? 'recibo' : 'guia', tent: 0, proxMs: Date.now(), msg: '' });
-    return grava({ etapa: 'guia', tent: 0, proxMs: Date.now(), msg: 'gerando a guia' });
+    if (dctf.situacao === 'transmitida') return grava({ etapa: 'recibo', tent: 0, proxMs: Date.now(), msg: 'baixando o recibo' });
+    return grava({ etapa: 'transmitir', tent: 0, proxMs: Date.now(), msg: 'transmitindo a DCTFWeb' });
   }
   if (a.etapa === 'guia') {
     const enviadoEm = Date.parse((d.mit && d.mit.enviadoEm) || '') || 0;
@@ -345,31 +345,33 @@ async function _autoPasso(ref, d) {
       _log(`automático ${d.nome}: guia · ${r.msg || r.status}`);
       if (r.status !== 'feito' || /com problema/.test(r.msg || '')) throw new Error(`guia: ${r.msg || 'falha'}`);
     }
-    return grava({ etapa: 'transmitir', tent: 0, proxMs: Date.now(), msg: 'transmitindo a DCTFWeb' });
+    return grava({ pendente: false, etapa: 'feito', msg: '' });
   }
   if (a.etapa === 'transmitir') {
     const { d: atual } = await _doc(comp, cnpj);
     const dc = (atual && atual.dctf) || {};
-    if (dc.situacao === 'transmitida' && dc.recibo) return grava({ pendente: false, etapa: 'feito', msg: '' });
+    if (dc.situacao === 'transmitida' && dc.recibo) return grava({ etapa: dc.arquivo ? 'guia' : 'recibo', tent: 0, proxMs: Date.now(), msg: dc.arquivo ? 'gerando a guia' : 'baixando o recibo' });
     let semFolha = !!(atual && atual.semFolha);
     try { const e = await f.getDoc(f.doc(db, COL_E, cnpj)); if (e.exists() && e.data().semFolha !== undefined) semFolha = !!e.data().semFolha; } catch (_) {}
     if (dc.retificadora !== true && !semFolha) {
-      _log(`automático ${d.nome}: DCTFWeb original — fica para a equipe confirmar a folha e transmitir`);
-      return grava({ pendente: false, etapa: 'confirmar', msg: 'DCTFWeb original: confirme a folha e a REINF e transmita' });
+      _log(`automático ${d.nome}: DCTFWeb original — fica para a equipe confirmar a folha e transmitir (a guia sai depois)`);
+      return grava({ pendente: false, etapa: 'confirmar', msg: 'DCTFWeb original: confirme a folha e a REINF e transmita — a guia do MIT sai sozinha depois' });
     }
     const r = await _transmitir({ comp, cnpjs: [cnpj], confirmado: { folha: true, reinf: true, mit: true }, por });
     _log(`automático ${d.nome}: transmissão · ${r.msg || r.status}`);
     if (r.status !== 'feito') return grava({ pendente: false, etapa: 'erro', msg: String(r.msg || 'a Receita não aceitou a transmissão').slice(0, 300) });
     const { d: dep } = await _doc(comp, cnpj);
-    if (dep && dep.dctf && dep.dctf.arquivo) return grava({ pendente: false, etapa: 'feito', msg: '' });
+    if (dep && dep.dctf && dep.dctf.arquivo) return grava({ etapa: 'guia', tent: 0, proxMs: Date.now(), msg: 'gerando a guia' });
     return grava({ etapa: 'recibo', tent: 0, proxMs: Date.now() + 60 * 1000, msg: 'baixando o recibo' });
   }
   if (a.etapa === 'recibo') {
     const { ref: r2, d: atual } = await _doc(comp, cnpj);
     const x = await _buscarRecibo(comp, cnpj, r2, atual);
-    if (x.ok) return grava({ pendente: false, etapa: 'feito', msg: '' });
+    if (x.ok) return grava({ etapa: 'guia', tent: 0, proxMs: Date.now(), msg: 'gerando a guia' });
+    // em andamento de novo (transmissão não concluída): não gera guia — volta para a equipe
+    if (/em andamento/.test(x.msg || '')) return grava({ pendente: false, etapa: 'erro', msg: 'a Receita mostra a DCTFWeb ainda em andamento — transmita de novo; a guia não foi gerada' });
     const t = (a.tent || 0) + 1;
-    if (t >= 6) return grava({ pendente: false, etapa: 'feito', msg: 'o recibo vem no próximo "Consultar"' });
+    if (t >= 6) return grava({ etapa: 'guia', tent: 0, proxMs: Date.now(), msg: 'gerando a guia (o recibo vem no próximo "Consultar")' });
     return grava({ tent: t, proxMs: Date.now() + 2 * 60 * 1000, msg: 'aguardando a Receita liberar o recibo' });
   }
   return grava({ pendente: false });
@@ -563,6 +565,11 @@ async function _transmitir(p) {
     return { status: 'erro', msg: x.msg || 'A Receita não aceitou a transmissão.' };
   }
   await f.setDoc(ref, _limpo({ dctf: { ...dctf, situacao: 'transmitida', recibo: x.recibo || '', arquivo: x.arquivo || '', transmitidaEm: new Date().toISOString(), transmitidaPor: p.por || '' }, ultimoErro: '' }), { merge: true });
+  // 2.4.55: o automático tinha parado esperando a confirmação (original) → depois da transmissão, segue com recibo e guia
+  if (d.auto && !d.auto.pendente && ['confirmar', 'erro'].includes(d.auto.etapa) && situacaoDe(d) === 'enviado') {
+    await f.setDoc(ref, _limpo({ auto: { ...d.auto, pendente: true, etapa: x.arquivo ? 'guia' : 'recibo', tent: 0, proxMs: Date.now() + 20000, msg: x.arquivo ? 'gerando a guia' : 'baixando o recibo' } }), { merge: true });
+    setTimeout(() => _autoVarrer().catch((e) => _log(`automático: ${e.message || e}`)), 25000);
+  }
   return { status: 'feito', msg: `${d.nome}: ${x.jaTransmitida ? 'a DCTFWeb já estava transmitida' : `DCTFWeb${dctf.retificadora ? ' retificadora' : ''} transmitida${x.recibo ? ` · recibo ${x.recibo}` : ' · o recibo vem no próximo "Consultar"'}`}` };
 }
 
