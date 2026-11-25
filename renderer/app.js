@@ -5484,13 +5484,19 @@ function bindCorrigirEfd() {
   });
   function monoPrev() {
     const an = MONO.an, gs = (an.grupos || []).filter((g) => MONO.sel.has(g.grupo));
-    const vp = gs.reduce((t, g) => t + g.pis, 0), vc = gs.reduce((t, g) => t + g.cofins, 0);
+    // 2.4.48: grupo cujo regime não está na apuração do arquivo (só documento) não muda o valor a recolher
+    const soDoc = new Set(an.so_documento || []), naAp = gs.filter((g) => !(g.regimes || []).length || !(g.regimes || []).every((r) => soDoc.has(r)));
+    const vp = naAp.reduce((t, g) => t + g.pis, 0), vc = naAp.reduce((t, g) => t + g.cofins, 0);
     const a = an.apuracao_antes || {}, ap = (a.PIS || {}).total || 0, ac = (a.COFINS || {}).total || 0;
     const linha = (rot, antes, depois, forte) => `<tr><td>${rot}</td><td class="n">R$ ${fm(antes)}</td><td class="n"><b style="color:${forte ? '#0b7a55' : 'inherit'}">R$ ${fm(depois)}</b></td></tr>`;
+    // 2.4.48: no não cumulativo, o que passar do valor a recolher não é economia no mês — volta como crédito para o saldo
+    const eco = (ap - Math.max(0, ap - vp)) + (ac - Math.max(0, ac - vc)), sald = Math.max(0, vp + vc - eco);
     $('#monoPrev').innerHTML = `<table class="dif-mini"><thead><tr><th></th><th class="n">Antes</th><th class="n">Depois</th></tr></thead><tbody>
       ${linha('PIS a recolher (M200)', ap, Math.max(0, ap - vp), true)}
       ${linha('COFINS a recolher (M600)', ac, Math.max(0, ac - vc), true)}
-      <tr><td><b>Economia no mês</b></td><td></td><td class="n"><b style="color:#0b7a55;font-size:17px">R$ ${fm(vp + vc)}</b></td></tr></tbody></table>`;
+      <tr><td><b>Economia no mês</b></td><td></td><td class="n"><b style="color:#0b7a55;font-size:17px">R$ ${fm(eco)}</b></td></tr>
+      ${naAp.length < gs.length ? `<tr><td colspan="3"><small>${gs.length - naAp.length} grupo(s) marcado(s) são corrigidos só nos documentos: o PIS/COFINS deles não estava na apuração (M210/M610), então o valor a recolher não muda.</small></td></tr>` : ''}
+      ${sald > 0.004 ? `<tr><td><b>Crédito que volta para o saldo</b><br><small>não é usado neste mês; fica para os próximos (M100/M500 e 1100/1500)</small></td><td></td><td class="n"><b style="color:#2563eb;font-size:17px">R$ ${fm(sald)}</b></td></tr>` : ''}</tbody></table>`;
     $('#btnMonoAplicar').disabled = !gs.length || !$('#monoRevenda').checked;
   }
   function monoRender() {
@@ -5513,7 +5519,7 @@ function bindCorrigirEfd() {
         <div class="k-warn"><span>PIS + COFINS a mais</span><b data-n="${(k.pis || 0) + (k.cofins || 0)}" data-fmt="brl">R$ 0,00</b><small>PIS R$ ${fm(k.pis)} · COFINS R$ ${fm(k.cofins)}</small></div>
         <div class="k-ok"><span>Já corretos</span><b data-n="${k.corretos || 0}">0</b><small>sem tributo (CST 04/06)</small></div>
       </div>
-      ${(an.pendencias || []).map((p) => `<div class="dif-av"><b>${esc(p.titulo)}</b><br>${esc(p.detalhe)}</div>`).join('')}
+      ${(an.pendencias || []).map((p) => `<div class="dif-av${p.tipo === 'info' ? ' ok' : ''}"><b>${esc(p.titulo)}</b><br>${esc(p.detalhe)}</div>`).join('')}
       ${grupos.length ? `
       <div class="mono-grid">
         <div class="mono-card">
@@ -5558,11 +5564,12 @@ function bindCorrigirEfd() {
           <div><button class="act inv-export" id="btnMonoFechar2">Fechar</button></div></div>
           <div class="dif-kpis">
             <div class="k-ok"><span>Itens corrigidos</span><b data-n="${x.itens_corrigidos || 0}">0</b><small>CST 01 → 04</small></div>
-            <div class="k-ok"><span>Economia no mês</span><b data-n="${(x.pis || 0) + (x.cofins || 0)}" data-fmt="brl">R$ 0,00</b><small>PIS R$ ${fm(x.pis)} · COFINS R$ ${fm(x.cofins)}</small></div>
+            <div class="k-ok"><span>Economia no mês</span><b data-n="${((x.economia || {}).PIS || 0) + ((x.economia || {}).COFINS || 0)}" data-fmt="brl">R$ 0,00</b><small>PIS R$ ${fm((x.economia || {}).PIS)} · COFINS R$ ${fm((x.economia || {}).COFINS)}</small></div>
+            ${((x.credito_saldo || {}).PIS || 0) + ((x.credito_saldo || {}).COFINS || 0) > 0.004 ? `<div class="k-ok"><span>Crédito que volta para o saldo</span><b data-n="${((x.credito_saldo || {}).PIS || 0) + ((x.credito_saldo || {}).COFINS || 0)}" data-fmt="brl">R$ 0,00</b><small>PIS R$ ${fm((x.credito_saldo || {}).PIS)} · COFINS R$ ${fm((x.credito_saldo || {}).COFINS)} · M100/M500 e 1100/1500</small></div>` : ''}
             <div><span>PIS a recolher agora</span><b data-n="${((x.apuracao_depois || {}).PIS || {}).total || 0}" data-fmt="brl">R$ 0,00</b><small>M200</small></div>
             <div><span>COFINS a recolher agora</span><b data-n="${((x.apuracao_depois || {}).COFINS || {}).total || 0}" data-fmt="brl">R$ 0,00</b><small>M600</small></div>
           </div>
-          ${(x.pendencias || []).map((p) => `<div class="dif-av"><b>${esc(p.titulo)}</b><br>${esc(p.detalhe)}</div>`).join('')}
+          ${(x.pendencias || []).map((p) => `<div class="dif-av${p.tipo === 'info' ? ' ok' : ''}"><b>${esc(p.titulo)}</b><br>${esc(p.detalhe)}</div>`).join('')}
           <div class="dif-av ok">Arquivo novo pronto. Use <b>Baixar SPED corrigido</b> para salvar e valide no PVA. Se rodar o <b>Corrigir</b> depois, ele parte do arquivo original — rode o Corrigir antes do monofásico.</div>`;
         conta(box);
         $('#btnMonoFechar2').addEventListener('click', () => { box.hidden = true; });

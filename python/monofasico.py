@@ -223,6 +223,7 @@ def analisar_texto(texto):
         'apuracao_antes': _apuracao(L),
         'apuracao_depois': sim['apuracao_depois'] if sim else _apuracao(L),
         'pendencias': sim['pendencias'] if sim else [],
+        'so_documento': sim['so_documento'] if sim else [],
     }
 
 
@@ -247,26 +248,45 @@ def aplicar_texto(texto, grupos_sel, simular=False):
         e['base_c'] += c['base_c']
         e['v_c'] += c['v_c']
     ap = _apuracao(L)
+    ap_antes = ap
     bloqueia = set()
-    # não cumulativo: se os créditos descontados passariam da contribuição, não aplica (mexe no saldo de créditos)
+    # não cumulativo: se os créditos descontados passariam da contribuição nova, a sobra de crédito volta para o saldo
+    # (M100/M500, M200/M600 e 1100/1500) — 2.4.48. Só bloqueia se o arquivo não tiver de onde tirar (inconsistente).
     for trib, k in (('PIS', 'v_p'), ('COFINS', 'v_c')):
         a = ap.get(trib)
-        if a and efeito['nc'][k] and a['cred_desc'] > a['nc_per'] - efeito['nc'][k] + 0.005:
-            bloqueia.add('nc')
-    # M210/M610 de destino precisam existir
+        if a and efeito['nc'][k]:
+            sobra = a['cred_desc'] - (a['nc_per'] - efeito['nc'][k])
+            if sobra > 0.005 and sobra > a['cred_desc'] + 0.005:
+                bloqueia.add('nc')
+    # M210/M610 de destino precisam existir. Se a contribuição desses itens nem está no M210/M610 (a apuração do arquivo
+    # não foi montada a partir dos documentos), corrige só os documentos e o M400/M410: tirar do M210 reduziria o
+    # tributo de outros itens ou o acréscimo da redução linear (M220/M620 código 11) — 2.4.48
+    sem_base = set()
+    falta_base = {}
     for rg, cods in (('cum', ec._CUMULATIVOS), ('nc', ec._NAO_CUMULATIVOS)):
         if not efeito[rg]['receita'] and not efeito[rg]['v_p']:
             continue
-        for r210 in ('M210', 'M610'):
+        for r210, kv in (('M210', 'v_p'), ('M610', 'v_c')):
             alvos = [i for i, l in enumerate(L) if ec._reg(l) == r210 and ec._partes(l['txt'])[1] in cods[:1] and len(ec._partes(l['txt'])) >= 16]
             if len(alvos) != 1:
                 bloqueia.add(rg)
+            elif efeito[rg][kv] > ec._num(ec._partes(L[alvos[0]]['txt'])[10]) + 0.01:
+                sem_base.add(rg)
+                falta_base[(rg, r210)] = (efeito[rg][kv], ec._num(ec._partes(L[alvos[0]]['txt'])[10]))
     for rg in bloqueia:
         n = sum(1 for c in cands if c['regime'] == rg and c['reg'] != 'C185')
         if n:
             pend.append({'titulo': f'{n} item(ns) do regime {"não cumulativo" if rg == "nc" else "cumulativo"} não foram corrigidos',
-                         'detalhe': ('Os créditos descontados no M200/M600 passariam da contribuição do mês — a correção mexe no saldo de créditos e precisa ser feita manualmente.'
+                         'detalhe': ('Os créditos descontados no M200/M600 não fecham com o M100/M500 e o 1100/1500 do arquivo — confira a apuração no PVA antes.'
                                      if rg == 'nc' else 'Não achei um único M210/M610 (COD_CONT 51, leiaute com 16 campos) para receber a redução.')})
+    sem_base -= bloqueia
+    for rg in sorted(sem_base):
+        vp, ap210 = falta_base.get((rg, 'M210'), falta_base.get((rg, 'M610'), (0, 0)))
+        pend.append({'tipo': 'info', 'titulo': 'Corrigido nos documentos — o valor a recolher não muda',
+                     'detalhe': f'Os itens tinham PIS de R$ {ec._fmt(vp)} nos documentos, mas o M210 do arquivo só apura R$ {ec._fmt(ap210)} de contribuição '
+                                '(o resto do M200 é o acréscimo da redução linear, M220 código 11). Ou seja, esse PIS/COFINS não estava sendo cobrado na apuração. '
+                                'O arquivo novo corrige o CST 01 → 04 nos documentos e leva a receita para o M400/M410 (alíquota zero); '
+                                'o M210/M610 e o M220/M620 ficam como estão. Vale conferir no Domínio por que a apuração não bate com os documentos.'})
     cands = [c for c in cands if c['regime'] and c['regime'] not in bloqueia]
     acoes = []
     # 2) itens
@@ -304,7 +324,7 @@ def aplicar_texto(texto, grupos_sel, simular=False):
             t['cta'] = c['cod_cta']
     for rg, cods in (('cum', ec._CUMULATIVOS), ('nc', ec._NAO_CUMULATIVOS)):
         t = tot[rg]
-        if not t['receita'] and not t['v_p'] and not t['v_c']:
+        if rg in sem_base or (not t['receita'] and not t['v_p'] and not t['v_c']):
             continue
         for r210, kb, kv in (('M210', 'base_p', 'v_p'), ('M610', 'base_c', 'v_c')):
             i = next(i for i, l in enumerate(L) if ec._reg(l) == r210 and ec._partes(l['txt'])[1] == cods[0])
@@ -316,7 +336,9 @@ def aplicar_texto(texto, grupos_sel, simular=False):
             p[15] = ec._fmt(max(0.0, ec._num(p[15]) - t[kv]))
             L[i]['txt'] = ec._monta(p)
     ctx = {}
+    credito_saldo = {}
     for trib in ('PIS', 'COFINS'):
+        credito_saldo[trib] = _devolve_credito(L, trib, acoes)
         ec._recalc_m200(L, trib, ctx, 'Recalculado depois da correção do monofásico.')
     # 4) M205/M605 (valor do DARF por campo) acompanham o M200/M600
     for trib, r200, r205 in (('PIS', 'M200', 'M205'), ('COFINS', 'M600', 'M605')):
@@ -358,10 +380,115 @@ def aplicar_texto(texto, grupos_sel, simular=False):
         'pis': round(sum(c['v_p'] for c in cands), 2), 'cofins': round(sum(c['v_c'] for c in cands), 2),
         'receita': round(sum(c['receita'] for c in cands), 2),
         'apuracao_depois': _apuracao(L), 'pendencias': pend, 'acoes': acoes[:300],
+        'credito_saldo': {k: round(v, 2) for k, v in credito_saldo.items()},
+        'so_documento': sorted(sem_base),
     }
+    dep = res['apuracao_depois']
+    res['economia'] = {t: round(max(0.0, (ap_antes.get(t) or {}).get('total', 0) - (dep.get(t) or {}).get('total', 0)), 2) for t in ('PIS', 'COFINS')}
     if not simular:
         res['texto'] = novo_texto
     return res
+
+
+def _periodo(L):
+    p = next((ec._partes(l['txt']) for l in L if ec._reg(l) == '0000'), None)
+    return p[6][2:8] if p and len(p) > 6 and len(p[6]) == 8 else ''      # DT_INI ddmmaaaa → mmaaaa
+
+
+def _devolve_credito(L, trib, acoes):
+    """Regime não cumulativo: depois de reduzir a contribuição (M210/M610), os créditos descontados no M200/M600 não podem
+    passar da contribuição nova. A sobra deixa de ser descontada e volta para o saldo a utilizar em períodos futuros:
+      * M100/M500 (créditos do mês): VL_CRED_DESC menos, SLD_CRED mais, IND_DESC_CRED = 1 (parcial);
+      * M200/M600: VL_TOT_CRED_DESC (e, se faltar, VL_TOT_CRED_DESC_ANT) menos — o M200 é recalculado em seguida;
+      * 1100/1500 (controle de créditos): VL_CRED_DESC_EFD menos e SLD_CRED_FIM mais, no período e código do crédito;
+        sem linha do período, ela é criada.
+    Devolve o valor que voltou para o saldo."""
+    r100, r200, r210, r1100, ant1100 = (('M100', 'M200', 'M210', '1100', '1001') if trib == 'PIS' else ('M500', 'M600', 'M610', '1500', '1001'))
+    i200 = next((i for i, l in enumerate(L) if ec._reg(l) == r200), None)
+    if i200 is None:
+        return 0.0
+    p200 = ec._partes(L[i200]['txt'])
+    nc_novo = sum(ec._num(ec._partes(l['txt'])[15]) for l in L if ec._reg(l) == r210 and ec._partes(l['txt'])[1] in ec._NAO_CUMULATIVOS)
+    desc, ant = ec._num(p200[2]), ec._num(p200[3])
+    sobra = round(desc + ant - nc_novo, 2)
+    if sobra <= 0.004:
+        return 0.0
+    per = _periodo(L)
+    tira_mes = min(sobra, desc)
+    resto = round(sobra - tira_mes, 2)
+    # 1) créditos do mês (M100/M500), do último para o primeiro
+    falta = tira_mes
+    for i in sorted((i for i, l in enumerate(L) if ec._reg(l) == r100), reverse=True):
+        if falta <= 0.004:
+            break
+        p = ec._partes(L[i]['txt'])
+        if len(p) < 15:
+            continue
+        usado = ec._num(p[13])
+        x = round(min(usado, falta), 2)
+        if x <= 0:
+            continue
+        antes = L[i]['txt']
+        p[13] = ec._fmt(usado - x)
+        p[14] = ec._fmt(ec._num(p[14]) + x)
+        p[12] = '1'
+        L[i]['txt'] = ec._monta(p)
+        acoes.append({'registro': r100, 'linha': L[i]['n'], 'antes': antes, 'depois': L[i]['txt'], 'grupo': 'crédito volta ao saldo'})
+        _ajusta_1100(L, r1100, ant1100, per, p[1], x, p, acoes)
+        falta = round(falta - x, 2)
+    tirado_mes = round(tira_mes - falta, 2)
+    # 2) se ainda sobrar, créditos de meses anteriores usados neste mês (1100/1500 de outros períodos), do mais novo
+    tirado_ant = 0.0
+    if resto > 0.004:
+        outras = [i for i, l in enumerate(L) if ec._reg(l) == r1100 and ec._partes(l['txt'])[1] != per and ec._num(ec._partes(l['txt'])[12]) > 0]
+        outras.sort(key=lambda i: (ec._partes(L[i]['txt'])[1][2:], ec._partes(L[i]['txt'])[1][:2]), reverse=True)
+        for i in outras:
+            if resto <= 0.004:
+                break
+            p = ec._partes(L[i]['txt'])
+            x = round(min(ec._num(p[12]), resto), 2)
+            antes = L[i]['txt']
+            p[12] = ec._fmt(ec._num(p[12]) - x)
+            p[17] = ec._fmt(ec._num(p[17]) + x)
+            L[i]['txt'] = ec._monta(p)
+            acoes.append({'registro': r1100, 'linha': L[i]['n'], 'antes': antes, 'depois': L[i]['txt'], 'grupo': 'crédito volta ao saldo'})
+            resto = round(resto - x, 2)
+            tirado_ant = round(tirado_ant + x, 2)
+    p200[2] = ec._fmt(desc - tirado_mes)
+    p200[3] = ec._fmt(ant - tirado_ant)
+    L[i200]['txt'] = ec._monta(p200)
+    return round(tirado_mes + tirado_ant, 2)
+
+
+def _ajusta_1100(L, r1100, ant1100, per, cod, x, p100, acoes):
+    """1100/1500 do crédito do mês (PER_APU_CRED = período do arquivo, ORIG_CRED 01, mesmo COD_CRED)."""
+    alvo = next((i for i, l in enumerate(L) if ec._reg(l) == r1100 and ec._partes(l['txt'])[1] == per
+                 and ec._partes(l['txt'])[4] == cod and ec._partes(l['txt'])[2] in ('01', '1')), None)
+    if alvo is not None:
+        p = ec._partes(L[alvo]['txt'])
+        antes = L[alvo]['txt']
+        p[12] = ec._fmt(max(0.0, ec._num(p[12]) - x))
+        p[17] = ec._fmt(ec._num(p[17]) + x)
+        L[alvo]['txt'] = ec._monta(p)
+        acoes.append({'registro': r1100, 'linha': L[alvo]['n'], 'antes': antes, 'depois': L[alvo]['txt'], 'grupo': 'crédito volta ao saldo'})
+        return
+    disp = ec._num(p100[11])
+    desc_novo = ec._num(p100[13])
+    novo = [r1100, per, '01', '', cod, ec._fmt(disp), ec._fmt(0), ec._fmt(disp), ec._fmt(0), ec._fmt(0), ec._fmt(0), ec._fmt(disp),
+            ec._fmt(desc_novo), ec._fmt(0), ec._fmt(0), ec._fmt(0), ec._fmt(0), ec._fmt(disp - desc_novo)]
+    # posição: depois do último 1100/1500 ou, sem nenhum, antes do primeiro registro do bloco 1 com código maior
+    ult = [i for i, l in enumerate(L) if ec._reg(l) == r1100]
+    if ult:
+        pos = ult[-1] + 1
+    else:
+        pos = next((i for i, l in enumerate(L) if ec._reg(l).startswith('1') and ec._reg(l)[1:].isdigit() and int(ec._reg(l)) > int(r1100)), None)
+        if pos is None:
+            pos = next((i for i, l in enumerate(L) if ec._reg(l) == '1990'), len(L))
+    L.insert(pos, {'n': None, 'txt': ec._monta(novo), 'novo': True})
+    i1001 = next((i for i, l in enumerate(L) if ec._reg(l) == '1001'), None)       # bloco 1 passa a ter dados
+    if i1001 is not None and ec._partes(L[i1001]['txt'])[1] != '0':
+        L[i1001]['txt'] = ec._monta(['1001', '0'])
+    acoes.append({'registro': r1100, 'linha': None, 'antes': '(não existia)', 'depois': ec._monta(novo), 'grupo': 'crédito volta ao saldo'})
 
 
 def _soma_m400(L, r400, r410, limite, nat_tot, cta):
