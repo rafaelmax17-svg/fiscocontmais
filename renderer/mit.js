@@ -16,7 +16,7 @@
   };
   const SIT = { a_enviar: ['pe', 'A enviar'], saldo_credor: ['cr', 'Sem débito · vai sem movimento'], em_curso: ['pe', 'Encerramento em curso'],
     enviado: ['ok', 'MIT enviado'], sem_movimento: ['en', 'Sem movimento enviado'], dispensado: ['en', 'MIT não precisa'] };
-  const SELECIONAVEL = (d) => ['a_enviar', 'saldo_credor'].includes(d.sit) && !fila(d.cnpj);
+  const SELECIONAVEL = (d) => ['a_enviar', 'saldo_credor', 'dispensado'].includes(d.sit) && !fila(d.cnpj);
   const PED = { consultar: 'Consulta na Receita', enviar: 'Envio do MIT', guia: 'Guia do MIT', transmitir: 'Transmissão da DCTFWeb', recibo: 'Recibo da DCTFWeb' };
   const M = { comp: '', d: null, sel: new Set(), conf: new Set(), irAberto: '', semMov: '', trans: '', filtro: 'todas', animou: '' };
   let desliga = null, recarga = null;
@@ -97,8 +97,8 @@
     if (d.sit === 'a_enviar' && !pf) h += `<label class="mt-ck"><input type="checkbox" data-conf="${e(d.cnpj)}" ${M.conf.has(d.cnpj) ? 'checked' : ''}> confere com a EFD</label>`;
     // 2.4.57: sem débito entra no mesmo lote do "Enviar MIT selecionados" (vai sem movimento; se a DCTFWeb já tiver
     // débitos da folha/REINF, o sistema registra "MIT não precisa" e não envia nada)
-    if (d.sit === 'saldo_credor' && !pf) h += `<div class="sm">Sem débito de PIS/COFINS: marque e use "Enviar MIT selecionados".</div>`;
-    if (d.sit === 'dispensado' && d.mitDispensado) h += `<div class="sm">${e(d.mitDispensado.motivo || 'Sem débito e a DCTFWeb já tem débitos da folha/REINF: o MIT não precisa ser enviado.')}</div>`;
+    if (['saldo_credor', 'dispensado'].includes(d.sit) && !pf) h += `<div class="sm">Sem débito de PIS/COFINS: marque e use "Enviar MIT selecionados" — vai como MIT sem movimento; se a DCTFWeb tiver débitos da folha/REINF, ela é transmitida depois com eles.</div>`;
+    if (false && d.sit === 'dispensado' && d.mitDispensado) h += `<div class="sm">${e(d.mitDispensado.motivo || 'Sem débito e a DCTFWeb já tem débitos da folha/REINF: o MIT não precisa ser enviado.')}</div>`;
     if (['enviado', 'sem_movimento', 'em_curso'].includes(d.sit) && d.mit) {
       h += `<div class="sm">${d.mit.id ? `apuração nº ${e(d.mit.id)} · ` : ''}${e(dataBr(d.mit.enviadoEm) || ymdBr(d.mit.data))}${d.mit.enviadoPor ? ` · ${e(d.mit.enviadoPor)}` : ''}</div>`;
       (d.mit.avisos || []).slice(0, 2).forEach((a) => {
@@ -178,7 +178,7 @@
           : `<div class="mt-vz">Nenhuma EFD-Contribuições importada em ${compBr(M.comp)}. Clique em <b>EFD-Contribuições (.txt)</b> e escolha os arquivos — pode ser de várias empresas de uma vez; a competência vem do próprio arquivo.</div>`}
         <div class="mt-resp"><b>Responsável pela apuração</b> (vai em todos os MIT): ${rs && rs.cpf ? `${e(rs.nome || '')} · CPF ${e(rs.cpf)}${rs.crc ? ` · CRC ${e(rs.crc)}` : ''}${rs.email ? ` · ${e(rs.email)}` : ''}${rs.tel ? ` · ${e(rs.tel)}` : ''} · enviado com a Liddera como procuradora` : '<b style="color:var(--neg)">não configurado</b> (Admin › Integra Contador)'}</div>
         ${(R.pedidos || []).length ? `<div class="mt-ped"><b>Últimos pedidos${window._ehAdminSessao && window._ehAdminSessao() ? ' <button class="mt-lk" id="mtLimpar" style="float:right">Limpar histórico</button>' : ''}</b>${robo.ativo && robo.nome ? `<div class="sm" style="margin:-2px 0 6px">Quem atende a fila: <b>${e(robo.nome.split(' · ')[0])}</b>${robo.visto ? ` · último sinal ${e(new Date(robo.visto).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))}` : ''}${robo.online ? '' : ' · <b style="color:var(--neg)">sem sinal</b>'}</div>` : ''}${R.pedidos.slice(0, 6).map((p) => `<div><span class="mt-tg ${p.status === 'feito' ? 'ok' : p.status === 'erro' ? 'er' : p.status === 'aviso' ? 'nm' : 'pe'}">${e({ novo: 'Na fila', rodando: 'Em andamento', feito: 'Feito', erro: 'Erro', aviso: 'Aviso' }[p.status] || p.status)}</span> ${e(PED[p.tipo] || p.tipo)} · ${e(p.por)} · ${e(dataBr(p.emMs))}${p.msg ? ` — ${e(p.msg)}` : ''}</div>`).join('')}</div>` : ''}
-        <div class="mt-lei"><b>Como funciona:</b> o valor de cada código é o "a recolher" da EFD (M205/M605), já depois dos créditos, das retenções e das deduções. Empresa sem débito vai no mesmo lote como MIT sem movimento; se a DCTFWeb do mês já tiver débitos da folha (eSocial) ou da EFD-Reinf, o MIT não é obrigatório (Manual do MIT, item 8.2) e fica registrado "MIT não precisa". O MIT vence no último dia útil do mês seguinte (o mesmo prazo da DCTFWeb); a EFD-Contribuições precisa estar gerada e validada antes, mesmo que ainda não transmitida. Depois do MIT, a guia só do MIT e a transmissão da DCTFWeb saem daqui (sozinhas, com o envio automático ligado) e guia e recibo vão para a pasta da competência — a assinatura da DCTFWeb é feita pelo próprio sistema com o certificado do escritório, sem o assinador do portal.</div>
+        <div class="mt-lei"><b>Como funciona:</b> o valor de cada código é o "a recolher" da EFD (M205/M605), já depois dos créditos, das retenções e das deduções. Empresa sem débito vai no mesmo lote como MIT sem movimento; se a DCTFWeb do mês já tiver débitos da folha (eSocial) ou da EFD-Reinf, ela continua com esses débitos e é transmitida em seguida (retificadora, se a original já foi entregue), com o recibo na pasta da competência. O MIT vence no último dia útil do mês seguinte (o mesmo prazo da DCTFWeb); a EFD-Contribuições precisa estar gerada e validada antes, mesmo que ainda não transmitida. Depois do MIT, a guia só do MIT e a transmissão da DCTFWeb saem daqui (sozinhas, com o envio automático ligado) e guia e recibo vão para a pasta da competência — a assinatura da DCTFWeb é feita pelo próprio sistema com o certificado do escritório, sem o assinador do portal.</div>
       </div>`;
     ligar();
     animar();
@@ -281,7 +281,7 @@
       const lista = [...deb, ...sem].map((d) => d.cnpj);
       const tot = deb.reduce((s, d) => s + totalLinha(d), 0);
       const txt = [deb.length ? `COM DÉBITO (${deb.length}) · total R$ ${num(tot)}\n${deb.map((d) => `• ${d.nome}: R$ ${num(totalLinha(d))}`).join('\n')}` : '',
-        sem.length ? `SEM DÉBITO (${sem.length}) · vão como MIT sem movimento\n${sem.map((d) => `• ${d.nome}`).join('\n')}\n(se a DCTFWeb do mês já tiver débitos da folha ou da EFD-Reinf, o MIT não é necessário e não é enviado)` : ''].filter(Boolean).join('\n\n');
+        sem.length ? `SEM DÉBITO (${sem.length}) · vão como MIT sem movimento\n${sem.map((d) => `• ${d.nome}`).join('\n')}\n(se a DCTFWeb do mês já tiver débitos da folha ou da EFD-Reinf, ela continua com eles e é transmitida em seguida — retificadora, se a original já foi entregue — e o recibo vai para a pasta)` : ''].filter(Boolean).join('\n\n');
       if (!confirm(`Enviar o MIT de ${lista.length} empresa(s) para a Receita?\n\n${txt}\n\nO MIT é encerrado na Receita (os débitos entram na DCTFWeb do mês).`)) return;
       if (await pedir({ tipo: 'enviar', cnpjs: lista }, 'Envio pedido.')) { M.sel.clear(); M.conf.clear(); }
     };
