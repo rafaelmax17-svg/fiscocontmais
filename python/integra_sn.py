@@ -1177,15 +1177,30 @@ def processar(p):
                 import mit as _mit
                 emp = dict(p.get('empresa') or {})
                 sem = bool(p.get('semMovimento'))
+                imediata, chk = sem, sem
+                if sem and p.get('forcarSem'):
+                    # 2.4.57: sem débito no MIT, mas a DCTFWeb do mês pode já ter débitos da folha/REINF. Nesse caso o MIT sem
+                    # movimento vai SEM a transmissão imediata (que geraria DCTFWeb "sem movimento"): a DCTFWeb continua com os
+                    # débitos da folha/REINF e o sistema a transmite depois (retificadora, se a original já foi entregue)
+                    try:
+                        dd = dctf_conferir_empresa(tok, cert, contratante, {'cnpj': emp.get('cnpj')}, p['comp'], consumo)
+                        tot = sum(float(v or 0) for v in (dd.get('reinf') or {}).values()) + sum(float(v or 0) for v in (dd.get('outros') or {}).values())
+                        if dd.get('situacao') in ('em_andamento', 'transmitida') and (tot > 0 or dd.get('codigos') or (dd.get('tudo') or {})):
+                            imediata = False
+                    except Exception:
+                        imediata = False
+                    chk = False
                 try:
                     # sem movimento: a DCTFWeb (sem movimento) é transmitida logo após o encerramento (TransmissaoImediata)
                     emp['payload'] = _mit.montar(emp.get('dados') or {}, p.get('resp') or {}, sem_movimento=sem,
-                                                 tributacao=emp.get('tributacao'), extras=emp.get('extras'), transmissao_imediata=sem,
+                                                 tributacao=emp.get('tributacao'), extras=emp.get('extras'), transmissao_imediata=imediata,
                                                  balanco=bool(emp.get('balanco')))
                 except (ValueError, KeyError) as e:
                     return {'ok': True, 'token': tok, 'proc': proc, 'resultado': {'cnpj': emp.get('cnpj'), 'ok': False, 'msg': str(e)[:300]}, 'consumo': consumo}
                 try:
-                    r = mit_enviar_empresa(tok, cert, contratante, proc, emp, p['comp'], consumo, chk_dctf=sem)
+                    r = mit_enviar_empresa(tok, cert, contratante, proc, emp, p['comp'], consumo, chk_dctf=chk)
+                    if sem and not imediata:
+                        r['comOutrosDebitos'] = True
                 except Exception as e:
                     r = {'cnpj': (p.get('empresa') or {}).get('cnpj'), 'ok': False, 'msg': f'Falha no envio: {e}'[:300]}
                 return {'ok': True, 'token': tok, 'proc': proc, 'resultado': r, 'consumo': consumo}

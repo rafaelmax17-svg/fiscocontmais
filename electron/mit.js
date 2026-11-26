@@ -341,6 +341,7 @@ async function _autoPasso(ref, d) {
     return grava({ etapa: 'transmitir', tent: 0, proxMs: Date.now(), msg: 'transmitindo a DCTFWeb' });
   }
   if (a.etapa === 'guia') {
+    if (d.mit && d.mit.semMovimento) return grava({ pendente: false, etapa: 'feito', msg: '' });      // sem débito: não tem guia
     const enviadoEm = Date.parse((d.mit && d.mit.enviadoEm) || '') || 0;
     const temGuia = (d.guias || []).some((g) => Date.parse(g.em || '') >= enviadoEm);
     if (!temGuia) {
@@ -476,7 +477,8 @@ async function _enviar(p) {
     if (!d) { erros.push(`${cnpj}: não importada`); continue; }
     const sem = !!p.semMovimento || (p.semMov || []).includes(cnpj);
     const empresa = { cnpj, nome: d.nome, dados: { comp: d.comp, regime: d.regime, pis: d.pis || [], cofins: d.cofins || [] }, tributacao: d.tributacao, balanco: !!d.balanco, extras: d.extras || [] };
-    const r = await _robo.python({ acao: 'mit_enviar', comp: p.comp, empresa, semMovimento: sem });
+    // 2.4.57: sem débito vai sempre (mesmo com débitos da folha/REINF na DCTFWeb); a DCTFWeb é transmitida depois
+    const r = await _robo.python({ acao: 'mit_enviar', comp: p.comp, empresa, semMovimento: sem, forcarSem: sem });
     if (!r.ok) throw new Error(r.erro || 'Falha no envio do MIT.');
     await _consumo(r);
     const x = r.resultado || {};
@@ -496,8 +498,8 @@ async function _enviar(p) {
       protocolo: x.protocolo || '', semMovimento: sem, enviadoPor: p.por || '', enviadoEm: new Date().toISOString(), jaEnviado: !!x.jaEnviado,
       valor: _r2((d.total || 0) + _totalExtras(d.extras)) };
     const dctf = await _lerDctf(p.comp, cnpj).catch(() => null);
-    const auto = p.auto && !sem && situacaoDe(d) === 'a_enviar' ? { pendente: true, etapa: 'dctf', tent: 0, proxMs: Date.now() + 15000, desde: new Date().toISOString(), por: p.por || '', msg: 'aguardando a DCTFWeb na Receita' } : null;
-    await f.setDoc(ref, _limpo({ mit, ...(dctf ? { dctf } : {}), ...(auto ? { auto } : {}), ultimoErro: '', mudouDepoisDoEnvio: false }), { merge: true });
+    const auto = p.auto && (sem || situacaoDe(d) === 'a_enviar') ? { pendente: true, etapa: 'dctf', tent: 0, proxMs: Date.now() + 15000, desde: new Date().toISOString(), por: p.por || '', msg: 'aguardando a DCTFWeb na Receita' } : null;
+    await f.setDoc(ref, _limpo({ mit, ...(dctf ? { dctf } : {}), ...(auto ? { auto } : {}), ultimoErro: '', mudouDepoisDoEnvio: false, mitDispensado: null }), { merge: true });
     ok.push(d.nome);
     _log(`MIT ${sem ? 'sem movimento ' : ''}${d.nome}: ${x.msg || ''}`);
   }
