@@ -55,6 +55,10 @@ def _read_text(path):
             continue
     return raw.decode('latin-1', 'replace')
 
+_TIPO_E111 = {'0': 'Outros débitos', '1': 'Estorno de créditos', '2': 'Outros créditos',
+              '3': 'Estorno de débitos', '4': 'Dedução', '5': 'Débito especial'}
+
+
 def _num(s):
     s = (s or '').strip()
     if not s:
@@ -237,11 +241,30 @@ def parse_sped(path):
         return f[i] if i < len(f) else ''
 
     cur = None           # C100 atual: (tipo, chave, cod_part, doc_key)
+    aj_doc = {}          # ajustes dos documentos (C197/D197 e similares) por código -> {valor, desc, n}
+    sit_doc = ''
     for ln in txt.splitlines():
         if not ln or ln[0] != '|':
             continue
         f = ln.split('|')
         reg = f[1] if len(f) > 1 else ''
+
+        # Ajustes lançados nas notas (Tabela 5.3, Guia Prático): 3º caractere 3/4/5 = débito (E110 campo 03),
+        # 0/1/2 = crédito (E110 campo 07); só ICMS próprio (4º caractere 0, 3..8); cancelados/extemporâneos fora.
+        if reg in ('C100', 'D100'):
+            sit_doc = _g(6)
+        elif reg in ('C500', 'C800', 'D700'):
+            sit_doc = _g(5)
+        elif reg in ('C197', 'C597', 'C857', 'C897', 'D197', 'D737'):
+            cod = _g(2).strip()
+            v = _num(_g(7))
+            if (v and len(cod) >= 4 and cod[2] in '012345' and cod[3] in '0345678'
+                    and sit_doc not in ('01', '07', '10', '02', '03', '04', '05')):
+                x = aj_doc.setdefault(cod, {'valor': 0.0, 'desc': '', 'n': 0})
+                x['valor'] += v
+                x['n'] += 1
+                if not x['desc'] and _g(3).strip():
+                    x['desc'] = _g(3).strip()
 
         if reg == '0000':
             empresa = {
@@ -381,9 +404,12 @@ def parse_sped(path):
         elif reg == 'E110':
             apur = {
                 'debitos': _num(f[2]),
+                'aj_debitos_doc': _num(f[3]),
                 'aj_debitos': _num(f[4]),
                 'creditos': _num(f[6]),
+                'aj_creditos_doc': _num(f[7]),
                 'aj_creditos': _num(f[8]),
+                'deb_esp': _num(_g(15)),
                 'estornos_cred': _num(f[5]), 'estornos_deb': _num(f[9]),
                 'saldo_credor_ant': _num(f[10]),
                 'saldo_apurado': _num(f[11]),
@@ -394,7 +420,13 @@ def parse_sped(path):
         elif reg == 'E111':
             v = _num(f[4])
             if v:
-                ajustes.append({'codigo': f[2].strip(), 'descricao': f[3].strip(), 'valor': v})
+                cod = f[2].strip()
+                t = cod[3] if len(cod) >= 4 else ''
+                # Tabela 5.1.1, 4º caractere: 0 outros débitos, 1 estorno de créditos, 5 débito especial (somam ao imposto);
+                # 2 outros créditos, 3 estorno de débitos, 4 dedução (abatem o imposto)
+                ajustes.append({'codigo': cod, 'descricao': f[3].strip(), 'valor': v, 'origem': 'E111',
+                                'natureza': 'debito' if t in '015' and t else 'credito',
+                                'tipo': _TIPO_E111.get(t, 'Ajuste')})
 
     # ---- CFOP agregado (compras/vendas) ----
     compras = []
@@ -462,6 +494,9 @@ def parse_sped(path):
             'creditos': apur.get('creditos', 0.0),
             'ajuste_creditos': apur.get('aj_creditos', 0.0),
             'ajuste_debitos': apur.get('aj_debitos', 0.0),
+            'ajuste_creditos_doc': apur.get('aj_creditos_doc', 0.0),
+            'ajuste_debitos_doc': apur.get('aj_debitos_doc', 0.0),
+            'deducoes': apur.get('deducoes', 0.0), 'deb_esp': apur.get('deb_esp', 0.0),
             'icms_recolher': icms_rec,
             'saldo_credor_transp': apur.get('saldo_credor_transp', 0.0),
             'saldo_credor_ant': apur.get('saldo_credor_ant', 0.0),
@@ -469,6 +504,10 @@ def parse_sped(path):
         },
         'aliquota_efetiva': aliq_efetiva,
         'ajustes_e111': ajustes,
+        'ajustes_doc': [{'codigo': c, 'descricao': x['desc'], 'valor': round(x['valor'], 2), 'qtd': x['n'], 'origem': 'documento',
+                         'natureza': 'debito' if c[2] in '345' else 'credito',
+                         'tipo': 'Ajuste a débito nas notas' if c[2] in '345' else 'Ajuste a crédito nas notas'}
+                        for c, x in sorted(aj_doc.items())],
         'compras_cfop': compras,
         'vendas_cfop': vendas,
         'saidas_cfop': vendas,
@@ -1088,6 +1127,26 @@ def _rank(rows, cor):
 # --------------------------------------------------------------------------- #
 # Dashboard do cliente (SPED)
 # --------------------------------------------------------------------------- #
+def _linhas_apuracao(ap):
+    """Linhas do quadro Apuração do ICMS, na ordem do E110: o que soma ao imposto em vermelho, o que abate em verde."""
+    def g(k):
+        return ap.get(k, 0.0) or 0.0
+    lin = []
+    def row(txt, v, deb, sempre=False):
+        if v or sempre:
+            cor = 'var(--neg)' if deb else 'var(--pos)'
+            lin.append(f'<div class="row"><span class="k">{txt}</span><span class="val" style="color:{cor}">{"+ " if deb else "− "}R$ {_brl(v)}</span></div>')
+    row('Ajustes a débito nas notas (C197/D197)', g('ajuste_debitos_doc'), True)
+    row('Ajustes a débito (E111)', g('ajuste_debitos'), True)
+    row('Estornos de créditos', g('estornos_cred'), True)
+    lin.append(f'<div class="row"><span class="k">Créditos (ICMS s/ compras)</span><span class="val">− R$ {_brl(g("creditos"))}</span></div>')
+    row('Ajustes a crédito nas notas (C197/D197)', g('ajuste_creditos_doc'), False)
+    row('Ajustes de créditos (E111)', g('ajuste_creditos'), False, sempre=not (g('ajuste_creditos_doc') or g('estornos_deb')))
+    row('Estornos de débitos', g('estornos_deb'), False)
+    row('Deduções', g('deducoes'), False)
+    return ''.join(lin)
+
+
 def gerar_dashboard_sped_html(d):
     emp = d['empresa']
     ap = d['apuracao']
@@ -1096,9 +1155,15 @@ def gerar_dashboard_sped_html(d):
     cmax = max((r['valor'] for r in d['compras_cfop']), default=1)
     vmax = max((r['valor'] for r in d['vendas_cfop']), default=1)
     ajustes_html = ''
-    for a in d['ajustes_e111']:
-        ajustes_html += (f'<div class="row"><span class="k">{_esc(a["codigo"])} · {_esc(a["descricao"])[:70]}</span>'
-                         f'<span class="val" style="color:var(--pos)">R$ {_brl(a["valor"])}</span></div>')
+    _aj = list(d.get('ajustes_e111') or []) + list(d.get('ajustes_doc') or [])
+    for a in sorted(_aj, key=lambda x: x.get('natureza') != 'debito'):
+        deb = a.get('natureza') == 'debito'
+        desc = a.get('descricao') or a.get('tipo') or ''
+        if a.get('origem') == 'documento':
+            desc = f'{desc} · {a.get("qtd", 0)} nota(s)' if a.get('descricao') else f'{a.get("tipo")} ({a.get("qtd", 0)} nota(s))'
+        tag = (f'<span class="ajt {"d" if deb else "c"}">{"Débito" if deb else "Crédito"}</span>')
+        ajustes_html += (f'<div class="row"><span class="k">{tag}{_esc(a["codigo"])} · {_esc(desc)[:80]}</span>'
+                         f'<span class="val" style="color:var({"--neg" if deb else "--pos"})">{"+ " if deb else "− "}R$ {_brl(a["valor"])}</span></div>')
     if not ajustes_html:
         ajustes_html = '<div style="color:var(--ink2);font-size:12.5px">Sem ajustes na apuração.</div>'
 
@@ -1111,7 +1176,7 @@ def gerar_dashboard_sped_html(d):
                   f'<span class="val" style="color:var(--pos)">R$ {_brl(sc_ant)}</span></div>') if sc_ant > 0 else ''
     sc_box = ''
     if sc_transp > 0:
-        deb_tot = (ap.get('debitos', 0.0) or 0.0) + (ap.get('ajuste_debitos', 0.0) or 0.0) + (ap.get('estornos_cred', 0.0) or 0.0)
+        deb_tot = (ap.get('debitos', 0.0) or 0.0) + (ap.get('ajuste_debitos', 0.0) or 0.0) + (ap.get('ajuste_debitos_doc', 0.0) or 0.0) + (ap.get('estornos_cred', 0.0) or 0.0)
         disp = deb_tot + sc_transp
         p_deb = max(0.0, min(100.0, deb_tot / disp * 100)) if disp else 0.0
         p_sobra = 100.0 - p_deb
@@ -1125,6 +1190,7 @@ def gerar_dashboard_sped_html(d):
     return f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Apuração ICMS · {_esc(emp.get('empresa',''))}</title>
 <style>{_CSS}
+.ajt{{display:inline-block;font-size:10px;font-weight:700;border-radius:5px;padding:1px 6px;margin-right:8px;vertical-align:1px}}.ajt.d{{background:rgba(226,61,76,.12);color:var(--neg)}}.ajt.c{{background:rgba(14,164,114,.12);color:var(--pos)}}
 .scbox{{margin-top:12px;border-radius:14px;padding:14px 16px;background:linear-gradient(135deg,#e9f8f1,#f3fbf7);border:1px solid #b7e6cf;animation:fadeUp .6s .3s both}}
 .sc-top{{display:flex;justify-content:space-between;align-items:center;gap:10px}}.sc-top b{{display:block;color:#0a6b47;font-size:13.5px}}.sc-top small{{color:#3f8f6c;font-size:11.5px}}
 .sc-v{{font-size:20px;font-weight:800;color:#0a7a52}}
@@ -1153,8 +1219,7 @@ def gerar_dashboard_sped_html(d):
   <div class="grid2">
     <div class="card sec" style="animation-delay:.15s"><h3><span class="dot"></span>Apuração do ICMS</h3>
       <div class="row"><span class="k">Débitos (ICMS s/ saídas)</span><span class="val">R$ {_brl(ap['debitos'])}</span></div>
-      <div class="row"><span class="k">Créditos (ICMS s/ compras)</span><span class="val">R$ {_brl(ap['creditos'])}</span></div>
-      <div class="row"><span class="k">Ajustes de créditos</span><span class="val" style="color:var(--pos)">R$ {_brl(ap['ajuste_creditos'])}</span></div>
+      {_linhas_apuracao(ap)}
       {sc_ant_row}<div class="row tot"><span class="k">ICMS a recolher</span><span class="val">R$ {_brl(ap['icms_recolher'])}</span></div>
       {sc_box}
     </div>
