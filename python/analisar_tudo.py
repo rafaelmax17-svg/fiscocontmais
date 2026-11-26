@@ -16,6 +16,8 @@ Ordem (é também a ordem de aplicação, uma sobre a outra, no mesmo arquivo):
   5) Valor e base × XML ........... valor_xml
   6) Crédito de fornecedor do Simples  simples_ro
   6b) Crédito maçã e pera ......... credito_maca (C195 + C197 RO10000038; não precisa de XML)
+  6c) Crédito presumido ALC Guajará-Mirim  credito_alcgm (C197 RO10000036 pelo desconto do ICMS no XML; sem XML, pelo
+                                   abatimento do C100; bonificação e remessa por conta e ordem sem crédito)
   7) Acumulador 7000 .............. acumulador_despesa
   8) Cadastro de produtos (0200) .. cadastro_0200
   9) Unidade × XML ................ unidade_xml (troca o código da unidade pelo da nota; precisa dos XMLs)
@@ -36,7 +38,7 @@ Escolhas (aplicar):
   {"etapas": {"difal": true, ...},                       etapa desmarcada não roda
    "difal": {"<id da decisão>": "incluir"|"nao"|..., "cfop:<id>": false, "cred:<id doc>": false, "cred_modo": "zerar"|"estorno"},
    "desconto": {"<chave>": false}, "icms": {"<chave>": false}, "valor": {"<chave>": false},
-   "simples": {"<chave>": false}, "maca": {"<chave da nota ou nº|série|fornecedor>": false},
+   "simples": {"<chave>": false}, "maca": {"<chave da nota ou nº|série|fornecedor>": false}, "alcgm": {"<chave ou nº|série|participante>": false},
    "acum": {"<COD_ITEM>": "70xx"|false}, "cad": {"<COD_ITEM>": "07"|"08"|false}, "comb": {"<doc:item>": false}, "ucons": {"<doc:item>": false},
    "stent": {"<doc:item>": false}, "chave": {"<nota>": false}, "ncm": {"<COD_ITEM>": "<NCM escolhido>"|false},
    "pvacad": {"<id do item>": false},
@@ -57,6 +59,7 @@ import desconto_xml as dx
 import acumulador_despesa as ad
 import cadastro_0200 as c2
 import credito_maca as cm
+import credito_alcgm as cg
 import combustivel_cfop as cc
 import uso_consumo_cfop as uc
 import chave_xml as ck
@@ -72,12 +75,12 @@ from xml_entradas import ler_xmls
 _PROG = {'arq': None, 'plano': [], 'reg': 0}
 PLANO_ANALISE = ['Lendo o SPED', 'Lendo os XMLs', 'Chave de acesso × XML', 'NCM × XML das entradas', 'Uso e consumo lançado como revenda',
                  'Combustível × uso e consumo', 'ICMS-ST na entrada', 'Uso e consumo · DIFAL e crédito', 'Validação do PVA · cadastro e ajustes',
-                 'Desconto, ICMS e valor × XML', 'Crédito maçã e pera', 'Acumulador 7000', 'Cadastro de produtos (0200)', 'Unidade × XML',
-                 'Somando o impacto']
+                 'Desconto, ICMS e valor × XML', 'Crédito maçã e pera', 'Crédito presumido ALC Guajará-Mirim', 'Acumulador 7000',
+                 'Cadastro de produtos (0200)', 'Unidade × XML', 'Somando o impacto']
 PLANO_APLICA = ['Lendo o SPED', 'Lendo os XMLs', 'Preparando a correção', 'Chave de acesso × XML', 'NCM × XML das entradas',
                 'Uso e consumo lançado como revenda', 'Combustível × uso e consumo', 'ICMS-ST na entrada', 'Uso e consumo · DIFAL e crédito',
-                'Desconto, ICMS e valor × XML', 'Crédito maçã e pera', 'Acumulador 7000', 'Cadastro de produtos (0200)', 'Unidade × XML',
-                'Validação do PVA · cadastro e ajustes', 'Gravando o arquivo corrigido']
+                'Desconto, ICMS e valor × XML', 'Crédito maçã e pera', 'Crédito presumido ALC Guajará-Mirim', 'Acumulador 7000',
+                'Cadastro de produtos (0200)', 'Unidade × XML', 'Validação do PVA · cadastro e ajustes', 'Gravando o arquivo corrigido']
 
 
 def _P(etapa, reg=None):
@@ -496,6 +499,33 @@ def analisar(sped, xml_dir, permitidas=None):
                    'grupos': [{'id': 'maca', 'titulo': 'Notas de maçã e pera com crédito faltando ou diferente', 'sugestao': 'lançar o crédito presumido',
                                'linhas': lin}] if lin else []})
 
+    # 6c) crédito presumido ALC Guajará-Mirim (RO10000036) — pelo XML; sem XML, pelo abatimento do C100
+    _P('Crédito presumido ALC Guajará-Mirim')
+    ga = cg.analisar_texto(corr, xmls)
+    if ga.get('aplica'):
+        lin = []
+        for z in ga['docs']:
+            if z['status'] == 'confere':
+                continue
+            nota = f"NF {_num(z['num'])} · {z['fornecedor']}"
+            if z['status'] == 'verificar':
+                lin.append({'sel': z['sel'], 'nota': nota, 'det': cg.descricao(z), 'valor': 0.0, 'marcado': False, 'bloqueado': True})
+            else:
+                lin.append({'sel': z['sel'], 'nota': nota, 'det': cg.descricao(z), 'valor': z['dif'], 'marcado': True})
+        n_lin = sum(1 for l in lin if not l.get('bloqueado'))
+        tot = round(sum(l['valor'] for l in lin if not l.get('bloqueado')), 2)
+        r_g = ga['resumo']
+        etapas.append({'key': 'alcgm', 'titulo': 'Crédito presumido ALC Guajará-Mirim',
+                       'desc': 'C197 RO10000036 = desconto do ICMS na nota (RICMS/RO, Anexo IV, Parte 2, item 01, Notas 1 a 3) · '
+                               'bonificação e remessa por conta e ordem sem crédito'
+                               + (f" · {r_g['confere']} nota(s) já conferem" if r_g['confere'] else '')
+                               + (f" · {r_g['sem_xml']} sem XML (pelo C100)" if r_g['sem_xml'] else ''),
+                       'qtd': f'{len(lin)} nota(s)' if lin else ('nada a corrigir' if r_g['confere'] else 'nada encontrado'),
+                       'valor': (f"{'+' if tot >= 0 else '−'} R$ {_fm(abs(tot))} crédito" if n_lin else ''),
+                       'badge': 'pode corrigir' if n_lin else ('verificar' if lin else 'sem correção'), 'tipo': 'auto' if n_lin else 'zero',
+                       'grupos': [{'id': 'alcgm', 'titulo': 'Notas com crédito presumido diferente do desconto da nota', 'sugestao': 'acertar pelo desconto do ICMS',
+                                   'linhas': lin}] if lin else []})
+
     # 7) acumulador 7000
     _P('Acumulador 7000')
     aa = ad.analisar_texto(corr)
@@ -732,6 +762,24 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
                 return None, enc, e
             final = novo
             resumo['maca'] = {'notas': r.get('notas', 0), 'credito': r.get('credito', 0.0)}
+            avisos += r.get('avisos') or []
+    # 6c) crédito presumido ALC Guajará-Mirim
+    _P('Crédito presumido ALC Guajará-Mirim')
+    if liga('alcgm'):
+        eg = esc.get('alcgm') or {}
+        ga = cg.analisar_texto(final, xmls)
+        ids = [z['id'] for z in ga['docs'] if z['status'] in ('diferente', 'falta', 'retirar', 'base') and eg.get(z['sel'], True) is not False]
+        if ids:
+            sel = {'docs': ids}
+            if e116:
+                sel['e116'] = e116
+            novo, r = cg.aplicar_texto(final, xmls, sel)
+            e = erro_de(r, 'Crédito presumido ALC Guajará-Mirim')
+            if e:
+                return None, enc, e
+            final = novo
+            resumo['alcgm'] = {'notas': r.get('notas', 0), 'incluidas': r.get('incluidas', 0), 'retiradas': r.get('retiradas', 0),
+                               'acertadas': r.get('acertadas', 0), 'delta': r.get('delta_07', 0.0)}
             avisos += r.get('avisos') or []
     # 7) acumulador 7000
     _P('Acumulador 7000')

@@ -2988,6 +2988,7 @@ const CORR_ETAPAS = [
   { key: 'valor', nome: 'Valor e base × XML' },
   { key: 'simples', nome: 'Crédito do Simples' },
   { key: 'maca', nome: 'Crédito maçã e pera' },
+  { key: 'alcgm', nome: 'Crédito presumido ALC Guajará-Mirim' },
   { key: 'acum', nome: 'Acumulador 7000' },
   { key: 'cad', nome: 'Cadastro de produtos (0200)' },
   { key: 'unid', nome: 'Unidade × XML' },

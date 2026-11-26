@@ -109,6 +109,7 @@ def ler_xml(texto):
             'orig': _t(g, 'orig'), 'cst': _t(g, 'CST'), 'csosn': _t(g, 'CSOSN'),
             'picms': _fx(_t(g, 'pICMS')), 'vicms': _fx(_t(g, 'vICMS')), 'vbc': _fx(_t(g, 'vBC')), 'predbc': _fx(_t(g, 'pRedBC')),
             'vicmsst': _fx(_t(g, 'vICMSST')), 'pcredsn': _fx(_t(g, 'pCredSN')), 'vcredsn': _fx(_t(g, 'vCredICMSSN')),
+            'vdeson': _fx(_t(g, 'vICMSDeson')), 'motdes': _t(g, 'motDesICMS'),     # 2.4.58: crédito presumido ALC (credito_alcgm)
         }
         it['valor_merc'] = round(it['vprod'] - it['vdesc'] + it['vfrete'] + it['vseg'] + it['voutro'], 2)
         it['valor_oper'] = round(it['valor_merc'] + it['vipi'], 2)     # base do DIFAL de uso/consumo inclui o IPI
@@ -131,6 +132,7 @@ def ler_xml(texto):
     return {
         'chave': chave, 'tipo': 'nfe', 'simples': simples, 'csosn': sorted(csosns),
         'mod': _t(ide, 'mod'), 'id_dest': _t(ide, 'idDest'), 'ind_pres': _t(ide, 'indPres'),
+        'nat_op': _t(ide, 'natOp'),
         'dest_uf': _t(dest, 'enderDest/UF'), 'dest_cnpj': _t(dest, 'CNPJ'),
         'crt': _t(emit, 'CRT'), 'emit_nome': _t(emit, 'xNome'), 'emit_uf': _t(emit, 'enderEmit/UF'),
         'vnf': _fx(_t(tot, 'vNF')), 'vst': _fx(_t(tot, 'vST')),
