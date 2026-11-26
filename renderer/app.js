@@ -738,14 +738,18 @@ function bindFiscal() {
 
   // ---- Dashboard (SPED) ----
   $('#btnSpedImport').addEventListener('click', async () => {
-    const pick = await pickOrReuseSped();
-    if (pick.canceled) return;
+    // "Importar" sempre pergunta o arquivo: reaproveitar o SPED já carregado na sessão fazia o dashboard
+    // (e a exportação p/ cliente) sair de uma versão antiga do arquivo, sem a pessoa perceber.
+    const pk = await window.fiscocont.fiscal.pickSped();
+    if (pk.canceled || !pk.path) return;
+    const pick = { path: pk.path };
     overlay(true, 'Lendo o SPED e montando o dashboard…');
     const res = await window.fiscocont.fiscal.dashboard(pick.path);
     if (res.error) { overlay(false); toast(res.error, true); return; }
     await applySpedToAllModules(pick.path);
     const fr = $('#spedFrame');
     fr.srcdoc = res.html;
+    FISCAL.dashSped = pick.path;   // a exportação p/ cliente usa exatamente o arquivo do dashboard da tela
     fr.hidden = false; $('#spedEmpty').hidden = true;
     $('#btnSpedHtml').disabled = false; $('#btnSpedPdf').disabled = false;
 
@@ -764,7 +768,9 @@ function bindFiscal() {
         const bp = $('#btnDocsPdf'); if (bp) bp.disabled = false;
       }
     }
-    toast('Dashboard gerado: ' + (res.empresa || ''));
+    const nomeArq = String(pick.path).split(/[\\/]/).pop();
+    const lb = $('#spedArqNome'); if (lb) { lb.textContent = 'Arquivo: ' + nomeArq; lb.title = pick.path; }
+    toast('Dashboard gerado: ' + (res.empresa || '') + ' · ' + nomeArq);
   });
   $('#btnSpedHtml').addEventListener('click', () => exportFiscal('dashboard', 'html'));
   $('#btnSpedPdf').addEventListener('click', () => exportFiscal('dashboard', 'pdf'));
@@ -3867,7 +3873,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
 
 async function exportFiscal(kind, fmt, cliente = false) {
   const payload = kind === 'dashboard'
-    ? { kind, spedPath: FISCAL.spedPath }
+    ? { kind, spedPath: FISCAL.dashSped || FISCAL.spedPath }
     : kind === 'documentos'
     ? { kind, spedPath: FISCAL.docsSped }
     : kind === 'confSaidas'
