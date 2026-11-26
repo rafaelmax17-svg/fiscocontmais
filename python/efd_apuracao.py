@@ -114,6 +114,36 @@ def fix_aliq_regime(L, acoes, pend, ctx):
         acoes.append({'cat': 'aliq_regime', 'tipo': 'alterado', 'linha': L[i]['n'], 'registro': ec._reg(L[i]), 'antes': antes, 'depois': L[i]['txt'],
                       'motivo': f"CST 01 com alíquota fora do regime {'cumulativo' if reg == 'cum' else 'não cumulativo'}: "
                                 f"PIS {ec._fmt(ap, 2)}% e COFINS {ec._fmt(ac, 2)}%, valor recalculado (base × alíquota)."})
+    # duas linhas C175 da mesma NFC-e que só diferiam pela alíquota passam a ter a mesma chave (CFOP, CST, alíquotas,
+    # conta) — o PVA acusa "Duplicidade de ocorrência da chave": junta numa linha só e recalcula base × alíquota
+    if muda and ec.det_c175dup(L):
+        n0 = len(acoes)
+        L = ec._fix_c175dup(L, acoes, pend, ctx)
+        juntou = {a['depois'] for a in acoes[n0:] if a['cat'] == 'c175dup'}
+        troca = {}
+        for l in L:
+            if ec._reg(l) == 'C175' and l['txt'] in juntou:
+                p = ec._partes(l['txt'])
+                if p[4] == '01':
+                    p[9] = ec._fmt(round(ec._num(p[5]) * ap / 100, 2))
+                if p[10] == '01':
+                    p[15] = ec._fmt(round(ec._num(p[11]) * ac / 100, 2))
+                troca[l['txt']] = ec._monta(p)
+                l['txt'] = troca[l['txt']]
+        for a in acoes[n0:]:
+            if a['cat'] == 'c175dup' and a['depois'] in troca:
+                a['depois'] = troca[a['depois']]
+        # a junção removeu linhas: os C100 dos itens alterados são achados de novo
+        alterados = {x['depois'] for x in acoes if x['cat'] == 'aliq_regime'} | set(troca.values())
+        pais, cur = set(), None
+        for i2, l in enumerate(L):
+            r = ec._reg(l)
+            if r in ('C100', 'A100'):
+                cur = i2
+            elif r in ('C010', 'A010'):
+                cur = None
+            elif r in ('C170', 'C175', 'A170') and cur is not None and l['txt'] in alterados:
+                pais.add(cur)
     # total do C100/A100 = soma dos itens (o CST 05/75 — ST — não entra no total do documento)
     for pai in sorted(pais):
         r = ec._reg(L[pai])

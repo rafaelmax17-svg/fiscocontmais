@@ -2191,6 +2191,7 @@ def corrigir_efd(texto, pva=None, nome_arquivo='sped.txt', hoje='', conta_ajuste
         elif cid == 'c175dup':
             achados = sum(len(g['idxs']) for g in antes['c175dup'])
             corrigidos = sum(len(a['linha']) for a in a_cat)
+            achados = max(achados, corrigidos)        # 2.4.57: a junção também acontece depois de acertar a alíquota do regime
         elif cid == 'mdup':
             achados = sum(len(g['idxs']) for g in antes['mdup'])
             corrigidos = achados - pendentes
