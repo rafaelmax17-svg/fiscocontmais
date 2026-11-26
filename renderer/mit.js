@@ -327,13 +327,13 @@
       x.onclick = async () => {
         x.disabled = true;
         try {
-          const r = await window.api.mit.escolherPasta({ cnpj: x.dataset.pasta, nome: x.dataset.pnome, comp: M.comp });
+          const r = await api().escolherPasta({ cnpj: x.dataset.pasta, nome: x.dataset.pnome, comp: M.comp });
           if (r && r.canceled) return;
           if (r && r.error) { toast(r.error, true); return; }
           const pd = r && r.pedido;
           toast(pd && pd.erro ? `Pasta guardada. ${pd.erro}` : 'Pasta guardada para esta empresa. O recibo foi pedido de novo e vai para a pasta Sped - Contribuições da competência.');
           carregar();
-        } finally { x.disabled = false; }
+        } catch (err) { toast(`Não foi possível escolher a pasta: ${(err && err.message) || err}`, true); } finally { x.disabled = false; }
       };
     });
     q('[data-guia]').forEach((x) => { x.onclick = () => pedir({ tipo: 'guia', cnpjs: [x.dataset.guia] }, `Guia pedida: o PDF vai para a pasta do cliente (competência ${compBr(M.comp)}).`); });
