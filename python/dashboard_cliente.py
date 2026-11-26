@@ -294,6 +294,8 @@ td.v{text-align:right;font-weight:700;color:#1f2a5a;white-space:nowrap}td.p{text
 .trf td{background:#f6f3ff;color:#6b55d6;font-weight:600;padding:9px 10px}
 .aj3{font-size:9.5px;font-weight:800;border-radius:5px;padding:2px 6px;margin-right:8px}
 .vazio{font-size:12.5px;color:#8a92b2}
+.subh{display:flex;justify-content:space-between;align-items:center;margin:6px 0 2px;padding:6px 10px;border-radius:9px;background:#fff4ec;font-size:12px;font-weight:700;color:#c2410c}
+.subh.o{background:#f3f0ff;color:#6b55d6;margin-top:14px}
 .foot{text-align:center;font-size:11.5px;color:#8a92b2;margin-top:24px}
 /* animações: o estado final é o estilo normal; as animações só partem do estado inicial */
 @keyframes up{from{opacity:0;transform:translateY(14px)}}
@@ -324,6 +326,7 @@ _JS = """<script>
 </script>"""
 
 _PAL_E = ['#1f2a5a', '#2b3a72', '#3d55c4', '#5470d6', '#7088e0', '#91a3ea', '#b3c0f1', '#d2dbf7']
+_PAL_O = ['#6b55d6', '#8b78e0', '#a597ea', '#bdb3f0', '#d2cbf5', '#e2ddf8', '#ece9fa', '#f3f1fc']
 _PAL_S = ['#c2410c', '#e8611c', '#f08a3c', '#f4a261', '#f7bc8a', '#f9cfa9', '#fbe0c7', '#fdeee0']
 
 
@@ -422,13 +425,27 @@ def gerar(d, logo=''):
              f'<div class="flow anim" style="grid-template-columns:{" ".join(cols)}">{"".join(flow)}</div>')
 
     # ---- 02 VAF ----
-    sec02 = f"""<div class="sec anim"><span>02</span><h2>VAF Fiscal</h2><em>valor adicionado no período</em></div>
-<div class="card anim"><div class="vafb"><div class="vb"><small>+ Vendas</small><b class="num" style="color:#0a8a5f">{_R(fat)}</b></div>
+    vr = d.get('vaf_ro')
+    if vr:   # Rondônia: Decreto 11.908/2005, art. 8º, § 3º (red. Decreto 22.533/2018) — ΣVS − ΣVE da EFD
+        vaf_box = (f'<div class="vafb" style="grid-template-columns:1fr 1fr 1fr 1fr 1.25fr">'
+                   f'<div class="vb"><small>+ Vendas</small><b class="num" style="color:#0a8a5f">{_R(vr["vendas"])}</b></div>'
+                   f'<div class="vb"><small>+ Transferências e demais saídas</small><b class="num" style="color:#0a8a5f">{_R(vr["saidas"] - vr["vendas"])}</b></div>'
+                   f'<div class="vb"><small>− Compras e demais entradas</small><b class="num" style="color:#d93b41">{_R(vr["entradas"] - vr["transf_entradas"])}</b></div>'
+                   f'<div class="vb"><small>− Transferências recebidas</small><b class="num" style="color:#d93b41">{_R(vr["transf_entradas"])}</b></div>'
+                   f'<div class="vb r"><small>= Valor adicionado</small>{_cnt(vr["vaf"])}</div></div>'
+                   f'<div class="note">Regra de Rondônia (Decreto 11.908/2005, art. 8º, § 3º): todas as saídas menos todas as entradas da EFD, '
+                   f'inclusive transferências entre estabelecimentos. Ficam fora ativo imobilizado, uso e consumo, bonificações, remessas e '
+                   f'outros CFOPs listados no decreto (saídas {_R(vr["excl_saidas"])} · entradas {_R(vr["excl_entradas"])}). '
+                   f'O VAF compõe o índice de participação do município no ICMS.</div>')
+    else:
+        vaf_box = f"""<div class="vafb"><div class="vb"><small>+ Vendas</small><b class="num" style="color:#0a8a5f">{_R(fat)}</b></div>
 <div class="vb"><small>− Devolução de vendas</small><b class="num" style="color:#d93b41">{_R(d.get('dev_vendas'))}</b></div>
 <div class="vb"><small>− Compras p/ comercialização/industrialização</small><b class="num" style="color:#d93b41">{_R(d.get('entradas_brutas'))}</b></div>
 <div class="vb"><small>+ Devolução de compras</small><b class="num">{_R(d.get('dev_compras'))}</b></div>
 <div class="vb r"><small>= Valor adicionado</small>{_cnt(d.get('valor_adicionado'))}</div></div>
-<div class="note">Não entram no VAF: uso e consumo ({_R(d.get('uso_consumo'))}) e imobilizado ({_R(d.get('imobilizado'))}). O VAF compõe o índice de participação do município no ICMS.</div></div>"""
+<div class="note">Não entram no VAF: uso e consumo ({_R(d.get('uso_consumo'))}) e imobilizado ({_R(d.get('imobilizado'))}). O VAF compõe o índice de participação do município no ICMS.</div>"""
+    sec02 = (f'<div class="sec anim"><span>02</span><h2>VAF Fiscal</h2><em>valor adicionado no período</em></div>'
+             f'<div class="card anim">{vaf_box}</div>')
 
     # ---- 03 CFOP ----
     def bloco_cfop(lista, pal, tit):
@@ -444,8 +461,35 @@ def gerar(d, logo=''):
             f'<td class="p">{r.get("nfs", 0)} NF</td><td class="v num">{_R(r["valor"])}</td><td class="p">{_brl(_pct(r["valor"], tot))}%</td></tr>'
             for i, r in enumerate(lista))
         return f'<div class="card"><h4>{tit} · {_R(tot)}</h4><div class="stack">{stack}</div><table>{linhas}</table></div>'
-    sec03 = (f'<div class="sec anim"><span>03</span><h2>Movimentação por CFOP</h2><em>principais de entrada e de saída</em></div>'
-             f'<div class="two anim">{bloco_cfop(d.get("compras_cfop"), _PAL_E, "Entradas")}{bloco_cfop(d.get("vendas_cfop"), _PAL_S, "Saídas")}</div>')
+    def bloco_saidas(lista):
+        lista = [r for r in (lista or []) if (r.get('valor') or 0) > 0]
+        if not lista:
+            return '<div class="card"><h4>Saídas</h4><div class="vazio">Sem movimento no período.</div></div>'
+        vend = [r for r in lista if r.get('venda')]
+        outr = [r for r in lista if not r.get('venda')]
+        tv, to = sum(r['valor'] for r in vend), sum(r['valor'] for r in outr)
+        mostra_o = outr[:6]
+        tot = tv + to
+        cores_v = {r['cfop']: _PAL_S[min(i, 7)] for i, r in enumerate(vend)}
+        cores_o = {r['cfop']: _PAL_O[min(i, 7)] for i, r in enumerate(outr)}
+        stack = ''.join(f'<div style="width:{_pct(r["valor"], tot):.2f}%;background:{cores_v[r["cfop"]]}"></div>' for r in vend)
+        stack += ''.join(f'<div style="width:{_pct(r["valor"], tot):.2f}%;background:{cores_o[r["cfop"]]}"></div>' for r in outr)
+        def linhas(rs, cores):
+            return ''.join(
+                f'<tr><td><span class="sw" style="background:{cores[r["cfop"]]}"></span><span class="cfb">{_esc(r["cfop"])}</span>'
+                f'{_esc(cfop_desc(r["cfop"], r.get("desc")))}{"<span class=tr>TRANSF.</span>" if _eh_transf(r["cfop"]) else ""}</td>'
+                f'<td class="p">{r.get("nfs", 0)} NF</td><td class="v num">{_R(r["valor"])}</td><td class="p">{_brl(_pct(r["valor"], tot))}%</td></tr>'
+                for r in rs)
+        h = f'<div class="card"><h4>Saídas · {_R(tot)}</h4><div class="stack">{stack}</div>'
+        h += f'<div class="subh"><span>Vendas</span><b class="num">{_R(tv)}</b></div>'
+        h += f'<table>{linhas(vend, cores_v)}</table>' if vend else '<div class="vazio">Nenhuma venda no período.</div>'
+        if outr:
+            extra = f' · {len(outr) - len(mostra_o)} outro(s) CFOP somam {_R(sum(r["valor"] for r in outr[6:]))}' if len(outr) > 6 else ''
+            h += (f'<div class="subh o"><span>Outras saídas (não são venda)</span><b class="num">{_R(to)}</b></div>'
+                  f'<table>{linhas(mostra_o, cores_o)}</table>' + (f'<div class="note">{extra[3:]}</div>' if extra else ''))
+        return h + '</div>'
+    sec03 = (f'<div class="sec anim"><span>03</span><h2>Movimentação por CFOP</h2><em>entradas e saídas, com as vendas separadas</em></div>'
+             f'<div class="two anim">{bloco_cfop(d.get("compras_cfop"), _PAL_E, "Entradas")}{bloco_saidas(d.get("vendas_cfop"))}</div>')
 
     # ---- 04 compras ----
     raiz = re.sub(r'\D', '', emp.get('cnpj') or '')[:8]

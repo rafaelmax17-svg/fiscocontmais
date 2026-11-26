@@ -171,6 +171,28 @@ _CFOP_DEV_COMPRA = {'5201', '5202', '5210', '5410', '5411', '6201', '6202', '621
 _CFOP_USO_CONSUMO = {'1556', '2556', '1653', '2653', '1557', '2557', '1407', '2407'}
 _CFOP_IMOBILIZADO = {'1551', '2551', '1552', '2552', '1406', '1604'}
 
+def _faixa(a, b):
+    return {str(x) for x in range(a, b + 1)}
+
+
+# VAF de Rondônia — Decreto 11.908/2005, art. 8º, § 3º (redação do Decreto 22.533/2018, efeitos desde 01/01/2017):
+# VALOR ADICIONADO = ΣVS − ΣVE (+ VPP + VAINF + VDE + VTA, anuais e fora da EFD). ΣVS/ΣVE = valor das operações de
+# saída/entrada dos Blocos C e D da EFD, exceto os CFOPs abaixo. Tudo o que não está na lista entra (inclusive
+# transferências, devoluções e baixa de estoque).
+_VAF_RO_EXCL_SAIDA = (
+    _faixa(5412, 5415) | {'5504', '5505'} | _faixa(5551, 5557) | {'5601', '5602', '5603', '5605', '5606', '5657'}
+    | _faixa(5663, 5666) | _faixa(5901, 5926) | {'5929'} | _faixa(5931, 5933) | {'5949'}
+    | _faixa(6412, 6415) | {'6504', '6505'} | _faixa(6551, 6557) | {'6603', '6657'} | _faixa(6663, 6666)
+    | _faixa(6901, 6925) | {'6929'} | _faixa(6931, 6933) | {'6949', '7551', '7553', '7556', '7930', '7949'})
+_VAF_RO_EXCL_ENTRADA = (
+    {'1128', '1406', '1407', '1414', '1415', '1505', '1506'} | _faixa(1551, 1557) | _faixa(1601, 1605) | {'1653'}
+    | _faixa(1662, 1664) | _faixa(1901, 1926) | _faixa(1931, 1933) | {'1949'}
+    | {'2128', '2406', '2407', '2414', '2415', '2505', '2506'} | _faixa(2551, 2557) | {'2603', '2653'}
+    | _faixa(2662, 2664) | _faixa(2901, 2925) | _faixa(2931, 2933) | {'2949'}
+    | {'3128', '3551', '3553', '3556', '3653', '3930', '3949'})
+_CFOP_TRANSF = {'151', '152', '153', '408', '409', '552', '557', '658', '659'}
+
+
 def _classe_cfop(c):
     if c in _CFOP_VENDA: return 'venda'
     if c in _CFOP_DEV_VENDA: return 'dev_venda'
@@ -362,6 +384,14 @@ def parse_sped(path):
                 })
             else:
                 saidas_total += _num(_g(15))
+        elif reg in ('C320', 'C490', 'C690', 'C850', 'C890', 'D590', 'D690', 'D696'):
+            # resumos por CST/CFOP de documentos consolidados (NF mod. 02, ECF, NF mod. 06/29, CF-e SAT, NFC-e
+            # consolidada, comunicação, transporte): mesmo leiaute CST|CFOP|ALIQ|VL_OPR
+            c = _g(3).strip(); vlop = _num(_g(5))
+            if c:
+                d = cfop.setdefault(c, {'valor': 0.0, 'docs': set(), 'tipo': None})
+                d['valor'] += vlop
+                d['tipo'] = 'entrada' if c[0] in _ENTRADA_CFOP else ('saida' if c[0] in _SAIDA_CFOP else 'outro')
         elif reg == 'D190':
             c = _g(3).strip(); vlop = _num(_g(5))
             if c:
@@ -432,7 +462,8 @@ def parse_sped(path):
     compras = []
     vendas = []
     for c, d in cfop.items():
-        row = {'cfop': c, 'desc': _cfop_desc(c), 'valor': round(d['valor'], 2), 'nfs': len(d['docs'])}
+        row = {'cfop': c, 'desc': _cfop_desc(c), 'valor': round(d['valor'], 2), 'nfs': len(d['docs']),
+               'venda': c in _CFOP_VENDA}
         if d['tipo'] == 'entrada':
             compras.append(row)
         elif d['tipo'] == 'saida':
@@ -460,6 +491,21 @@ def parse_sped(path):
     vendas_liquidas = round(vl_venda - vl_dev_venda, 2)
     compras_liquidas = round(vl_compra_vaf - vl_dev_compra, 2)
     vaf = round(vendas_liquidas - compras_liquidas, 2)       # VAF = vendas líq. − compras líq.
+    vaf_ro = None
+    if (empresa.get('uf') or '').upper() == 'RO':
+        def _sm(f):
+            return round(sum(d['valor'] for c, d in cfop.items() if f(c)), 2)
+        vs = _sm(lambda c: c[:1] in '567' and c not in _VAF_RO_EXCL_SAIDA)
+        ve = _sm(lambda c: c[:1] in '123' and c not in _VAF_RO_EXCL_ENTRADA)
+        vaf_ro = {
+            'saidas': vs, 'entradas': ve, 'vaf': round(vs - ve, 2),
+            'vendas': faturamento,
+            'transf_saidas': _sm(lambda c: c[:1] in '567' and c[1:] in _CFOP_TRANSF and c not in _VAF_RO_EXCL_SAIDA),
+            'transf_entradas': _sm(lambda c: c[:1] in '123' and c[1:] in _CFOP_TRANSF and c not in _VAF_RO_EXCL_ENTRADA),
+            'excl_saidas': _sm(lambda c: c in _VAF_RO_EXCL_SAIDA),
+            'excl_entradas': _sm(lambda c: c in _VAF_RO_EXCL_ENTRADA),
+        }
+        vaf = vaf_ro['vaf']
     icms_rec = apur.get('icms_recolher', 0.0)
     aliq_efetiva = round((icms_rec / faturamento * 100) if faturamento else 0.0, 4)
 
@@ -489,6 +535,7 @@ def parse_sped(path):
         'dev_vendas': round(vl_dev_venda, 2),
         'dev_compras': round(vl_dev_compra, 2),
         'valor_adicionado': vaf,
+        'vaf_ro': vaf_ro,                                    # regra do Decreto 11.908/2005 (RO), quando a UF é RO
         'apuracao': {
             'debitos': apur.get('debitos', 0.0),
             'creditos': apur.get('creditos', 0.0),
@@ -1127,6 +1174,18 @@ def _rank(rows, cor):
 # --------------------------------------------------------------------------- #
 # Dashboard do cliente (SPED)
 # --------------------------------------------------------------------------- #
+def _vaf_ro_html(d):
+    v = d['vaf_ro']
+    return (f'<div class="row"><span class="k">+ Saídas da EFD (Blocos C e D)</span><span class="val" style="color:var(--pos)">R$ {_brl(v["saidas"])}</span></div>'
+            f'<div class="row"><span class="k" style="padding-left:14px">vendas R$ {_brl(v["vendas"])} · transferências R$ {_brl(v["transf_saidas"])}</span><span class="val"></span></div>'
+            f'<div class="row"><span class="k">− Entradas da EFD (Blocos C e D)</span><span class="val" style="color:var(--neg)">R$ {_brl(v["entradas"])}</span></div>'
+            f'<div class="row"><span class="k" style="padding-left:14px">inclui transferências recebidas R$ {_brl(v["transf_entradas"])}</span><span class="val"></span></div>'
+            f'<div class="va"><span>= Valor adicionado</span><span>R$ {_brl(v["vaf"])}</span></div>'
+            f'<div style="font-size:10.5px;color:var(--ink2);margin-top:8px;line-height:1.45">Regra de RO: Decreto 11.908/2005, art. 8º, § 3º '
+            f'(red. Decreto 22.533/2018) — ΣVS − ΣVE da EFD. Ficam fora os CFOPs listados no decreto (ativo, uso e consumo, '
+            f'bonificação, remessas, frete 1.932/2.932, 5.949...): saídas R$ {_brl(v["excl_saidas"])} e entradas R$ {_brl(v["excl_entradas"])}.</div>')
+
+
 def _linhas_apuracao(ap):
     """Linhas do quadro Apuração do ICMS, na ordem do E110: o que soma ao imposto em vermelho, o que abate em verde."""
     def g(k):
@@ -1224,12 +1283,12 @@ def gerar_dashboard_sped_html(d):
       {sc_box}
     </div>
     <div class="card sec" style="animation-delay:.2s"><h3><span class="dot"></span>VAF Fiscal</h3>
-      <div class="row"><span class="k">+ Vendas (CFOP de venda)</span><span class="val" style="color:var(--pos)">R$ {_brl(d['faturamento_bruto'])}</span></div>
+      {_vaf_ro_html(d) if d.get('vaf_ro') else f'''<div class="row"><span class="k">+ Vendas (CFOP de venda)</span><span class="val" style="color:var(--pos)">R$ {_brl(d['faturamento_bruto'])}</span></div>
       <div class="row"><span class="k">− Devolução de vendas</span><span class="val">R$ {_brl(d['dev_vendas'])}</span></div>
       <div class="row"><span class="k">− Compras p/ comercialização/industrialização</span><span class="val" style="color:var(--neg)">R$ {_brl(d['entradas_brutas'])}</span></div>
       <div class="row"><span class="k">+ Devolução de compras</span><span class="val">R$ {_brl(d['dev_compras'])}</span></div>
       <div class="va"><span>= Valor adicionado</span><span>R$ {_brl(d['valor_adicionado'])}</span></div>
-      <div style="font-size:10.5px;color:var(--ink2);margin-top:8px;line-height:1.45">Não entram no VAF: uso e consumo (R$ {_brl(d.get('uso_consumo',0))}) e imobilizado (R$ {_brl(d.get('imobilizado',0))}).</div>
+      <div style="font-size:10.5px;color:var(--ink2);margin-top:8px;line-height:1.45">Não entram no VAF: uso e consumo (R$ {_brl(d.get('uso_consumo',0))}) e imobilizado (R$ {_brl(d.get('imobilizado',0))}).</div>'''}
     </div>
   </div>
   <div class="grid2">
