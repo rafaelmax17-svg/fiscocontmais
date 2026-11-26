@@ -15,7 +15,10 @@ Base legal (RICMS/RO, Decreto 22.721/2018, Anexo IV, Parte 2, item 01 — consol
 
 O que faz (só nas notas de entrada interestaduais, modelo 55, empresa de Guajará-Mirim ou que já usa o RO10000036):
   • valor do C197 diferente do desconto do XML → acerta base, alíquota e valor;
-  • nota com desconto e sem C197 (inclusive ST, Nota 1) → inclui C195 + C197;
+  • nota com desconto e sem C197 → inclui C195 + C197;
+  • 2.4.59: item com ICMS-ST (C170 com CST x60 ou CFOP x.401/x.403) fica FORA do C197: o crédito presumido dele é
+    aproveitado no cálculo do ICMS-ST da entrada (Parecer GETRI 342/2009: "no cálculo do ICMS/ST ou em conta gráfica",
+    nunca nos dois). Aparece só como informação, com o valor que foi para a ST;
   • bonificação (CFOP x.910) e remessa por conta e ordem (x.923) com C197 → retira o crédito;
   • sem XML e sem desconto no C100, mas com C197 → só "Verificar" (não altera).
 E110 campo 07 refeito (11, 13 e 14 recalculados; obrigação 000 do E116 ajustada). Gera arquivo NOVO; o original nunca
@@ -28,6 +31,7 @@ import unicodedata
 from decimal import Decimal
 
 import difal_ro as dr
+import desconto_xml as dx
 
 COD_AJ = 'RO10000036'
 MUN_GM = '1100106'                     # Guajará-Mirim (IBGE)
@@ -98,8 +102,10 @@ def analisar_texto(texto, xmls=None):
         x = xmls.get(_ch(d['chave']))
         if x and (x.get('tipo') not in (None, 'nfe') or 'erro' in x):
             x = None
-        st = any(c['cst'][-2:] in ('10', '30', '60', '70') or c['cfop'] in ('2401', '2403') for c in d['c190'])
-        motivo, ref = '', ''
+        eh_st = lambda cst, cfop: cst[-2:] in ('10', '30', '60', '70') or cfop[1:] in ('401', '403')
+        st = any(eh_st(c['cst'], c['cfop']) for c in d['c190'])
+        so_st = bool(d['c190']) and all(eh_st(c['cst'], c['cfop']) for c in d['c190'])
+        motivo, ref, credito_st, st_verificar = '', '', 0.0, False
         if x:
             itens = x.get('itens') or []
             orig = {(it.get('cfop') or '')[1:] for it in itens}
@@ -109,6 +115,22 @@ def analisar_texto(texto, xmls=None):
             elif orig and orig <= {'910'}:
                 motivo = 'bonificacao'
             ok = [it for it in itens if (it.get('cfop') or '')[1:] not in ('910', '923') and (it.get('vdeson') or 0) > 0]
+            if st and ok:
+                # item do XML × item do SPED: o CST/CFOP de ST está no C170 (o XML do fornecedor traz CST 40)
+                c170s = []
+                for c in d['c170']:
+                    cc = linhas[c['i']].split('|')
+                    c170s.append({'i': c['i'], 'num': c['num'], 'vl_item': dr._n(cc[7]), 'st': eh_st(c['cst'], c['cfop'])})
+                if so_st:
+                    fora = ok
+                else:
+                    par = dx._casar(c170s, itens)
+                    st_ids = {id(par[c['i']]) for c in c170s if c['st'] and c['i'] in par}
+                    if any(c['st'] and c['i'] not in par for c in c170s):
+                        st_verificar = True          # item de ST sem par no XML: não dá para separar com segurança
+                    fora = [it for it in ok if id(it) in st_ids]
+                credito_st = round(sum(it['vdeson'] for it in fora), 2)
+                ok = [it for it in ok if all(it is not z for z in fora)]
             certo = 0.0 if motivo else round(sum(it['vdeson'] for it in ok), 2)
             base = 0.0 if motivo else round(sum((it['vprod'] - (it.get('vdesc') or 0)) for it in ok), 2)
             fonte = 'XML'
@@ -118,6 +140,11 @@ def analisar_texto(texto, xmls=None):
             elif cfops and cfops <= {'2923', '1923'}:
                 motivo = 'remessa'
             certo = 0.0 if motivo else round(abat, 2)
+            if st and not motivo:
+                if so_st:
+                    credito_st, certo = certo, 0.0
+                elif certo:
+                    st_verificar = True              # sem XML não dá para separar o desconto dos itens com ST
             base = 0.0
             if certo > 0:
                 base = lanc[0]['bc'] if lanc and lanc[0]['bc'] > 0 else round(sum(c['vl_opr'] for c in d['c190'] if c['cfop'][1:] not in ('910', '923')), 2)
@@ -128,7 +155,7 @@ def analisar_texto(texto, xmls=None):
             # próxima e base = desconto ÷ alíquota (ex.: nota com "DESCONTO ICMS 7% 1.340,27")
             aliq = min((4.0, 7.0, 12.0), key=lambda p: abs(p - certo / base * 100)) if base > 0 else 7.0
             base = round(certo * 100 / aliq, 2)
-        if not x and not motivo and certo == 0 and lancado > 0:
+        if (not x and not motivo and certo == 0 and lancado > 0 and not so_st) or (st_verificar and abs(certo - lancado) > TOL):
             status = 'verificar'
         elif abs(certo - lancado) <= TOL:
             status = 'confere'
@@ -144,17 +171,22 @@ def analisar_texto(texto, xmls=None):
         out.append({'id': d['i'], 'sel': _sel(d), 'num': d['num'], 'serie': d['serie'], 'data': d['dt'], 'chave': d['chave'],
                     'fornecedor': p.get('nome', d['part']), 'fonte': fonte, 'motivo': motivo, 'venda_ref': ref,
                     'venda_no_sped': bool(ref and ref in nums), 'st': st, 'lancado': lancado, 'certo': certo, 'base': base,
-                    'aliq': aliq, 'status': status, 'dif': round(certo - lancado, 2), 'nat_op': (x or {}).get('nat_op', '')})
+                    'aliq': aliq, 'status': status, 'dif': round(certo - lancado, 2), 'nat_op': (x or {}).get('nat_op', ''),
+                    'credito_st': credito_st, 'so_st': so_st, 'st_verificar': st_verificar})
     corr = [z for z in out if z['status'] in ('diferente', 'falta', 'retirar', 'base')]
     resumo = {'aplica': True, 'notas': len(out), 'confere': sum(1 for z in out if z['status'] == 'confere'),
               'corrigir': len(corr), 'verificar': sum(1 for z in out if z['status'] == 'verificar'),
-              'delta': round(sum(z['dif'] for z in corr), 2), 'sem_xml': sum(1 for z in out if z['fonte'] != 'XML')}
+              'delta': round(sum(z['dif'] for z in corr), 2), 'sem_xml': sum(1 for z in out if z['fonte'] != 'XML'),
+              'credito_st': round(sum(z['credito_st'] for z in out), 2), 'notas_st': sum(1 for z in out if z['credito_st'] > 0)}
     return {'docs': out, 'resumo': resumo, 'aplica': True, 'tem_e110': bool(e110)}
 
 
 def descricao(z):
     """Texto curto da linha para o painel."""
     fm = lambda v: f'{v:,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+    if z['status'] == 'verificar' and z.get('st_verificar'):
+        return (f"nota com itens de ST e itens normais sem XML (ou item de ST que não casou com o XML): não dá para separar o crédito da ST · "
+                f"C197 hoje R$ {fm(z['lancado'])} · NÃO ALTERADO: confira")
     if z['status'] == 'verificar':
         return f"C197 de R$ {fm(z['lancado'])}, mas a nota não tem desconto do ICMS no C100 e não há XML · NÃO ALTERADO: confira o XML"
     if z['motivo'] == 'remessa':
@@ -163,7 +195,7 @@ def descricao(z):
                 + ('' if not z['venda_ref'] or z['venda_no_sped'] else ' · a nota de venda não está neste SPED'))
     if z['motivo'] == 'bonificacao':
         return f"bonificação não tem crédito presumido · retirar R$ {fm(z['lancado'])}"
-    st = ' · nota com ST (Nota 1: também tem direito)' if z['st'] else ''
+    st = (f" · itens com ST fora do C197 (R$ {fm(z['credito_st'])} usados no cálculo do ICMS-ST)" if z.get('credito_st') else '')
     if z['status'] == 'falta':
         return f"desconto do ICMS na nota sem C197 · incluir {fm(z['aliq'])}% sobre R$ {fm(z['base'])} = R$ {fm(z['certo'])}{st}"
     if z['status'] == 'base':

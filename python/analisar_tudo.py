@@ -505,9 +505,12 @@ def analisar(sped, xml_dir, permitidas=None):
     if ga.get('aplica'):
         lin = []
         for z in ga['docs']:
-            if z['status'] == 'confere':
-                continue
             nota = f"NF {_num(z['num'])} · {z['fornecedor']}"
+            if z['status'] == 'confere':
+                if z.get('so_st') and z.get('credito_st'):
+                    lin.append({'sel': z['sel'], 'nota': nota, 'valor': 0.0, 'marcado': False, 'bloqueado': True,
+                                'det': f"nota com ST: crédito presumido de R$ {_fm(z['credito_st'])} vai no cálculo do ICMS-ST da entrada, não no C197 · só informação"})
+                continue
             if z['status'] == 'verificar':
                 lin.append({'sel': z['sel'], 'nota': nota, 'det': cg.descricao(z), 'valor': 0.0, 'marcado': False, 'bloqueado': True})
             else:
@@ -519,7 +522,8 @@ def analisar(sped, xml_dir, permitidas=None):
                        'desc': 'C197 RO10000036 = desconto do ICMS na nota (RICMS/RO, Anexo IV, Parte 2, item 01, Notas 1 a 3) · '
                                'bonificação e remessa por conta e ordem sem crédito'
                                + (f" · {r_g['confere']} nota(s) já conferem" if r_g['confere'] else '')
-                               + (f" · {r_g['sem_xml']} sem XML (pelo C100)" if r_g['sem_xml'] else ''),
+                               + (f" · {r_g['sem_xml']} sem XML (pelo C100)" if r_g['sem_xml'] else '')
+                               + (f" · ST: R$ {_fm(r_g['credito_st'])} em {r_g['notas_st']} nota(s) ficam para o cálculo do ICMS-ST" if r_g.get('credito_st') else ''),
                        'qtd': f'{len(lin)} nota(s)' if lin else ('nada a corrigir' if r_g['confere'] else 'nada encontrado'),
                        'valor': (f"{'+' if tot >= 0 else '−'} R$ {_fm(abs(tot))} crédito" if n_lin else ''),
                        'badge': 'pode corrigir' if n_lin else ('verificar' if lin else 'sem correção'), 'tipo': 'auto' if n_lin else 'zero',
