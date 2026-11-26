@@ -495,6 +495,10 @@ def dctf_situacao(res):
     """CONSDECCOMPLETA33 → em_andamento | transmitida | sem_declaracao | semproc | erro.
     Só é "transmitida" com prova: a Receita devolveu a declaração e nada diz que ela não existe."""
     t = _msgs_txt(res)
+    # 2.4.59: MG08 "Não foi encontrada Declaração" vem junto com MG02 "Encaminhamento não autorizado" quando ainda não
+    # existe DCTFWeb no mês — não é falta de procuração
+    if res.get('http') != 403 and re.search(r'mg08|nao foi encontrada declaracao', t):
+        return 'sem_declaracao'
     if res.get('http') == 403 or 'procura' in t or 'nao autorizad' in t:
         return 'semproc'
     # 2.4.41: "não há declaração em andamento" (depois de transmitida) não pode virar "em andamento"
@@ -960,6 +964,8 @@ def dctf_recibo_empresa(tok, cert, contratante, emp, comp, consumo):
                 r['arquivo'] = _grava(pasta, f'Recibo DCTFWeb{tipo} {m}{a} - {_nome_arq(emp.get("nome") or cnpj)}.pdf', pdfs[0][2])
             except OSError as e:
                 r['aviso'] = f'Recibo não gravado na pasta: {e}'[:200]
+        else:
+            r['aviso'] = 'pasta do cliente não encontrada no drive (confira o nome da pasta da empresa)'
         r['ok'] = True
         r['msg'] = f"Recibo {r.get('recibo') or ''} baixado".strip()
     else:

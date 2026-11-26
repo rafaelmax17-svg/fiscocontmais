@@ -291,7 +291,11 @@ async function _varrer() {
   }
   const { db, f } = _fs();
   const novos = [], presos = [];
-  (await _prazo((f.getDocsFromServer || f.getDocs)(f.query(f.collection(db, COL_P), f.where('status', '==', 'novo'))), 30000, 'fila')).forEach((x) => { if (!_atendidos.has(x.id)) novos.push({ id: x.id, ...x.data() }); });
+  (await _prazo((f.getDocsFromServer || f.getDocs)(f.query(f.collection(db, COL_P), f.where('status', '==', 'novo'))), 30000, 'fila')).forEach((x) => {
+    // 2.4.59: pedido ainda "novo" no servidor, mas marcado como atendido aqui (a gravação de "rodando" se perdeu) → volta
+    if (_atendidos.has(x.id) && Date.now() - (x.data().emMs || 0) > 3 * 60 * 1000) { _atendidos.delete(x.id); _log(`pedido ${x.id}: estava parado na fila; pegando de novo`); }
+    if (!_atendidos.has(x.id)) novos.push({ id: x.id, ...x.data() });
+  });
   (await _prazo(f.getDocs(f.query(f.collection(db, COL_P), f.where('status', '==', 'rodando'))), 30000, 'fila')).forEach((x) => {
     const d = x.data();
     if (d.inicioMs && Date.now() - d.inicioMs > 20 * 60 * 1000) presos.push(x.ref);
@@ -463,7 +467,7 @@ async function _consultar(p) {
     await f.setDoc(ref, _limpo({ mit, ultimoErro: '' }), { merge: true });
     n++;
     if (mit && mit.situacao === 3 && !(d.dctf && d.dctf.arquivo)) {
-      try { if ((await _buscarRecibo(p.comp, _so(x.cnpj), ref, { ...d, mit })).ok) nr++; } catch (e) { _log(`${d.nome}: recibo da DCTFWeb: ${e.message || e}`); }
+      try { const rb = await _buscarRecibo(p.comp, _so(x.cnpj), ref, { ...d, mit }); if (rb.ok && rb.salvo !== false) nr++; } catch (e) { _log(`${d.nome}: recibo da DCTFWeb: ${e.message || e}`); }
     }
   }
   return { status: 'feito', msg: `${n} empresa(s) consultada(s) na Receita${nr ? ` · ${nr} recibo(s) da DCTFWeb baixado(s)` : ''}` };
@@ -610,9 +614,19 @@ async function _buscarRecibo(comp, cnpj, ref, d) {
   await _consumo(r);
   const x = r.resultado || {};
   if (x.msgReceita) _log(`${d.nome}: recibo · Receita: "${x.msgReceita}"`);
-  if (!x.ok) return { ok: false, msg: /dispon|transmit|n[aã]o encontr/i.test(x.msg || '') ? 'a DCTFWeb do mês ainda não está transmitida (ou o recibo não foi liberado)' : (x.msg || 'falha') };
-  await f.setDoc(ref, _limpo({ dctf: { ...(d.dctf || {}), ...(lida || {}), situacao: 'transmitida', recibo: x.recibo || '', arquivo: x.arquivo || '', reciboAviso: x.aviso || '', reciboEm: new Date().toISOString() } }), { merge: true });
-  return { ok: true };
+  if (!x.ok) {
+    const semDecl = lida && lida.situacao === 'sem_declaracao';
+    return { ok: false, msg: semDecl ? 'a Receita ainda não tem DCTFWeb deste mês (envie o MIT primeiro)'
+      : /dispon|transmit|n[aã]o encontr/i.test(x.msg || '') ? 'a DCTFWeb do mês ainda não está transmitida (ou o recibo não foi liberado)' : (x.msg || 'falha') };
+  }
+  // 2.4.59: transmitida de fato → some o aviso antigo ("não transmitiu sozinha", erro de transmissão…)
+  await f.setDoc(ref, _limpo({ dctf: { ...(d.dctf || {}), ...(lida || {}), situacao: 'transmitida', recibo: x.recibo || '', arquivo: x.arquivo || '', reciboAviso: x.arquivo ? '' : (x.aviso || 'o PDF não foi salvo'), reciboEm: new Date().toISOString() }, ultimoErro: '' }), { merge: true });
+  // 2.4.59: o recibo existe na Receita, mas o PDF não foi para a pasta — antes contava como "baixado"
+  if (!x.arquivo) {
+    _log(`${d.nome}: recibo ${x.recibo || ''} encontrado, mas NÃO salvo: ${x.aviso || 'sem pasta'}`);
+    return { ok: true, salvo: false, msg: `recibo ${x.recibo || ''} encontrado na Receita, mas não foi salvo: ${x.aviso || 'pasta do cliente não encontrada'}` };
+  }
+  return { ok: true, salvo: true };
 }
 
 async function _recibo(p) {
@@ -621,10 +635,10 @@ async function _recibo(p) {
     const { ref, d } = await _doc(p.comp, cnpj);
     if (!d) { erros.push(`${cnpj}: não importada`); continue; }
     const x = await _buscarRecibo(p.comp, cnpj, ref, d);
-    if (x.ok) ok.push(d.nome); else erros.push(`${d.nome}: ${x.msg}`);
+    if (x.ok && x.salvo !== false) ok.push(d.nome); else erros.push(`${d.nome}: ${x.msg}`);
   }
   // DCTFWeb ainda em andamento não é erro: só não há recibo para baixar ainda
-  if (!ok.length && erros.length) return { status: erros.every((x) => /em andamento|ainda não liberou|ainda não devolveu/.test(x)) ? 'aviso' : 'erro', msg: erros.join(' · ').slice(0, 400) };
+  if (!ok.length && erros.length) return { status: erros.every((x) => /em andamento|ainda não liberou|ainda não devolveu|ainda não tem DCTFWeb/.test(x)) ? 'aviso' : 'erro', msg: erros.join(' · ').slice(0, 400) };
   return { status: 'feito', msg: `${ok.length} recibo(s) baixado(s)${erros.length ? ` · ${erros.length} sem recibo: ${erros.join(' · ')}` : ''}`.slice(0, 400) };
 }
 

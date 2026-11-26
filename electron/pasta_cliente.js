@@ -37,6 +37,24 @@ function _lista() {
   _cache = { em: Date.now(), lista };
   return lista;
 }
+// 2.4.59: nome da Receita × nome da pasta com conectivos diferentes ("TALITA YURI COMERCIO…" × "Talita e Yuri Comercio…")
+const LIGA = new Set(['e', 'de', 'da', 'do', 'das', 'dos', 'para', 'com', 'em', 'a', 'o']);
+const _tok = (k) => k.split(' ').filter((w) => w && !LIGA.has(w));
+const _solta = (k) => _tok(k).sort().join(' ');
+function _parecido(k, lista) {
+  const alvo = new Set(_tok(k));
+  if (alvo.size < 2) return null;
+  const nomes = lista.filter((d) => !/\bfilial\b/.test(d.k));
+  const iguais = nomes.filter((d) => _solta(d.k) === _solta(k));
+  if (iguais.length) return iguais.length === 1 ? iguais[0] : null;
+  const nota = nomes.map((d) => {
+    const t = new Set(_tok(d.k));
+    let c = 0; t.forEach((w) => { if (alvo.has(w)) c++; });
+    return { d, j: c / (alvo.size + t.size - c) };
+  }).sort((a, b) => b.j - a.j);
+  if (nota[0] && nota[0].j >= 0.85 && (!nota[1] || nota[0].j - nota[1].j >= 0.1)) return nota[0].d;
+  return null;
+}
 function limparCache() { _cache = { em: 0, lista: [] }; }
 function disponivel() { return RAIZES.some((r) => { try { return fs.statSync(r).isDirectory(); } catch (_) { return false; } }); }
 
@@ -53,7 +71,7 @@ function achar({ nome, cnpj } = {}) {
   if (/\bfilial\b/.test(k)) return exatos.length === 1 ? exatos[0] : null;
   // sem CNPJ não dá para saber se é matriz ou filial: se a empresa tem pasta de filial, não arrisca
   if (doc.length !== 14 && lista.some((d) => d.k.startsWith(`${k} `) && /\bfilial\b/.test(d.k))) return null;
-  if (ordem <= 1) return exatos.length === 1 ? exatos[0] : null;
+  if (ordem <= 1) return exatos.length === 1 ? exatos[0] : (exatos.length ? null : _parecido(k, lista));
   // filial: só pastas "<nome> ... filial N ..."
   const filiais = lista.filter((d) => d.k.startsWith(`${k} `) && /\bfilial\b/.test(d.k));
   if (filiais.length === 1) return filiais[0];

@@ -67,7 +67,8 @@
     const dctf = transm ? ['ok', `DCTFWeb<br>transmitida${dc.retificadora ? ' <span class="mt-rt">retif.</span>' : ''}`]
       : (pf && pf.tipo === 'transmitir') || a === 'transmitir' ? ['ru', 'DCTFWeb<br>transmitindo…'] : a === 'dctf' ? ['ru', 'DCTFWeb<br>esperando a Receita']
       : dc.situacao === 'em_andamento' ? ['pe', 'DCTFWeb<br>falta transmitir'] : ['no', 'DCTFWeb'];
-    const rec = dc.arquivo ? ['ok', 'Recibo<br>na pasta'] : (pf && pf.tipo === 'recibo') || a === 'recibo' ? ['ru', 'Recibo<br>baixando…'] : transm ? ['pe', 'Recibo<br>falta baixar'] : ['no', 'Recibo'];
+    const rec = dc.arquivo ? ['ok', 'Recibo<br>na pasta'] : (pf && pf.tipo === 'recibo') || a === 'recibo' ? ['ru', 'Recibo<br>baixando…']
+      : dc.recibo && dc.reciboAviso ? ['pe', 'Recibo<br>não salvo'] : transm ? ['pe', 'Recibo<br>falta baixar'] : ['no', 'Recibo'];
     return [mit, dctf, rec, guia];
   }
   const ICO = { ok: '✓', ru: '↻', pe: '!', no: '', na: '–', cr: '≡' };
@@ -93,6 +94,8 @@
     else if (d.auto && d.auto.etapa === 'erro') h += `<div class="mt-err">O automático parou: ${e(d.auto.msg || '')}. Continue pelos botões.</div>`;
     if (pf) h += `<div class="sm">${e(PED[pf.tipo] || pf.tipo)} ${pf.status === 'rodando' ? 'em andamento…' : 'na fila…'}</div>`;
     if (d.ultimoErro) h += `<div class="mt-err">${e(d.ultimoErro)}</div>`;
+    const dcx = d.dctf || {};
+    if (dcx.recibo && !dcx.arquivo && dcx.reciboAviso && !pf) h += `<div class="mt-warn">Recibo nº ${e(dcx.recibo)} existe na Receita, mas o PDF não foi salvo: ${e(dcx.reciboAviso)}.</div>`;
     if (d.mudouDepoisDoEnvio) h += `<div class="mt-warn">A EFD importada agora tem valores diferentes do MIT enviado: confira se é preciso retificar o MIT no portal.</div>`;
     if (d.sit === 'a_enviar' && !pf) h += `<label class="mt-ck"><input type="checkbox" data-conf="${e(d.cnpj)}" ${M.conf.has(d.cnpj) ? 'checked' : ''}> confere com a EFD</label>`;
     // 2.4.57: sem débito entra no mesmo lote do "Enviar MIT selecionados" (vai sem movimento; se a DCTFWeb já tiver
