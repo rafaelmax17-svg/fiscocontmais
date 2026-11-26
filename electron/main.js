@@ -5009,7 +5009,7 @@ ipcMain.handle('fiscal:export', async (_evt, { fmt, payload }) => {
   const clienteArgs = cliente ? ['--cliente'] : [];
   const htmlTmp = path.join(os.tmpdir(), `fc_exp_${Date.now()}.html`);
   try {
-    if (kind === 'dashboard') await runFiscal(['sped', spedPath, '--dashboard-html', htmlTmp], htmlTmp);
+    if (kind === 'dashboard') await runFiscal(['sped', spedPath, '--dashboard-html', htmlTmp, '--cliente'], htmlTmp); // modelo do cliente
     else if (kind === 'documentos') await runFiscal(['sped', spedPath, '--documentos-html', htmlTmp], htmlTmp);
     else if (kind === 'confSaidas') await runFiscal(['conferencia-saidas', spedPath, '--xmls', xmlsPath, '--html', htmlTmp, ...clienteArgs], htmlTmp);
     else if (kind === 'desoneracao') await runFiscal(['desoneracao', '--xmls', xmlsPath, '--html', htmlTmp], htmlTmp);
@@ -5036,7 +5036,7 @@ ipcMain.handle('fiscal:export', async (_evt, { fmt, payload }) => {
       const worker = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true } });
       try {
         await worker.loadFile(htmlTmp);
-        await new Promise((r) => setTimeout(r, 1600)); // deixa as animações concluírem
+        await new Promise((r) => setTimeout(r, kind === 'dashboard' ? 2200 : 1600)); // deixa as animações concluírem
         const pdf = await worker.webContents.printToPDF({ printBackground: true, pageSize: 'A4', landscape: true, margins: { marginType: 'none' } });
         fs.writeFileSync(save.filePath, pdf);
       } finally { worker.destroy(); }

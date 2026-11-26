@@ -442,7 +442,7 @@ def parse_sped(path):
 
     # ---- rankings ----
     forn = sorted(
-        ({'nome': participantes.get(cp, {}).get('nome', cp), 'valor': round(v, 2)}
+        ({'nome': participantes.get(cp, {}).get('nome', cp), 'cnpj': participantes.get(cp, {}).get('cnpj', ''), 'valor': round(v, 2)}
          for cp, v in forn_val.items()), key=lambda r: -r['valor'])[:8]
     prod = sorted(
         ({'nome': produtos.get(ci, ci), 'valor': round(v, 2)}
@@ -3574,7 +3574,11 @@ def main(argv):
             _out(opt('--json', 'sped.json'), json.dumps(data, ensure_ascii=False))
             print('JSON gerado')
         if '--dashboard-html' in args:
-            _out(opt('--dashboard-html', 'dashboard.html'), gerar_dashboard_sped_html(sped))
+            if '--cliente' in args:   # modelo do cliente (exportação HTML/PDF); a tela do sistema segue com o dashboard atual
+                import dashboard_cliente
+                _out(opt('--dashboard-html', 'dashboard.html'), dashboard_cliente.gerar(sped, _logo_uri()))
+            else:
+                _out(opt('--dashboard-html', 'dashboard.html'), gerar_dashboard_sped_html(sped))
             print('Dashboard HTML gerado')
         if '--documentos-html' in args:
             _out(opt('--documentos-html', 'documentos.html'), gerar_documentos_html(sped))
