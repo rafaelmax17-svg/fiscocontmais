@@ -14,8 +14,9 @@
     Irpj: [['236201', 'IRPJ · estimativa mensal (Lucro Real anual)'], ['022001', 'IRPJ · Lucro Real trimestral'], ['208901', 'IRPJ · Lucro Presumido']],
     Csll: [['248401', 'CSLL · estimativa mensal (Lucro Real anual)'], ['601201', 'CSLL · Lucro Real trimestral'], ['237201', 'CSLL · Lucro Presumido']],
   };
-  const SIT = { a_enviar: ['pe', 'A enviar'], saldo_credor: ['cr', 'Saldo credor · MIT não necessário'], em_curso: ['pe', 'Encerramento em curso'],
-    enviado: ['ok', 'MIT enviado'], sem_movimento: ['en', 'Sem movimento enviado'] };
+  const SIT = { a_enviar: ['pe', 'A enviar'], saldo_credor: ['cr', 'Sem débito · vai sem movimento'], em_curso: ['pe', 'Encerramento em curso'],
+    enviado: ['ok', 'MIT enviado'], sem_movimento: ['en', 'Sem movimento enviado'], dispensado: ['en', 'MIT não precisa'] };
+  const SELECIONAVEL = (d) => ['a_enviar', 'saldo_credor'].includes(d.sit) && !fila(d.cnpj);
   const PED = { consultar: 'Consulta na Receita', enviar: 'Envio do MIT', guia: 'Guia do MIT', transmitir: 'Transmissão da DCTFWeb', recibo: 'Recibo da DCTFWeb' };
   const M = { comp: '', d: null, sel: new Set(), conf: new Set(), irAberto: '', semMov: '', trans: '', filtro: 'todas', animou: '' };
   let desliga = null, recarga = null;
@@ -55,10 +56,10 @@
   const hm = (s) => { const x = s ? new Date(s) : null; return x && !isNaN(x) ? x.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '') : ''; };
   function etapas(d) {
     const a = d.auto && d.auto.pendente ? d.auto.etapa : '', pf = fila(d.cnpj), dc = d.dctf || {};
-    const mitFeito = ['enviado', 'sem_movimento'].includes(d.sit), semGuia = ['sem_movimento', 'saldo_credor'].includes(d.sit);
+    const mitFeito = ['enviado', 'sem_movimento', 'dispensado'].includes(d.sit), semGuia = ['sem_movimento', 'saldo_credor', 'dispensado'].includes(d.sit);
     const temGuia = (d.guias || []).length > 0, transm = dc.situacao === 'transmitida' && !!(dc.recibo || dc.arquivo);
-    const mit = mitFeito ? ['ok', d.sit === 'sem_movimento' ? 'MIT sem<br>movimento' : `MIT<br>${e(hm(d.mit && d.mit.enviadoEm))}`]
-      : (pf && pf.tipo === 'enviar') || d.sit === 'em_curso' ? ['ru', 'MIT<br>enviando…'] : d.sit === 'saldo_credor' ? ['cr', 'Saldo<br>credor'] : ['pe', 'MIT<br>pendente'];
+    const mit = d.sit === 'dispensado' ? ['na', 'MIT não<br>precisa'] : mitFeito ? ['ok', d.sit === 'sem_movimento' ? 'MIT sem<br>movimento' : `MIT<br>${e(hm(d.mit && d.mit.enviadoEm))}`]
+      : (pf && pf.tipo === 'enviar') || d.sit === 'em_curso' ? ['ru', 'MIT<br>enviando…'] : d.sit === 'saldo_credor' ? ['cr', 'Sem<br>débito'] : ['pe', 'MIT<br>pendente'];
     // 2.4.55: ordem MIT → DCTFWeb → recibo → guia (a guia só depois da DCTFWeb entregue)
     const espera = ['dctf', 'transmitir', 'recibo'].includes(a) || (d.auto && d.auto.etapa === 'confirmar' && !temGuia);
     const guia = temGuia ? ['ok', `Guia<br>${e(hm((d.guias || []).slice(-1)[0].em))}`] : semGuia ? ['na', 'Guia<br>não tem']
@@ -94,11 +95,10 @@
     if (d.ultimoErro) h += `<div class="mt-err">${e(d.ultimoErro)}</div>`;
     if (d.mudouDepoisDoEnvio) h += `<div class="mt-warn">A EFD importada agora tem valores diferentes do MIT enviado: confira se é preciso retificar o MIT no portal.</div>`;
     if (d.sit === 'a_enviar' && !pf) h += `<label class="mt-ck"><input type="checkbox" data-conf="${e(d.cnpj)}" ${M.conf.has(d.cnpj) ? 'checked' : ''}> confere com a EFD</label>`;
-    if (d.sit === 'saldo_credor' && !pf) {
-      h += `<label class="mt-ck"><input type="checkbox" data-sm="${e(d.cnpj)}" ${M.semMov === d.cnpj ? 'checked' : ''}> enviar MIT sem movimento mesmo assim</label>`;
-      if (M.semMov === d.cnpj) h += `<div class="mt-warn">"Sem movimento" é para o mês sem fato gerador (IN RFB 2.237/2024, art. 6º, § 2º): com saldo credor a empresa teve movimento. Antes de enviar, o sistema confere se a DCTFWeb do mês tem débito de eSocial ou da EFD-Reinf — se tiver, não envia. Com o sem movimento, a DCTFWeb sem movimento é transmitida logo em seguida.</div>
-        <button class="act mt-b" data-env-sm="${e(d.cnpj)}">Enviar MIT sem movimento</button>`;
-    }
+    // 2.4.57: sem débito entra no mesmo lote do "Enviar MIT selecionados" (vai sem movimento; se a DCTFWeb já tiver
+    // débitos da folha/REINF, o sistema registra "MIT não precisa" e não envia nada)
+    if (d.sit === 'saldo_credor' && !pf) h += `<div class="sm">Sem débito de PIS/COFINS: marque e use "Enviar MIT selecionados".</div>`;
+    if (d.sit === 'dispensado' && d.mitDispensado) h += `<div class="sm">${e(d.mitDispensado.motivo || 'Sem débito e a DCTFWeb já tem débitos da folha/REINF: o MIT não precisa ser enviado.')}</div>`;
     if (['enviado', 'sem_movimento', 'em_curso'].includes(d.sit) && d.mit) {
       h += `<div class="sm">${d.mit.id ? `apuração nº ${e(d.mit.id)} · ` : ''}${e(dataBr(d.mit.enviadoEm) || ymdBr(d.mit.data))}${d.mit.enviadoPor ? ` · ${e(d.mit.enviadoPor)}` : ''}</div>`;
       (d.mit.avisos || []).slice(0, 2).forEach((a) => {
@@ -107,7 +107,7 @@
         h += `<div class="sm">${e(a)}</div>`;
       });
     }
-    if (['enviado', 'saldo_credor', 'sem_movimento'].includes(d.sit) && d.dctf) {
+    if (['enviado', 'saldo_credor', 'sem_movimento', 'dispensado'].includes(d.sit) && d.dctf) {
       if (d.dctf.situacao === 'sem_declaracao') h += `<div class="sm">Sem DCTFWeb no mês</div>`;
       else if (d.dctf.retificadora && d.dctf.situacao === 'em_andamento') h += `<div class="sm"><span class="mt-retif" title="A original já tinha sido transmitida (normalmente pela folha). Os débitos dela continuam os mesmos; esta só acrescenta os do MIT.">retificadora</span></div>`;
     }
@@ -117,14 +117,14 @@
       h += '</div>';
     }
     // sem movimento: se a Receita não transmitiu sozinha, a DCTFWeb fica em andamento — transmite por aqui
-    if (d.sit === 'sem_movimento' && !pf && d.dctf && d.dctf.situacao === 'em_andamento') h += `<div class="mt-acs"><button class="act mt-b" data-tr="${e(d.cnpj)}">Transmitir DCTFWeb</button></div>`;
+    if (['sem_movimento', 'dispensado'].includes(d.sit) && !pf && d.dctf && d.dctf.situacao === 'em_andamento') h += `<div class="mt-acs"><button class="act mt-b" data-tr="${e(d.cnpj)}">Transmitir DCTFWeb</button></div>`;
     const lk = [];
     const ug = (d.guias || []).slice(-1)[0];
     if (ug && ug.arquivo) lk.push(`<a href="#" class="mt-ab" data-arq="${e(ug.arquivo)}">guia PDF</a>`);
     if (d.dctf && d.dctf.arquivo) lk.push(`<a href="#" class="mt-ab" data-arq="${e(d.dctf.arquivo)}">recibo DCTFWeb</a>${d.dctf.recibo ? ` <span class="sm">nº ${e(d.dctf.recibo)}</span>` : ''}`);
     if (lk.length) h += `<div class="mt-lks">${lk.join('')}</div>`;
     if (ug && ug.aviso) h += `<div class="sm">${e(ug.aviso)}</div>`;
-    if (!(d.dctf && d.dctf.arquivo) && ['enviado', 'saldo_credor', 'sem_movimento'].includes(d.sit) && !pf && !(d.dctf && d.dctf.situacao === 'em_andamento')) h += `<div class="mt-acs"><button class="act mt-b" data-rec="${e(d.cnpj)}" title="Busca na Receita o recibo da DCTFWeb do mês (transmitida pelo sistema ou por fora) e salva na pasta do cliente">Baixar recibo da DCTFWeb</button></div>`;
+    if (!(d.dctf && d.dctf.arquivo) && ['enviado', 'saldo_credor', 'sem_movimento', 'dispensado'].includes(d.sit) && !pf && !(d.dctf && d.dctf.situacao === 'em_andamento')) h += `<div class="mt-acs"><button class="act mt-b" data-rec="${e(d.cnpj)}" title="Busca na Receita o recibo da DCTFWeb do mês (transmitida pelo sistema ou por fora) e salva na pasta do cliente">Baixar recibo da DCTFWeb</button></div>`;
     if (M.trans === d.cnpj) {
       h += `<div class="mt-trbox">${d.dctf && d.dctf.retificadora ? '<div class="mt-warn">Esta DCTFWeb é <b>retificadora</b>: a original já foi transmitida (normalmente pela folha). Os débitos que já estavam na original (folha e REINF) continuam os mesmos; a retificadora só acrescenta os do MIT. Dentro do prazo, retificar não gera multa.</div>' : ''}<b>Antes de transmitir, confirme:</b>
         <label class="mt-ck"><input type="checkbox" id="mtCf1"> a folha (eSocial) do mês está fechada e conferida</label>
@@ -140,11 +140,13 @@
     const docs = R.docs || [];
     const comDeb = docs.filter((d) => d.sit === 'a_enviar'), cred = docs.filter((d) => d.sit === 'saldo_credor');
     const totalDeclarar = comDeb.reduce((s, d) => s + totalLinha(d), 0);
-    const semRecibo = docs.filter((d) => ['enviado', 'saldo_credor', 'sem_movimento'].includes(d.sit) && !(d.dctf && d.dctf.arquivo) && !fila(d.cnpj));
+    const semRecibo = docs.filter((d) => ['enviado', 'saldo_credor', 'sem_movimento', 'dispensado'].includes(d.sit) && !(d.dctf && d.dctf.arquivo) && !fila(d.cnpj));
     const comps = new Set([M.comp, compAnterior()]); for (let i = 1; i <= 6; i++) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); comps.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
     const rs = R.resp;
     const robo = R.robo || {};
-    const podeEnviar = [...M.sel].filter((c) => M.conf.has(c)).length;
+    const sitDe = (c) => ((docs.find((d) => d && d.cnpj === c) || {}).sit);
+    const podeEnviar = [...M.sel].filter((c) => (sitDe(c) === 'a_enviar' && M.conf.has(c)) || sitDe(c) === 'saldo_credor').length;
+    const selDeb = [...M.sel].filter((c) => sitDe(c) === 'a_enviar');
     raiz().innerHTML = `
       <div class="fiscal-bar adm-bar">
         <button class="act inv-export adm-btn" id="mtEfd">EFD-Contribuições (.txt)</button>
@@ -152,7 +154,7 @@
         <span class="fiscal-spacer"></span>
         <button class="act inv-export" id="mtRecs" ${semRecibo.length ? '' : 'disabled'} title="Recibo da DCTFWeb de todas as empresas da competência que ainda não têm o recibo na pasta">Baixar recibos da DCTFWeb${semRecibo.length ? ` (${semRecibo.length})` : ''}</button>
         <button class="act inv-export" id="mtCons" ${docs.length ? '' : 'disabled'}>Consultar situação na Receita</button>
-        <button class="act adm-go" id="mtEnv" ${podeEnviar ? '' : 'disabled'} title="Envia as empresas marcadas com 'confere com a EFD'">Enviar MIT selecionados${podeEnviar ? ` (${podeEnviar})` : ''}</button>
+        <button class="act adm-go" id="mtEnv" ${podeEnviar ? '' : 'disabled'} title="Envia as empresas marcadas: com débito (precisam do 'confere com a EFD') e sem débito (vão sem movimento)">Enviar MIT selecionados${podeEnviar ? ` (${podeEnviar})` : ''}</button>
       </div>
       <div class="mt-w">
         <h1 class="mt-h1">MIT · PIS e COFINS</h1>
@@ -162,10 +164,11 @@
           <span><b>Envio automático ${R.auto && R.auto.ligado ? 'ligado' : 'desligado'}:</b> ao enviar o MIT com movimento, o robô transmite a DCTFWeb (retificadora, ou original de empresa marcada "sem folha e sem REINF"), baixa o recibo e só então gera a guia do MIT, salvando os dois na pasta da competência (${compBr(M.comp)}).${R.auto && R.auto.por ? ` <span class="sm">· ${R.auto.ligado ? 'ligado' : 'desligado'} por ${e(R.auto.por)}</span>` : ''}</span></label>` : ''}
         ${painel(docs, totalDeclarar)}
         ${docs.length ? chips(docs) : ''}
-        ${docs.length ? `<table class="mt-t"><thead><tr><th style="width:26px"><input type="checkbox" id="mtTodos" title="Marcar todas a enviar"></th><th>Empresa</th><th>Tributação</th><th>Débitos (código · valor)</th><th class="n">Total</th><th style="width:34%">Situação</th></tr></thead><tbody>
+        ${selDeb.length ? `<label class="mt-ck mt-conflote"><input type="checkbox" id="mtConfTodos" ${selDeb.every((c) => M.conf.has(c)) ? 'checked' : ''}> <b>Confere com a EFD</b> — marcar nas ${selDeb.length} empresa(s) com débito selecionada(s)</label>` : ''}
+        ${docs.length ? `<table class="mt-t"><thead><tr><th style="width:26px"><input type="checkbox" id="mtTodos" title="Marcar todas a enviar (com débito e sem débito)"></th><th>Empresa</th><th>Tributação</th><th>Débitos (código · valor)</th><th class="n">Total</th><th style="width:34%">Situação</th></tr></thead><tbody>
           ${docs.filter((d) => M.filtro === 'todas' || grupoDe(d) === M.filtro).map((d) => {
             const trava = !['a_enviar', 'saldo_credor'].includes(d.sit);
-            return `<tr><td>${d.sit === 'a_enviar' && !fila(d.cnpj) ? `<input type="checkbox" data-sel="${e(d.cnpj)}" ${M.sel.has(d.cnpj) ? 'checked' : ''}>` : ''}</td>
+            return `<tr><td>${SELECIONAVEL(d) ? `<input type="checkbox" data-sel="${e(d.cnpj)}" ${M.sel.has(d.cnpj) ? 'checked' : ''}>` : ''}</td>
               <td><b>${e(d.nome)}</b><div class="sm">CNPJ ${e(fmtCnpj(d.cnpj))} · ${e(compBr(d.comp))}${d.retificadora ? ' · <b>EFD retificadora</b>' : ''}</div><div class="sm">${e(d.arquivo || '')}</div></td>
               <td><select class="mt-mini" data-trib="${e(d.cnpj)}" ${trava ? 'disabled' : ''}>${Object.entries(TRIB).map(([k, v]) => `<option value="${k}" ${+k === +d.tributacao ? 'selected' : ''}>${v}</option>`).join('')}</select><div class="sm">${e(REG[d.regime] || '')}</div>${+d.tributacao === 1 && !trava ? `<label class="mt-ck" title="Lucro Real Anual: como o IRPJ/CSLL do mês foi apurado (campo obrigatório do MIT)"><input type="checkbox" data-bal="${e(d.cnpj)}" ${d.balanco ? 'checked' : ''} ${trava ? 'disabled' : ''}> IRPJ/CSLL por balancete de suspensão/redução</label><div class="sm">${d.balanco ? '' : 'desmarcado = estimativa sobre a receita bruta'}</div>` : ''}${window._ehAdminSessao && window._ehAdminSessao() ? `<label class="mt-ck mt-sf" title="Só para empresa que NUNCA tem folha (eSocial) nem EFD-Reinf. Marcada, o envio automático transmite a DCTFWeb original sozinho. Só o Admin vê esta opção."><input type="checkbox" data-sf="${e(d.cnpj)}" ${d.semFolha ? 'checked' : ''}> Admin: sem folha e sem REINF</label>` : d.semFolha ? '<div class="sm mt-sfb" title="Marcada pelo Admin: a DCTFWeb original desta empresa é transmitida sozinha pelo envio automático">sem folha e sem REINF</div>' : ''}</td>
               <td>${linhaDebitos(d)}</td>
@@ -175,7 +178,7 @@
           : `<div class="mt-vz">Nenhuma EFD-Contribuições importada em ${compBr(M.comp)}. Clique em <b>EFD-Contribuições (.txt)</b> e escolha os arquivos — pode ser de várias empresas de uma vez; a competência vem do próprio arquivo.</div>`}
         <div class="mt-resp"><b>Responsável pela apuração</b> (vai em todos os MIT): ${rs && rs.cpf ? `${e(rs.nome || '')} · CPF ${e(rs.cpf)}${rs.crc ? ` · CRC ${e(rs.crc)}` : ''}${rs.email ? ` · ${e(rs.email)}` : ''}${rs.tel ? ` · ${e(rs.tel)}` : ''} · enviado com a Liddera como procuradora` : '<b style="color:var(--neg)">não configurado</b> (Admin › Integra Contador)'}</div>
         ${(R.pedidos || []).length ? `<div class="mt-ped"><b>Últimos pedidos${window._ehAdminSessao && window._ehAdminSessao() ? ' <button class="mt-lk" id="mtLimpar" style="float:right">Limpar histórico</button>' : ''}</b>${robo.ativo && robo.nome ? `<div class="sm" style="margin:-2px 0 6px">Quem atende a fila: <b>${e(robo.nome.split(' · ')[0])}</b>${robo.visto ? ` · último sinal ${e(new Date(robo.visto).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))}` : ''}${robo.online ? '' : ' · <b style="color:var(--neg)">sem sinal</b>'}</div>` : ''}${R.pedidos.slice(0, 6).map((p) => `<div><span class="mt-tg ${p.status === 'feito' ? 'ok' : p.status === 'erro' ? 'er' : p.status === 'aviso' ? 'nm' : 'pe'}">${e({ novo: 'Na fila', rodando: 'Em andamento', feito: 'Feito', erro: 'Erro', aviso: 'Aviso' }[p.status] || p.status)}</span> ${e(PED[p.tipo] || p.tipo)} · ${e(p.por)} · ${e(dataBr(p.emMs))}${p.msg ? ` — ${e(p.msg)}` : ''}</div>`).join('')}</div>` : ''}
-        <div class="mt-lei"><b>Como funciona:</b> o valor de cada código é o "a recolher" da EFD (M205/M605), já depois dos créditos, das retenções e das deduções. Com saldo credor não há débito a declarar e o MIT não é necessário. O MIT vence no último dia útil do mês seguinte (o mesmo prazo da DCTFWeb); a EFD-Contribuições precisa estar gerada e validada antes, mesmo que ainda não transmitida. Depois do MIT, a guia só do MIT e a transmissão da DCTFWeb saem daqui (sozinhas, com o envio automático ligado) e guia e recibo vão para a pasta da competência — a assinatura da DCTFWeb é feita pelo próprio sistema com o certificado do escritório, sem o assinador do portal.</div>
+        <div class="mt-lei"><b>Como funciona:</b> o valor de cada código é o "a recolher" da EFD (M205/M605), já depois dos créditos, das retenções e das deduções. Empresa sem débito vai no mesmo lote como MIT sem movimento; se a DCTFWeb do mês já tiver débitos da folha (eSocial) ou da EFD-Reinf, o MIT não é obrigatório (Manual do MIT, item 8.2) e fica registrado "MIT não precisa". O MIT vence no último dia útil do mês seguinte (o mesmo prazo da DCTFWeb); a EFD-Contribuições precisa estar gerada e validada antes, mesmo que ainda não transmitida. Depois do MIT, a guia só do MIT e a transmissão da DCTFWeb saem daqui (sozinhas, com o envio automático ligado) e guia e recibo vão para a pasta da competência — a assinatura da DCTFWeb é feita pelo próprio sistema com o certificado do escritório, sem o assinador do portal.</div>
       </div>`;
     ligar();
     animar();
@@ -189,7 +192,7 @@
   }
   function painel(docs, totalDeclarar) {
     const n = docs.length;
-    const cm = docs.filter((d) => d.sit === 'enviado').length, sm = docs.filter((d) => d.sit === 'sem_movimento').length;
+    const cm = docs.filter((d) => d.sit === 'enviado').length, sm = docs.filter((d) => ['sem_movimento', 'dispensado'].includes(d.sit)).length;
     const pe = docs.filter((d) => ['a_enviar', 'em_curso'].includes(d.sit)).length, cr = docs.filter((d) => d.sit === 'saldo_credor').length;
     const tr = docs.filter((d) => d.dctf && d.dctf.situacao === 'transmitida' && (d.dctf.recibo || d.dctf.arquivo));
     const rt = tr.filter((d) => d.dctf.retificadora).length;
@@ -202,7 +205,7 @@
     const pct = totalDeclarar + decl ? Math.round((decl / (totalDeclarar + decl)) * 100) : 0;
     return `<div class="mt-dash">
       <div class="mt-dc"><span class="mt-gl" style="background:#6366f1"></span><small>MIT</small><div class="mt-rw">${anel([[cm, '#6366f1'], [sm, '#a78bfa']], n, `<tspan data-cnt="${cm + sm}">0</tspan>/${n}`)}
-        <div class="mt-lg"><div><i style="background:#6366f1"></i>Com movimento enviado <b>${cm}</b></div><div><i style="background:#a78bfa"></i>Sem movimento enviado <b>${sm}</b></div><div><i style="background:#f59e0b"></i>Pendentes <b>${pe}</b></div>${cr ? `<div><i style="background:#38bdf8"></i>Saldo credor <b>${cr}</b></div>` : ''}</div></div></div>
+        <div class="mt-lg"><div><i style="background:#6366f1"></i>Com movimento enviado <b>${cm}</b></div><div><i style="background:#a78bfa"></i>Sem débito resolvido <b>${sm}</b></div><div><i style="background:#f59e0b"></i>Pendentes <b>${pe}</b></div>${cr ? `<div><i style="background:#38bdf8"></i>Sem débito a enviar <b>${cr}</b></div>` : ''}</div></div></div>
       <div class="mt-dc"><span class="mt-gl" style="background:#16a34a"></span><small>DCTFWeb</small><div class="mt-rw">${anel([[tr.length, '#16a34a'], [and, '#f59e0b']], n, `<tspan data-cnt="${tr.length}">0</tspan>/${n}`)}
         <div class="mt-lg"><div><i style="background:#16a34a"></i>Transmitidas <b>${tr.length}</b>${rt ? ` <span class="sm">(${rt} retif.)</span>` : ''}</div><div><i style="background:#f59e0b"></i>Falta transmitir <b>${and}</b></div><div><i style="background:#cbd5e1"></i>Ainda sem DCTFWeb <b>${Math.max(0, sem)}</b></div></div></div></div>
       <div class="mt-dc"><span class="mt-gl" style="background:#0ea5e9"></span><small>Guias do MIT</small><div class="mt-kv"><b data-cnt="${comG}">0</b> <span>de ${precisa.length}</span></div>
@@ -214,7 +217,7 @@
   function chips(docs) {
     const c = { todas: docs.length, mit: 0, guia: 0, dctf: 0, ok: 0, cred: 0 };
     docs.forEach((d) => { const g = grupoDe(d); if (c[g] !== undefined) c[g]++; });
-    const L = [['todas', 'Todas'], ['mit', 'MIT pendente'], ['guia', 'Sem guia'], ['dctf', 'Falta transmitir DCTFWeb'], ['ok', 'Concluídas'], ['cred', 'Saldo credor']];
+    const L = [['todas', 'Todas'], ['mit', 'MIT pendente'], ['guia', 'Sem guia'], ['dctf', 'Falta transmitir DCTFWeb'], ['ok', 'Concluídas'], ['cred', 'Sem débito']];
     return `<div class="mt-chips">${L.filter(([k]) => k === 'todas' || c[k]).map(([k, t]) => `<button class="mt-chip ${M.filtro === k ? 'on' : ''}" data-fil="${k}">${t}<em>${c[k]}</em></button>`).join('')}</div>`;
   }
   function animar() {
@@ -267,29 +270,29 @@
     $('#mtComp').onchange = (ev) => { M.comp = ev.target.value; M.sel.clear(); M.conf.clear(); carregar(); };
     $('#mtCons').onclick = () => pedir({ tipo: 'consultar', cnpjs: (M.d.docs || []).map((d) => d.cnpj) }, 'Consulta pedida.');
     $('#mtRecs').onclick = () => {
-      const lista = (M.d.docs || []).filter((d) => ['enviado', 'saldo_credor', 'sem_movimento'].includes(d.sit) && !(d.dctf && d.dctf.arquivo) && !fila(d.cnpj)).map((d) => d.cnpj);
+      const lista = (M.d.docs || []).filter((d) => ['enviado', 'saldo_credor', 'sem_movimento', 'dispensado'].includes(d.sit) && !(d.dctf && d.dctf.arquivo) && !fila(d.cnpj)).map((d) => d.cnpj);
       if (lista.length) pedir({ tipo: 'recibo', cnpjs: lista }, `Recibos pedidos (${lista.length}): vão para a pasta de cada cliente.`);
     };
     q('[data-rec]').forEach((x) => { x.onclick = () => pedir({ tipo: 'recibo', cnpjs: [x.dataset.rec] }, 'Recibo pedido: vai para a pasta do cliente.'); });
     $('#mtEnv').onclick = async () => {
-      const lista = [...M.sel].filter((c) => M.conf.has(c));
-      const docs = (M.d.docs || []).filter((d) => lista.includes(d.cnpj));
-      const tot = docs.reduce((s, d) => s + totalLinha(d), 0);
-      if (!confirm(`Enviar o MIT de ${docs.length} empresa(s) para a Receita?\n\nTotal declarado: R$ ${num(tot)}\n\n${docs.map((d) => `• ${d.nome}: R$ ${num(totalLinha(d))}`).join('\n')}\n\nO MIT é encerrado na Receita (os débitos entram na DCTFWeb do mês).`)) return;
+      const todosDocs = M.d.docs || [];
+      const deb = todosDocs.filter((d) => M.sel.has(d.cnpj) && d.sit === 'a_enviar' && M.conf.has(d.cnpj));
+      const sem = todosDocs.filter((d) => M.sel.has(d.cnpj) && d.sit === 'saldo_credor');
+      const lista = [...deb, ...sem].map((d) => d.cnpj);
+      const tot = deb.reduce((s, d) => s + totalLinha(d), 0);
+      const txt = [deb.length ? `COM DÉBITO (${deb.length}) · total R$ ${num(tot)}\n${deb.map((d) => `• ${d.nome}: R$ ${num(totalLinha(d))}`).join('\n')}` : '',
+        sem.length ? `SEM DÉBITO (${sem.length}) · vão como MIT sem movimento\n${sem.map((d) => `• ${d.nome}`).join('\n')}\n(se a DCTFWeb do mês já tiver débitos da folha ou da EFD-Reinf, o MIT não é necessário e não é enviado)` : ''].filter(Boolean).join('\n\n');
+      if (!confirm(`Enviar o MIT de ${lista.length} empresa(s) para a Receita?\n\n${txt}\n\nO MIT é encerrado na Receita (os débitos entram na DCTFWeb do mês).`)) return;
       if (await pedir({ tipo: 'enviar', cnpjs: lista }, 'Envio pedido.')) { M.sel.clear(); M.conf.clear(); }
     };
     const todos = $('#mtTodos');
-    if (todos) todos.onchange = () => { (M.d.docs || []).filter((d) => d.sit === 'a_enviar' && !fila(d.cnpj)).forEach((d) => (todos.checked ? M.sel.add(d.cnpj) : M.sel.delete(d.cnpj))); desenhar(); };
+    if (todos) todos.onchange = () => { (M.d.docs || []).filter(SELECIONAVEL).forEach((d) => (todos.checked ? M.sel.add(d.cnpj) : M.sel.delete(d.cnpj))); desenhar(); };
     q('[data-sel]').forEach((x) => { x.onchange = () => { x.checked ? M.sel.add(x.dataset.sel) : M.sel.delete(x.dataset.sel); desenhar(); }; });
     q('[data-conf]').forEach((x) => { x.onchange = () => { if (x.checked) { M.conf.add(x.dataset.conf); M.sel.add(x.dataset.conf); } else M.conf.delete(x.dataset.conf); desenhar(); }; });
     q('[data-trib]').forEach((x) => { x.onchange = () => salvar(x.dataset.trib, { tributacao: +x.value }); });
     q('[data-bal]').forEach((x) => { x.onchange = () => salvar(x.dataset.bal, { balanco: x.checked }); });
-    q('[data-sm]').forEach((x) => { x.onchange = () => { M.semMov = x.checked ? x.dataset.sm : ''; desenhar(); }; });
-    q('[data-env-sm]').forEach((x) => { x.onclick = () => {
-      const d = (M.d.docs || []).find((y) => y.cnpj === x.dataset.envSm);
-      if (!confirm(`Enviar o MIT SEM MOVIMENTO de ${d.nome} (${compBr(M.comp)})?\n\nA empresa teve saldo credor, não ausência de fato gerador. A decisão fica registrada com o seu nome.`)) return;
-      pedir({ tipo: 'enviar', cnpjs: [d.cnpj], semMovimento: true }, 'Envio sem movimento pedido.').then(() => { M.semMov = ''; });
-    }; });
+    const ct = $('#mtConfTodos');
+    if (ct) ct.onchange = () => { (M.d.docs || []).filter((d) => M.sel.has(d.cnpj) && d.sit === 'a_enviar').forEach((d) => (ct.checked ? M.conf.add(d.cnpj) : M.conf.delete(d.cnpj))); desenhar(); };
     q('[data-ir]').forEach((x) => { x.onclick = () => { M.irAberto = x.dataset.ir; desenhar(); }; });
     const g = $('#mtIrG');
     if (g) {

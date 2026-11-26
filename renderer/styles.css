@@ -2346,3 +2346,5 @@ body.menu-grupos .mg-lista{display:flex;flex-direction:column;gap:2px}
 @media (max-width:1250px){.mt-dash{grid-template-columns:1fr 1fr}}
 .mt-sf{font-size:11px;color:#6d28d9}[data-theme="dark"] .mt-sf{color:#c4b5fd}
 .mt-sfb{display:inline-block;margin-top:5px;padding:1px 8px;border-radius:99px;background:#ede9fe;color:#6d28d9;font-weight:650}
+.mt-conflote{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:7px 12px;border-radius:10px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-size:12.5px}
+[data-theme="dark"] .mt-conflote{background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.35);color:#a7f3d0}

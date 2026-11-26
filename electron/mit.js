@@ -58,6 +58,7 @@ function situacaoDe(d) {
   if (!d) return '';
   if (d.mit && d.mit.situacao === 3) return d.mit.semMovimento ? 'sem_movimento' : 'enviado';
   if (d.mit && d.mit.situacao === 4) return 'em_curso';
+  if (d.mitDispensado) return 'dispensado';        // 2.4.57: sem débito e a DCTFWeb já tem débitos da folha/REINF
   return (d.total || 0) + _totalExtras(d.extras) > 0 ? 'a_enviar' : 'saldo_credor';
 }
 
@@ -179,17 +180,19 @@ async function pedir({ tipo, comp, cnpjs, semMovimento, confirmado, data } = {})
   if (!lista.length) throw new Error('Escolha a(s) empresa(s).');
   const extra = {};
   if (tipo === 'enviar') {
+    // 2.4.57: no mesmo lote vão as empresas com débito (MIT com os débitos da EFD) e as sem débito (MIT sem movimento)
+    const semMov = [];
     for (const c of lista) {
       const s = await f.getDoc(f.doc(db, COL, `${comp}_${c}`)); const d = s.exists() ? s.data() : null;
       if (!d) throw new Error('Empresa não importada.');
       const sit = situacaoDe(d);
       if (['enviado', 'sem_movimento', 'em_curso'].includes(sit)) throw new Error(`${d.nome}: o MIT já foi enviado.`);
-      if (semMovimento ? sit !== 'saldo_credor' : sit !== 'a_enviar') throw new Error(`${d.nome}: ${semMovimento ? 'o sem movimento só vale para empresa sem débito' : 'sem débito a declarar (saldo credor)'}.`);
+      if (sit === 'saldo_credor' || sit === 'dispensado') semMov.push(c);
+      else if (sit !== 'a_enviar') throw new Error(`${d.nome}: situação ${sit}.`);
     }
-    if (semMovimento) { if (lista.length !== 1) throw new Error('O sem movimento é enviado uma empresa por vez.'); extra.semMovimento = true; }
-    else {
-      try { const a = await f.getDoc(f.doc(db, 'mit_config', 'automatico')); if (a.exists() && a.data().ligado) extra.auto = true; } catch (_) {}
-    }
+    if (semMov.length) extra.semMov = semMov;
+    if (semMovimento && lista.length === 1 && semMov.length === 1) extra.semMovimento = true;
+    try { const a = await f.getDoc(f.doc(db, 'mit_config', 'automatico')); if (a.exists() && a.data().ligado) extra.auto = true; } catch (_) {}
   }
   if (tipo === 'transmitir') {
     if (lista.length !== 1) throw new Error('Escolha uma empresa para transmitir.');
@@ -471,12 +474,20 @@ async function _enviar(p) {
   for (const cnpj of p.cnpjs || []) {
     const { ref, d } = await _doc(p.comp, cnpj);
     if (!d) { erros.push(`${cnpj}: não importada`); continue; }
-    const sem = !!p.semMovimento;
+    const sem = !!p.semMovimento || (p.semMov || []).includes(cnpj);
     const empresa = { cnpj, nome: d.nome, dados: { comp: d.comp, regime: d.regime, pis: d.pis || [], cofins: d.cofins || [] }, tributacao: d.tributacao, balanco: !!d.balanco, extras: d.extras || [] };
     const r = await _robo.python({ acao: 'mit_enviar', comp: p.comp, empresa, semMovimento: sem });
     if (!r.ok) throw new Error(r.erro || 'Falha no envio do MIT.');
     await _consumo(r);
     const x = r.resultado || {};
+    if (x.dispensado) {
+      // sem débito de PIS/COFINS e a DCTFWeb do mês já tem débitos da folha/REINF: o MIT sem movimento não é obrigatório
+      // (Manual do MIT, item 8.2) e não muda nada — fica registrado como "não precisa", sem erro
+      await f.setDoc(ref, _limpo({ mitDispensado: { em: new Date().toISOString(), por: p.por || '', motivo: x.msg || '' }, ultimoErro: '' }), { merge: true });
+      ok.push(`${d.nome} (MIT não precisa)`);
+      _log(`MIT ${d.nome}: não precisa — ${x.msg || ''}`);
+      continue;
+    }
     if (!x.ok && !x.jaEnviado) {
       await f.setDoc(ref, _limpo({ ultimoErro: x.msg || 'falha', ultimoErroEm: new Date().toISOString() }), { merge: true });
       erros.push(`${d.nome}: ${x.msg || 'falha'}`); continue;
@@ -485,7 +496,7 @@ async function _enviar(p) {
       protocolo: x.protocolo || '', semMovimento: sem, enviadoPor: p.por || '', enviadoEm: new Date().toISOString(), jaEnviado: !!x.jaEnviado,
       valor: _r2((d.total || 0) + _totalExtras(d.extras)) };
     const dctf = await _lerDctf(p.comp, cnpj).catch(() => null);
-    const auto = p.auto && !sem ? { pendente: true, etapa: 'dctf', tent: 0, proxMs: Date.now() + 15000, desde: new Date().toISOString(), por: p.por || '', msg: 'aguardando a DCTFWeb na Receita' } : null;
+    const auto = p.auto && !sem && situacaoDe(d) === 'a_enviar' ? { pendente: true, etapa: 'dctf', tent: 0, proxMs: Date.now() + 15000, desde: new Date().toISOString(), por: p.por || '', msg: 'aguardando a DCTFWeb na Receita' } : null;
     await f.setDoc(ref, _limpo({ mit, ...(dctf ? { dctf } : {}), ...(auto ? { auto } : {}), ultimoErro: '', mudouDepoisDoEnvio: false }), { merge: true });
     ok.push(d.nome);
     _log(`MIT ${sem ? 'sem movimento ' : ''}${d.nome}: ${x.msg || ''}`);
@@ -529,7 +540,7 @@ async function _transmitir(p) {
   if (!d) return { status: 'erro', msg: 'Empresa não importada.' };
   if (!p.confirmado || !p.confirmado.folha || !p.confirmado.reinf || !p.confirmado.mit) return { status: 'erro', msg: 'Faltou a confirmação da folha, da REINF e do MIT.' };
   const sit = situacaoDe(d);
-  if (!['enviado', 'saldo_credor', 'sem_movimento'].includes(sit)) return { status: 'erro', msg: 'Envie o MIT antes de transmitir a DCTFWeb.' };
+  if (!['enviado', 'saldo_credor', 'sem_movimento', 'dispensado'].includes(sit)) return { status: 'erro', msg: 'Envie o MIT antes de transmitir a DCTFWeb.' };
   // 2.4.41: transmitida pelo sistema nas últimas 24 h → não transmite de novo (cada nova transmissão vira outra retificadora)
   // (2.4.43: só com recibo — as "transmitidas" sem recibo de antes desta versão podem não ter sido aceitas pela Receita)
   const jaEm = d.dctf && d.dctf.transmitidaEm && d.dctf.recibo && Date.now() - Date.parse(d.dctf.transmitidaEm) < 24 * 3600 * 1000 ? d.dctf.transmitidaEm : '';

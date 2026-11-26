@@ -2289,8 +2289,9 @@ def conferencia_saidas(sped, xml_paths, tol=0.02):
         if not x['is_nota']:
             ignorados_evento += 1
             continue
-        # numa nota de SAÍDA, quem emite tem que ser a própria empresa do SPED
-        if not (empresa_cnpj and x['cnpj'] == empresa_cnpj):
+        # 2.4.57: só as SAÍDAS de fato — emitidas pela própria empresa do SPED e com tpNF = 1. Entradas (compras de
+        # fornecedores ou notas de entrada emitidas pela própria empresa) misturadas no lote são ignoradas em silêncio
+        if not (empresa_cnpj and x['cnpj'] == empresa_cnpj) or x.get('tp') == '0':
             nao_pertence.append(x)
             continue
         total_xml += x['vnf']
@@ -2364,7 +2365,7 @@ def gerar_conferencia_saidas_html(cf, vendas_cfop=None, cliente=False):
 
     # ALERTA: XMLs cujo emitente não é a empresa do SPED (entrada misturada, ou saída de outra empresa)
     alerta_np_html = ''
-    if cf.get('qtd_nao_pertence'):
+    if False and cf.get('qtd_nao_pertence'):     # 2.4.57: o aviso confundia a equipe — as entradas só ficam de fora
         grupos = cf.get('nao_pertence_grupos', [])
         itens = ''.join(
             f'<li><b>{_esc(g["nome"] or "(sem nome)")}</b> — CNPJ {_esc(_fmt_cnpj(g["cnpj"]))} · {g["qtd"]} arquivo(s)</li>'

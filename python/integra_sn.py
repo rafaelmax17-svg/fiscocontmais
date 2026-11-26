@@ -1098,7 +1098,10 @@ def mit_enviar_empresa(tok, cert, contratante, proc, emp, comp, consumo, chk_dct
         if d.get('situacao') in ('em_andamento', 'transmitida'):
             tot = sum(float(v or 0) for v in (d.get('reinf') or {}).values()) + sum(float(v or 0) for v in (d.get('outros') or {}).values())
             if tot > 0 or d.get('codigos'):
-                r['msg'] = 'A DCTFWeb deste mês já tem débitos de outra origem (eSocial / EFD-Reinf): o MIT sem movimento não foi enviado.'
+                # 2.4.57: não é erro — sem débito no MIT e com débito da folha/REINF a DCTFWeb já sai com movimento;
+                # o MIT sem movimento não é obrigatório (Manual do MIT, item 8.2)
+                r['msg'] = 'Sem débito de PIS/COFINS e a DCTFWeb do mês já tem débitos da folha (eSocial) ou da EFD-Reinf: o MIT não precisa ser enviado.'
+                r['dispensado'] = True
                 return r
         elif d.get('situacao') not in ('sem_declaracao',):
             r['msg'] = 'Não consegui confirmar a DCTFWeb do mês (necessário para o sem movimento): ' + (d.get('msg') or d.get('situacao') or '')
