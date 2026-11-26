@@ -170,6 +170,7 @@ contextBridge.exposeInMainWorld('fiscocont', {
     importar: (arquivos) => ipcRenderer.invoke('mit:importar', arquivos),
     salvarEmpresa: (o) => ipcRenderer.invoke('mit:salvarEmpresa', o),
     pedir: (o) => ipcRenderer.invoke('mit:pedir', o),
+    escolherPasta: (o) => ipcRenderer.invoke('mit:escolherPasta', o),
     auto: (ligado) => ipcRenderer.invoke('mit:auto', ligado),
     limparHistorico: (comp) => ipcRenderer.invoke('mit:limparHistorico', comp),
     abrir: (o) => ipcRenderer.invoke('mit:abrir', o),

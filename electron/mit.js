@@ -212,6 +212,33 @@ async function pedir({ tipo, comp, cnpjs, semMovimento, confirmado, data } = {})
   return { id: ref.id, roboOnline: robo.online };
 }
 
+// 2.4.60: pasta Sped - Contribuições da competência, usando a pasta da empresa escolhida pela equipe quando o nome não bate
+async function _pastaComp(cnpj, nome, a, m) {
+  try {
+    const { db, f } = _fs();
+    const s = await f.getDoc(f.doc(db, COL_E, _so(cnpj)));
+    if (s.exists() && s.data().pasta) pastaCliente.lembrar(cnpj, s.data().pasta);
+  } catch (_) {}
+  return pastaCliente.pastaContribDoMes({ nome, cnpj }, a, m, true);
+}
+
+// a equipe escolhe a pasta da empresa (o nome no drive é diferente do nome na Receita) e o recibo é pedido de novo
+async function definirPasta({ cnpj, dir, comp }) {
+  if (!podeUsar()) throw new Error('Sem acesso ao módulo MIT.');
+  const c = _so(cnpj);
+  if (c.length !== 14 || !dir) throw new Error('Escolha a pasta da empresa.');
+  const fsx = require('fs');
+  const pasta = pastaCliente.pastaDaEmpresa(dir);
+  if (!fsx.existsSync(pasta)) throw new Error('A pasta escolhida não está acessível neste computador.');
+  const { db, f } = _fs();
+  await f.setDoc(f.doc(db, COL_E, c), { pasta, pastaPor: _quem(), pastaEm: new Date().toISOString() }, { merge: true });
+  pastaCliente.lembrar(c, pasta);
+  _log(`${c}: pasta da empresa escolhida por ${_quem()}: ${pasta}`);
+  let pedido = null;
+  if (comp) { try { pedido = await pedir({ tipo: 'recibo', comp, cnpjs: [c] }); } catch (e) { pedido = { erro: String(e.message || e) }; } }
+  return { pasta, pedido };
+}
+
 // ------------------------------------------------------------------ robô (computador do Admin que fala com a Receita)
 function ligarRobo(opc) {
   desligarRobo();
@@ -524,7 +551,7 @@ async function _guia(p) {
     // 2.4.53: a guia vai para a pasta da competência (10/2026), não a do mês do vencimento
     // 2.4.57: dentro de Sped - Contribuições\AAAA\mês (junto da EFD-Contribuições), não em Relatórios
     const [a, m] = p.comp.split('-');
-    const pasta = pastaCliente.pastaContribDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
+    const pasta = (await _pastaComp(cnpj, d.nome, a, m)) || '';
     const r = await _robo.python({ acao: 'dctf_guia', comp: p.comp, empresa: { cnpj, nome: d.nome, situacao: dctf.situacao, origens: ['MIT'], data: p.data ? p.data.replace(/-/g, '') : '', pasta, rotulo: 'MIT PIS-COFINS' } });
     if (!r.ok) throw new Error(r.erro || 'Falha ao gerar a guia.');
     await _consumo(r);
@@ -559,7 +586,7 @@ async function _transmitir(p) {
     return { status: 'erro', msg: `A DCTFWeb não está em andamento (${(dctf && (dctf.msg || dctf.situacao)) || 'sem resposta'}).` };
   }
   const [a, m] = p.comp.split('-');
-  const pasta = pastaCliente.pastaContribDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
+  const pasta = (await _pastaComp(cnpj, d.nome, a, m)) || '';
   const envia = async (lida) => {
     const r = await _robo.python({ acao: 'dctf_transmitir', comp: p.comp, empresa: { cnpj, nome: d.nome, esperado: lida.reinf || {}, esperadoTudo: lida.esperadoTudo || {}, esperadoHash: lida.xmlHash || '', pasta, semMovimento: sit === 'sem_movimento' } });
     if (!r.ok) throw new Error(r.erro || 'Falha na transmissão.');
@@ -608,7 +635,7 @@ async function _buscarRecibo(comp, cnpj, ref, d) {
     return { ok: false, msg: peloSistema ? 'a Receita mostra a DCTFWeb ainda em andamento — a transmissão anterior não foi concluída; transmita de novo' : 'a DCTFWeb do mês está em andamento — falta transmitir' };
   }
   const [a, m] = comp.split('-');
-  const pasta = pastaCliente.pastaContribDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
+  const pasta = (await _pastaComp(cnpj, d.nome, a, m)) || '';
   const r = await _robo.python({ acao: 'dctf_recibo', comp, empresa: { cnpj, nome: d.nome, pasta, retificadora: !!((lida && lida.retificadora) || (d.dctf && d.dctf.retificadora)) } });
   if (!r.ok) throw new Error(r.erro || 'Falha ao buscar o recibo.');
   await _consumo(r);
@@ -670,4 +697,4 @@ async function limparErrosAntigos() {
   fs.writeFileSync(marca, new Date().toISOString());
 }
 
-module.exports = { init, podeUsar, dados, importar, salvarEmpresa, pedir, configAuto, limparHistorico, limparErrosAntigos, ligarRobo, desligarRobo, situacaoDe };
+module.exports = { init, podeUsar, dados, importar, salvarEmpresa, pedir, definirPasta, configAuto, limparHistorico, limparErrosAntigos, ligarRobo, desligarRobo, situacaoDe };

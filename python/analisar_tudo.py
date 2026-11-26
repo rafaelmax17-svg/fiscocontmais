@@ -18,6 +18,7 @@ Ordem (é também a ordem de aplicação, uma sobre a outra, no mesmo arquivo):
   6b) Crédito maçã e pera ......... credito_maca (C195 + C197 RO10000038; não precisa de XML)
   6c) Crédito presumido ALC Guajará-Mirim  credito_alcgm (C197 RO10000036 pelo desconto do ICMS no XML; sem XML, pelo
                                    abatimento do C100; bonificação e remessa por conta e ordem sem crédito)
+  6d) VL_ABAT_NT dos itens ........ abat_nt (C170 campo 38 = C100 campo 15: pelo XML ou rateio pelo valor do item)
   7) Acumulador 7000 .............. acumulador_despesa
   8) Cadastro de produtos (0200) .. cadastro_0200
   9) Unidade × XML ................ unidade_xml (troca o código da unidade pelo da nota; precisa dos XMLs)
@@ -38,7 +39,7 @@ Escolhas (aplicar):
   {"etapas": {"difal": true, ...},                       etapa desmarcada não roda
    "difal": {"<id da decisão>": "incluir"|"nao"|..., "cfop:<id>": false, "cred:<id doc>": false, "cred_modo": "zerar"|"estorno"},
    "desconto": {"<chave>": false}, "icms": {"<chave>": false}, "valor": {"<chave>": false},
-   "simples": {"<chave>": false}, "maca": {"<chave da nota ou nº|série|fornecedor>": false}, "alcgm": {"<chave ou nº|série|participante>": false},
+   "simples": {"<chave>": false}, "maca": {"<chave da nota ou nº|série|fornecedor>": false}, "alcgm": {"<chave ou nº|série|participante>": false}, "abatnt": {"<chave>": false},
    "acum": {"<COD_ITEM>": "70xx"|false}, "cad": {"<COD_ITEM>": "07"|"08"|false}, "comb": {"<doc:item>": false}, "ucons": {"<doc:item>": false},
    "stent": {"<doc:item>": false}, "chave": {"<nota>": false}, "ncm": {"<COD_ITEM>": "<NCM escolhido>"|false},
    "pvacad": {"<id do item>": false},
@@ -60,6 +61,7 @@ import acumulador_despesa as ad
 import cadastro_0200 as c2
 import credito_maca as cm
 import credito_alcgm as cg
+import abat_nt as abn
 import combustivel_cfop as cc
 import uso_consumo_cfop as uc
 import chave_xml as ck
@@ -75,12 +77,12 @@ from xml_entradas import ler_xmls
 _PROG = {'arq': None, 'plano': [], 'reg': 0}
 PLANO_ANALISE = ['Lendo o SPED', 'Lendo os XMLs', 'Chave de acesso × XML', 'NCM × XML das entradas', 'Uso e consumo lançado como revenda',
                  'Combustível × uso e consumo', 'ICMS-ST na entrada', 'Uso e consumo · DIFAL e crédito', 'Validação do PVA · cadastro e ajustes',
-                 'Desconto, ICMS e valor × XML', 'Crédito maçã e pera', 'Crédito presumido ALC Guajará-Mirim', 'Acumulador 7000',
-                 'Cadastro de produtos (0200)', 'Unidade × XML', 'Somando o impacto']
+                 'Desconto, ICMS e valor × XML', 'Crédito maçã e pera', 'Crédito presumido ALC Guajará-Mirim', 'Abatimento nos itens (C170)',
+                 'Acumulador 7000', 'Cadastro de produtos (0200)', 'Unidade × XML', 'Somando o impacto']
 PLANO_APLICA = ['Lendo o SPED', 'Lendo os XMLs', 'Preparando a correção', 'Chave de acesso × XML', 'NCM × XML das entradas',
                 'Uso e consumo lançado como revenda', 'Combustível × uso e consumo', 'ICMS-ST na entrada', 'Uso e consumo · DIFAL e crédito',
-                'Desconto, ICMS e valor × XML', 'Crédito maçã e pera', 'Crédito presumido ALC Guajará-Mirim', 'Acumulador 7000',
-                'Cadastro de produtos (0200)', 'Unidade × XML', 'Validação do PVA · cadastro e ajustes', 'Gravando o arquivo corrigido']
+                'Desconto, ICMS e valor × XML', 'Crédito maçã e pera', 'Crédito presumido ALC Guajará-Mirim', 'Abatimento nos itens (C170)',
+                'Acumulador 7000', 'Cadastro de produtos (0200)', 'Unidade × XML', 'Validação do PVA · cadastro e ajustes', 'Gravando o arquivo corrigido']
 
 
 def _P(etapa, reg=None):
@@ -530,6 +532,18 @@ def analisar(sped, xml_dir, permitidas=None):
                        'grupos': [{'id': 'alcgm', 'titulo': 'Notas com crédito presumido diferente do desconto da nota', 'sugestao': 'acertar pelo desconto do ICMS',
                                    'linhas': lin}] if lin else []})
 
+    # 6d) VL_ABAT_NT dos itens (advertência do PVA: soma do C170 campo 38 ≠ C100 campo 15)
+    _P('Abatimento nos itens (C170)')
+    ab = abn.analisar_texto(corr, xmls)
+    if ab['docs']:
+        lin = [{'sel': z['sel'], 'nota': f"NF {_num(z['num'])}", 'valor': 0.0, 'marcado': True,
+                'det': f"C100 R$ {_fm(z['abat'])} · itens somam R$ {_fm(z['soma'])} → {z['itens']} item(ns) pelo {z['fonte']}"} for z in ab['docs']]
+        etapas.append({'key': 'abatnt', 'titulo': 'Abatimento nos itens (C170 campo 38)',
+                       'desc': 'Tira a advertência do PVA "somatório do VL_ABAT_NT dos C170 diferente do campo 15 do C100": o desconto do ICMS '
+                               'da nota vai item a item (XML; sem XML, rateio pelo valor do item). Não muda imposto nem a nota.',
+                       'qtd': f"{len(lin)} nota(s)", 'valor': '', 'badge': 'pode corrigir', 'tipo': 'auto',
+                       'grupos': [{'id': 'abatnt', 'titulo': 'Notas com o abatimento só no C100', 'sugestao': 'preencher nos itens', 'linhas': lin}]})
+
     # 7) acumulador 7000
     _P('Acumulador 7000')
     aa = ad.analisar_texto(corr)
@@ -785,6 +799,15 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
             resumo['alcgm'] = {'notas': r.get('notas', 0), 'incluidas': r.get('incluidas', 0), 'retiradas': r.get('retiradas', 0),
                                'acertadas': r.get('acertadas', 0), 'delta': r.get('delta_07', 0.0)}
             avisos += r.get('avisos') or []
+    # 6d) VL_ABAT_NT dos itens
+    _P('Abatimento nos itens (C170)')
+    if liga('abatnt'):
+        eb = esc.get('abatnt') or {}
+        ab = abn.analisar_texto(final, xmls)
+        ids = [z['id'] for z in ab['docs'] if eb.get(z['sel'], True) is not False]
+        if ids:
+            final, r = abn.aplicar_texto(final, xmls, ids)
+            resumo['abatnt'] = {'notas': r.get('notas', 0)}
     # 7) acumulador 7000
     _P('Acumulador 7000')
     if liga('acum'):

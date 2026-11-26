@@ -56,10 +56,27 @@ function _parecido(k, lista) {
   return null;
 }
 function limparCache() { _cache = { em: 0, lista: [] }; }
+
+// 2.4.60: pasta da empresa escolhida pela equipe quando o nome não bate (guardada na nuvem, em mit_empresas/<cnpj>.pasta)
+const _escolhidas = new Map();
+function lembrar(cnpj, dir) { const c = String(cnpj || '').replace(/\D/g, ''); if (c && dir) _escolhidas.set(c, dir); }
+// a pasta escolhida pode ser uma subpasta (Sped - Contribuições, Relatórios…): sobe até a pasta da empresa, que é a filha
+// direta de "Fiscal - <regime>"
+function pastaDaEmpresa(dir) {
+  const d = path.resolve(String(dir || ''));
+  for (const raiz of RAIZES) {
+    const r = path.resolve(raiz);
+    const rel = path.relative(r, d);
+    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return path.join(r, rel.split(path.sep)[0]);
+  }
+  return d;
+}
 function disponivel() { return RAIZES.some((r) => { try { return fs.statSync(r).isDirectory(); } catch (_) { return false; } }); }
 
 // { dir, regime } da pasta da empresa, ou null
 function achar({ nome, cnpj } = {}) {
+  const esc = _escolhidas.get(String(cnpj || '').replace(/\D/g, ''));
+  if (esc) { try { if (fs.statSync(esc).isDirectory()) return { nome: path.basename(esc), dir: esc, k: chave(path.basename(esc)), regime: path.basename(path.dirname(esc)).replace(/^Fiscal - /, ''), escolhida: true }; } catch (_) {} }
   const k = chave(nome);
   if (!k) return null;
   const lista = _lista();
@@ -130,4 +147,4 @@ function pastaDoMes(emp, ano, mes, criar = true) {
   try { return pastaMes(p.dir, ano, mes, criar); } catch (_) { return null; }
 }
 
-module.exports = { RAIZES, achar, pastaMes, pastaDoMes, pastaContribMes, pastaContribDoMes, disponivel, limparCache, chave };
+module.exports = { RAIZES, achar, pastaMes, pastaDoMes, pastaContribMes, pastaContribDoMes, disponivel, limparCache, chave, lembrar, pastaDaEmpresa };

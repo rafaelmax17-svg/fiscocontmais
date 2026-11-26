@@ -693,6 +693,14 @@ ipcMain.handle('mit:escolherEfd', async () => {
 ipcMain.handle('mit:importar', (_evt, arquivos) => _mit(() => mitMod.importar(arquivos)));
 ipcMain.handle('mit:salvarEmpresa', (_evt, o) => _mit(() => mitMod.salvarEmpresa(o || {})));
 ipcMain.handle('mit:pedir', (_evt, o) => _mit(() => mitMod.pedir(o || {})));
+// 2.4.60: recibo não salvo porque o nome da pasta não bate → a equipe aponta a pasta da empresa ali mesmo
+ipcMain.handle('mit:escolherPasta', async (_evt, o = {}) => {
+  const pc = require('./pasta_cliente');
+  const ini = pc.RAIZES.find((r) => { try { return fs.statSync(r).isDirectory(); } catch (_) { return false; } });
+  const r = await dialog.showOpenDialog(mainWindow, { title: `Pasta da empresa no drive${o.nome ? ` · ${o.nome}` : ''}`, defaultPath: ini || undefined, properties: ['openDirectory'] });
+  if (r.canceled || !r.filePaths[0]) return { canceled: true };
+  return _mit(() => mitMod.definirPasta({ cnpj: o.cnpj, comp: o.comp, dir: r.filePaths[0] }));
+});
 ipcMain.handle('mit:auto', (_evt, ligado) => _mit(() => mitMod.configAuto(!!ligado)));
 ipcMain.handle('mit:limparHistorico', (_evt, comp) => _mit(() => mitMod.limparHistorico(comp)));
 ipcMain.handle('mit:abrir', (_evt, { caminho }) => _mit(async () => {
@@ -2989,6 +2997,7 @@ const CORR_ETAPAS = [
   { key: 'simples', nome: 'Crédito do Simples' },
   { key: 'maca', nome: 'Crédito maçã e pera' },
   { key: 'alcgm', nome: 'Crédito presumido ALC Guajará-Mirim' },
+  { key: 'abatnt', nome: 'Abatimento nos itens (C170 campo 38)' },
   { key: 'acum', nome: 'Acumulador 7000' },
   { key: 'cad', nome: 'Cadastro de produtos (0200)' },
   { key: 'unid', nome: 'Unidade × XML' },

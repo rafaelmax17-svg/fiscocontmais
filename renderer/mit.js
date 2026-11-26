@@ -95,7 +95,11 @@
     if (pf) h += `<div class="sm">${e(PED[pf.tipo] || pf.tipo)} ${pf.status === 'rodando' ? 'em andamento…' : 'na fila…'}</div>`;
     if (d.ultimoErro) h += `<div class="mt-err">${e(d.ultimoErro)}</div>`;
     const dcx = d.dctf || {};
-    if (dcx.recibo && !dcx.arquivo && dcx.reciboAviso && !pf) h += `<div class="mt-warn">Recibo nº ${e(dcx.recibo)} existe na Receita, mas o PDF não foi salvo: ${e(dcx.reciboAviso)}.</div>`;
+    if (dcx.recibo && !dcx.arquivo && dcx.reciboAviso && !pf) {
+      h += `<div class="mt-warn">Recibo nº ${e(dcx.recibo)} existe na Receita, mas o PDF não foi salvo: ${e(dcx.reciboAviso)}.`;
+      if (/pasta/i.test(dcx.reciboAviso)) h += `<div style="margin-top:6px"><button class="act mt-b" data-pasta="${e(d.cnpj)}" data-pnome="${e(d.nome || '')}" title="O nome da pasta no drive é diferente do nome na Receita: escolha a pasta da empresa uma vez e o sistema guarda para os próximos meses">Escolher a pasta da empresa</button></div>`;
+      h += '</div>';
+    }
     if (d.mudouDepoisDoEnvio) h += `<div class="mt-warn">A EFD importada agora tem valores diferentes do MIT enviado: confira se é preciso retificar o MIT no portal.</div>`;
     if (d.sit === 'a_enviar' && !pf) h += `<label class="mt-ck"><input type="checkbox" data-conf="${e(d.cnpj)}" ${M.conf.has(d.cnpj) ? 'checked' : ''}> confere com a EFD</label>`;
     // 2.4.57: sem débito entra no mesmo lote do "Enviar MIT selecionados" (vai sem movimento; se a DCTFWeb já tiver
@@ -319,6 +323,19 @@
       const d = (M.d.docs || []).find((y) => y.cnpj === x.dataset.rmx);
       salvar(d.cnpj, { extras: (d.extras || []).filter((y) => y.cod !== x.dataset.cod) });
     }; });
+    q('[data-pasta]').forEach((x) => {
+      x.onclick = async () => {
+        x.disabled = true;
+        try {
+          const r = await window.api.mit.escolherPasta({ cnpj: x.dataset.pasta, nome: x.dataset.pnome, comp: M.comp });
+          if (r && r.canceled) return;
+          if (r && r.error) { toast(r.error, true); return; }
+          const pd = r && r.pedido;
+          toast(pd && pd.erro ? `Pasta guardada. ${pd.erro}` : 'Pasta guardada para esta empresa. O recibo foi pedido de novo e vai para a pasta Sped - Contribuições da competência.');
+          carregar();
+        } finally { x.disabled = false; }
+      };
+    });
     q('[data-guia]').forEach((x) => { x.onclick = () => pedir({ tipo: 'guia', cnpjs: [x.dataset.guia] }, `Guia pedida: o PDF vai para a pasta do cliente (competência ${compBr(M.comp)}).`); });
     q('[data-fil]').forEach((x) => { x.onclick = () => { M.filtro = x.dataset.fil; desenhar(); }; });
     q('[data-sf]').forEach((x) => { x.onchange = () => {
