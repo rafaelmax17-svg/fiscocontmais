@@ -71,9 +71,26 @@ function _filho(dir, teste) {
 // <Empresa>\Relatórios\<AAAA>\<mês> — usa o que existir, cria só o que faltar (nunca a pasta da empresa)
 function pastaMes(dirEmp, ano, mes, criar = true) {
   if (!dirEmp || !fs.existsSync(dirEmp)) return null;
-  ano = String(ano); const mm = String(mes).padStart(2, '0'), m = String(parseInt(mes, 10));
   const rel = _filho(dirEmp, (n) => /^relatorios?$/.test(norm(n))) || 'Relatórios';
-  const dRel = path.join(dirEmp, rel);
+  return _anoMes(path.join(dirEmp, rel), ano, mes, criar);
+}
+
+// 2.4.57: <Empresa>\Sped - Contribuições (ou "EFD-Contribuições", "SPED Contribuições"…)\<AAAA>\<mês> — recibo da
+// DCTFWeb e guia do MIT acompanham a EFD-Contribuições da competência. Sem a pasta, cria "Sped - Contribuições".
+function pastaContribMes(dirEmp, ano, mes, criar = true) {
+  if (!dirEmp || !fs.existsSync(dirEmp)) return null;
+  const ehContrib = (n) => { const k = norm(n); return /\bcontribuicoes\b/.test(k) && /\b(sped|efd)\b/.test(k) && !/\bfiscal\b/.test(k); };
+  const base = _filho(dirEmp, ehContrib) || 'Sped - Contribuições';
+  return _anoMes(path.join(dirEmp, base), ano, mes, criar);
+}
+function pastaContribDoMes(emp, ano, mes, criar = true) {
+  const p = achar(emp);
+  if (!p) return null;
+  try { return pastaContribMes(p.dir, ano, mes, criar); } catch (_) { return null; }
+}
+
+function _anoMes(dRel, ano, mes, criar) {
+  ano = String(ano); const mm = String(mes).padStart(2, '0'), m = String(parseInt(mes, 10));
   const a = _filho(dRel, (n) => norm(n) === ano) || ano;
   const dAno = path.join(dRel, a);
   const okMes = (n) => {
@@ -95,4 +112,4 @@ function pastaDoMes(emp, ano, mes, criar = true) {
   try { return pastaMes(p.dir, ano, mes, criar); } catch (_) { return null; }
 }
 
-module.exports = { RAIZES, achar, pastaMes, pastaDoMes, disponivel, limparCache, chave };
+module.exports = { RAIZES, achar, pastaMes, pastaDoMes, pastaContribMes, pastaContribDoMes, disponivel, limparCache, chave };

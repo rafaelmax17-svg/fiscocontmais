@@ -376,7 +376,8 @@ async function _transmitir(p) {
   const esperado = rf && _api(rf) ? (doc.esperado || {}) : rf ? esperadoDaReinf(rf) : {};
   if (temReinf && (!rf || rf.status !== 'fechado' || _marcaReinf(rf, esperado) !== doc.reinfAssinatura)) return { status: 'erro', msg: 'A EFD-Reinf mudou depois da conferência: atualize a conferência antes de transmitir.' };
   const [a, m] = comp.split('-');
-  const pasta = pastaCliente.pastaDoMes({ nome: doc.nome, cnpj }, a, m, true) || '';
+  // 2.4.57: o recibo da DCTFWeb vai para Sped - Contribuições\AAAA\mês da competência (como no MIT)
+  const pasta = pastaCliente.pastaContribDoMes({ nome: doc.nome, cnpj }, a, m, true) || '';
   const r = await _robo.python({ acao: 'dctf_transmitir', comp, empresa: { cnpj, nome: doc.nome, esperado, pasta, ...(tudo ? { esperadoTudo: doc.esperadoTudo || {} } : {}) } });
   if (!r.ok) throw new Error(r.erro || 'Falha na transmissão.');
   const x = r.resultado || {};

@@ -518,8 +518,9 @@ async function _guia(p) {
     const dctf = await _lerDctf(p.comp, cnpj);
     if (!dctf || !['em_andamento', 'transmitida'].includes(dctf.situacao)) { erros.push(`${d.nome}: a DCTFWeb do mês ainda não está disponível (${(dctf && (dctf.msg || dctf.situacao)) || 'sem resposta'})`); continue; }
     // 2.4.53: a guia vai para a pasta da competência (10/2026), não a do mês do vencimento
+    // 2.4.57: dentro de Sped - Contribuições\AAAA\mês (junto da EFD-Contribuições), não em Relatórios
     const [a, m] = p.comp.split('-');
-    const pasta = pastaCliente.pastaDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
+    const pasta = pastaCliente.pastaContribDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
     const r = await _robo.python({ acao: 'dctf_guia', comp: p.comp, empresa: { cnpj, nome: d.nome, situacao: dctf.situacao, origens: ['MIT'], data: p.data ? p.data.replace(/-/g, '') : '', pasta, rotulo: 'MIT PIS-COFINS' } });
     if (!r.ok) throw new Error(r.erro || 'Falha ao gerar a guia.');
     await _consumo(r);
@@ -554,7 +555,7 @@ async function _transmitir(p) {
     return { status: 'erro', msg: `A DCTFWeb não está em andamento (${(dctf && (dctf.msg || dctf.situacao)) || 'sem resposta'}).` };
   }
   const [a, m] = p.comp.split('-');
-  const pasta = pastaCliente.pastaDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
+  const pasta = pastaCliente.pastaContribDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
   const envia = async (lida) => {
     const r = await _robo.python({ acao: 'dctf_transmitir', comp: p.comp, empresa: { cnpj, nome: d.nome, esperado: lida.reinf || {}, esperadoTudo: lida.esperadoTudo || {}, esperadoHash: lida.xmlHash || '', pasta, semMovimento: sit === 'sem_movimento' } });
     if (!r.ok) throw new Error(r.erro || 'Falha na transmissão.');
@@ -603,7 +604,7 @@ async function _buscarRecibo(comp, cnpj, ref, d) {
     return { ok: false, msg: peloSistema ? 'a Receita mostra a DCTFWeb ainda em andamento — a transmissão anterior não foi concluída; transmita de novo' : 'a DCTFWeb do mês está em andamento — falta transmitir' };
   }
   const [a, m] = comp.split('-');
-  const pasta = pastaCliente.pastaDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
+  const pasta = pastaCliente.pastaContribDoMes({ nome: d.nome, cnpj }, a, m, true) || '';
   const r = await _robo.python({ acao: 'dctf_recibo', comp, empresa: { cnpj, nome: d.nome, pasta, retificadora: !!((lida && lida.retificadora) || (d.dctf && d.dctf.retificadora)) } });
   if (!r.ok) throw new Error(r.erro || 'Falha ao buscar o recibo.');
   await _consumo(r);
