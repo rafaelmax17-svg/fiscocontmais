@@ -2348,3 +2348,23 @@ body.menu-grupos .mg-lista{display:flex;flex-direction:column;gap:2px}
 .mt-sfb{display:inline-block;margin-top:5px;padding:1px 8px;border-radius:99px;background:#ede9fe;color:#6d28d9;font-weight:650}
 .mt-conflote{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:7px 12px;border-radius:10px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-size:12.5px}
 [data-theme="dark"] .mt-conflote{background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.35);color:#a7f3d0}
+
+/* ===== Robozinho da Ajuda (SVG próprio, animado) ===== */
+.lbot{display:block;overflow:visible}
+.lbot .lb-fl{animation:lbFloat 3.2s ease-in-out infinite}
+.lbot .lb-sh{transform-box:fill-box;transform-origin:center;animation:lbShadow 3.2s ease-in-out infinite}
+.lbot .lb-eye{transform-box:fill-box;transform-origin:50% 80%;animation:lbBlink 4.6s infinite}
+.lbot .lb-arm.r{transform-box:fill-box;transform-origin:15% 10%;animation:lbWave 6s ease-in-out infinite}
+.lbot .lb-arm.l{transform-box:fill-box;transform-origin:50% 8%;animation:lbSway 3.2s ease-in-out infinite}
+.lbot .lb-head{transform-box:view-box;transform-origin:50px 52px;animation:lbTilt 6s ease-in-out infinite}
+.lbot .lb-mouth{animation:lbGlow 2.4s ease-in-out infinite}
+@keyframes lbFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@keyframes lbShadow{0%,100%{transform:scaleX(1);opacity:.18}50%{transform:scaleX(.78);opacity:.1}}
+@keyframes lbBlink{0%,44%,48%,100%{transform:scaleY(1)}46%{transform:scaleY(.1)}}
+@keyframes lbWave{0%,62%,100%{transform:rotate(0)}68%{transform:rotate(-125deg)}74%{transform:rotate(-100deg)}80%{transform:rotate(-125deg)}86%{transform:rotate(-100deg)}92%{transform:rotate(0)}}
+@keyframes lbSway{0%,100%{transform:rotate(0)}50%{transform:rotate(4deg)}}
+@keyframes lbTilt{0%,62%,100%{transform:rotate(0)}70%,88%{transform:rotate(-6deg)}}
+@keyframes lbGlow{0%,100%{opacity:1}50%{opacity:.7}}
+@media (prefers-reduced-motion:reduce){.lbot *{animation:none!important}}
+.ia-fab .lbot{width:46px;margin-top:-3px;filter:drop-shadow(0 2px 3px rgba(31,42,90,.25))}
+.ia-ic .lbot{width:28px}
