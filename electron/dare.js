@@ -324,14 +324,14 @@ async function ler(ano, opc = {}) {
         let res;
         try { res = await _consultar(ie, ano); } catch (e1) { P.log(`${ie}: ${e1.message} · tentando de novo`); await P.vai(URL_CONSULTA, 45000); res = await _consultar(ie, ano); }
         const linhas = res.r.linhas.map((l) => ({ ...l, valorN: _num(l.valor), valorAtuN: _num(l.valorAtu) }));
-        doc = { ie, nome, razao: res.r.cab.razao || nome, cnpj: _so(res.r.cab.cnpj), ano, debitos: linhas, lidoEm: lid, erro: '' };
+        doc = { ie, nome, razao: res.r.cab.razao || nome, cnpj: _so(res.r.cab.cnpj), ano, debitos: linhas, lidoEm: lid, consultadoEm: new Date().toISOString(), erro: '' };
         if (linhas.length) { comDebito++; total += linhas.reduce((s, l) => s + l.valorN, 0); }
         linhas.forEach((l) => { if (!conhecidos.has(`${ie}|${l.nr}|${l.parc}`)) { novos++; novosValor += l.valorN; novosEmp[nome] = (novosEmp[nome] || 0) + 1; } });
         linhas.forEach((l) => vencs.push({ v: l.venc, x: l.valorN }));
         P.log(`${ie} ${nome}: ${linhas.length} débito(s)`);
       } catch (e) {
         falhas++; P.log(`${ie} ${nome}: ${e.message || e}`);
-        doc = { ie, nome, ano, lidoEm: lid, erro: String(e.message || e).slice(0, 200) };
+        doc = { ie, nome, ano, lidoEm: lid, consultadoEm: new Date().toISOString(), erro: String(e.message || e).slice(0, 200) };
       }
       await f.setDoc(f.doc(db, COL, `${ano}_${ie}`), doc, { merge: true });
       try { D.notificar('dare:empresa', { tipo: 'debitos', ano, i: i + 1, n: ies.length }); } catch (_) {}   // a tela atualiza a cada empresa
@@ -703,12 +703,12 @@ async function lerPagos(mes, opc = {}) {
         let res;
         try { res = await _consultarCC(ie, ini, fim); } catch (e1) { P.log(`${ie}: ${e1.message} · tentando de novo`); await P.vai(URL_CC, 45000); res = await _consultarCC(ie, ini, fim); }
         const pagos = _soPagos(res.r.linhas);
-        doc = { ie, nome, razao: res.r.cab.razao || nome, cnpj: _so(res.r.cab.cnpj), mes, pagos, lidoEm: lid, erro: '' };
+        doc = { ie, nome, razao: res.r.cab.razao || nome, cnpj: _so(res.r.cab.cnpj), mes, pagos, lidoEm: lid, consultadoEm: new Date().toISOString(), erro: '' };
         if (pagos.length) { comPago++; qtd += pagos.length; total += pagos.reduce((s, l) => s + l.pagoN, 0); }
         P.log(`${ie} ${nome}: ${res.r.linhas.length} lançamento(s) no conta corrente · ${pagos.length} pago(s)`);
       } catch (e) {
         falhas++; P.log(`${ie} ${nome}: ${e.message || e}`);
-        doc = { ie, nome, mes, lidoEm: lid, erro: String(e.message || e).slice(0, 200) };
+        doc = { ie, nome, mes, lidoEm: lid, consultadoEm: new Date().toISOString(), erro: String(e.message || e).slice(0, 200) };
       }
       await fs_.setDoc(fs_.doc(db, COL, `pg_${mes}_${_so(ie)}`), doc, { merge: true });
       try { D.notificar('dare:empresa', { tipo: 'pagos', mes, i: i + 1, n: ies.length }); } catch (_) {}

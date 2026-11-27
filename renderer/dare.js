@@ -9,6 +9,9 @@
   const fmtCnpj = (c) => String(c || '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
   const hoje0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
   const dt = (br) => { const m = String(br || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null; };
+  // data e hora em que a empresa foi consultada no portal (consultadoEm; nas consultas antigas, o início da consulta)
+  const qdo = (iso) => { const d = iso ? new Date(iso) : null; if (!d || isNaN(d)) return '';
+    const p2 = (n) => String(n).padStart(2, '0'); return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()} às ${p2(d.getHours())}:${p2(d.getMinutes())}`; };
   const br = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   const DSEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
   const MES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -82,7 +85,7 @@
       const v = dt(x.venc);
       const dias = v ? Math.round((v - h) / 864e5) : null;
       const g = (m.gerados || {})[`${x.nr}_${x.parc || '00'}`] || null;
-      out.push({ ...x, ie: m.ie, nome: m.nome, razao: m.razao, cnpj: m.cnpj, ano: m.ano, dias, ger: g });
+      out.push({ ...x, ie: m.ie, nome: m.nome, razao: m.razao, cnpj: m.cnpj, ano: m.ano, dias, ger: g, qd: m.consultadoEm || m.lidoEm || '' });
     }));
     return out.sort((a, b) => (a.dias ?? 9e9) - (b.dias ?? 9e9) || a.nome.localeCompare(b.nome));
   }
@@ -198,7 +201,7 @@
         ${vis.length ? `<table class="fc-tab dr-tab"><thead><tr><th><input type="checkbox" id="drTodos" ${vis.length && vis.every((x) => R.sel.has(chave(x))) ? 'checked' : ''}></th><th>Empresa</th><th>Lançamento / parc.</th><th>Referência</th><th>Receita</th><th>Vencimento</th><th class="dr-n">Valor</th><th>Situação</th><th>DARE</th><th>Extrato</th></tr></thead><tbody>
           ${vis.slice(0, R.mostrar).map((x) => { const [st, cl] = sit(x); const k = chave(x); return `<tr class="${R.sel.has(k) ? 'fc-on' : ''}">
             <td><input type="checkbox" data-sel="${e(k)}" ${R.sel.has(k) ? 'checked' : ''}${x.temDare === false ? ' disabled' : ''}></td>
-            <td><b>${e(x.nome)}</b><small>IE ${e(x.ie)}${x.cnpj ? ' · CNPJ ' + fmtCnpj(x.cnpj) : ''}</small></td>
+            <td><b>${e(x.nome)}</b><small>IE ${e(x.ie)}${x.cnpj ? ' · CNPJ ' + fmtCnpj(x.cnpj) : ''}</small>${x.qd ? `<small class="dr-qd">🕒 Consultado em ${qdo(x.qd)}</small>` : ''}</td>
             <td>${e(x.nr)}<small>parcela ${e(x.parc || '00')}</small></td><td>${e(x.ref)}</td><td>${e(x.rec)}</td><td>${e(x.venc)}</td>
             <td class="dr-n"><b>${brl(x.valorN)}</b>${x.valorAtuN ? `<small>atualizado ${brl(x.valorAtuN)}</small>` : ''}</td>
             <td><span class="fc-c ${cl}">${st}</span>${x.sit && !/n[aã]o pago/i.test(x.sit) ? `<small>${e(x.sit)}</small>` : ''}</td>
@@ -421,7 +424,7 @@
     const d = R.pg.d, out = [];
     (d.emps || []).forEach((m) => (m.pagos || []).forEach((x) => {
       const k = `${x.nr}_${x.parc || '00'}`;
-      out.push({ ...x, ie: m.ie, nome: m.nome, razao: m.razao, cnpj: m.cnpj, mes: m.mes,
+      out.push({ ...x, ie: m.ie, nome: m.nome, razao: m.razao, cnpj: m.cnpj, mes: m.mes, qd: m.consultadoEm || m.lidoEm || '',
         ger: (d.gerados || {})[`${semZero(m.ie)}|${k}`] || null, ext: (m.extratos || {})[k] || null });
     }));
     return out;
@@ -463,7 +466,7 @@
 
     // por empresa, na ordem do nome; dentro, por vencimento
     const porE = new Map();
-    vis.forEach((x) => { if (!porE.has(x.ie)) porE.set(x.ie, { nome: x.razao || x.nome, ie: x.ie, cnpj: x.cnpj, l: [] }); porE.get(x.ie).l.push(x); });
+    vis.forEach((x) => { if (!porE.has(x.ie)) porE.set(x.ie, { nome: x.razao || x.nome, ie: x.ie, cnpj: x.cnpj, qd: x.qd, l: [] }); porE.get(x.ie).l.push(x); });
     const grupos = [...porE.values()].sort((a, b) => a.nome.localeCompare(b.nome));
     grupos.forEach((g) => g.l.sort((a, b) => (dt(a.venc) || 0) - (dt(b.venc) || 0) || a.nr.localeCompare(b.nr)));
     const fmtV = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -502,7 +505,7 @@
         <div class="dp-k" style="--c:#7c3aed"><span>Parcelamentos</span><b>${pc.length}</b><i>${pc.length ? pcTxt : '—'}</i></div>
       </div>
       ${falhas.length ? `<div class="fc-aviso" style="margin:12px 0 0">Não consegui consultar ${falhas.length} empresa(s) na última consulta: ${falhas.slice(0, 6).map((m) => e(m.nome)).join(', ')}${falhas.length > 6 ? '…' : ''}. Clique em “Atualizar pagos” para tentar de novo.</div>` : ''}
-      ${grupos.length ? grupos.map((g) => `<div class="dp-emp"><div class="dp-eh"><div><b>${e(g.nome)}</b><small>IE ${e(g.ie)}${g.cnpj ? ' · CNPJ ' + fmtCnpj(g.cnpj) : ''}</small></div>
+      ${grupos.length ? grupos.map((g) => `<div class="dp-emp"><div class="dp-eh"><div><b>${e(g.nome)}</b><small>IE ${e(g.ie)}${g.cnpj ? ' · CNPJ ' + fmtCnpj(g.cnpj) : ''}${g.qd ? ` · 🕒 consultado em ${qdo(g.qd)}` : ''}</small></div>
           <div class="dp-et"><button class="fc-b" data-cpemp="${e(g.ie)}">⧉ copiar números desta empresa</button>pago no período <b>${brl(soma(g.l))}</b></div></div>
         <table class="fc-tab dp-tab"><thead><tr><th>Lançamento</th><th>Receita</th><th>Vencimento</th><th>Pago em</th><th class="dr-n">Valor lançado</th><th class="dr-n">Valor pago</th><th class="dr-n">Acréscimo</th><th>Situação</th><th>Extrato</th></tr></thead>
         <tbody>${g.l.map(linha).join('')}</tbody></table></div>`).join('')
@@ -571,7 +574,7 @@
   async function exportar() {
     const L = linhas().filter(passa);
     const porE = new Map();
-    L.forEach((x) => { if (!porE.has(x.ie)) porE.set(x.ie, { nome: x.nome, ie: x.ie, cnpj: x.cnpj, l: [] }); porE.get(x.ie).l.push(x); });
+    L.forEach((x) => { if (!porE.has(x.ie)) porE.set(x.ie, { nome: x.nome, ie: x.ie, cnpj: x.cnpj, qd: x.qd, l: [] }); porE.get(x.ie).l.push(x); });
     const tot = L.reduce((s, x) => s + (x.valorN || 0), 0), venc = L.filter((x) => x.dias < 0);
     const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>*{box-sizing:border-box}body{margin:0;font-family:'Segoe UI',Arial,sans-serif;color:#141b2d;padding:6px 4px}
       .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #1d4ed8;padding-bottom:10px;margin-bottom:14px}.tag{font-size:10px;font-weight:800;letter-spacing:.08em;color:#1d4ed8}
@@ -581,9 +584,9 @@
       table{width:100%;border-collapse:collapse;font-size:10.8px;margin-top:4px}th{text-align:left;font-size:9.5px;color:#8a93ad;text-transform:uppercase;padding:5px;border-bottom:1.5px solid #e5e9f1}
       td{padding:5px;border-bottom:1px solid #eef0f6}tr{break-inside:avoid}thead{display:table-header-group}.n{text-align:right}.v{color:#b91c1c;font-weight:700}</style></head><body>
       <div class="hd"><div><div class="tag">SEFIN-RO · PORTAL DO CONTRIBUINTE</div><h1>Débitos em aberto · exercício ${e(R.ano)}</h1><div class="sub">${porE.size} empresa(s) · posição de ${e(R.d.meta ? new Date(R.d.meta.ultimaLeitura).toLocaleString('pt-BR').slice(0, 17).replace(',', '') : '')}</div></div>
-      <div class="esc"><b>Liddera | Inteligência em Negócios</b>Gerado pelo FiscoCont+ em ${new Date().toLocaleDateString('pt-BR')}</div></div>
+      <div class="esc"><b>Liddera | Inteligência em Negócios</b>Gerado pelo FiscoCont+ em ${qdo(new Date().toISOString())}</div></div>
       <div class="k"><div style="--c:#1d4ed8"><b>${brl(tot)}</b><span>Total em aberto · ${L.length} débito(s)</span></div><div style="--c:#dc2626"><b>${brl(venc.reduce((s, x) => s + x.valorN, 0))}</b><span>Vencidos · ${venc.length}</span></div></div>
-      ${[...porE.values()].map((g) => `<h3>${e(g.nome)}</h3><small>IE ${e(g.ie)}${g.cnpj ? ' · CNPJ ' + fmtCnpj(g.cnpj) : ''} · ${brl(g.l.reduce((s, x) => s + x.valorN, 0))}</small>
+      ${[...porE.values()].map((g) => `<h3>${e(g.nome)}</h3><small>IE ${e(g.ie)}${g.cnpj ? ' · CNPJ ' + fmtCnpj(g.cnpj) : ''} · ${brl(g.l.reduce((s, x) => s + x.valorN, 0))}${g.qd ? ' · consultado no portal em ' + qdo(g.qd) : ''}</small>
         <table><thead><tr><th>Lançamento</th><th>Parc.</th><th>Referência</th><th>Receita</th><th>Vencimento</th><th class="n">Valor</th><th>Situação</th></tr></thead><tbody>
         ${g.l.map((x) => `<tr><td>${e(x.nr)}</td><td>${e(x.parc)}</td><td>${e(x.ref)}</td><td>${e(x.rec)}</td><td>${e(x.venc)}</td><td class="n">${brl(x.valorN)}</td><td class="${x.dias < 0 ? 'v' : ''}">${sit(x)[0]}</td></tr>`).join('')}</tbody></table>`).join('')}
       </body></html>`;
