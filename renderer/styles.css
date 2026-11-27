@@ -2368,3 +2368,7 @@ body.menu-grupos .mg-lista{display:flex;flex-direction:column;gap:2px}
 @media (prefers-reduced-motion:reduce){.lbot *{animation:none!important}}
 .ia-fab .lbot{width:46px;margin-top:-3px;filter:drop-shadow(0 2px 3px rgba(31,42,90,.25))}
 .ia-ic .lbot{width:28px}
+/* fundo branco atrás do robozinho */
+.ia-fab{background:#fff;border:1px solid #e3e7f1;box-shadow:0 8px 24px rgba(31,42,90,.18)}
+.ia-ic{background:#fff}
+.ia-ic .lbot{width:27px}
