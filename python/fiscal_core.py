@@ -3836,11 +3836,21 @@ def gerar_pgdas_html(dados, historico=None):
     segs_das = [(l, tot.get(k, 0.0), c) for l, k, c in labels_tributo if tot.get(k, 0.0) > 0.005]
     arcs_das = _donut(segs_das, cx=100, cy=100, r=76, sw=30) if segs_das else ''
     tot_das = sum(v for _, v, _ in segs_das) or 1
+    # Alíquota de cada tributo = valor do tributo ÷ receita bruta do mês (RPA). A soma das alíquotas dá a carga
+    # efetiva do DAS sobre o faturamento do mês (já considerando ST, monofásico, retenções e mais de um Anexo).
+    rpa_tot = float((rec.get('rpa') or {}).get('total') or 0)
+    def _aq(v):
+        return f'{_brl(v / rpa_tot * 100)}%' if rpa_tot > 0 else '—'
+    _td = 'padding:5px 6px;border-bottom:1px solid var(--line)'
     rows_das_tbl = ''.join(
-        f'<tr><td><span class="dot" style="background:{c};width:9px;height:9px;border-radius:3px;display:inline-block;margin-right:7px"></span>{l}</td>'
-        f'<td>{v/tot_das*100:.2f}%</td><td style="text-align:right">R$ {_brl(v)}</td></tr>'
+        f'<tr><td style="{_td}"><span class="dot" style="background:{c};width:9px;height:9px;border-radius:3px;display:inline-block;margin-right:7px"></span>{l}</td>'
+        f'<td style="{_td};text-align:right;font-weight:700">{_aq(v)}</td>'
+        f'<td style="{_td};text-align:right;color:var(--ink2)">{_brl(v/tot_das*100)}%</td><td style="{_td};text-align:right">R$ {_brl(v)}</td></tr>'
         for l, v, c in segs_das)
-    leg_das = ''.join(f'<div class="lg"><span class="dot" style="background:{c}"></span>{l}<b>{v/tot_das*100:.1f}%</b></div>' for l, v, c in segs_das)
+    if segs_das:
+        rows_das_tbl += (f'<tr style="font-weight:800"><td style="padding:7px 6px">Total</td><td style="padding:7px 6px;text-align:right">{_aq(tot_das)}</td>'
+                         f'<td style="padding:7px 6px;text-align:right;color:var(--ink2)">100,00%</td><td style="padding:7px 6px;text-align:right">R$ {_brl(tot_das)}</td></tr>')
+    leg_das = ''.join(f'<div class="lg"><span class="dot" style="background:{c}"></span>{l}<b>{f"{v/tot_das*100:.1f}".replace(".", ",")}%</b></div>' for l, v, c in segs_das)
 
     limite = 4_800_000.0
     pct_limite = min(rec['rbt12']['total'] / limite * 100, 100) if limite else 0
@@ -3920,10 +3930,12 @@ def gerar_pgdas_html(dados, historico=None):
     <div><h3><span class="dot"></span>Detalhamento do DAS — R$ {_brl(tot_das)}</h3>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr><th style="text-align:left;color:var(--ink2);font-size:10.5px;text-transform:uppercase;border-bottom:2px solid var(--line);padding:6px">Imposto</th>
-        <th style="text-align:left;color:var(--ink2);font-size:10.5px;text-transform:uppercase;border-bottom:2px solid var(--line);padding:6px">%</th>
+        <th style="text-align:right;color:var(--ink2);font-size:10.5px;text-transform:uppercase;border-bottom:2px solid var(--line);padding:6px" title="Valor do tributo ÷ faturamento do mês">Alíquota</th>
+        <th style="text-align:right;color:var(--ink2);font-size:10.5px;text-transform:uppercase;border-bottom:2px solid var(--line);padding:6px" title="Participação no valor do DAS">% do DAS</th>
         <th style="text-align:right;color:var(--ink2);font-size:10.5px;text-transform:uppercase;border-bottom:2px solid var(--line);padding:6px">Valor</th></tr></thead>
         <tbody style="color:var(--navy)">{rows_das_tbl}</tbody>
       </table>
+      <div style="font-size:10.5px;color:var(--ink2);margin-top:8px">Alíquota = valor de cada tributo ÷ faturamento do mês (R$ {_brl(rpa_tot)}).</div>
     </div>
   </div>
 
