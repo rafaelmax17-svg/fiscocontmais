@@ -2985,6 +2985,7 @@ function _soAdminCorretor() {
 const CORR_ETAPAS = [
   { key: 'validacao', nome: 'Validação do PVA', fixo: true },
   { key: 'pvacad', nome: 'Validação do PVA · cadastro e ajustes', teste: true },
+  { key: 'cancent', nome: 'Entradas canceladas na SEFAZ' },
   { key: 'chave', nome: 'Chave de acesso × XML', teste: true },
   { key: 'ncm', nome: 'NCM × XML das entradas', teste: true },
   { key: 'ucons', nome: 'Uso e consumo lançado como revenda', teste: true },
@@ -4018,20 +4019,69 @@ function _corrProg(evt, nome) {
   const arq = path.join(os.tmpdir(), `fc_prog_${nome}_${Date.now()}.json`);
   return { arq, cb: (d) => { try { if (!evt.sender.isDestroyed()) evt.sender.send('corr:progresso', d); } catch (_) {} } };
 }
-ipcMain.handle('admin:tudoAnalisar', async (evt, { spedPath, usarCorrigido, xmls }) => {
+// Situação na SEFAZ das NF-e/NFC-e/CT-e de ENTRADA do SPED (Corretor · "Entradas canceladas na SEFAZ").
+// Cache por chave em userData: cancelada/denegada é definitivo; autorizada é consultada de novo depois de 12 h.
+const _situCachePath = () => path.join(app.getPath('userData'), 'situacao_sefaz_entradas.json');
+function _certParaSefaz(cnpj) {
+  const validos = (_lerIndiceCert().empresas || []).filter((e) => (e.tipo || 'matriz') !== 'procuracao' && !(e.validade && new Date(e.validade) < new Date()));
+  const ordem = [validos.find((e) => e.cnpj === cnpj), validos.find((e) => String(e.cnpj || '').slice(0, 8) === cnpj.slice(0, 8)), ...validos];
+  for (const e of ordem) {
+    if (!e) continue;
+    const c = _certDaEmpresa(e);
+    if (!c.error) return { ...c, nome: e.razaoSocial || e.cnpj, propria: String(e.cnpj || '').slice(0, 8) === cnpj.slice(0, 8) };
+  }
+  return { error: 'Para conferir na SEFAZ é preciso um certificado digital válido cadastrado nas Baixas DF-e (de preferência o da própria empresa).' };
+}
+async function _conferirSefaz(evt, arqSped) {
+  let cnpj = '';
+  try { const l0 = fs.readFileSync(arqSped, 'latin1').slice(0, 400).split(/\r?\n/)[0].split('|'); cnpj = String(l0[7] || '').replace(/\D/g, ''); } catch (_) {}
+  const cert = _certParaSefaz(cnpj);
+  if (cert.error) return { error: cert.error };
+  const env = (t, p) => { try { if (!evt.sender.isDestroyed()) evt.sender.send('corr:progresso', { t, k: 1, n: 1, p }); } catch (_) {} };
+  let ultimo = null, feitasAntes = 0;
+  for (let volta = 0; volta < 40; volta++) {          // em partes de 150 chaves (cada processo do núcleo tem limite de tempo)
+    const stamp = `${Date.now()}_${volta}`;
+    const saida = path.join(os.tmpdir(), `fc_situ_${stamp}.json`), prog = path.join(os.tmpdir(), `fc_situ_prog_${stamp}.json`);
+    const tm = setInterval(() => {
+      try {
+        const p = JSON.parse(fs.readFileSync(prog, 'utf-8'));
+        const tot = (ultimo ? feitasAntes + ultimo.restam : 0) || p.total;
+        env(`Conferindo as entradas na SEFAZ: ${feitasAntes + p.feitas} de ${Math.max(tot, feitasAntes + p.total)}`, Math.min(95, ((feitasAntes + p.feitas) / Math.max(tot, feitasAntes + p.total)) * 100));
+      } catch (_) {}
+    }, 700);
+    try {
+      await runFiscal(['situacao-sefaz', cert.pfxPath, '--senha', cert.senha, '--sped', arqSped, '--cache', _situCachePath(),
+        '--max', '150', '--progresso', prog, '--json', saida], saida);
+    } finally { clearInterval(tm); }
+    const r = JSON.parse(fs.readFileSync(saida, 'utf-8'));
+    for (const f of [saida, prog]) fs.unlink(f, () => {});
+    if (r.erro) return { error: r.erro };
+    feitasAntes += r.consultadas || 0;
+    ultimo = r;
+    if (!r.restam) break;
+  }
+  return { ok: true, ...(ultimo || {}), certificado: cert.nome, certPropria: cert.propria };
+}
+ipcMain.handle('admin:tudoAnalisar', async (evt, { spedPath, usarCorrigido, xmls, sefaz }) => {
   const bloq = _soCorretor(); if (bloq) return bloq;
   if (!spedPath) return { error: 'Selecione o SPED.' };
   const base = _difalBase(spedPath, usarCorrigido);
   const jsonOut = path.join(os.tmpdir(), `fc_tudo_${Date.now()}.json`);
   try {
+    let situ = null;
+    if (sefaz) {
+      situ = await _conferirSefaz(evt, base.arq);
+      if (situ.error) return { error: situ.error };
+    }
     const perm = await _corrPermitidas();
     const regimes = await _regimesJson([base.arq]);
     const prog = _corrProg(evt, 'tudo');
     await runFiscal(['analisar-tudo', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--regimes', regimes, '--json', jsonOut,
-      '--progresso', prog.arq, ...(perm ? ['--etapas', perm.join(',')] : [])], jsonOut, prog);
+      '--situacao', _situCachePath(), '--progresso', prog.arq, ...(perm ? ['--etapas', perm.join(',')] : [])], jsonOut, prog);
     fs.unlink(prog.arq, () => {});
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {}); fs.unlink(regimes, () => {});
     if (res.erro) return { error: res.erro };
+    if (situ) res.sefaz = { certificado: situ.certificado, certPropria: situ.certPropria, total: situ.total, erros: situ.erros };
     return { ok: true, res, origem: base.origem };
   } catch (e) { return { error: String(e.message || e) }; }
 });
@@ -4049,7 +4099,7 @@ ipcMain.handle('admin:tudoAplicar', async (evt, { spedPath, usarCorrigido, xmls,
     const perm = await _corrPermitidas();
     const regimes = await _regimesJson([base.arq]);
     await runFiscal(['analisar-tudo', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--regimes', regimes, '--json', jsonOut,
-      '--aplicar', escJson, '--saida', saida, '--progresso', prog.arq, ...(perm ? ['--etapas', perm.join(',')] : [])], jsonOut, prog);
+      '--situacao', _situCachePath(), '--aplicar', escJson, '--saida', saida, '--progresso', prog.arq, ...(perm ? ['--etapas', perm.join(',')] : [])], jsonOut, prog);
     fs.unlink(prog.arq, () => {});
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
     for (const f of [jsonOut, escJson, regimes]) fs.unlink(f, () => {});

@@ -69,17 +69,18 @@ import ncm_xml as nx
 import st_entrada_ro as se
 import unidade_xml as ux
 import pva_cadastro as pc
+import cancel_entradas as ce
 from xml_entradas import ler_xmls
 
 
 # ------------------------------------------------------------------ progresso (2.4.34)
 # O Electron passa --progresso ARQ.json e lê o arquivo enquanto roda: a barra da tela mostra a etapa real.
 _PROG = {'arq': None, 'plano': [], 'reg': 0}
-PLANO_ANALISE = ['Lendo o SPED', 'Lendo os XMLs', 'Chave de acesso × XML', 'NCM × XML das entradas', 'Uso e consumo lançado como revenda',
+PLANO_ANALISE = ['Lendo o SPED', 'Lendo os XMLs', 'Entradas canceladas na SEFAZ', 'Chave de acesso × XML', 'NCM × XML das entradas', 'Uso e consumo lançado como revenda',
                  'Combustível × uso e consumo', 'ICMS-ST na entrada', 'Uso e consumo · DIFAL e crédito', 'Validação do PVA · cadastro e ajustes',
                  'Desconto, ICMS e valor × XML', 'Crédito maçã e pera', 'Crédito presumido ALC Guajará-Mirim', 'Abatimento nos itens (C170)',
                  'Acumulador 7000', 'Cadastro de produtos (0200)', 'Unidade × XML', 'Somando o impacto']
-PLANO_APLICA = ['Lendo o SPED', 'Lendo os XMLs', 'Preparando a correção', 'Chave de acesso × XML', 'NCM × XML das entradas',
+PLANO_APLICA = ['Lendo o SPED', 'Lendo os XMLs', 'Preparando a correção', 'Entradas canceladas na SEFAZ', 'Chave de acesso × XML', 'NCM × XML das entradas',
                 'Uso e consumo lançado como revenda', 'Combustível × uso e consumo', 'ICMS-ST na entrada', 'Uso e consumo · DIFAL e crédito',
                 'Desconto, ICMS e valor × XML', 'Crédito maçã e pera', 'Crédito presumido ALC Guajará-Mirim', 'Abatimento nos itens (C170)',
                 'Acumulador 7000', 'Cadastro de produtos (0200)', 'Unidade × XML', 'Validação do PVA · cadastro e ajustes', 'Gravando o arquivo corrigido']
@@ -162,6 +163,8 @@ def _traduz_ids(ed, de_texto, para_texto):
         m = re.match(r'^([a-z]+):(\d+)$', k)
         if m and int(m.group(2)) in a and a[int(m.group(2))] in inv:
             out[f"{m.group(1)}:{inv[a[int(m.group(2))]]}"] = v
+        elif m and int(m.group(2)) in a:
+            continue                                   # a nota saiu do arquivo (ex.: entrada cancelada na SEFAZ)
         else:
             out[k] = v
     return out
@@ -188,6 +191,42 @@ def _base(sped, xml_dir):
     return texto, enc, corr, rc, xmls, lidos, erros
 
 
+_SITU = {'itens': {}}      # situação na SEFAZ das chaves de entrada (arquivo --situacao, preenchido pela consulta do sistema)
+
+
+def _etapa_cancel(corr):
+    a = ce.analisar_texto(corr, _SITU['itens'])
+    if not a['total']:
+        return {'key': 'cancent', 'titulo': 'Entradas canceladas na SEFAZ', 'desc': 'nenhuma NF-e/NFC-e/CT-e de entrada com chave no arquivo',
+                'qtd': 'nada encontrado', 'valor': '', 'badge': 'sem correção', 'tipo': 'zero', 'grupos': []}
+    if not a['conferidas']:
+        return {'key': 'cancent', 'titulo': 'Entradas canceladas na SEFAZ',
+                'desc': f"{a['total']} nota(s)/CT-e de entrada com chave ainda não conferidos na SEFAZ. Clique em \"Conferir entradas na SEFAZ\" (no alto do painel).",
+                'qtd': 'não conferido', 'valor': '', 'badge': 'conferir na SEFAZ', 'tipo': 'sem_xml', 'grupos': []}
+    lin = []
+    for d in a['itens']:
+        q = (d['quando'] or '')[:10]
+        q = f"{q[8:10]}/{q[5:7]}/{q[:4]}" if len(q) == 10 else ''
+        acao = 'sai do arquivo' if d['ind_emit'] == '1' else ('vira COD_SIT 02 (cancelado)' if d['situacao'] == 'cancelada' else 'vira COD_SIT 04 (denegado)')
+        cred = d['cred'] + d['c197c']
+        lin.append({'sel': d['id'], 'nota': f"{d['tipo']} {d['num'].lstrip('0') or '0'}", 'valor': d['valor'], 'marcado': True,
+                    'det': f"{d['fornecedor'][:48]} · {'CANCELADA' if d['situacao'] == 'cancelada' else 'DENEGADA'} na SEFAZ"
+                           + (f' em {q}' if q else '') + f" · {acao}" + (f" · crédito R$ {_fm(cred)} sai da apuração" if cred else ''),
+                    'busca': d['chave']})
+    cred_tot = sum(d['cred'] + d['c197c'] for d in a['itens'])
+    falta = a['sem_consulta']
+    desc = (f"{a['conferidas']} de {a['total']} nota(s)/CT-e de entrada conferidos na SEFAZ"
+            + (f" · {falta} sem resposta da SEFAZ (confira de novo)" if falta else '')
+            + (f" · {a['nao_encontradas']} não encontrada(s) na SEFAZ (confira a chave)" if a['nao_encontradas'] else '')
+            + '. Documento cancelado ou denegado não dá crédito: o de fornecedor sai do arquivo; o de emissão própria fica só como cancelado/denegado.')
+    return {'key': 'cancent', 'titulo': 'Entradas canceladas na SEFAZ', 'desc': desc,
+            'qtd': f'{len(lin)} documento(s)' if lin else 'nenhuma cancelada',
+            'valor': f'− R$ {_fm(cred_tot)} crédito' if cred_tot else '',
+            'badge': 'pode corrigir' if lin else ('verificar' if falta else 'sem correção'), 'tipo': 'auto' if lin else 'zero',
+            'grupos': [{'id': 'cancent', 'titulo': 'Canceladas/denegadas na SEFAZ e escrituradas como regulares', 'sugestao': 'tirar do SPED',
+                        'linhas': lin}] if lin else []}
+
+
 # ------------------------------------------------------------------ análise
 def analisar(sped, xml_dir, permitidas=None):
     texto, enc, corr, rc, xmls, lidos, erros = _base(sped, xml_dir)
@@ -195,6 +234,10 @@ def analisar(sped, xml_dir, permitidas=None):
     pode = lambda k: _pode(permitidas, k)
     corr_v = corr                                     # arquivo só com a validação (é o que a etapa 1 mostra)
     ca_uc = ca_comb = ca_ch = None
+    etapa_canc = None
+    _P('Entradas canceladas na SEFAZ')
+    if pode('cancent'):
+        etapa_canc = _etapa_cancel(corr)
     _P('Chave de acesso × XML')
     if pode('chave'):
         corr, ca_ch = _todas(ck, corr, xmls)         # as demais etapas acham o XML pela chave já corrigida
@@ -593,6 +636,8 @@ def analisar(sped, xml_dir, permitidas=None):
     if permitidas is None:
         etapas.append({'key': 'estoque', 'titulo': 'Estoque de mercadoria que saiu da ST', 'desc': 'precisa da planilha do estoque: use o botão "Estoque ST"',
                        'qtd': '—', 'valor': '', 'badge': 'botão próprio', 'tipo': 'fora', 'grupos': []})
+    if etapa_canc:
+        etapas.insert(1 if etapas and etapas[0]['key'] == 'validacao' else 0, etapa_canc)
     etapas = [e for e in etapas if e['key'] == 'estoque' or pode(e['key'])]
     ks = [e['key'] for e in etapas]                       # mesma ordem da aplicação: uso e consumo, combustível, ST da entrada
     if 'stent' in ks and 'comb' in ks and ks.index('stent') < ks.index('comb'):
@@ -613,6 +658,21 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
     final, resumo, avisos = corr, {}, []
     _P('Preparando a correção')
     base_an = _base_analise(corr, xmls, permitidas)                               # o que a análise usou
+    # 0) entradas canceladas/denegadas na SEFAZ — saem primeiro, para as demais etapas já não olharem para elas
+    _P('Entradas canceladas na SEFAZ')
+    if liga('cancent') and _SITU['itens']:
+        ecn = esc.get('cancent') or {}
+        ids = [i['id'] for i in ce.analisar_texto(final, _SITU['itens'])['itens'] if ecn.get(i['id'], True) is not False]
+        if ids:
+            novo, r = ce.aplicar_texto(final, _SITU['itens'], ids, esc.get('e116') if isinstance(esc.get('e116'), dict) else None)
+            if r.get('erro'):
+                if 'E116' in r['erro'] and not isinstance(esc.get('e116'), dict):
+                    return None, enc, {'precisa_e116': True, 'etapa': 'Entradas canceladas na SEFAZ',
+                                       'erro': 'Com a correção a empresa passa a ter ICMS a recolher e o SPED não tem guia (E116). Informe o vencimento e o código de receita da guia.'}
+                return None, enc, {'erro': f"Entradas canceladas na SEFAZ: {r['erro']}", 'etapa': 'Entradas canceladas na SEFAZ'}
+            final = novo
+            resumo['cancent'] = {'notas': r['notas'], 'retiradas': r['retiradas'], 'proprias': r['proprias'], 'credito': r['credito']}
+            avisos += r.get('avisos') or []
     # 1·) chave de acesso × XML
     _P('Chave de acesso × XML')
     if liga('chave'):
@@ -876,6 +936,7 @@ def main_cli(argv):
         print('uso: analisar-tudo --sped ARQ.txt [--xmls PASTA] [--regimes R.json] --json saida.json [--aplicar esc.json --saida novo.txt]')
         return 1
     dr.carrega_regimes(opt('--regimes'))
+    _SITU['itens'] = ce.ler_situacoes(opt('--situacao'))
     _PROG['arq'] = opt('--progresso')
     _PROG['plano'] = PLANO_APLICA if opt('--aplicar') else PLANO_ANALISE
     perm = opt('--etapas')

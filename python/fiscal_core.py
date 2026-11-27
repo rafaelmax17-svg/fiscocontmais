@@ -3116,6 +3116,81 @@ def main(argv):
 
     # "nfe-chave" — Consulta NF-e por chave (Admin): situação + XML (Ambiente Nacional) + DANFE.
     # Entrada: JSON {chaves, cnpj, empresa, pasta, baixar, ciencia, pdf}. Saída: JSON {itens: [...]}.
+    # "situacao-sefaz" — Corretor: situação na SEFAZ (autorizada/cancelada/denegada) das NF-e/NFC-e/CT-e de ENTRADA do SPED.
+    # Uso: situacao-sefaz <pfx> --senha S --sped ARQ.txt --cache situacoes.json [--progresso P] --json saida.json
+    # O cache guarda cada chave; cancelada/denegada é definitivo, autorizada é consultada de novo depois de 12 h.
+    if modo == 'situacao-sefaz':
+        import nfe_chave as _nc
+        import manifestacao as _mf
+        import cancel_entradas as _ce
+        import time as _t
+        from datetime import datetime as _dt, timezone as _tz
+        args = argv[1:]
+
+        def opts(name, default=None):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        saida, cache_p, prog = opts('--json', 'situacao.json'), opts('--cache'), opts('--progresso')
+        try:
+            texto, _enc = _ler_sped(opts('--sped'))
+            chaves = list(dict.fromkeys(_ce.chaves_entrada(texto)))
+            cache = _ce.ler_situacoes(cache_p)
+            agora = _dt.now(_tz.utc)
+
+            def precisa(c):
+                h = cache.get(c) or {}
+                if h.get('situacao') in ('cancelada', 'denegada'):
+                    return False
+                if h.get('situacao') == 'autorizada':
+                    try:
+                        return (agora - _dt.fromisoformat(h.get('em'))).total_seconds() > 12 * 3600
+                    except Exception:
+                        return True
+                return True
+            faltam = [c for c in chaves if precisa(c)]
+            mx = int(opts('--max', '0') or 0)
+            res = {'total': len(chaves), 'faltavam': len(faltam), 'consultadas': 0, 'canceladas': 0, 'denegadas': 0, 'erros': 0,
+                   'restam': max(0, len(faltam) - mx) if mx else 0}
+            if mx:
+                faltam = faltam[:mx]
+            if faltam:
+                cert_pem, key_pem, tmp_cert = _extrair_cert_chave_temp(args[0], opts('--senha', ''))
+                try:
+                    sess = _mf.sessao(cert_pem, key_pem)
+                    for k, c in enumerate(faltam):
+                        try:
+                            r = _nc.situacao(sess, c)
+                            ev = [e for e in (r.get('eventos') or []) if e.get('tipo') == '110111']
+                            cache[c] = {'situacao': r.get('situacao') or 'erro', 'cstat': r.get('cstat', ''), 'motivo': r.get('motivo', ''),
+                                        'quando': ev[-1].get('quando', '') if ev else '', 'em': agora.isoformat()}
+                        except Exception as e1:
+                            cache[c] = {'situacao': 'erro', 'motivo': str(e1)[:160], 'em': agora.isoformat()}
+                        res['consultadas'] += 1
+                        if prog and (k % 5 == 0 or k == len(faltam) - 1):
+                            try:
+                                with open(prog, 'w', encoding='utf-8') as fh:
+                                    json.dump({'feitas': k + 1, 'total': len(faltam)}, fh)
+                            except Exception:
+                                pass
+                        if (k + 1) % 25 == 0 and cache_p:     # guarda no meio do caminho (consulta longa)
+                            with open(cache_p, 'w', encoding='utf-8') as fh:
+                                json.dump({'itens': cache}, fh, ensure_ascii=False)
+                        _t.sleep(0.25)
+                finally:
+                    import shutil as _sh
+                    _sh.rmtree(tmp_cert, ignore_errors=True)
+                if cache_p:
+                    with open(cache_p, 'w', encoding='utf-8') as fh:
+                        json.dump({'itens': cache}, fh, ensure_ascii=False)
+            for c in chaves:
+                st = (cache.get(c) or {}).get('situacao')
+                res['canceladas'] += st == 'cancelada'
+                res['denegadas'] += st == 'denegada'
+                res['erros'] += st in (None, 'erro')
+        except Exception as e:
+            res = {'erro': str(e)}
+        _out(saida, json.dumps(res, ensure_ascii=False))
+        return 0 if 'erro' not in res else 1
+
     if modo == 'nfe-chave':
         import nfe_chave as _nc
         args = argv[1:]
