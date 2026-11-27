@@ -360,7 +360,7 @@ def gerar(d, logo=''):
     # ---- topo ----
     logo_html = f'<img src="{logo}" alt="Liddera">' if logo else ''
     band = f"""<div class="band"><div class="in">
-<div class="top anim"><div class="brand">{logo_html}<div><b>Liddera | Inteligência em Negócios</b><span>Apuração ICMS · EFD-ICMS/IPI</span></div></div>
+<div class="top anim"><div class="brand">{logo_html}<div><b>Liddera | Inteligência em Negócios</b><span>Relatório mensal do ICMS</span></div></div>
 <div class="per">Período<b>{_esc(comp)}</b>{_esc(per_txt)}{' · ' + uf if uf else ''}</div></div>
 <div class="emp anim" style="animation-delay:.08s"><div><h1>{_esc(emp.get('empresa', ''))}</h1><p>CNPJ {_esc(_cnpj(emp.get('cnpj')))} · IE {_esc(emp.get('ie', ''))}{' · ' + uf if uf else ''}</p></div>
 <div class="fat"><span class="tag">● Contribuinte do ICMS</span><small>FATURAMENTO BRUTO DO MÊS</small>{_cnt(fat)}</div></div></div></div>"""
@@ -433,7 +433,7 @@ def gerar(d, logo=''):
                    f'<div class="vb"><small>− Compras e demais entradas</small><b class="num" style="color:#d93b41">{_R(vr["entradas"] - vr["transf_entradas"])}</b></div>'
                    f'<div class="vb"><small>− Transferências recebidas</small><b class="num" style="color:#d93b41">{_R(vr["transf_entradas"])}</b></div>'
                    f'<div class="vb r"><small>= Valor adicionado</small>{_cnt(vr["vaf"])}</div></div>'
-                   f'<div class="note">Regra de Rondônia (Decreto 11.908/2005, art. 8º, § 3º): todas as saídas menos todas as entradas da EFD, '
+                   f'<div class="note">Regra de Rondônia (Decreto 11.908/2005, art. 8º, § 3º): todas as saídas menos todas as entradas da escrituração fiscal, '
                    f'inclusive transferências entre estabelecimentos. Ficam fora ativo imobilizado, uso e consumo, bonificações, remessas e '
                    f'outros CFOPs listados no decreto (saídas {_R(vr["excl_saidas"])} · entradas {_R(vr["excl_entradas"])}). '
                    f'O VAF compõe o índice de participação do município no ICMS.</div>')
@@ -518,9 +518,12 @@ def gerar(d, logo=''):
         db = a.get('natureza') == 'debito'
         cor = '#d93b41' if db else '#0a8a5f'
         desc = a.get('descricao') or a.get('tipo') or ''
-        orig = f'{a.get("qtd", 0)} nota(s) (C197)' if a.get('origem') == 'documento' else 'E111'
+        # sem nome de registro do SPED (E111, C197...): o cliente não precisa disso
+        q = a.get('qtd', 0)
+        orig = (f' <span style="color:#9aa2bf">· lançado em {q} {"notas fiscais" if q != 1 else "nota fiscal"}</span>'
+                if a.get('origem') == 'documento' else '')
         linhas += (f'<tr><td><span class="aj3" style="background:{"#fde8e9" if db else "#e7f8f1"};color:{cor}">{"DÉBITO" if db else "CRÉDITO"}</span>'
-                   f'<span class="cfb" style="color:{cor}">{_esc(a.get("codigo"))}</span>{_esc(desc)[:90]} <span style="color:#9aa2bf">· {orig}</span></td>'
+                   f'<span class="cfb" style="color:{cor}">{_esc(a.get("codigo"))}</span>{_esc(desc)[:90]}{orig}</td>'
                    f'<td class="v num" style="color:{cor}">{"+ " if db else "− "}{_R(a.get("valor"))}</td></tr>')
     if linhas:
         sd = sum(a.get('valor') or 0 for a in ajs if a.get('natureza') == 'debito')
