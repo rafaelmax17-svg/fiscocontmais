@@ -2152,7 +2152,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
     // ---- 🔎 Analisar tudo / Aplicar tudo
     const TD = { an: null, etapa: {}, marc: {}, val: {}, aberto: new Set(), gAberto: new Set(), lAberta: new Set(), busca: {}, lim: {}, modo: {}, e116: null };
     const TD_DICT = { cfop: 'difal', difal: 'difal', balcao: 'difal', frete: 'difal', cred: 'difal', desconto: 'desconto', icms: 'icms', valor: 'valor',
-      simples: 'simples', snd: 'simples', maca: 'maca', alcgm: 'alcgm', abatnt: 'abatnt', cancent: 'cancent', acum: 'acum', cad: 'cad', comb: 'comb', ucons: 'ucons', stent: 'stent', chave: 'chave', ncm: 'ncm',
+      simples: 'simples', snd: 'simples', maca: 'maca', alcgm: 'alcgm', abatnt: 'abatnt', cancent: 'cancent', saisef: 'saisef', saisefc: 'saisef', cstcf: 'cstcf', dareaj: 'dareaj', dareajn: 'dareaj', acum: 'acum', cad: 'cad', comb: 'comb', ucons: 'ucons', stent: 'stent', chave: 'chave', ncm: 'ncm',
       pva_gtin: 'pvacad', pva_semuso: 'pvacad', pva_cest: 'pvacad', pva_c197: 'pvacad' };
     const tdK = (g, l) => `${g}|${l.sel}`;
     function tdIniciar(an) {
@@ -2214,7 +2214,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
         <div class="dif-head"><div><div class="dif-k">✨ Análise Inteligente</div>
           <h3>${esc(an.empresa.nome || an.arquivo)}</h3>
           <div class="dif-sub">Todas as conferências num painel só. O que é certo já vem marcado; o que depende de decisão vem com a sugestão marcada para você revisar. Nada muda até clicar em <b>Aplicar tudo</b>. O arquivo original nunca é alterado.</div></div>
-          <div class="sn-hbtn"><button class="act inv-export" id="tdSefaz" title="Consulta na SEFAZ se as NF-e/NFC-e e CT-e de entrada do arquivo foram cancelados ou denegados">Conferir entradas na SEFAZ</button><button class="act inv-export" id="tdXmls">${XMLS.path ? 'Trocar XMLs' : 'Anexar XMLs das notas'}</button><button class="act inv-export" id="tdFechar">Fechar</button></div></div>
+          <div class="sn-hbtn"><button class="act inv-export" id="tdSefaz" title="Consulta na SEFAZ se as NF-e/NFC-e e CT-e de entrada do arquivo foram cancelados ou denegados">Conferir entradas na SEFAZ</button><button class="act inv-export" id="tdSefazS" title="Consulta na SEFAZ as notas emitidas pela empresa (e os números que faltam na sequência, com o XML anexado). Pode demorar: são todas as saídas do mês.">Conferir saídas na SEFAZ</button><button class="act inv-export" id="tdXmls">${XMLS.path ? 'Trocar XMLs' : 'Anexar XMLs das notas'}</button><button class="act inv-export" id="tdFechar">Fechar</button></div></div>
         ${XMLS.path ? `<div class="dif-av ok dif-xmlbar"><b>XMLs anexados:</b> ${an.xml_lidos || 0} lido(s).</div>` : '<div class="dif-av"><b>Sem XMLs das notas:</b> Desconto, ICMS × XML, Valor e base × XML, Simples, Unidade e a chave de acesso não rodam. Anexe os XMLs para incluir essas conferências.</div>'}
         <div class="dif-kpis">
           <div><span>Conferências</span><b>${an.etapas.length}</b><small>${ativas} com correção</small></div>
@@ -2242,6 +2242,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       $('#tdFechar').addEventListener('click', () => { box.hidden = true; $('#corrSpedEmpty').hidden = false; });
       $('#tdXmls').addEventListener('click', async () => { if (await corrPedeXmls()) tdAbrir(); });
       $('#tdSefaz').addEventListener('click', () => tdAbrir(true));
+      $('#tdSefazS').addEventListener('click', () => tdAbrir('saidas'));
       box.querySelectorAll('.td-e').forEach((c) => c.addEventListener('change', () => { TD.etapa[c.dataset.e] = c.checked; tdDesenhar(); }));
       box.querySelectorAll('[data-ab]').forEach((a) => a.addEventListener('click', () => { const k = a.dataset.ab; if (TD.aberto.has(k)) TD.aberto.delete(k); else TD.aberto.add(k); tdDesenhar(); }));
       box.querySelectorAll('[data-mt], [data-dt]').forEach((a) => a.addEventListener('click', () => {
@@ -2260,7 +2261,7 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       $('#tdAplicar').addEventListener('click', () => tdAplicar());
     }
     function tdEscolhas() {
-      const esc2 = { etapas: { ...TD.etapa }, difal: {}, desconto: {}, icms: {}, valor: {}, simples: {}, maca: {}, alcgm: {}, abatnt: {}, cancent: {}, acum: {}, cad: {}, comb: {}, ucons: {}, stent: {}, chave: {}, ncm: {}, pvacad: {} };
+      const esc2 = { etapas: { ...TD.etapa }, difal: {}, desconto: {}, icms: {}, valor: {}, simples: {}, maca: {}, alcgm: {}, abatnt: {}, cancent: {}, saisef: {}, cstcf: {}, dareaj: {}, acum: {}, cad: {}, comb: {}, ucons: {}, stent: {}, chave: {}, ncm: {}, pvacad: {} };
       if (TD.e116) esc2.e116 = TD.e116;
       TD.an.etapas.forEach((e) => e.grupos.forEach((g) => {
         const dic = TD_DICT[g.id];
@@ -2269,8 +2270,9 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
         (g.linhas || []).forEach((l) => {
           if (l.bloqueado) return;
           const k = tdK(g.id, l), on = !!TD.marc[k];
-          if (['cfop', 'cred', 'desconto', 'icms', 'valor', 'simples', 'maca', 'alcgm', 'abatnt', 'cancent', 'comb', 'ucons', 'stent', 'chave', 'pva_gtin', 'pva_semuso', 'pva_cest', 'pva_c197'].includes(g.id)) { if (!on) esc2[dic][l.sel] = false; return; }
-          if (g.id === 'acum' || g.id === 'cad' || g.id === 'ncm') { esc2[dic][l.sel] = on ? (TD.val[k] || l.padrao || false) : false; return; }
+          if (['cfop', 'cred', 'desconto', 'icms', 'valor', 'simples', 'maca', 'alcgm', 'abatnt', 'cancent', 'saisef', 'saisefc', 'dareaj', 'comb', 'ucons', 'stent', 'chave', 'pva_gtin', 'pva_semuso', 'pva_cest', 'pva_c197'].includes(g.id)) { if (!on) esc2[dic][l.sel] = false; return; }
+          if (g.id === 'dareajn') { esc2.dareaj[l.sel] = on; return; }
+          if (g.id === 'acum' || g.id === 'cad' || g.id === 'ncm' || g.id === 'cstcf') { esc2[dic][l.sel] = on ? (TD.val[k] || l.padrao || false) : false; return; }
           if (g.id === 'snd') { esc2.simples[l.sel] = on; return; }
           if (!on) { esc2.difal[l.sel] = g.id === 'balcao' ? 'manter' : 'nao'; return; }
           let v = TD.val[k] || l.padrao;
@@ -2284,12 +2286,13 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       if (!corrSpedPath) return;
       corrSoMostra('#corrTudo');
       corrProg(true, 'Conferindo');
-      const r = await window.fiscocont.admin.tudoAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path, sefaz: sefaz === true });
+      const r = await window.fiscocont.admin.tudoAnalisar({ spedPath: corrSpedPath, usarCorrigido: corrFeito, xmls: XMLS.path,
+        sefaz: sefaz === true ? 'entradas' : (sefaz === 'saidas' ? 'saidas' : false) });
       await corrProg(false, r.error ? false : undefined);
       if (r.error) { toast(r.error, true); return; }
       if (r.res && r.res.sefaz) {
         const sz = r.res.sefaz;
-        toast(`Entradas conferidas na SEFAZ (${sz.total}) com o certificado de ${sz.certificado}${sz.certPropria ? '' : ' (não é o da própria empresa)'}`
+        toast(`${sefaz === 'saidas' ? 'Saídas' : 'Entradas'} conferidas na SEFAZ (${sz.total}) com o certificado de ${sz.certificado}${sz.certPropria ? '' : ' (não é o da própria empresa)'}`
           + (sz.erros ? ` · ${sz.erros} sem resposta: clique de novo para tentar` : '') + '.');
       }
       TD.e116 = null;
@@ -2327,6 +2330,9 @@ ${ex ? ex.grupos.map((g) => `|C197|RO10000038|Cred Presumido…||${(+g.base).toF
       if (z.valor) lin.push(`Valor e base × XML: ${z.valor.notas} nota(s)${z.valor.credito_retirado ? `, crédito retirado R$ ${fmR(z.valor.credito_retirado)}` : ''}`);
       if (z.simples) lin.push(`Crédito do Simples: ${z.simples.notas} nota(s), R$ ${fmR(z.simples.credito)}`);
       if (z.maca) lin.push(`Crédito maçã e pera: ${z.maca.notas} nota(s), R$ ${fmR(z.maca.credito)}`);
+      if (z.saisef) lin.push(`Saídas × SEFAZ: ${z.saisef.canceladas} nota(s) marcada(s) como cancelada(s) · ${z.saisef.incluidas} cancelada(s) que faltavam incluída(s)${z.saisef.debito ? ` · débito − R$ ${fmR(z.saisef.debito)}` : ''}`);
+      if (z.cstcf) lin.push(`CST × CFOP × ICMS: CST trocado em ${z.cstcf.linhas} linha(s) do C190 de ${z.cstcf.notas} nota(s)`);
+      if (z.dareaj) lin.push(`DARE × ajustes: ${z.dareaj.acertados} ajuste(s) acertado(s) pelo DARE pago · ${z.dareaj.incluidos} crédito(s) de DARE incluído(s) · R$ ${fmR(z.dareaj.credito)}`);
       if (z.cancent) lin.push(`Entradas canceladas na SEFAZ: ${z.cancent.notas} documento(s) (${z.cancent.retiradas} retirado(s), ${z.cancent.proprias} de emissão própria marcado(s) como cancelado) · crédito − R$ ${Number(z.cancent.credito || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
       if (z.abatnt) lin.push(`Abatimento nos itens (C170 campo 38): ${z.abatnt.notas} nota(s)`);
       if (z.alcgm) lin.push(`Crédito presumido ALC Guajará-Mirim: ${z.alcgm.notas} nota(s) (${z.alcgm.acertadas} acertada(s) · ${z.alcgm.incluidas} incluída(s) · ${z.alcgm.retiradas} retirada(s)) · ${z.alcgm.delta >= 0 ? '+' : '−'} R$ ${fmR(Math.abs(z.alcgm.delta))} no E110`);

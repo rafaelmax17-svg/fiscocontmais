@@ -70,17 +70,20 @@ import st_entrada_ro as se
 import unidade_xml as ux
 import pva_cadastro as pc
 import cancel_entradas as ce
+import cst_cfop as ccf
+import saidas_sefaz as ssf
+import dare_ajustes as dja
 from xml_entradas import ler_xmls
 
 
 # ------------------------------------------------------------------ progresso (2.4.34)
 # O Electron passa --progresso ARQ.json e lê o arquivo enquanto roda: a barra da tela mostra a etapa real.
 _PROG = {'arq': None, 'plano': [], 'reg': 0}
-PLANO_ANALISE = ['Lendo o SPED', 'Lendo os XMLs', 'Entradas canceladas na SEFAZ', 'Chave de acesso × XML', 'NCM × XML das entradas', 'Uso e consumo lançado como revenda',
+PLANO_ANALISE = ['Lendo o SPED', 'Lendo os XMLs', 'Entradas canceladas na SEFAZ', 'Saídas × SEFAZ', 'CST × CFOP × ICMS', 'DARE × ajustes', 'Chave de acesso × XML', 'NCM × XML das entradas', 'Uso e consumo lançado como revenda',
                  'Combustível × uso e consumo', 'ICMS-ST na entrada', 'Uso e consumo · DIFAL e crédito', 'Validação do PVA · cadastro e ajustes',
                  'Desconto, ICMS e valor × XML', 'Crédito maçã e pera', 'Crédito presumido ALC Guajará-Mirim', 'Abatimento nos itens (C170)',
                  'Acumulador 7000', 'Cadastro de produtos (0200)', 'Unidade × XML', 'Somando o impacto']
-PLANO_APLICA = ['Lendo o SPED', 'Lendo os XMLs', 'Preparando a correção', 'Entradas canceladas na SEFAZ', 'Chave de acesso × XML', 'NCM × XML das entradas',
+PLANO_APLICA = ['Lendo o SPED', 'Lendo os XMLs', 'Preparando a correção', 'Entradas canceladas na SEFAZ', 'Saídas × SEFAZ', 'CST × CFOP × ICMS', 'DARE × ajustes', 'Chave de acesso × XML', 'NCM × XML das entradas',
                 'Uso e consumo lançado como revenda', 'Combustível × uso e consumo', 'ICMS-ST na entrada', 'Uso e consumo · DIFAL e crédito',
                 'Desconto, ICMS e valor × XML', 'Crédito maçã e pera', 'Crédito presumido ALC Guajará-Mirim', 'Abatimento nos itens (C170)',
                 'Acumulador 7000', 'Cadastro de produtos (0200)', 'Unidade × XML', 'Validação do PVA · cadastro e ajustes', 'Gravando o arquivo corrigido']
@@ -191,6 +194,7 @@ def _base(sped, xml_dir):
     return texto, enc, corr, rc, xmls, lidos, erros
 
 
+_DARES = {'dados': None}    # DAREs pagos da empresa (arquivo --dares, lido do módulo de DARE)
 _SITU = {'itens': {}}      # situação na SEFAZ das chaves de entrada (arquivo --situacao, preenchido pela consulta do sistema)
 
 
@@ -238,6 +242,16 @@ def analisar(sped, xml_dir, permitidas=None):
     _P('Entradas canceladas na SEFAZ')
     if pode('cancent'):
         etapa_canc = _etapa_cancel(corr)
+    etapas_novas = []                               # 2.5.3 (em teste): saídas × SEFAZ, CST × CFOP × ICMS, DARE × ajustes
+    _P('Saídas × SEFAZ')
+    if pode('saisef'):
+        etapas_novas.append(ssf.etapa(corr, _SITU['itens'], xmls))
+    _P('CST × CFOP × ICMS')
+    if pode('cstcf'):
+        etapas_novas.append(ccf.etapa(corr))
+    _P('DARE × ajustes')
+    if pode('dareaj'):
+        etapas_novas.append(dja.etapa(corr, _DARES['dados']))
     _P('Chave de acesso × XML')
     if pode('chave'):
         corr, ca_ch = _todas(ck, corr, xmls)         # as demais etapas acham o XML pela chave já corrigida
@@ -636,8 +650,9 @@ def analisar(sped, xml_dir, permitidas=None):
     if permitidas is None:
         etapas.append({'key': 'estoque', 'titulo': 'Estoque de mercadoria que saiu da ST', 'desc': 'precisa da planilha do estoque: use o botão "Estoque ST"',
                        'qtd': '—', 'valor': '', 'badge': 'botão próprio', 'tipo': 'fora', 'grupos': []})
-    if etapa_canc:
-        etapas.insert(1 if etapas and etapas[0]['key'] == 'validacao' else 0, etapa_canc)
+    pos = 1 if etapas and etapas[0]['key'] == 'validacao' else 0
+    for e_ in reversed(([etapa_canc] if etapa_canc else []) + etapas_novas):
+        etapas.insert(pos, e_)
     etapas = [e for e in etapas if e['key'] == 'estoque' or pode(e['key'])]
     ks = [e['key'] for e in etapas]                       # mesma ordem da aplicação: uso e consumo, combustível, ST da entrada
     if 'stent' in ks and 'comb' in ks and ks.index('stent') < ks.index('comb'):
@@ -672,6 +687,50 @@ def aplicar(sped, xml_dir, escolhas, permitidas=None):
                 return None, enc, {'erro': f"Entradas canceladas na SEFAZ: {r['erro']}", 'etapa': 'Entradas canceladas na SEFAZ'}
             final = novo
             resumo['cancent'] = {'notas': r['notas'], 'retiradas': r['retiradas'], 'proprias': r['proprias'], 'credito': r['credito']}
+            avisos += r.get('avisos') or []
+
+    def _roda(nome, fn):
+        novo, r = fn()
+        if r.get('erro'):
+            if 'E116' in r['erro'] and not isinstance(esc.get('e116'), dict):
+                return None, {'precisa_e116': True, 'etapa': nome,
+                              'erro': 'Com a correção a empresa passa a ter ICMS a recolher e o SPED não tem guia (E116). Informe o vencimento e o código de receita da guia.'}
+            return None, {'erro': f"{nome}: {r['erro']}", 'etapa': nome}
+        return novo, r
+    e116s = esc.get('e116') if isinstance(esc.get('e116'), dict) else None
+    _P('Saídas × SEFAZ')
+    if liga('saisef'):
+        es = esc.get('saisef') or {}
+        an_s = ssf.analisar_texto(final, _SITU['itens'], xmls)
+        ids = [x['id'] for x in an_s['canceladas'] if es.get(x['id'], True) is not False]
+        ids += [x['id'] for x in an_s['buracos'] if x['situacao'] in ('cancelada', 'denegada') and es.get(x['id'], True) is not False]
+        if ids:
+            novo, r = _roda('Saídas × SEFAZ', lambda: ssf.aplicar_texto(final, _SITU['itens'], xmls, ids, e116s))
+            if novo is None:
+                return None, enc, r
+            final = novo
+            resumo['saisef'] = {'incluidas': r['incluidas'], 'canceladas': r['canceladas'], 'debito': r['debito']}
+            avisos += r.get('avisos') or []
+    _P('CST × CFOP × ICMS')
+    if liga('cstcf'):
+        es = {k: v for k, v in (esc.get('cstcf') or {}).items() if v in ('40', '41')}
+        if es:
+            novo, r = ccf.aplicar_texto(final, es)
+            final = novo
+            if r['linhas']:
+                resumo['cstcf'] = r
+    _P('DARE × ajustes')
+    if liga('dareaj') and _DARES['dados'] is not None:
+        es = esc.get('dareaj') or {}
+        an_d = dja.analisar_texto(final, _DARES['dados'])
+        ids = [x['id'] for x in an_d['itens'] if (x['tipo'] == 'diferente' and es.get(x['id'], True) is not False)
+               or (x['tipo'] == 'sem_credito' and es.get(x['id']) is True)]
+        if ids:
+            novo, r = _roda('DARE × ajustes', lambda: dja.aplicar_texto(final, _DARES['dados'], ids, e116s))
+            if novo is None:
+                return None, enc, r
+            final = novo
+            resumo['dareaj'] = {'acertados': r['acertados'], 'incluidos': r['incluidos'], 'credito': r['credito']}
             avisos += r.get('avisos') or []
     # 1·) chave de acesso × XML
     _P('Chave de acesso × XML')
@@ -937,6 +996,7 @@ def main_cli(argv):
         return 1
     dr.carrega_regimes(opt('--regimes'))
     _SITU['itens'] = ce.ler_situacoes(opt('--situacao'))
+    _DARES['dados'] = dja.ler_pagos(opt('--dares'))
     _PROG['arq'] = opt('--progresso')
     _PROG['plano'] = PLANO_APLICA if opt('--aplicar') else PLANO_ANALISE
     perm = opt('--etapas')

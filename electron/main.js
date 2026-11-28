@@ -2986,6 +2986,9 @@ const CORR_ETAPAS = [
   { key: 'validacao', nome: 'Validação do PVA', fixo: true },
   { key: 'pvacad', nome: 'Validação do PVA · cadastro e ajustes', teste: true },
   { key: 'cancent', nome: 'Entradas canceladas na SEFAZ' },
+  { key: 'saisef', nome: 'Saídas × SEFAZ (notas emitidas)', teste: true },
+  { key: 'cstcf', nome: 'CST × CFOP × ICMS', teste: true },
+  { key: 'dareaj', nome: 'DARE × ajustes de crédito', teste: true },
   { key: 'chave', nome: 'Chave de acesso × XML', teste: true },
   { key: 'ncm', nome: 'NCM × XML das entradas', teste: true },
   { key: 'ucons', nome: 'Uso e consumo lançado como revenda', teste: true },
@@ -4032,7 +4035,21 @@ function _certParaSefaz(cnpj) {
   }
   return { error: 'Para conferir na SEFAZ é preciso um certificado digital válido cadastrado nas Baixas DF-e (de preferência o da própria empresa).' };
 }
-async function _conferirSefaz(evt, arqSped) {
+// DAREs pagos da empresa do SPED (mês da apuração e os dois seguintes), do que o módulo de DARE já leu
+async function _daresDoSped(arqSped) {
+  try {
+    const l0 = fs.readFileSync(arqSped, 'latin1').slice(0, 400).split(/\r?\n/)[0].split('|');
+    const ie = String(l0[10] || '').replace(/\D/g, ''), dt = String(l0[4] || '');
+    if (!ie || dt.length !== 8) return null;
+    const meses = [0, 1, 2].map((k) => { const d = new Date(+dt.slice(4), +dt.slice(2, 4) - 1 + k, 1); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`; });
+    const r = await dare.pagosDaIE(ie, meses);
+    if (!r) return null;
+    const arq = path.join(os.tmpdir(), `fc_dares_${Date.now()}.json`);
+    fs.writeFileSync(arq, JSON.stringify(r));
+    return arq;
+  } catch (_) { return null; }
+}
+async function _conferirSefaz(evt, arqSped, tipo, xmls) {
   let cnpj = '';
   try { const l0 = fs.readFileSync(arqSped, 'latin1').slice(0, 400).split(/\r?\n/)[0].split('|'); cnpj = String(l0[7] || '').replace(/\D/g, ''); } catch (_) {}
   const cert = _certParaSefaz(cnpj);
@@ -4046,11 +4063,12 @@ async function _conferirSefaz(evt, arqSped) {
       try {
         const p = JSON.parse(fs.readFileSync(prog, 'utf-8'));
         const tot = (ultimo ? feitasAntes + ultimo.restam : 0) || p.total;
-        env(`Conferindo as entradas na SEFAZ: ${feitasAntes + p.feitas} de ${Math.max(tot, feitasAntes + p.total)}`, Math.min(95, ((feitasAntes + p.feitas) / Math.max(tot, feitasAntes + p.total)) * 100));
+        env(`Conferindo ${tipo === 'saidas' ? 'as saídas' : 'as entradas'} na SEFAZ: ${feitasAntes + p.feitas} de ${Math.max(tot, feitasAntes + p.total)}`, Math.min(95, ((feitasAntes + p.feitas) / Math.max(tot, feitasAntes + p.total)) * 100));
       } catch (_) {}
     }, 700);
     try {
       await runFiscal(['situacao-sefaz', cert.pfxPath, '--senha', cert.senha, '--sped', arqSped, '--cache', _situCachePath(),
+        '--tipo', tipo === 'saidas' ? 'saidas' : 'entradas', ...(xmls ? ['--xmls', xmls] : []),
         '--max', '150', '--progresso', prog, '--json', saida], saida);
     } finally { clearInterval(tm); }
     const r = JSON.parse(fs.readFileSync(saida, 'utf-8'));
@@ -4070,15 +4088,16 @@ ipcMain.handle('admin:tudoAnalisar', async (evt, { spedPath, usarCorrigido, xmls
   try {
     let situ = null;
     if (sefaz) {
-      situ = await _conferirSefaz(evt, base.arq);
+      situ = await _conferirSefaz(evt, base.arq, sefaz === 'saidas' ? 'saidas' : 'entradas', xmls);
       if (situ.error) return { error: situ.error };
     }
     const perm = await _corrPermitidas();
     const regimes = await _regimesJson([base.arq]);
+    const dares = await _daresDoSped(base.arq);
     const prog = _corrProg(evt, 'tudo');
     await runFiscal(['analisar-tudo', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--regimes', regimes, '--json', jsonOut,
-      '--situacao', _situCachePath(), '--progresso', prog.arq, ...(perm ? ['--etapas', perm.join(',')] : [])], jsonOut, prog);
-    fs.unlink(prog.arq, () => {});
+      '--situacao', _situCachePath(), ...(dares ? ['--dares', dares] : []), '--progresso', prog.arq, ...(perm ? ['--etapas', perm.join(',')] : [])], jsonOut, prog);
+    fs.unlink(prog.arq, () => {}); if (dares) fs.unlink(dares, () => {});
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8')); fs.unlink(jsonOut, () => {}); fs.unlink(regimes, () => {});
     if (res.erro) return { error: res.erro };
     if (situ) res.sefaz = { certificado: situ.certificado, certPropria: situ.certPropria, total: situ.total, erros: situ.erros };
@@ -4098,8 +4117,9 @@ ipcMain.handle('admin:tudoAplicar', async (evt, { spedPath, usarCorrigido, xmls,
     const prog = _corrProg(evt, 'aplica');
     const perm = await _corrPermitidas();
     const regimes = await _regimesJson([base.arq]);
+    const daresAp = await _daresDoSped(base.arq);
     await runFiscal(['analisar-tudo', '--sped', base.arq, ...(xmls ? ['--xmls', xmls] : []), '--regimes', regimes, '--json', jsonOut,
-      '--situacao', _situCachePath(), '--aplicar', escJson, '--saida', saida, '--progresso', prog.arq, ...(perm ? ['--etapas', perm.join(',')] : [])], jsonOut, prog);
+      '--situacao', _situCachePath(), ...(daresAp ? ['--dares', daresAp] : []), '--aplicar', escJson, '--saida', saida, '--progresso', prog.arq, ...(perm ? ['--etapas', perm.join(',')] : [])], jsonOut, prog);
     fs.unlink(prog.arq, () => {});
     const res = JSON.parse(fs.readFileSync(jsonOut, 'utf-8'));
     for (const f of [jsonOut, escJson, regimes]) fs.unlink(f, () => {});

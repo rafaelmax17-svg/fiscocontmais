@@ -3132,7 +3132,13 @@ def main(argv):
         saida, cache_p, prog = opts('--json', 'situacao.json'), opts('--cache'), opts('--progresso')
         try:
             texto, _enc = _ler_sped(opts('--sped'))
-            chaves = list(dict.fromkeys(_ce.chaves_entrada(texto)))
+            if opts('--tipo') == 'saidas':     # notas emitidas pela empresa + números que faltam e têm XML anexado
+                import saidas_sefaz as _ss
+                from xml_entradas import ler_xmls as _lx
+                _xm = _lx([opts('--xmls')])[0] if opts('--xmls') else {}
+                chaves = _ss.chaves_para_consulta(texto, _xm)
+            else:
+                chaves = list(dict.fromkeys(_ce.chaves_entrada(texto)))
             cache = _ce.ler_situacoes(cache_p)
             agora = _dt.now(_tz.utc)
 

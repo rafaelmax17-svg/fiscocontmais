@@ -741,6 +741,26 @@ async function dadosPagos(mes) {
   return { mes, emps, meta, gerados, pasta: pasta(), rodando: _lendoPg || _lendo || !!_prep };
 }
 
+// DAREs pagos de uma inscrição em alguns meses (para o Corretor do SPED conferir os ajustes de crédito do E111).
+// Lê só o que o módulo já guardou (dare/pg_<AAAAMM>_<IE>); não consulta o portal. null = nada lido para essa IE.
+async function pagosDaIE(ie, meses) {
+  const { db, f } = _fs();
+  const alvo = _so(ie).replace(/^0+/, '');
+  if (!alvo) return null;
+  const pagos = [], lidos = [];
+  for (const mes of meses) {
+    for (const id of [...new Set([alvo.padStart(14, '0'), alvo, _so(ie)])]) {
+      const snap = await f.getDoc(f.doc(db, COL, `pg_${mes}_${id}`));
+      if (!snap.exists()) continue;
+      const x = snap.data();
+      lidos.push(mes);
+      (x.pagos || []).forEach((p) => pagos.push({ nr: p.nr, parc: p.parc, ref: p.ref, rec: p.rec, valorN: p.valorN, pagoN: p.pagoN, pagoEm: p.pagoEm, mes }));
+      break;
+    }
+  }
+  return lidos.length ? { meses: lidos, pagos } : null;
+}
+
 // extrato de um lançamento pago (link "Exibir" do conta corrente) → mesma pasta e nome dos extratos dos débitos
 async function extratoPago(x) {
   _exige();
@@ -776,4 +796,4 @@ async function extratoPago(x) {
   finally { P.liberar(true); }
 }
 
-module.exports = { init, podeUsar, ler, resumo, dados, previa, preparar, novoCodigo, emitir, cancelar, extrato, lerPagos, dadosPagos, extratoPago, PASTA_PADRAO };
+module.exports = { init, podeUsar, ler, resumo, dados, previa, preparar, novoCodigo, emitir, cancelar, extrato, lerPagos, dadosPagos, extratoPago, pagosDaIE, PASTA_PADRAO };
