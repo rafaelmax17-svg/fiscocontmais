@@ -45,6 +45,10 @@ contextBridge.exposeInMainWorld('fiscocont', {
     onCodigo: (cb) => { ipcRenderer.removeAllListeners('dfe:captcha'); ipcRenderer.on('dfe:captcha', (_e, d) => cb(d)); },
     onProgresso: (cb) => { ipcRenderer.removeAllListeners('dfe:progresso'); ipcRenderer.on('dfe:progresso', (_e, d) => cb(d)); },
   },
+  ncm: {
+    consultar: (o) => ipcRenderer.invoke('ncm:consultar', o),
+    buscar: (o) => ipcRenderer.invoke('ncm:buscar', o),
+  },
   nfech: {
     empresas: () => ipcRenderer.invoke('nfech:empresas'),
     importar: () => ipcRenderer.invoke('nfech:importar'),

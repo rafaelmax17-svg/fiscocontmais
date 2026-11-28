@@ -4022,6 +4022,56 @@ function _corrProg(evt, nome) {
   const arq = path.join(os.tmpdir(), `fc_prog_${nome}_${Date.now()}.json`);
   return { arq, cb: (d) => { try { if (!evt.sender.isDestroyed()) evt.sender.send('corr:progresso', d); } catch (_) {} } };
 }
+// ---------------------------------------------------------------- Consulta de NCM (menu Fiscal, toda a equipe)
+// Descrição oficial: tabela NCM do Classif (Portal Único Siscomex), JSON público, guardada em userData e atualizada a
+// cada 7 dias (se o download falhar, usa a última guardada). PIS/COFINS e IBS/CBS: python/consulta_ncm.py.
+const NCM_URL = 'https://portalunico.siscomex.gov.br/classif/api/publico/nomenclatura/download/json?perfil=PUBLICO';
+const _ncmTabPath = () => path.join(app.getPath('userData'), 'ncm_siscomex.json');
+let _ncmBaixando = null;
+async function _ncmTabela() {
+  const arq = _ncmTabPath();
+  let idade = Infinity;
+  try { idade = Date.now() - fs.statSync(arq).mtimeMs; } catch (_) {}
+  if (idade < 7 * 86400000) return arq;
+  if (!_ncmBaixando) {
+    _ncmBaixando = (async () => {
+      try {
+        const r = await fetch(NCM_URL, { signal: AbortSignal.timeout(60000) });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const txt = await r.text();
+        JSON.parse(txt);                                      // só grava se for JSON válido
+        fs.writeFileSync(arq + '.tmp', txt, 'utf-8');
+        fs.renameSync(arq + '.tmp', arq);
+      } catch (e) { console.warn('[ncm] tabela do Siscomex não baixou:', e.message || e); }
+      finally { _ncmBaixando = null; }
+    })();
+  }
+  await _ncmBaixando;
+  return fs.existsSync(arq) ? arq : null;
+}
+const _ncmPode = async (fn) => {
+  if (!sessionRole) return { error: 'Entre no sistema para consultar.' };
+  if (sessionLocked) return { error: 'Sessão travada: digite a senha para continuar.' };
+  try { return { ok: true, ...(await fn()) }; } catch (e) { return { error: String(e.message || e) }; }
+};
+ipcMain.handle('ncm:consultar', (_evt, { ncm }) => _ncmPode(async () => {
+  const tab = await _ncmTabela();
+  const saida = path.join(os.tmpdir(), `fc_ncm_${Date.now()}.json`);
+  await runFiscal(['ncm-consulta', '--ncm', String(ncm || ''), ...(tab ? ['--tabela', tab] : []), '--json', saida], saida);
+  const res = JSON.parse(fs.readFileSync(saida, 'utf-8')); fs.unlink(saida, () => {});
+  let atualizada = '';
+  try { atualizada = new Date(fs.statSync(_ncmTabPath()).mtimeMs).toISOString(); } catch (_) {}
+  return { res, tabelaEm: atualizada };
+}));
+ipcMain.handle('ncm:buscar', (_evt, { texto }) => _ncmPode(async () => {
+  const tab = await _ncmTabela();
+  if (!tab) return { res: { itens: [], tabela: false } };
+  const saida = path.join(os.tmpdir(), `fc_ncmb_${Date.now()}.json`);
+  await runFiscal(['ncm-busca', '--texto', String(texto || ''), '--tabela', tab, '--json', saida], saida);
+  const res = JSON.parse(fs.readFileSync(saida, 'utf-8')); fs.unlink(saida, () => {});
+  return { res };
+}));
+
 // Situação na SEFAZ das NF-e/NFC-e/CT-e de ENTRADA do SPED (Corretor · "Entradas canceladas na SEFAZ").
 // Cache por chave em userData: cancelada/denegada é definitivo; autorizada é consultada de novo depois de 12 h.
 const _situCachePath = () => path.join(app.getPath('userData'), 'situacao_sefaz_entradas.json');

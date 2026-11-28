@@ -243,6 +243,11 @@
         <span>Apuração Assistida</span>
         <em class="nav-rt">REFORMA TRIBUTÁRIA</em>
       </button>
+      <button class="nav-item" data-group="fiscal" data-view="fiscal-ncm" title="Descrição oficial, PIS/COFINS e IBS/CBS pelo NCM">
+        <svg viewBox="0 0 24 24" class="ic"><circle cx="10.5" cy="10.5" r="6" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M15 15l5 5M8 9h5M8 12h3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>Consulta de NCM</span>
+        <em class="nav-new">NOVO</em>
+      </button>
       <button class="nav-item" data-group="fiscal" data-view="fiscal-inut">
         <svg viewBox="0 0 24 24" class="ic"><path d="M4 6h4M4 12h4M4 18h4M12 6h8M12 18h8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M12 12h8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-dasharray="2 2.4"/></svg>
         <span>Inutilizadas × Domínio</span>
@@ -1252,6 +1257,7 @@
 
       <div class="view" id="view-fiscal-fisconforme" hidden><div id="fcRaiz" class="fc"></div></div>
       <div class="view" id="view-fiscal-nfechave" hidden><div id="ncRaiz" class="nc"></div></div>
+      <div class="view" id="view-fiscal-ncm" hidden><div id="ncmRaiz"></div></div>
       <div class="view" id="view-admin-planilhas" hidden><div id="plRaiz" class="pl"></div></div>
       <div class="view" id="view-fiscal-dare" hidden><div id="drRaiz" class="fc dr"></div></div>
       <div class="view" id="view-fiscal-reinf" hidden><div id="rfRaiz" class="rf"></div></div>
@@ -1716,6 +1722,7 @@
 <script src="integra-admin.js"></script>
 <script src="fisconforme.js"></script>
   <script src="nfechave.js"></script>
+  <script src="ncm.js"></script>
   <script src="planilhas.js"></script>
 <script src="pop.js"></script>
   <script src="dare.js"></script>

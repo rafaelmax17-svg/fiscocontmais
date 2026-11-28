@@ -19,6 +19,11 @@ def limpa(s):
     return re.sub(r'\s+', ' ', (s or '').replace('\xa0', ' ')).strip()
 
 
+def _chave_data(s):
+    p = (s or '').split('/')
+    return tuple(int(x) for x in reversed(p)) if all(x.isdigit() for x in p) and p != [''] else (0,)
+
+
 def ler_tabela(caminho):
     d = docx.Document(caminho)
     titulo = limpa(d.paragraphs[0].text)
@@ -55,10 +60,15 @@ def ler_tabela(caminho):
             continue                                   # título de grupo (100, 200...), não é código de natureza
         ncm = '' if ncm == '-' else ncm
         if cod in itens:                               # mesmo código em várias linhas (períodos de alíquota)
-            if fim or not itens[cod]['t']:
+            if itens[cod].get('_aberto') or not fim:   # alguma linha sem data final: o código continua vigente
+                itens[cod]['t'] = ''
+                itens[cod]['_aberto'] = True
+            elif _chave_data(fim) > _chave_data(itens[cod]['t']):
                 itens[cod]['t'] = fim
             continue
-        itens[cod] = {'d': desc, 'n': ncm, 'i': ini, 't': fim}
+        itens[cod] = {'d': desc, 'n': ncm, 'i': ini, 't': fim, '_aberto': not fim}
+    for x in itens.values():
+        x.pop('_aberto', None)
     return tab, {'titulo': titulo, 'rotulo': ' · '.join(partes), 'csts': CSTS[tab], 'itens': itens}
 
 

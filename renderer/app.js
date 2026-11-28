@@ -569,6 +569,7 @@ function switchView(name) {
   if (name === 'fiscal-mit') { $('#view-fiscal-mit').hidden = false; $('#empty').hidden = true; if (window._mitEntrar) window._mitEntrar(); return; }
   if (name === 'fiscal-dare') { $('#view-fiscal-dare').hidden = false; $('#empty').hidden = true; if (window._dareEntrar) window._dareEntrar(); return; }
   if (name === 'admin-planilhas') { $('#view-admin-planilhas').hidden = false; $('#empty').hidden = true; if (window._planEntrar) window._planEntrar(); return; }
+  if (name === 'fiscal-ncm') { $('#view-fiscal-ncm').hidden = false; $('#empty').hidden = true; if (window._ncmEntrar) window._ncmEntrar(); return; }
   if (name === 'fiscal-nfechave') { $('#view-fiscal-nfechave').hidden = false; $('#empty').hidden = true; if (window._nfechEntrar) window._nfechEntrar(); return; }
   if (name === 'fiscal-fisconforme') { $('#view-fiscal-fisconforme').hidden = false; $('#empty').hidden = true; if (window._fiscEntrar) window._fiscEntrar(); return; }
   if (name === 'admin-integra') { $('#view-admin-integra').hidden = false; $('#empty').hidden = true; if (window._integraEntrar) window._integraEntrar(); return; }
@@ -4235,7 +4236,7 @@ function applyRole(role, modulos) {
     const ok = new Set(MODULOS);
     $$('.nav .nav-item[data-view]').forEach((b) => {
       const exclusivo = ['admin-usuarios', 'admin-lic', 'admin-integra'].includes(b.dataset.view);
-      const sempre = b.dataset.view === 'manual-fiscal' && !hideFiscal;     // o manual vale para todo o Fiscal
+      const sempre = ['manual-fiscal', 'fiscal-ncm'].includes(b.dataset.view) && !hideFiscal;     // manual e consulta de NCM valem para todo o Fiscal
       b.classList.toggle('role-hidden', exclusivo || (!sempre && !ok.has(b.dataset.view)));
     });
     // cada título do menu só aparece se algum item logo abaixo dele estiver liberado

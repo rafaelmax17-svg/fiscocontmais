@@ -3197,6 +3197,23 @@ def main(argv):
         _out(saida, json.dumps(res, ensure_ascii=False))
         return 0 if 'erro' not in res else 1
 
+    # "ncm-consulta" / "ncm-busca" — Consulta de NCM (descrição oficial, PIS/COFINS, IBS/CBS)
+    if modo in ('ncm-consulta', 'ncm-busca'):
+        import consulta_ncm as _cn
+        args = argv[1:]
+
+        def opts(name, default=None):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        try:
+            if modo == 'ncm-consulta':
+                res = _cn.consultar(opts('--ncm', ''), tabela=opts('--tabela'))
+            else:
+                res = _cn.buscar(opts('--texto', ''), opts('--tabela'))
+        except Exception as e:
+            res = {'erro': str(e)}
+        _out(opts('--json', 'ncm.json'), json.dumps(res, ensure_ascii=False))
+        return 0
+
     if modo == 'nfe-chave':
         import nfe_chave as _nc
         args = argv[1:]
