@@ -1,6 +1,7 @@
 'use strict';
-// Consulta de NCM (menu Fiscal, toda a equipe): descrição oficial (Siscomex/Classif), PIS/COFINS (tabelas oficiais da
-// EFD-Contribuições) e IBS/CBS (LC 214/2025). A partir de 24/12/2026 avisa a extinção do PIS e da COFINS em 2027.
+// Consulta de NCM (menu Fiscal, toda a equipe): descrição oficial (Siscomex/Classif ou tabela NCM da RFB), PIS/COFINS (tabelas
+// oficiais da EFD-Contribuições) e IBS/CBS/IS (banco oficial da Calculadora de Tributos da RFB). A partir de 24/12/2026 avisa a
+// extinção do PIS e da COFINS em 2027. A tela não manda conferir tabela: o sistema decide e escreve a regra.
 (function () {
   const e = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const pc = (v) => `${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
@@ -36,13 +37,27 @@
 .ncm-ls div{display:flex;gap:14px;padding:10px 16px;border-top:1px solid #f0f2f7;cursor:pointer;font-size:13px;color:#46507a}
 .ncm-ls div:hover{background:#fff6ef}.ncm-ls div b{color:#1f2a5a;min-width:92px}
 .ncm-vazio{color:#8a92b2;font-size:13px;padding:30px 0;text-align:center}
-.ncm-foot{font-size:11px;color:#8a92b2;margin-top:12px}`;
+.ncm-foot{font-size:11px;color:#8a92b2;margin-top:12px}
+.ncm-sub{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#8a92b2;margin:14px 0 2px}
+.ncm-it p.ncm-cond{color:#9a4a00;font-weight:700}
+.ncm-xiv{width:100%;box-sizing:border-box;border:1px solid #d6dbe8;border-radius:9px;padding:8px 10px;font-size:12.5px;margin-top:8px;outline:none}
+.ncm-xivr p.ncm-ok{color:#0a8a5f}.ncm-xivr p.ncm-no{color:#3d55c4}`;
     document.head.appendChild(st);
   }
 
   function hierarquia(h) {
     return (h || []).filter((x) => x.nivel === 'Capítulo' || x.nivel === 'Posição')
       .map((x) => `${e(x.nivel)} ${e(x.codigo)} · <b>${e(x.descricao)}</b>`).join('<br>');
+  }
+
+  const dataBr = (iso) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '');
+
+  function itemPis(a, cond) {
+    return `<div class="ncm-it"><span class="ncm-t ${a.tabela === '4.3.13' || a.tabela === '4.3.14' ? 'ok' : 'nv'}">${e(a.regime)}</span><span class="ncm-t nv">CST ${e(a.cst)}</span><span class="ncm-t gy">Tabela ${e(a.tabela)} · código ${e(a.codigo)}</span>
+      ${cond ? `<p class="ncm-cond">${e(a.condicao.charAt(0).toUpperCase() + a.condicao.slice(1))}.</p>` : ''}
+      <p>${e(a.descricao)}</p>
+      ${a.natureza_revenda ? `<p><b>Revenda (quem não fabrica nem importa):</b> alíquota zero, CST 04, natureza da receita ${e(a.natureza_revenda)}.</p>` : ''}
+      ${a.ncm_tabela ? `<p style="color:#8a92b2">NCM na tabela: ${e(a.ncm_tabela)}${a.desde ? ` · desde ${e(a.desde)}` : ''}</p>` : ''}</div>`;
   }
 
   function cardPis(r) {
@@ -52,40 +67,80 @@
         <div class="ncm-big">—</div><span class="ncm-t gy">não existem mais</span>
         <div class="ncm-lei">Desde 01/01/2027 o PIS e a COFINS deixaram de existir: a operação passa a ter a CBS (quadro ao lado). LC 214/2025.</div></div>`;
     }
+    const sit = p.situacoes || [];
     let h = `<div class="ncm-c"><h3>PIS e COFINS</h3><div class="s">Tabelas oficiais da EFD-Contribuições · até 31/12/2026</div>`;
     if (p.basica) {
       h += `<div class="ncm-big">Tributação básica</div><span class="ncm-t nv">CST 01</span>
         <div class="ncm-r"><span>Lucro Presumido (cumulativo)</span><b>PIS 0,65% · COFINS 3%</b></div>
         <div class="ncm-r"><span>Lucro Real (não cumulativo)</span><b>PIS 1,65% · COFINS 7,6%</b></div>
-        <div class="ncm-lei">O NCM não está nas tabelas de monofásico, ST, alíquota zero, isenção, sem incidência ou suspensão (4.3.10 a 4.3.16).
+        <div class="ncm-lei">${sit.length ? 'Fora das situações abaixo, este NCM' : 'Este NCM'} não tem monofásico, substituição tributária, alíquota zero, isenção, não incidência ou suspensão (Tabelas 4.3.10 a 4.3.16).
         Lei 9.718/1998 (cumulativo) · Leis 10.637/2002 e 10.833/2003 (não cumulativo).</div>`;
-      if (p.aviso_sem_ncm) h += `<div class="ncm-lei" style="background:#fff8ef;color:#9a4a00">Algumas linhas da Tabela 4.3.13 (alíquota zero) descrevem o produto sem NCM — por exemplo, leite e queijos. Para alimentos, confira a descrição do produto na tabela.</div>`;
-      return h + '</div>';
+    } else {
+      h += `<div class="ncm-big">${e(p.achados[0].regime)}</div>`;
+      p.achados.forEach((a) => { h += itemPis(a, false); });
     }
-    const a0 = p.achados[0];
-    h += `<div class="ncm-big">${e(a0.regime)}</div>`;
-    p.achados.forEach((a) => {
-      h += `<div class="ncm-it"><span class="ncm-t ${a.tabela === '4.3.13' || a.tabela === '4.3.14' ? 'ok' : 'nv'}">${e(a.regime)}</span><span class="ncm-t nv">CST ${e(a.cst)}</span><span class="ncm-t gy">Tabela ${e(a.tabela)} · código ${e(a.codigo)}</span>
-        ${a.condicao ? `<span class="ncm-t wa">${e(a.condicao.replace(/;\s*$/, ''))}</span>` : ''}
-        <p>${e(a.descricao)}</p>
-        ${a.natureza_revenda ? `<p><b>Revenda (quem não fabrica nem importa):</b> alíquota zero, CST 04, natureza da receita ${e(a.natureza_revenda)}.</p>` : ''}
-        ${a.ncm_tabela ? `<p style="color:#8a92b2">NCM na tabela: ${e(a.ncm_tabela)}${a.desde ? ` · desde ${e(a.desde)}` : ''}</p>` : ''}</div>`;
-    });
+    if (sit.length) {
+      h += `<div class="ncm-sub">Só nestas situações</div>`;
+      sit.forEach((a) => { h += itemPis(a, true); });
+    }
     return h + '</div>';
+  }
+
+  const rotRed = (v) => (v >= 100 ? 'Alíquota zero' : v ? `Redução de ${Number(v).toLocaleString('pt-BR')}%` : 'Tributação integral');
+  const anexoTxt = (x) => (x.anexo ? `Anexo ${e(x.anexo)}${x.item ? `, item ${e(x.item)}` : ''} da LC 214/2025` : '');
+
+  function linhaOutro(x) {
+    const txt = x.texto_item || x.descricao;
+    return `<div class="ncm-it"><span class="ncm-t ${x.red_cbs ? 'ok' : 'gy'}">${e(rotRed(x.red_cbs))}</span><span class="ncm-t nv">CST ${e(x.cst)}</span><span class="ncm-t nv">cClassTrib ${e(x.cclasstrib)}</span>
+      ${x.condicao ? `<p class="ncm-cond">${e(x.condicao.charAt(0).toUpperCase() + x.condicao.slice(1))}.</p>` : ''}
+      <p>${e(txt)}</p>${x.texto_item ? `<p style="color:#8a92b2">${e(x.descricao)}${anexoTxt(x) ? ` · ${anexoTxt(x)}` : ''}</p>` : ''}</div>`;
   }
 
   function cardIbs(r) {
     const b = r.ibs_cbs || {};
+    const pr = b.principal;
     const red = Number(b.reducao || 0);
-    const at = b.ano_teste;
-    return `<div class="ncm-c"><h3>IBS e CBS</h3><div class="s">Reforma Tributária · LC 214/2025</div>
-      <div class="ncm-big">${red >= 100 ? 'Alíquota zero' : red ? `Redução de ${red.toLocaleString('pt-BR')}%` : 'Tributação integral'}</div>
-      <span class="ncm-t ${red ? 'ok' : 'gy'}">${red ? 'com redução' : 'sem redução pelo NCM'}</span><span class="ncm-t nv">CST ${e(b.cst)}</span><span class="ncm-t nv">cClassTrib ${e(b.cclasstrib)}</span>
-      ${b.condicao ? `<span class="ncm-t wa">${e(b.condicao)}</span>` : ''}
-      <div class="ncm-r"><span>Enquadramento</span><b>${e(b.enquadramento)}</b></div>
-      ${at ? `<div class="ncm-r"><span>2026 (ano de teste)</span><b>CBS ${pc(at.cbs)} · IBS ${pc(at.ibs)}</b></div>` : ''}
-      ${b.art57 ? '<div class="ncm-r"><span>Uso e consumo pessoal</span><b>art. 57: crédito só se for revenda ou insumo da atividade</b></div>' : ''}
-      <div class="ncm-lei">${e(b.lei)}${at ? ' · em 2026: CBS 0,9% e IBS 0,1% (valores de teste)' : ''}</div></div>`;
+    const al = b.aliquotas;
+    const outros = b.outros || [];
+    const mesmo = outros.filter((x) => !x.publico && !x.diferimento && !x.condicao);
+    const cond = outros.filter((x) => x.condicao && !(b.anexo_xiv && x.cclasstrib === '200009'));
+    const pub = outros.filter((x) => x.publico);
+    const dif = outros.filter((x) => x.diferimento);
+    let h = `<div class="ncm-c"><h3>IBS e CBS</h3><div class="s">Reforma Tributária · LC 214/2025 · base oficial da calculadora da RFB</div>
+      <div class="ncm-big">${rotRed(red)}</div>
+      <span class="ncm-t ${red ? 'ok' : 'gy'}">${red ? 'com redução' : 'sem redução para este NCM'}</span><span class="ncm-t nv">CST ${e(b.cst)}</span><span class="ncm-t nv">cClassTrib ${e(b.cclasstrib)}</span>
+      <div class="ncm-r"><span>Enquadramento</span><b>${e(pr ? pr.descricao : 'Tributação integral')}</b></div>
+      ${pr && pr.texto_item ? `<div class="ncm-r"><span>${anexoTxt(pr)}</span><b>${e(pr.texto_item)}</b></div>` : ''}
+      ${al ? `<div class="ncm-r"><span>${al.ano}${al.ano === 2026 ? ' (ano de teste)' : ''}</span><b>CBS ${pc(al.cbs)} · IBS ${pc(al.ibs)}</b></div>` : `<div class="ncm-r"><span>${new Date(r.hoje).getFullYear()}</span><b>alíquota de referência ainda não publicada</b></div>`}
+      ${b.seletivo ? `<div class="ncm-r"><span>Imposto Seletivo</span><b>incide a partir de ${e(dataBr(b.seletivo.desde))}</b></div>` : ''}
+      ${b.art57 ? `<div class="ncm-r"><span>Uso e consumo pessoal (${e(b.art57)})</span><b>art. 57: crédito só se for revenda ou insumo da atividade</b></div>` : ''}`;
+    if (mesmo.length) h += `<div class="ncm-sub">O mesmo NCM em outro item da lei</div>${mesmo.map(linhaOutro).join('')}`;
+    if (cond.length) h += `<div class="ncm-sub">Só para estes produtos</div>${cond.map(linhaOutro).join('')}`;
+    if (b.anexo_xiv) {
+      h += `<div class="ncm-it"><b>Alíquota zero do Anexo XIV pelo princípio ativo</b>
+        <input id="ncmXiv" class="ncm-xiv" placeholder="Digite o princípio ativo (ex.: abacavir)" autocomplete="off"><div id="ncmXivR" class="ncm-xivr"></div></div>`;
+    }
+    if (pub.length) h += `<div class="ncm-sub">Na venda a órgão público ou entidade de saúde imune</div>${pub.map(linhaOutro).join('')}`;
+    if (dif.length) h += `<div class="ncm-sub">Com diferimento</div>${dif.map(linhaOutro).join('')}`;
+    const v = b.base || {};
+    h += `<div class="ncm-lei">Banco oficial da Calculadora de Tributos da RFB${v.versao ? ` · versão ${e(v.versao)} de ${e(dataBr(v.data))}` : ''}${al && al.ano === 2026 ? ' · em 2026: CBS 0,9% e IBS 0,1% (valores de teste)' : ''}.</div>`;
+    return h + '</div>';
+  }
+
+  function ligaXiv() {
+    const inp = $('#ncmXiv');
+    const lista = S.res && S.res.ibs_cbs && S.res.ibs_cbs.anexo_xiv;
+    if (!inp || !lista) return;
+    const norm = (t) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
+    inp.addEventListener('input', () => {
+      const q = norm(inp.value);
+      const out = $('#ncmXivR');
+      if (q.length < 3) { out.innerHTML = ''; return; }
+      const ach = lista.filter((x) => norm(x).includes(q));
+      out.innerHTML = ach.length
+        ? `<p class="ncm-ok">Consta do Anexo XIV: <b>alíquota zero</b> (CST 200 · cClassTrib 200009).</p><p>${ach.slice(0, 8).map(e).join(' · ')}${ach.length > 8 ? ` · +${ach.length - 8}` : ''}</p>`
+        : '<p class="ncm-no">Não consta do Anexo XIV: <b>redução de 60%</b> (CST 200 · cClassTrib 200032).</p>';
+    });
   }
 
   function desenha() {
@@ -96,8 +151,7 @@
     if (S.busy) corpo = '<div class="ncm-vazio">Consultando…</div>';
     else if (S.lista) {
       const L = S.lista;
-      if (!L.tabela) corpo = '<div class="ncm-vazio">A tabela de NCM do Siscomex ainda não foi baixada (sem internet?). Consulte pelo código de 8 dígitos.</div>';
-      else if (!L.itens.length) corpo = '<div class="ncm-vazio">Nenhum NCM com essas palavras na descrição.</div>';
+      if (!L.itens.length) corpo = '<div class="ncm-vazio">Nenhum NCM com essas palavras na descrição.</div>';
       else corpo = `<div class="ncm-foot" style="margin:0 0 8px">${L.total} NCM encontrado(s)${L.total > L.itens.length ? ` · mostrando ${L.itens.length}` : ''} — clique para consultar</div>
         <div class="ncm-ls">${L.itens.map((x) => `<div data-ncm="${e(x.ncm)}"><b>${e(x.ncm)}</b><span>${e(x.descricao)}</span></div>`).join('')}</div>`;
     } else if (S.res) {
@@ -106,12 +160,13 @@
       else {
         const aviso = r.aviso ? `<div class="ncm-av ${e(r.aviso.tipo)}">⚠ ${e(r.aviso.texto)}</div>` : '';
         const naoExiste = r.tabela && r.existe === false;
+        const fonte = r.fonte === 'siscomex' ? 'Descrição oficial · Siscomex/Classif' : 'Descrição oficial · tabela NCM da RFB';
         corpo = `${aviso}<div class="ncm-hd"><div><div class="n">${e(r.ncm)}</div>
-          <div class="d">${naoExiste ? '⚠ Este código não existe na tabela NCM vigente do Siscomex — confira o NCM.' : e(r.descricao || 'Descrição indisponível (tabela do Siscomex não baixada).')}</div>
+          <div class="d">${naoExiste ? '⚠ NCM inexistente: este código não está na tabela NCM vigente.' : e(r.descricao)}</div>
           <div class="tr">${hierarquia(r.hierarquia)}</div></div>
-          <div class="ncm-src">${r.tabela ? 'Descrição oficial · Siscomex/Classif' : 'Sem a tabela do Siscomex'}</div></div>
+          <div class="ncm-src">${fonte}</div></div>
           <div class="ncm-g">${cardPis(r)}${cardIbs(r)}</div>
-          <div class="ncm-foot">Tabela NCM do Siscomex${S.tabelaEm ? ` atualizada em ${new Date(S.tabelaEm).toLocaleDateString('pt-BR')}` : ''} · tabelas da EFD-Contribuições e reduções da LC 214/2025 carregadas no FiscoCont+.</div>`;
+          <div class="ncm-foot">${r.fonte === 'siscomex' ? `Tabela NCM do Siscomex${S.tabelaEm ? ` atualizada em ${new Date(S.tabelaEm).toLocaleDateString('pt-BR')}` : ''}` : 'Tabela NCM do banco oficial da calculadora da RFB'} · tabelas da EFD-Contribuições · IBS, CBS e Imposto Seletivo pelo banco oficial da Calculadora de Tributos da RFB.</div>`;
       }
     } else corpo = '<div class="ncm-vazio">Digite um NCM (ex.: 4818.10.00) ou palavras da descrição (ex.: papel higiênico).</div>';
     raiz.innerHTML = `<div class="ncm"><div class="ncm-top"><h2>Consulta de NCM</h2>
@@ -121,6 +176,7 @@
     inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') ir(); });
     $('#ncmGo').addEventListener('click', ir);
     raiz.querySelectorAll('[data-ncm]').forEach((d) => d.addEventListener('click', () => { S.q = d.dataset.ncm; ir(); }));
+    ligaXiv();
     if (!S.busy) inp.focus();
   }
 
